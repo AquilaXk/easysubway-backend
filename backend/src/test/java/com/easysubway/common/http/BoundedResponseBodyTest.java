@@ -114,6 +114,7 @@ class BoundedResponseBodyTest {
 	void timeoutInOneThreadDoesNotAffectConcurrentReads() throws Exception {
 		CountDownLatch timedOutLatch = new CountDownLatch(1);
 		AtomicBoolean threadBSuccess = new AtomicBoolean(false);
+		AtomicReference<Throwable> threadAError = new AtomicReference<>();
 		AtomicReference<Throwable> threadBError = new AtomicReference<>();
 
 		StalledStream stalledA = new StalledStream(Duration.ofSeconds(5));
@@ -151,7 +152,7 @@ class BoundedResponseBodyTest {
 			} catch (HttpTimeoutException expected) {
 				timedOutLatch.countDown();
 			} catch (IOException unexpected) {
-				// ignore
+				threadAError.set(unexpected);
 			}
 		});
 
@@ -173,6 +174,7 @@ class BoundedResponseBodyTest {
 		threadB.join(5000);
 
 		assertThat(stalledA.closed()).isTrue();
+		assertThat(threadAError.get()).isNull();
 		assertThat(threadBError.get()).isNull();
 		assertThat(threadBSuccess.get()).isTrue();
 	}
