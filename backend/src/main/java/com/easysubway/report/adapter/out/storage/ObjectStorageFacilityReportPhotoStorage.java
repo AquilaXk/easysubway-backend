@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Profile("prod | staging | release | prod-like")
-public class ObjectStorageFacilityReportPhotoStorage implements
+public final class ObjectStorageFacilityReportPhotoStorage implements
 	StoreFacilityReportPhotoPort,
 	LoadFacilityReportPhotoPort,
 	DeleteFacilityReportPhotoPort,

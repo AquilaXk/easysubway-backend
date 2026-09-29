@@ -271,21 +271,6 @@
 	</Match>
 	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.report.adapter.out.storage.ObjectStorageFacilityReportPhotoStorage"/>
-		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.report.adapter.out.storage.ObjectStorageFacilityReportPhotoStorage"/>
-		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.net.http.HttpClient,java.time.Clock" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.report.adapter.out.storage.ObjectStorageFacilityReportPhotoStorage"/>
-		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.net.http.HttpClient,java.time.Clock,java.time.Duration" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.report.application.service.ProductionReportReceiptTokenPepperValidator"/>
 		<Method name="&lt;init&gt;" params="java.lang.String" returns="void"/>
 	</Match>
