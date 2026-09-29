@@ -253,6 +253,63 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("환승역 도착 응답의 다른 노선(subwayId) 열차는 조회 노선의 FRESH 결과와 archive에 귀속하지 않는다")
+	void transferStationArrivalsOfOtherProviderLinesAreNotAttributedToQueriedLine() {
+		RealtimeProvider provider = query -> List.of(
+			euljiro3gaArrival("1002", "2001", "성수행 - 을지로4가방면", "내선", 60),
+			euljiro3gaArrival("1003", "3007", "오금행 - 충무로방면", "하행", 120),
+			euljiro3gaArrival("1002", "2002", "시청행 - 을지로입구방면", "외선", 150),
+			euljiro3gaArrival("1003", "3008", "대화행 - 종로3가방면", "상행", 180)
+		);
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			euljiro3gaLine3MappingPort(),
+			archive
+		);
+
+		RealtimeArrivalResult result = service.arrivals(euljiro3gaLine3Query());
+
+		assertThat(result.status()).isEqualTo(RealtimeStatus.FRESH);
+		assertThat(result.arrivals())
+			.extracting(RealtimeArrival::lineId, RealtimeArrival::trainNo)
+			.containsExactly(
+				org.assertj.core.api.Assertions.tuple("1003", "3007"),
+				org.assertj.core.api.Assertions.tuple("1003", "3008")
+			);
+		assertThat(archive.observations)
+			.extracting(RealtimeArrivalObservation::trainNo)
+			.containsExactly("3007", "3008");
+		assertThat(archive.observations)
+			.extracting(RealtimeArrivalObservation::lineId, RealtimeArrivalObservation::providerLineId)
+			.containsOnly(org.assertj.core.api.Assertions.tuple("seoul-3", "1003"));
+	}
+
+	@Test
+	@DisplayName("환승역 응답에 조회 노선 열차가 하나도 없으면 다른 노선 열차로 채우지도, 도착 없음으로 단정하지도 않는다")
+	void transferStationResponseWithoutQueriedLineIsUnavailableInsteadOfEmptyOrOtherLine() {
+		RealtimeProvider provider = query -> List.of(
+			euljiro3gaArrival("1002", "2001", "성수행 - 을지로4가방면", "내선", 60),
+			euljiro3gaArrival("1002", "2002", "시청행 - 을지로입구방면", "외선", 150)
+		);
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			euljiro3gaLine3MappingPort(),
+			archive
+		);
+
+		RealtimeArrivalResult result = service.arrivals(euljiro3gaLine3Query());
+
+		assertThat(result.status()).isEqualTo(RealtimeStatus.UNAVAILABLE);
+		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(result.arrivals()).isEmpty();
+		assertThat(archive.observations).isEmpty();
+	}
+
+	@Test
 	@DisplayName("운영 archive 저장은 fresh 응답 경로와 분리된다")
 	void dispatchesArchiveWithoutBlockingFreshResponse() {
 		CountingProvider provider = new CountingProvider();
@@ -1379,6 +1436,48 @@ class RealtimeGatewayServiceTest {
 
 	private RealtimeQuery line4Query() {
 		return new RealtimeQuery(null, "seoul-4", "1004", null, "4호선");
+	}
+
+	private RealtimeQuery euljiro3gaLine3Query() {
+		return new RealtimeQuery("station-euljiro-3ga", "seoul-3", "1003", "을지로3가", null);
+	}
+
+	private StubMappingPort euljiro3gaLine3MappingPort() {
+		StubMappingPort mappingPort = new StubMappingPort();
+		mappingPort.add(new RealtimeMapping(
+			"seoul-topis",
+			"station-euljiro-3ga",
+			"seoul-3",
+			"1003",
+			"1003000322",
+			"을지로3가",
+			"3호선",
+			true,
+			true,
+			"OFFICIAL",
+			1L
+		));
+		return mappingPort;
+	}
+
+	private RealtimeArrival euljiro3gaArrival(
+		String providerLineId,
+		String trainNo,
+		String destination,
+		String direction,
+		int etaSeconds
+	) {
+		return new RealtimeArrival(
+			providerLineId,
+			"을지로3가",
+			destination,
+			direction,
+			trainNo,
+			etaSeconds,
+			"%d분 후".formatted(etaSeconds / 60),
+			"전역 출발",
+			"2026-06-26T08:00:00Z"
+		);
 	}
 
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock) {

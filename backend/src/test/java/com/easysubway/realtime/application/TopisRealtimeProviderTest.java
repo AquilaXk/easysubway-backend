@@ -3,11 +3,17 @@ package com.easysubway.realtime.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
@@ -16,19 +22,31 @@ import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.config.Property;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -114,6 +132,161 @@ class TopisRealtimeProviderTest {
 		assertThat(positions)
 			.extracting(RealtimeTrainPosition::lineId, RealtimeTrainPosition::stationName, RealtimeTrainPosition::trainNo)
 			.containsExactly(tuple("1003", "동대입구", "3102"));
+	}
+
+	@Test
+	@DisplayName("열차 위치 항목에 statnNm이나 trainNo가 없거나 비어 있으면 빈 문자열로 채우지 않고 버린다")
+	void trainPositionWithoutStationNameOrTrainNoIsDroppedInsteadOfPassingBlankPlaceholder() {
+		ChunkedBodyHttpClient httpClient = ChunkedBodyHttpClient.ok("""
+			{
+			  "errorMessage": {"status": 200, "code": "INFO-000", "message": "정상 처리되었습니다."},
+			  "realtimePositionList": [
+			    {"subwayId": "1003", "trainNo": "3103", "trainSttus": "1", "updnLine": "1",
+			     "statnTnm": "오금", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "statnNm": " ", "trainNo": "3104", "trainSttus": "1", "updnLine": "1",
+			     "statnTnm": "오금", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "statnNm": "충무로", "trainSttus": "1", "updnLine": "1",
+			     "statnTnm": "오금", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "statnNm": "충무로", "trainNo": "", "trainSttus": "1", "updnLine": "1",
+			     "statnTnm": "오금", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "statnNm": "동대입구", "trainNo": "3102", "trainSttus": "0", "updnLine": "0",
+			     "statnTnm": "대화", "recptnDt": "2026-09-29 08:00:00"}
+			  ]
+			}
+			""");
+
+		List<RealtimeTrainPosition> positions = provider(httpClient).trainPositions(LINE_3_POSITIONS);
+
+		assertThat(positions)
+			.extracting(RealtimeTrainPosition::lineId, RealtimeTrainPosition::stationName, RealtimeTrainPosition::trainNo)
+			.containsExactly(tuple("1003", "동대입구", "3102"));
+	}
+
+	@Test
+	@DisplayName("도착 목록이 비어 있지 않은데 필수 필드 누락으로 전부 버려지면 도착 없음이 아니라 원천 불가로 닫는다")
+	void arrivalListWhoseEveryItemIsDroppedIsProviderUnavailable() {
+		ChunkedBodyHttpClient httpClient = ChunkedBodyHttpClient.ok("""
+			{
+			  "errorMessage": {"status": 200, "code": "INFO-000", "message": "정상 처리되었습니다."},
+			  "realtimeArrivalList": [
+			    {"statnNm": "을지로3가", "trainLineNm": "오금행 - 충무로방면", "updnLine": "하행",
+			     "btrainNo": "3001", "barvlDt": "120", "arvlMsg2": "2분 후", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "trainLineNm": "대화행 - 종로3가방면", "updnLine": "상행",
+			     "btrainNo": "3002", "barvlDt": "180", "arvlMsg2": "3분 후", "recptnDt": "2026-09-29 08:00:00"}
+			  ]
+			}
+			""");
+
+		assertThatThrownBy(() -> provider(httpClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+	}
+
+	@Test
+	@DisplayName("열차 위치 목록이 비어 있지 않은데 필수 필드 누락으로 전부 버려지면 위치 없음이 아니라 원천 불가로 닫는다")
+	void positionListWhoseEveryItemIsDroppedIsProviderUnavailable() {
+		ChunkedBodyHttpClient httpClient = ChunkedBodyHttpClient.ok("""
+			{
+			  "errorMessage": {"status": 200, "code": "INFO-000", "message": "정상 처리되었습니다."},
+			  "realtimePositionList": [
+			    {"statnNm": "충무로", "trainNo": "3101", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "trainNo": "3102", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "statnNm": "동대입구", "recptnDt": "2026-09-29 08:00:00"}
+			  ]
+			}
+			""");
+
+		assertThatThrownBy(() -> provider(httpClient).trainPositions(LINE_3_POSITIONS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+	}
+
+	@Test
+	@DisplayName("일부 항목만 버려지면 유효 항목은 유지하고 버린 건수만 WARN으로 남긴다(역명·열차번호 등 원천 값은 남기지 않는다)")
+	void partialDropKeepsValidItemsAndWarnsWithCountsOnly() {
+		ChunkedBodyHttpClient arrivalsClient = ChunkedBodyHttpClient.ok("""
+			{
+			  "errorMessage": {"status": 200, "code": "INFO-000", "message": "정상 처리되었습니다."},
+			  "realtimeArrivalList": [
+			    {"subwayId": "1003", "statnNm": "을지로3가", "trainLineNm": "오금행 - 충무로방면", "updnLine": "하행",
+			     "btrainNo": "3007", "barvlDt": "120", "arvlMsg2": "2분 후", "recptnDt": "2026-09-29 08:00:00"},
+			    {"statnNm": "을지로3가", "trainLineNm": "대화행 - 종로3가방면", "updnLine": "상행",
+			     "btrainNo": "3008", "barvlDt": "180", "arvlMsg2": "3분 후", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "trainLineNm": "대화행 - 종로3가방면", "updnLine": "상행",
+			     "btrainNo": "3009", "barvlDt": "240", "arvlMsg2": "4분 후", "recptnDt": "2026-09-29 08:00:00"}
+			  ]
+			}
+			""");
+		ChunkedBodyHttpClient positionsClient = ChunkedBodyHttpClient.ok("""
+			{
+			  "errorMessage": {"status": 200, "code": "INFO-000", "message": "정상 처리되었습니다."},
+			  "realtimePositionList": [
+			    {"subwayId": "1003", "statnNm": "동대입구", "trainNo": "3102", "trainSttus": "0", "updnLine": "0",
+			     "statnTnm": "대화", "recptnDt": "2026-09-29 08:00:00"},
+			    {"subwayId": "1003", "statnNm": "충무로", "trainSttus": "1", "updnLine": "1",
+			     "statnTnm": "오금", "recptnDt": "2026-09-29 08:00:00"}
+			  ]
+			}
+			""");
+		List<LogEvent> warnings = new ArrayList<>();
+
+		List<RealtimeArrival> arrivals;
+		List<RealtimeTrainPosition> positions;
+		try (CapturedProviderLog ignored = CapturedProviderLog.capture(warnings)) {
+			arrivals = provider(arrivalsClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS);
+			positions = provider(positionsClient).trainPositions(LINE_3_POSITIONS);
+		}
+
+		assertThat(arrivals).extracting(RealtimeArrival::trainNo).containsExactly("3007");
+		assertThat(positions).extracting(RealtimeTrainPosition::trainNo).containsExactly("3102");
+		assertThat(warnings).extracting(LogEvent::getLevel).containsOnly(Level.WARN);
+		assertThat(warnings)
+			.extracting(event -> event.getMessage().getFormattedMessage())
+			.satisfiesExactly(
+				message -> assertThat(message).contains("ARRIVALS", "receivedCount=3", "droppedCount=2"),
+				message -> assertThat(message).contains("TRAIN_POSITIONS", "receivedCount=2", "droppedCount=1")
+			)
+			.allSatisfy(message -> assertThat(message)
+				.doesNotContain("을지로3가", "충무로", "동대입구", "3007", "3008", "3009", "3102", "backend-key"));
+	}
+
+	@Test
+	@DisplayName("결과 코드가 전혀 없는 응답은 목록이 배열이어도 도착·위치 없음이 아니라 원천 불가로 닫는다")
+	void missingResultCodeWithArrayListIsProviderUnavailable() {
+		List<String> arrivalPayloads = List.of(
+			"{\"realtimeArrivalList\": []}",
+			"{\"errorMessage\": {\"status\": 200, \"message\": \"정상 처리되었습니다.\"}, \"realtimeArrivalList\": []}",
+			ONE_ARRIVAL_PAYLOAD.replace("\"code\":\"INFO-000\",", "")
+		);
+		for (String payload : arrivalPayloads) {
+			assertThatThrownBy(() -> provider(ChunkedBodyHttpClient.ok(payload)).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+				.as(payload)
+				.isInstanceOf(RealtimeProviderException.class)
+				.hasMessage("PROVIDER_UNAVAILABLE");
+		}
+		assertThatThrownBy(() -> provider(ChunkedBodyHttpClient.ok("{\"realtimePositionList\": []}"))
+			.trainPositions(LINE_3_POSITIONS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+	}
+
+	@Test
+	@DisplayName("헤더 뒤 본문이 요청 시간 예산(1.5초) 안에 끝나지 않으면 원천 불가가 아니라 timeout으로 닫고 본문 수신을 끊는다")
+	void bodyStalledPastRequestTimeoutIsProviderTimeout() throws Exception {
+		StalledBody body = new StalledBody(ONE_ARRIVAL_PAYLOAD.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(6));
+		HttpClient httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		HttpResponse<InputStream> response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenReturn(body);
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenReturn(response);
+		long startedAt = System.nanoTime();
+
+		assertThatThrownBy(() -> provider(httpClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_TIMEOUT");
+		assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(4));
+		assertThat(body.closed()).isTrue();
 	}
 
 	@Test
@@ -255,6 +428,103 @@ class TopisRealtimeProviderTest {
 		Arrays.fill(body, (byte) ' ');
 		System.arraycopy(payload, 0, body, 0, payload.length);
 		return body;
+	}
+
+	/**
+	 * 헤더 뒤 본문이 멈춘 원천을 흉내 낸다. 첫 read는 close되거나 stall 시간이 지날 때까지 막히고,
+	 * close로 풀리면 실제 HttpResponse 본문 스트림처럼 IOException으로 끝난다. stall 뒤에는 본문을 그대로 준다.
+	 */
+	private static final class StalledBody extends InputStream {
+		private final ByteArrayInputStream delegate;
+		private final Duration stall;
+		private final CountDownLatch released = new CountDownLatch(1);
+		private final AtomicBoolean closed = new AtomicBoolean();
+
+		private StalledBody(byte[] body, Duration stall) {
+			this.delegate = new ByteArrayInputStream(body);
+			this.stall = stall;
+		}
+
+		boolean closed() {
+			return closed.get();
+		}
+
+		@Override
+		public int read() throws IOException {
+			byte[] one = new byte[1];
+			int read = read(one, 0, 1);
+			return read == -1 ? -1 : one[0] & 0xff;
+		}
+
+		@Override
+		public int read(byte[] buffer, int offset, int length) throws IOException {
+			try {
+				released.await(stall.toMillis(), TimeUnit.MILLISECONDS);
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new InterruptedIOException("stalled body read interrupted");
+			}
+			if (closed.get()) {
+				throw new IOException("closed");
+			}
+			return delegate.read(buffer, offset, length);
+		}
+
+		@Override
+		public void close() {
+			closed.set(true);
+			released.countDown();
+		}
+	}
+
+	/**
+	 * provider logger에 WARN 이상을 모으는 appender를 잠시 붙인다.
+	 */
+	private static final class CapturedProviderLog implements AutoCloseable {
+		private final LoggerContext loggerContext;
+		private final Configuration configuration;
+		private final String loggerName;
+		private final LoggerConfig previousExactConfig;
+		private final AbstractAppender appender;
+
+		private CapturedProviderLog(List<LogEvent> events) {
+			this.loggerContext = (LoggerContext) LogManager.getContext(false);
+			this.configuration = loggerContext.getConfiguration();
+			this.loggerName = TopisRealtimeProvider.class.getName();
+			this.previousExactConfig = configuration.getLoggers().get(loggerName);
+			this.appender = new AbstractAppender(
+				"topis-realtime-provider-test",
+				null,
+				PatternLayout.createDefaultLayout(),
+				false,
+				Property.EMPTY_ARRAY
+			) {
+				@Override
+				public void append(LogEvent event) {
+					events.add(event.toImmutable());
+				}
+			};
+			appender.start();
+			configuration.addAppender(appender);
+			LoggerConfig loggerConfig = new LoggerConfig(loggerName, Level.WARN, false);
+			loggerConfig.addAppender(appender, Level.WARN, null);
+			configuration.addLogger(loggerName, loggerConfig);
+			loggerContext.updateLoggers();
+		}
+
+		static CapturedProviderLog capture(List<LogEvent> events) {
+			return new CapturedProviderLog(events);
+		}
+
+		@Override
+		public void close() {
+			configuration.removeLogger(loggerName);
+			if (previousExactConfig != null) {
+				configuration.addLogger(loggerName, previousExactConfig);
+			}
+			loggerContext.updateLoggers();
+			appender.stop();
+		}
 	}
 
 	/**

@@ -467,7 +467,9 @@ class TagoTrainSearchProviderTest {
 
 	@Test
 	void rejectsPageBodyOverTwoMebibytesWithoutParsingTruncatedPrefix() throws Exception {
+		var requests = new AtomicInteger();
 		var server = server(exchange -> {
+			requests.incrementAndGet();
 			if (respondEmptyForNextDay(exchange)) return;
 			respond(exchange, paddedToBytes(paginatedResponse(journeyRow(101), 1), 2_097_153));
 		});
@@ -478,9 +480,122 @@ class TagoTrainSearchProviderTest {
 			assertThatThrownBy(() -> provider.search(query))
 				.isInstanceOf(ProviderFailure.class)
 				.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+			assertThat(requests).hasValue(1);
 		} finally {
 			server.stop(0);
 		}
+	}
+
+	@Test
+	void rejectsAnOversizedPageWithoutRetryingOrReadingTheBodyToTheEnd() throws Exception {
+		var attempts = new AtomicInteger();
+		var budgetCalls = new AtomicInteger();
+		var httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		var body = new CountingBody(paddedToBytes(paginatedResponse(journeyRow(101), 1), 4 * 1_048_576)
+			.getBytes(StandardCharsets.UTF_8));
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenReturn(body);
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			attempts.incrementAndGet();
+			return response;
+		});
+		var provider = new TagoTrainSearchProvider(
+			"test-key",
+			JSON,
+			httpClient,
+			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
+			URI.create("https://provider.example/"),
+			budgetCalls::incrementAndGet,
+			java.time.Duration.ZERO
+		);
+
+		assertThatThrownBy(() -> provider.search(legQuery(LocalDate.parse("2026-07-20"), "KTX", "00")))
+			.isInstanceOf(ProviderFailure.class)
+			.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+		assertThat(attempts).hasValue(1);
+		assertThat(budgetCalls).hasValue(1);
+		assertThat(body.bytesRead()).isLessThanOrEqualTo(2_097_153L).isLessThan(body.length());
+		assertThat(body.closed()).isTrue();
+	}
+
+	@Test
+	void doesNotReadTheBodyOfANonSuccessResponse() throws Exception {
+		for (int status : java.util.List.of(400, 503)) {
+			var attempts = new AtomicInteger();
+			var bodies = new java.util.concurrent.CopyOnWriteArrayList<CountingBody>();
+			var httpClient = mock(HttpClient.class);
+			@SuppressWarnings("unchecked")
+			var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+			when(response.statusCode()).thenReturn(status);
+			when(response.body()).thenAnswer(ignored -> {
+				var body = new CountingBody(paddedToBytes(paginatedResponse("[]", 0), 4 * 1_048_576)
+					.getBytes(StandardCharsets.UTF_8));
+				bodies.add(body);
+				return body;
+			});
+			when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+				attempts.incrementAndGet();
+				return response;
+			});
+			var provider = new TagoTrainSearchProvider(
+				"test-key",
+				JSON,
+				httpClient,
+				Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
+				URI.create("https://provider.example/"),
+				() -> {},
+				java.time.Duration.ZERO
+			);
+
+			assertThatThrownBy(() -> provider.search(legQuery(LocalDate.parse("2026-07-20"), "KTX", "00")))
+				.as("HTTP %d", status)
+				.isInstanceOf(ProviderFailure.class)
+				.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+			assertThat(attempts).as("HTTP %d", status).hasValue(status == 503 ? 2 : 1);
+			assertThat(bodies).as("HTTP %d", status).hasSize(attempts.get()).allSatisfy(body -> {
+				assertThat(body.bytesRead()).isZero();
+				assertThat(body.closed()).isTrue();
+			});
+		}
+	}
+
+	@Test
+	void rejectsAPageWhoseBodyFinishesAfterTheSearchDeadline() throws Exception {
+		var attempts = new AtomicInteger();
+		var budgetCalls = new AtomicInteger();
+		var deadline = Instant.parse("2026-07-19T00:00:05Z");
+		var now = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-07-19T00:00:00Z"));
+		var httpClient = mock(HttpClient.class);
+		var clock = mock(Clock.class);
+		when(clock.instant()).thenAnswer(ignored -> now.get());
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenAnswer(ignored -> new CountingBody(
+			paginatedResponse(journeyRow(101), 1).getBytes(StandardCharsets.UTF_8),
+			() -> now.set(deadline)
+		));
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			attempts.incrementAndGet();
+			return response;
+		});
+		var provider = new TagoTrainSearchProvider(
+			"test-key",
+			JSON,
+			httpClient,
+			clock,
+			URI.create("https://provider.example/"),
+			budgetCalls::incrementAndGet,
+			java.time.Duration.ZERO
+		);
+
+		assertThatThrownBy(() -> provider.search(legQuery(LocalDate.parse("2026-07-20"), "KTX", "00"), deadline))
+			.isInstanceOf(ProviderFailure.class)
+			.hasMessage("TRAIN_SEARCH_UNAVAILABLE");
+		assertThat(attempts).hasValue(1);
+		assertThat(budgetCalls).as("deadline 뒤에 끝난 본문으로 다음 요청을 준비하지 않는다").hasValue(1);
 	}
 
 	@Test
@@ -860,6 +975,64 @@ class TagoTrainSearchProviderTest {
 
 	private InputStream bodyStream(String body) {
 		return new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
+	 * 응답 본문을 흉내 내며 실제로 읽힌 바이트 수와 close 여부를 기록한다. onRead는 매 read 직전에 실행된다.
+	 */
+	private static final class CountingBody extends InputStream {
+		private final ByteArrayInputStream delegate;
+		private final int length;
+		private final Runnable onRead;
+		private final java.util.concurrent.atomic.AtomicLong bytesRead = new java.util.concurrent.atomic.AtomicLong();
+		private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+
+		private CountingBody(byte[] body) {
+			this(body, () -> {});
+		}
+
+		private CountingBody(byte[] body, Runnable onRead) {
+			this.delegate = new ByteArrayInputStream(body);
+			this.length = body.length;
+			this.onRead = onRead;
+		}
+
+		long bytesRead() {
+			return bytesRead.get();
+		}
+
+		long length() {
+			return length;
+		}
+
+		boolean closed() {
+			return closed.get();
+		}
+
+		@Override
+		public int read() {
+			onRead.run();
+			int value = delegate.read();
+			if (value != -1) {
+				bytesRead.incrementAndGet();
+			}
+			return value;
+		}
+
+		@Override
+		public int read(byte[] buffer, int offset, int count) {
+			onRead.run();
+			int read = delegate.read(buffer, offset, count);
+			if (read > 0) {
+				bytesRead.addAndGet(read);
+			}
+			return read;
+		}
+
+		@Override
+		public void close() {
+			closed.set(true);
+		}
 	}
 
 	private String paddedToBytes(String json, int totalBytes) {
