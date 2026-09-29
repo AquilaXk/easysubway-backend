@@ -9,6 +9,9 @@ import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.easysubway.realtime.domain.RealtimeTripMapping;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,6 +49,7 @@ public class RealtimeGatewayService {
 	private static final int DEFAULT_PROVIDER_CALL_LIMIT_PER_DAY = 800;
 	private static final int MAX_PROVIDER_CALL_LIMIT_PER_MINUTE = 1;
 	private static final int MAX_PROVIDER_CALL_LIMIT_PER_DAY = 800;
+	private static final int MAX_LAST_SERVED_POSITIONS = 5000;
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -73,6 +77,8 @@ public class RealtimeGatewayService {
 	private final Map<String, CachedTrainPosition> trainPositionCache = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeArrivalResult>> arrivalRequests = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeTrainPositionResult>> trainPositionRequests = new ConcurrentHashMap<>();
+	private final Map<String, Instant> lastServedPositionAt = new ConcurrentHashMap<>();
+	private final Counter outOfOrderPositionDropCounter;
 	private volatile java.time.Instant quotaCircuitOpenUntil;
 
 	@Autowired
@@ -84,7 +90,8 @@ public class RealtimeGatewayService {
 		RealtimeProviderCallQuotaPort providerCallQuotaPort,
 		@Qualifier("realtimeArchiveExecutor") Executor archiveExecutor,
 		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_MINUTE:1}") int providerCallLimitPerMinute,
-		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}") int providerCallLimitPerDay
+		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}") int providerCallLimitPerDay,
+		MeterRegistry meterRegistry
 	) {
 		this(
 			provider,
@@ -95,7 +102,8 @@ public class RealtimeGatewayService {
 			providerCallQuotaPort,
 			providerCallLimitPerMinute,
 			providerCallLimitPerDay,
-			archiveExecutor
+			archiveExecutor,
+			meterRegistry
 		);
 	}
 
@@ -213,6 +221,35 @@ public class RealtimeGatewayService {
 		int providerCallLimitPerDay,
 		Executor archiveExecutor
 	) {
+		this(
+			provider,
+			clock,
+			mappingPort,
+			providerControl,
+			arrivalArchivePort,
+			providerCallQuotaPort,
+			providerCallLimitPerMinute,
+			providerCallLimitPerDay,
+			archiveExecutor,
+			new SimpleMeterRegistry()
+		);
+	}
+
+	RealtimeGatewayService(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl providerControl,
+		RealtimeArrivalArchivePort arrivalArchivePort,
+		RealtimeProviderCallQuotaPort providerCallQuotaPort,
+		int providerCallLimitPerMinute,
+		int providerCallLimitPerDay,
+		Executor archiveExecutor,
+		MeterRegistry meterRegistry
+	) {
+		this.outOfOrderPositionDropCounter = Counter.builder("easysubway.realtime.positions.out_of_order.dropped")
+			.description("Train positions dropped because they are older than a position already served")
+			.register(Objects.requireNonNull(meterRegistry, "meterRegistry must not be null"));
 		this.provider = provider;
 		this.clock = clock;
 		this.mappingPort = mappingPort;
@@ -380,12 +417,13 @@ public class RealtimeGatewayService {
 			}
 			Instant receivedAt = clock.instant();
 			List<RealtimeTrainPosition> freshTrainPositions = freshTrainPositions(trainPositions, receivedAt);
-			if (freshTrainPositions.isEmpty()) {
+			List<RealtimeTrainPosition> orderedTrainPositions = orderedTrainPositions(freshTrainPositions, receivedAt);
+			if (orderedTrainPositions.isEmpty()) {
 				return RealtimeTrainPositionResult.unavailable("PROVIDER_ERROR");
 			}
 			RealtimeTrainPositionResult result = RealtimeTrainPositionResult.fresh(
 				receivedAt.toString(),
-				freshTrainPositions
+				orderedTrainPositions
 			);
 			trainPositionCache.put(cacheKey, new CachedTrainPosition(result, receivedAt));
 			return result;
@@ -538,6 +576,73 @@ public class RealtimeGatewayService {
 			freshTrainPositions.add(trainPosition);
 		}
 		return List.copyOf(freshTrainPositions);
+	}
+
+	private List<RealtimeTrainPosition> orderedTrainPositions(
+		List<RealtimeTrainPosition> trainPositions,
+		Instant receivedAt
+	) {
+		if (trainPositions.isEmpty()) {
+			return List.of();
+		}
+		// freshTrainPositions가 파싱할 수 없는 providerReceivedAt 항목을 이미 버렸으므로 여기서는 항상 파싱된다.
+		Map<String, RealtimeTrainPosition> deduplicated = new java.util.LinkedHashMap<>();
+		Map<String, Instant> deduplicatedAt = new java.util.HashMap<>();
+		for (RealtimeTrainPosition position : trainPositions) {
+			Instant parsed = Objects.requireNonNull(
+				parseProviderReceivedAt(position.providerReceivedAt()),
+				"fresh train positions must carry a parseable providerReceivedAt"
+			);
+			String key = trainPositionKey(position);
+			Instant existingTime = deduplicatedAt.get(key);
+			if (existingTime == null || parsed.isAfter(existingTime)) {
+				deduplicated.put(key, position);
+				deduplicatedAt.put(key, parsed);
+			}
+		}
+
+		List<RealtimeTrainPosition> kept = new ArrayList<>();
+		for (RealtimeTrainPosition position : deduplicated.values()) {
+			String key = trainPositionKey(position);
+			Instant parsed = parseProviderReceivedAt(position.providerReceivedAt());
+			Instant lastServed = lastServedPositionAt.get(key);
+			if (lastServed != null && parsed.isBefore(lastServed)) {
+				providerMetrics.recordOutOfOrderDrop();
+				outOfOrderPositionDropCounter.increment();
+				continue;
+			}
+			kept.add(position);
+			if (lastServed == null || parsed.isAfter(lastServed)) {
+				lastServedPositionAt.put(key, parsed);
+			}
+		}
+
+		cleanExpiredLastServedPositions(receivedAt);
+		return List.copyOf(kept);
+	}
+
+	private String trainPositionKey(RealtimeTrainPosition position) {
+		return "%s|%s|%s".formatted(
+			position.lineId() == null ? "" : position.lineId(),
+			position.trainNo() == null ? "" : position.trainNo(),
+			position.direction() == null ? "" : position.direction()
+		);
+	}
+
+	private void cleanExpiredLastServedPositions(Instant now) {
+		if (lastServedPositionAt.size() <= MAX_LAST_SERVED_POSITIONS) {
+			return;
+		}
+		Instant cutoff = now.minus(PROVIDER_FRESHNESS_TTL.multipliedBy(2));
+		lastServedPositionAt.entrySet().removeIf(entry -> entry.getValue().isBefore(cutoff));
+		if (lastServedPositionAt.size() > MAX_LAST_SERVED_POSITIONS) {
+			List<Map.Entry<String, Instant>> sorted = new ArrayList<>(lastServedPositionAt.entrySet());
+			sorted.sort(Map.Entry.comparingByValue());
+			int excess = sorted.size() - MAX_LAST_SERVED_POSITIONS;
+			for (int i = 0; i < excess; i++) {
+				lastServedPositionAt.remove(sorted.get(i).getKey());
+			}
+		}
 	}
 
 	private RealtimeArrival adjustArrivalEta(RealtimeArrival arrival, Instant providerReceivedAt, Instant receivedAt) {
@@ -762,6 +867,7 @@ public class RealtimeGatewayService {
 		private final AtomicLong unsupportedResultCount = new AtomicLong();
 		private final AtomicLong providerAuthRejectedCount = new AtomicLong();
 		private final AtomicLong providerRequestRejectedCount = new AtomicLong();
+		private final AtomicLong outOfOrderPositionDropCount = new AtomicLong();
 
 		private void recordProviderCall(Duration latency) {
 			providerCallCount.incrementAndGet();
@@ -784,6 +890,10 @@ public class RealtimeGatewayService {
 			if ("PROVIDER_REQUEST_REJECTED".equals(providerCause)) {
 				providerRequestRejectedCount.incrementAndGet();
 			}
+		}
+
+		private void recordOutOfOrderDrop() {
+			outOfOrderPositionDropCount.incrementAndGet();
 		}
 
 		private void recordEmptyResult() {
@@ -830,7 +940,8 @@ public class RealtimeGatewayService {
 				ratio(unsupportedResultCount.get(), results),
 				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls,
 				providerAuthRejectedCount.get(),
-				providerRequestRejectedCount.get()
+				providerRequestRejectedCount.get(),
+				outOfOrderPositionDropCount.get()
 			);
 		}
 
