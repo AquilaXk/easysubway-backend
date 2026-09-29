@@ -315,6 +315,160 @@ class JourneyRaptorAdapterTest {
 		assertThat(new JourneyRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared())).isNotNull();
 	}
 
+	// 대체 진입 픽스처: 기본 선택은 최단 검증 거리 "entry"(120초·40m), 차단 시 "entry-alt"(300초·90m).
+	private static final Clock FACILITY_CLOCK = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+
+	@Test
+	void throwingFacilityPortFailsRequiredStepFreeRequestAsFacilityStatusUnavailable() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		FacilityAvailabilityPort throwingPort = () -> {
+			throw new IllegalStateException("facility provider down");
+		};
+		var adapter = new JourneyRaptorAdapter(throwingPort, true, FACILITY_CLOCK);
+
+		assertThatThrownBy(() -> adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement()))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+	}
+
+	@Test
+	void throwingFacilityPortPlansOtherRequestsWithoutFacilityBlocks() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		FacilityAvailabilityPort throwingPort = () -> {
+			throw new IllegalStateException("facility provider down");
+		};
+
+		var requiredNone = new JourneyRaptorAdapter(throwingPort, true, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement());
+		var notRequiredStepFree = new JourneyRaptorAdapter(throwingPort, false, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(requiredNone.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
+		assertThat(notRequiredStepFree.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
+	}
+
+	@Test
+	void freshFacilityViewBlocksTransitionForNoneRequest() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var freshView = FacilityAvailabilityView.blocked(EFFECTIVE.minus(Duration.ofMinutes(1)), Set.of("entry"));
+		var adapter = new JourneyRaptorAdapter(() -> freshView, false, FACILITY_CLOCK);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(result.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 300)));
+	}
+
+	@Test
+	void staleFacilityViewDoesNotBlockNoneRequest() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var staleView = FacilityAvailabilityView.blocked(EFFECTIVE.minus(Duration.ofMinutes(6)), Set.of("entry"));
+
+		for (boolean required : new boolean[] {false, true}) {
+			var result = new JourneyRaptorAdapter(() -> staleView, required, FACILITY_CLOCK).plan(
+				request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+					JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+				snapshot(runtime), EFFECTIVE, null, measurement());
+
+			assertThat(result.candidates()).singleElement().satisfies(candidate ->
+				assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
+		}
+	}
+
+	@Test
+	void blockedEdgeUnknownToCapturedBundleFailsRequiredStepFreeRequest() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var mismatchedView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("edge-from-another-bundle"));
+		var adapter = new JourneyRaptorAdapter(() -> mismatchedView, true, FACILITY_CLOCK);
+
+		assertThatThrownBy(() -> adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement()))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+	}
+
+	@Test
+	void blockedEdgeUnknownToCapturedBundleRejectsWholeViewForNoneRequest() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var mismatchedView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry", "edge-from-another-bundle"));
+		var adapter = new JourneyRaptorAdapter(() -> mismatchedView, true, FACILITY_CLOCK);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(result.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
+	}
+
+	@Test
+	void futureObservedAtBeyondClockSkewAllowanceIsNotFresh() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var withinSkew = FacilityAvailabilityView.blocked(EFFECTIVE.plusSeconds(30), Set.of("entry"));
+		var beyondSkew = FacilityAvailabilityView.blocked(EFFECTIVE.plusSeconds(31), Set.of("entry"));
+
+		assertThatThrownBy(() -> new JourneyRaptorAdapter(() -> beyondSkew, true, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement()))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+		var beyondSkewNone = new JourneyRaptorAdapter(() -> beyondSkew, true, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement());
+		var withinSkewNone = new JourneyRaptorAdapter(() -> withinSkew, true, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(beyondSkewNone.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
+		assertThat(withinSkewNone.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 300)));
+	}
+
+	@Test
+	void realtimeQueryAppliesTrainDelayAndAvoidsBlockedEntryTogether() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates("trip", 180, 180, false, "realtime-1"));
+		var realtimeObservation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+		var blockedView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry"));
+
+		var result = new JourneyRaptorAdapter(() -> blockedView, false, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
+			snapshot(runtime), EFFECTIVE, realtimeObservation, measurement());
+
+		// 시간표: trip 09:00→09:10 KST(00:00Z→00:10Z), 출구 60초. 지연 +180초 → 00:03Z→00:13Z, 도착 00:14Z.
+		assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
+			assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:14:00Z"));
+			assertThat(candidate.legs()).containsExactly(
+				new JourneyCandidate.Entry("station-a", 300),
+				new JourneyCandidate.Ride("line", "trip", "station-b", "station-a", "station-b",
+					Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"),
+					Instant.parse("2026-07-01T00:03:00Z"), Instant.parse("2026-07-01T00:13:00Z")),
+				new JourneyCandidate.Exit("station-b", 60));
+		});
+	}
+
 	@Test
 	void plansOneTimetableCandidateFromTheCapturedCompiledRuntimeOnly() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
@@ -1418,6 +1572,14 @@ class JourneyRaptorAdapterTest {
 			new TransitStopTime("trip-late", 2, "station-b", "line", 36_600, 36_600, 0, 0));
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), List.of(trip, lateTrip), stopTimes, List.of(), List.of(), null, access);
+	}
+
+	private static RouteTimetable alternateEntryTimetable() {
+		return timetable(directAccess(
+			new PathwayEdge("entry", "entrance", "platform-a", 120, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge("entry-alt", "entrance", "platform-a", 300, 90, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")));
 	}
 
 	private static RouteTimetable waypointTimetable() {
