@@ -98,6 +98,8 @@ class JourneyV3ErrorDispositionContractTest {
 			"최신 경로 데이터를 확인할 수 없어요.", "journey.action.newSearch"),
 		entry("profileJourneys", 503, "ROUTING_IDENTITY_MISMATCH", "ROUTING_IDENTITY_FAILURE",
 			"경로 데이터 확인 중 문제가 발생했어요.", "journey.action.newSearch"),
+		entry("profileJourneys", 503, "FACILITY_STATUS_UNAVAILABLE", "ROUTING_DATA_UNAVAILABLE",
+			"시설 가동 정보를 확인할 수 없어요.", "journey.action.newSearch"),
 		entry("profileJourneys", 503, "RAPTOR_FRONTIER_CAPACITY_EXCEEDED", "SERVICE_UNAVAILABLE",
 			"경로 후보를 안전하게 계산하지 못했어요.", "journey.action.newSearch"),
 		entry("profileJourneys", 504, "JOURNEY_PROFILE_TIMEOUT", "SEARCH_TIMEOUT",
