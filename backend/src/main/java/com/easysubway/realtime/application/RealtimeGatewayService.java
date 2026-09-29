@@ -550,21 +550,19 @@ public class RealtimeGatewayService {
 		if (trainPositions.isEmpty()) {
 			return List.of();
 		}
+		// freshTrainPositions가 파싱할 수 없는 providerReceivedAt 항목을 이미 버렸으므로 여기서는 항상 파싱된다.
 		Map<String, RealtimeTrainPosition> deduplicated = new java.util.LinkedHashMap<>();
+		Map<String, Instant> deduplicatedAt = new java.util.HashMap<>();
 		for (RealtimeTrainPosition position : trainPositions) {
-			Instant parsed = parseProviderReceivedAt(position.providerReceivedAt());
-			if (parsed == null) {
-				continue;
-			}
+			Instant parsed = Objects.requireNonNull(
+				parseProviderReceivedAt(position.providerReceivedAt()),
+				"fresh train positions must carry a parseable providerReceivedAt"
+			);
 			String key = trainPositionKey(position);
-			RealtimeTrainPosition existing = deduplicated.get(key);
-			if (existing == null) {
+			Instant existingTime = deduplicatedAt.get(key);
+			if (existingTime == null || parsed.isAfter(existingTime)) {
 				deduplicated.put(key, position);
-			} else {
-				Instant existingTime = parseProviderReceivedAt(existing.providerReceivedAt());
-				if (existingTime != null && parsed.isAfter(existingTime)) {
-					deduplicated.put(key, position);
-				}
+				deduplicatedAt.put(key, parsed);
 			}
 		}
 
