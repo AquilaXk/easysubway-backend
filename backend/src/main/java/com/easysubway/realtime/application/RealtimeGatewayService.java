@@ -304,6 +304,10 @@ public class RealtimeGatewayService {
 			String providerCause = exception.providerCause();
 			String publicUnavailableCause = publicUnavailableCause(providerCause);
 			providerMetrics.recordProviderException(publicUnavailableCause);
+			providerMetrics.recordProviderCause(providerCause);
+			if ("PROVIDER_REQUEST_REJECTED".equals(providerCause)) {
+				log.error("TOPIS request rejected: code={} capability={}", providerCause, "arrivals");
+			}
 			openQuotaCircuitIfNeeded(providerCause);
 			return RealtimeArrivalResult.unavailable(publicUnavailableCause);
 		} finally {
@@ -389,6 +393,10 @@ public class RealtimeGatewayService {
 			String providerCause = exception.providerCause();
 			String publicUnavailableCause = publicUnavailableCause(providerCause);
 			providerMetrics.recordProviderException(publicUnavailableCause);
+			providerMetrics.recordProviderCause(providerCause);
+			if ("PROVIDER_REQUEST_REJECTED".equals(providerCause)) {
+				log.error("TOPIS request rejected: code={} capability={}", providerCause, "trainPositions");
+			}
 			openQuotaCircuitIfNeeded(providerCause);
 			return RealtimeTrainPositionResult.unavailable(publicUnavailableCause);
 		} finally {
@@ -752,6 +760,8 @@ public class RealtimeGatewayService {
 		private final AtomicLong freshResultCount = new AtomicLong();
 		private final AtomicLong staleResultCount = new AtomicLong();
 		private final AtomicLong unsupportedResultCount = new AtomicLong();
+		private final AtomicLong providerAuthRejectedCount = new AtomicLong();
+		private final AtomicLong providerRequestRejectedCount = new AtomicLong();
 
 		private void recordProviderCall(Duration latency) {
 			providerCallCount.incrementAndGet();
@@ -764,6 +774,15 @@ public class RealtimeGatewayService {
 			}
 			if ("PROVIDER_QUOTA_EXCEEDED".equals(publicUnavailableCause)) {
 				providerQuotaExceededCount.incrementAndGet();
+			}
+		}
+
+		private void recordProviderCause(String providerCause) {
+			if ("PROVIDER_AUTH_REJECTED".equals(providerCause)) {
+				providerAuthRejectedCount.incrementAndGet();
+			}
+			if ("PROVIDER_REQUEST_REJECTED".equals(providerCause)) {
+				providerRequestRejectedCount.incrementAndGet();
 			}
 		}
 
@@ -809,7 +828,9 @@ public class RealtimeGatewayService {
 				ratio(freshResultCount.get(), results),
 				ratio(staleResultCount.get(), results),
 				ratio(unsupportedResultCount.get(), results),
-				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls
+				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls,
+				providerAuthRejectedCount.get(),
+				providerRequestRejectedCount.get()
 			);
 		}
 

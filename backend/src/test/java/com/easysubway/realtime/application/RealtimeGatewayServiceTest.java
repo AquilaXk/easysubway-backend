@@ -656,6 +656,30 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("quota 초과 응답 뒤 다른 캐시 키 요청도 circuit에 의해 원천 호출 없이 PROVIDER_QUOTA_EXCEEDED로 차단된다")
+	void quotaExceededCircuitBlocksSubsequentRequestsAcrossCacheKeys() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		StubMappingPort mappingPort = new StubMappingPort();
+		mappingPort.add(mapping("station-sangnoksu", "seoul-4", "1004", "1004000448", "상록수", true, true, "OFFICIAL"));
+		mappingPort.add(mapping("station-euljiro-3ga", "seoul-3", "1003", "1003000329", "을지로3가", true, true, "OFFICIAL"));
+		RealtimeGatewayService service = service(provider, clock, mappingPort);
+
+		provider.failureCode = "PROVIDER_QUOTA_EXCEEDED";
+
+		RealtimeArrivalResult first = service.arrivals(sangnoksuQuery());
+		assertThat(first.status()).hasToString("UNAVAILABLE");
+		assertThat(first.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(provider.arrivalCalls).hasValue(1);
+
+		clock.instant = clock.instant.plusSeconds(10);
+		RealtimeArrivalResult second = service.arrivals(euljiro3gaLine3Query());
+		assertThat(second.status()).hasToString("UNAVAILABLE");
+		assertThat(second.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(provider.arrivalCalls).hasValue(1);
+	}
+
+	@Test
 	@DisplayName("provider call rate limit은 cache가 있어도 payload 없는 unavailable로 종료한다")
 	void providerRateLimitReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
@@ -1203,6 +1227,31 @@ class RealtimeGatewayServiceTest {
 			.doesNotContain("외부역")
 			.doesNotContain("4123")
 			.doesNotContain("1004");
+	}
+
+	@Test
+	@DisplayName("provider health snapshot은 auth rejected 및 request rejected 카운트를 계측한다")
+	void providerHealthSnapshotRecordsAuthAndRequestRejectedCounts() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(provider, clock);
+
+		provider.failureCode = "PROVIDER_AUTH_REJECTED";
+		RealtimeArrivalResult authRejected = service.arrivals(sangnoksuQuery());
+
+		clock.instant = Instant.parse("2026-06-26T08:01:01Z");
+		provider.failureCode = "PROVIDER_REQUEST_REJECTED";
+		RealtimeTrainPositionResult requestRejected = service.trainPositions(line4Query());
+
+		// 내부 원인은 공개 응답에서 PROVIDER_ERROR로만 나간다.
+		assertThat(authRejected.status()).hasToString("UNAVAILABLE");
+		assertThat(authRejected.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(requestRejected.status()).hasToString("UNAVAILABLE");
+		assertThat(requestRejected.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+		assertThat(snapshot.providerAuthRejectedCount()).isEqualTo(1);
+		assertThat(snapshot.providerRequestRejectedCount()).isEqualTo(1);
 	}
 
 	@Test
