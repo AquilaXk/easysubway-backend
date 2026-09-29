@@ -438,6 +438,12 @@ public class RealtimeGatewayService {
 		List<RealtimeArrival> freshArrivals = new ArrayList<>();
 		List<RealtimeArrivalObservation> observations = new ArrayList<>();
 		for (RealtimeArrival arrival : arrivals) {
+			// TOPIS 도착은 역 단위라 환승역 응답에 다른 노선 열차도 섞인다. arrival.lineId()는 원천 subwayId이고
+			// normalized query의 providerLineId는 mapping의 provider_line_id(같은 TOPIS subwayId)다.
+			// 조회 노선이 아닌 열차는 조회 노선의 trip mapping·결과·archive로 귀속하지 않는다.
+			if (!normalizedQuery.query().providerLineId().equals(arrival.lineId())) {
+				continue;
+			}
 			Instant providerReceivedAt = parseProviderReceivedAt(arrival.providerReceivedAt());
 			if (providerReceivedAt == null || !isProviderFresh(providerReceivedAt, receivedAt)) {
 				continue;
