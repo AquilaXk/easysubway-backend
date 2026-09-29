@@ -68,6 +68,15 @@ class PackageDependencyRulesTest {
 		.because("owner=AquilaXk/easysubway-backend#56; legacy-json-annotation-baseline=RouteSearchResult·RouteWarning Jackson; "
 			+ "removal-condition=Journey V3 adapter-owned mapping replaces these legacy domain annotations; review-expiry=2026-10-31.");
 
+	@ArchTest
+	static final ArchRule 웹_진입점은_레거시_경로검색을_모른다 = noClasses()
+		.that().resideInAPackage("..adapter.in.web..")
+		.should().dependOnClassesThat()
+		.haveFullyQualifiedName("com.easysubway.route.application.service.RouteSearchService")
+		.orShould().dependOnClassesThat()
+		.haveFullyQualifiedName("com.easysubway.route.application.port.in.RouteSearchUseCase")
+		.because("공개 경로 탐색은 Journey V3 서버 공인 라우팅만 쓴다");
+
 	@Test
 	void route_domain_jackson_기존_baseline은_만료일_이후_실패한다() {
 		assertTrue(LocalDate.now(ZoneOffset.UTC).isBefore(LocalDate.of(2026, 11, 1)),
