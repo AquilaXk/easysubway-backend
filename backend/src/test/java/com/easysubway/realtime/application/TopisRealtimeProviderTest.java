@@ -7,27 +7,36 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.domain.RealtimeArrival;
+import com.easysubway.realtime.domain.RealtimeMapping;
+import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
+import com.easysubway.realtime.domain.RealtimeTripMapping;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -290,6 +299,49 @@ class TopisRealtimeProviderTest {
 	}
 
 	@Test
+	@DisplayName("역 도착 조회는 환승역의 다른 노선 행에 밀리지 않도록 한 번의 호출로 0~20행을 요청한다")
+	void arrivalRequestAsksForRowsZeroToTwentyInOneCall() throws Exception {
+		List<URI> requested = new CopyOnWriteArrayList<>();
+		HttpClient httpClient = stationRowsClient(
+			List.of(euljiro3gaRow("1003", "3007", "하행", "120")),
+			requested
+		);
+
+		provider(httpClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS);
+
+		assertThat(requested).singleElement()
+			.extracting(URI::getRawPath)
+			.asString()
+			.endsWith("/json/realtimeStationArrival/0/20/"
+				+ URLEncoder.encode("을지로3가", StandardCharsets.UTF_8));
+	}
+
+	@Test
+	@DisplayName("환승역 응답에서 다른 노선 행이 6행 이상 앞서도 조회 노선 행을 받아 조회 노선만 FRESH로 낸다")
+	void transferStationWithSixOtherLineRowsFirstStillYieldsQueriedLineFresh() throws Exception {
+		List<String> stationRows = new ArrayList<>();
+		for (int index = 1; index <= 6; index++) {
+			stationRows.add(euljiro3gaRow("1002", "200" + index, index % 2 == 0 ? "외선" : "내선", "6" + index));
+		}
+		stationRows.add(euljiro3gaRow("1003", "3007", "하행", "120"));
+		stationRows.add(euljiro3gaRow("1003", "3008", "상행", "180"));
+		List<URI> requested = new CopyOnWriteArrayList<>();
+		RealtimeGatewayService gateway = new RealtimeGatewayService(
+			provider(stationRowsClient(stationRows, requested)),
+			Clock.fixed(Instant.parse("2026-09-28T23:00:10Z"), ZoneOffset.UTC),
+			euljiro3gaLine3MappingPort()
+		);
+
+		RealtimeArrivalResult result = gateway.arrivals(EULJIRO_3GA_LINE_3_ARRIVALS);
+
+		assertThat(result.status()).isEqualTo(RealtimeStatus.FRESH);
+		assertThat(result.arrivals())
+			.extracting(RealtimeArrival::lineId, RealtimeArrival::trainNo)
+			.containsExactly(tuple("1003", "3007"), tuple("1003", "3008"));
+		assertThat(requested).hasSize(1);
+	}
+
+	@Test
 	@DisplayName("INFO-000인데 도착 목록이 없으면 도착 없음이 아니라 원천 불가로 닫는다")
 	void successCodeWithoutArrivalListIsProviderUnavailable() {
 		ChunkedBodyHttpClient httpClient = ChunkedBodyHttpClient.ok("""
@@ -419,6 +471,74 @@ class TopisRealtimeProviderTest {
 
 	private static TopisRealtimeProvider provider(HttpClient httpClient) {
 		return new TopisRealtimeProvider("backend-key", JSON, httpClient);
+	}
+
+	/**
+	 * 역 단위 도착 원천처럼 요청 경로의 {startIndex}/{endIndex} 범위(양 끝 포함) 행만 돌려주는 HTTP stub.
+	 */
+	private static HttpClient stationRowsClient(List<String> stationRows, List<URI> requested) throws Exception {
+		HttpClient httpClient = mock(HttpClient.class);
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			HttpRequest request = invocation.getArgument(0);
+			requested.add(request.uri());
+			String[] segments = request.uri().getRawPath().split("/");
+			int startIndex = Integer.parseInt(segments[segments.length - 3]);
+			int endIndex = Integer.parseInt(segments[segments.length - 2]);
+			List<String> served = stationRows.subList(
+				Math.min(startIndex, stationRows.size()),
+				Math.min(endIndex + 1, stationRows.size())
+			);
+			String body = "{\"errorMessage\":{\"status\":200,\"code\":\"INFO-000\",\"message\":\"정상 처리되었습니다.\"},"
+				+ "\"realtimeArrivalList\":[" + String.join(",", served) + "]}";
+			InputStream stream = new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
+			return new StubResponse<>(request, 200, stream);
+		});
+		return httpClient;
+	}
+
+	private static String euljiro3gaRow(String subwayId, String trainNo, String direction, String etaSeconds) {
+		return ("{\"subwayId\":\"%s\",\"statnNm\":\"을지로3가\",\"trainLineNm\":\"%s방면\",\"updnLine\":\"%s\","
+			+ "\"btrainNo\":\"%s\",\"barvlDt\":\"%s\",\"arvlMsg2\":\"곧 도착\",\"recptnDt\":\"2026-09-29 08:00:00\"}")
+			.formatted(subwayId, direction, direction, trainNo, etaSeconds);
+	}
+
+	private static RealtimeMappingPort euljiro3gaLine3MappingPort() {
+		RealtimeMapping mapping = new RealtimeMapping(
+			"seoul-topis",
+			"station-euljiro-3ga",
+			"seoul-3",
+			"1003",
+			"1003000322",
+			"을지로3가",
+			"3호선",
+			true,
+			true,
+			"OFFICIAL",
+			1L
+		);
+		return new RealtimeMappingPort() {
+			@Override
+			public Optional<RealtimeMapping> findArrivalMapping(String providerId, RealtimeQuery query) {
+				return Optional.of(mapping).filter(candidate -> candidate.stationId().equals(query.stationId()));
+			}
+
+			@Override
+			public Optional<RealtimeMapping> findTrainPositionMapping(String providerId, RealtimeQuery query) {
+				return Optional.of(mapping);
+			}
+
+			@Override
+			public Optional<RealtimeTripMapping> findTripMapping(
+				String providerId,
+				String lineId,
+				String providerLineId,
+				String rawDirection,
+				String rawDestination,
+				String rawServicePattern
+			) {
+				return Optional.empty();
+			}
+		};
 	}
 
 	private static byte[] paddedBody(String json, int totalBytes) {
