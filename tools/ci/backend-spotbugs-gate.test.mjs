@@ -37,7 +37,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.match(gateSource, /classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '28b6c4817d66a675da58d31561c55d307fd376f5ee2c1c66954a50a2dae4c25e');
-  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
+  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
 });
@@ -82,7 +82,7 @@ test('tracked enforced policy preserves prior children and projects the current 
   assert.equal(tracked.findings.length, 195);
   assert.equal(validatePolicy(tracked, { today: '2026-08-10' }), true);
   assert.equal(digest(JSON.stringify(tracked.toolchain.spotbugsEngine.classpath)), 'c97898ba01f21977e5301dfecb5a1b46c7f5e65548028d1b49b7bcb86ef547ee');
-  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
+  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   const report = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/report/'));
   assert.equal(report.length, 28);
   assert.deepEqual(report.slice(0, 5).map(({ disposition }) => disposition), [
@@ -1220,4 +1220,194 @@ test('writeSpotbugsMainEvidence declares stable task, report, and classpath inpu
   assert.match(build, /inputs\.property\('spotbugsToolVersion', spotbugs\.toolVersion\)/);
   assert.match(build, /inputs\.property\('spotbugsIgnoreFailures', spotbugsMain\.flatMap \{ task -> provider \{ task\.ignoreFailures \} \}\)/);
   assert.doesNotMatch(build, /writeSpotbugsMainEvidence[^{]*\{[^}]*upToDateWhen/);
+});
+
+const REBINDING_IDENTITY_FIELDS = ['bugPattern', 'category', 'priority', 'rank', 'className', 'methodName', 'methodSignature', 'sourcePath', 'startLine', 'endLine', 'sourceSha256', 'analyzerInstanceHash'];
+const REBINDING_REVIEW_ISSUE = 'https://github.com/AquilaXk/easysubway-backend/issues/413';
+const REBINDING_TARGET = '0f2bad439027143868dc6bbad2e1b507a23c979977dacb527f7347f790374010';
+const REBINDING_TODAY = { today: '2026-08-10' };
+const rebindingIdentity = (finding) => digest(`${JSON.stringify(Object.fromEntries(REBINDING_IDENTITY_FIELDS.map((field) => [field, finding[field]])))}\n`);
+const trackedLedger = () => JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+const rebindEntry = (entry, changes, rebinding = {}) => {
+  const next = { ...structuredClone(entry), ...changes };
+  delete next.rebinding;
+  next.identity = rebindingIdentity(next);
+  next.rebinding = {
+    foundationIdentity: entry.rebinding?.foundationIdentity ?? entry.identity,
+    previousIdentity: entry.identity,
+    reviewIssueUrl: REBINDING_REVIEW_ISSUE,
+    reason: 'Backend #413 reviewed that the source edit keeps the exact fail-fast constructor finding and its suppression rationale unchanged.',
+    ...rebinding,
+  };
+  return next;
+};
+const reboundLedger = (prior, index, changes, rebinding) => {
+  const current = structuredClone(prior);
+  current.findings[index] = rebindEntry(prior.findings[index], changes, rebinding);
+  return current;
+};
+const canonicalLedgerBytes = (policy) => `${JSON.stringify({ ...policy, findings: [] }, null, 2).replace('"findings": []', `"findings": [\n${policy.findings.map((finding) => `    ${JSON.stringify(finding)}`).join(',\n')}\n  ]`)}\n`;
+
+test('Backend #413 reviewed rebinding keeps the frozen foundation lineage and passes the prior ledger', () => {
+  const prior = trackedLedger();
+  const index = prior.findings.findIndex(({ identity }) => identity === REBINDING_TARGET);
+  assert.equal(index, 147);
+  const current = reboundLedger(prior, index, { sourceSha256: 'e'.repeat(64), startLine: 63, endLine: 63 });
+  assert.notEqual(current.findings[index].identity, REBINDING_TARGET);
+  assert.equal(current.findings[index].rebinding.foundationIdentity, REBINDING_TARGET);
+  assert.equal(current.findings.length, 195);
+  assert.equal(validatePolicy(current, REBINDING_TODAY), true);
+  assert.equal(validatePriorLedger(current, prior), true);
+  assert.equal(validatePriorLedger(current, current), true);
+  const second = reboundLedger(current, index, { sourceSha256: 'd'.repeat(64) });
+  assert.equal(second.findings[index].rebinding.foundationIdentity, REBINDING_TARGET);
+  assert.equal(second.findings[index].rebinding.previousIdentity, current.findings[index].identity);
+  assert.equal(validatePolicy(second, REBINDING_TODAY), true);
+  assert.equal(validatePriorLedger(second, current), true);
+  assert.equal(validateExcludeFilter(current, readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8')), true);
+});
+
+test('Backend #413 source binding change without a reviewed rebinding fails closed', () => {
+  const prior = trackedLedger();
+  const index = prior.findings.findIndex(({ identity }) => identity === REBINDING_TARGET);
+  const bare = structuredClone(prior);
+  bare.findings[index].sourceSha256 = 'e'.repeat(64);
+  bare.findings[index].identity = rebindingIdentity(bare.findings[index]);
+  assert.throws(() => validatePolicy(bare, REBINDING_TODAY), /foundation finding identity inventory mismatch/);
+  assert.throws(() => validatePriorLedger(bare, prior), /prior policy identity ledger mismatch/);
+  const unchangedIdentity = structuredClone(prior);
+  unchangedIdentity.findings[index].rebinding = { foundationIdentity: REBINDING_TARGET, previousIdentity: REBINDING_TARGET, reviewIssueUrl: REBINDING_REVIEW_ISSUE, reason: 'no source change' };
+  assert.throws(() => validatePolicy(unchangedIdentity, REBINDING_TODAY), /rebinding previousIdentity must differ from identity/);
+  assert.throws(() => validatePriorLedger(unchangedIdentity, prior), /rebinding cannot change without a source rebinding/);
+});
+
+test('Backend #413 rebinding is limited to suppression dispositions', () => {
+  const prior = trackedLedger();
+  const fixedIndex = prior.findings.findIndex(({ disposition }) => disposition === 'FIXED');
+  const fixed = reboundLedger(prior, fixedIndex, { sourceSha256: 'e'.repeat(64) });
+  assert.throws(() => validatePolicy(fixed, REBINDING_TODAY), /rebinding requires a suppression disposition/);
+  assert.throws(() => validatePriorLedger(fixed, prior), /rebinding requires a suppression disposition/);
+});
+
+test('Backend #413 rebinding cannot change the reviewed member, pattern, disposition, or suppression', () => {
+  const prior = trackedLedger();
+  const index = prior.findings.findIndex(({ identity }) => identity === REBINDING_TARGET);
+  const entry = prior.findings[index];
+  for (const changes of [
+    { bugPattern: 'EI_EXPOSE_REP' },
+    { className: 'com.easysubway.route.adapter.out.persistence.OtherRepository' },
+    { methodName: 'other' },
+    { methodSignature: '(Ljavax/sql/DataSource;)V' },
+    { sourcePath: 'backend/src/main/java/com/easysubway/route/adapter/out/persistence/OtherRepository.java' },
+    { category: 'STYLE' },
+    { priority: 1 },
+    { rank: 1 },
+    { disposition: 'ACCEPTED_BOUNDED_RISK' },
+    { suppression: { ...entry.suppression, reason: 'Different reviewed suppression.' } },
+  ]) {
+    assert.throws(() => validatePriorLedger(reboundLedger(prior, index, { sourceSha256: 'e'.repeat(64), ...changes }), prior), /rebinding changes the reviewed finding/, JSON.stringify(changes));
+  }
+  assert.throws(() => validatePriorLedger(reboundLedger(prior, index, { startLine: 63, endLine: 63 }), prior), /rebinding requires a changed sourceSha256/);
+});
+
+test('Backend #413 rebinding lineage fields are exact', () => {
+  const prior = trackedLedger();
+  const index = prior.findings.findIndex(({ identity }) => identity === REBINDING_TARGET);
+  const changes = { sourceSha256: 'e'.repeat(64) };
+  assert.throws(() => validatePriorLedger(reboundLedger(prior, index, changes, { previousIdentity: 'a'.repeat(64) }), prior), /rebinding previousIdentity does not match the prior ledger/);
+  const movedFoundation = reboundLedger(prior, index, changes, { foundationIdentity: 'a'.repeat(64) });
+  assert.throws(() => validatePolicy(movedFoundation, REBINDING_TODAY), /foundation finding identity inventory mismatch/);
+  assert.throws(() => validatePriorLedger(movedFoundation, prior), /rebinding foundationIdentity breaks the prior lineage/);
+  const current = reboundLedger(prior, index, changes);
+  const secondMoved = reboundLedger(current, index, { sourceSha256: 'd'.repeat(64) }, { foundationIdentity: current.findings[index].identity });
+  assert.throws(() => validatePriorLedger(secondMoved, current), /rebinding foundationIdentity breaks the prior lineage/);
+  const carriedEdited = structuredClone(current);
+  carriedEdited.findings[index].rebinding.reason = 'rewritten review reason';
+  assert.throws(() => validatePriorLedger(carriedEdited, current), /rebinding cannot change without a source rebinding/);
+  for (const reason of ['', '   ']) assert.throws(() => validatePolicy(reboundLedger(prior, index, changes, { reason }), REBINDING_TODAY), /rebinding reason must be non-empty text/);
+  for (const reviewIssueUrl of ['https://github.com/AquilaXk/other/issues/1', 'https://github.com/AquilaXk/easysubway-backend/pull/409', 'https://github.com/AquilaXk/easysubway-backend/issues/0', 'http://github.com/AquilaXk/easysubway-backend/issues/1']) {
+    assert.throws(() => validatePolicy(reboundLedger(prior, index, changes, { reviewIssueUrl }), REBINDING_TODAY), /rebinding review issue URL is invalid/);
+  }
+  const extraKey = reboundLedger(prior, index, changes);
+  extraKey.findings[index].rebinding.approvedBy = 'someone';
+  assert.throws(() => validatePolicy(extraKey, REBINDING_TODAY), /rebinding key order is invalid/);
+  const reordered = reboundLedger(prior, index, changes);
+  const { rebinding, ...rest } = reordered.findings[index];
+  reordered.findings[index] = { rebinding, ...rest };
+  assert.throws(() => validatePolicy(reordered, REBINDING_TODAY), /finding policy key order is invalid/);
+});
+
+test('Backend #413 rebind command recomputes the binding with the gate identity and writes a canonical ledger', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'spotbugs-rebind-'));
+  try {
+    const policyPath = join(directory, 'backend/quality/spotbugs-suppression-policy.json');
+    mkdirSync(dirname(policyPath), { recursive: true });
+    const baseBytes = readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8');
+    writeFileSync(policyPath, baseBytes);
+    const git = (...args) => execFileSync('git', ['-c', 'user.email=ci@example.invalid', '-c', 'user.name=ci', ...args], { cwd: directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    git('init', '-q');
+    git('add', 'backend/quality/spotbugs-suppression-policy.json');
+    git('commit', '-q', '-m', 'base');
+    const base = JSON.parse(baseBytes);
+    const index = base.findings.findIndex(({ identity }) => identity === REBINDING_TARGET);
+    const entry = base.findings[index];
+    const sourceFile = join(directory, entry.sourcePath);
+    mkdirSync(dirname(sourceFile), { recursive: true });
+    const sourceText = `${Array.from({ length: 80 }, (_, line) => `// line ${line + 1}`).join('\n')}\n`;
+    writeFileSync(sourceFile, sourceText);
+    const relativeSource = entry.sourcePath.replace('backend/src/main/java/', '');
+    const bug = (type, signature) => `<BugInstance type="${type}" category="${entry.category}" priority="${entry.priority}" rank="${entry.rank}" instanceHash="${entry.analyzerInstanceHash}" instanceOccurrenceNum="0" instanceOccurrenceMax="0"><Class classname="${entry.className}"/><Method classname="${entry.className}" name="&lt;init&gt;" signature="${signature}"/><SourceLine classname="${entry.className}" sourcepath="${relativeSource}" start="64" end="64"/></BugInstance>`;
+    const xmlPath = join(directory, 'spotbugsMain.xml');
+    writeFileSync(xmlPath, `<?xml version="1.0" encoding="UTF-8"?><BugCollection>${bug(entry.bugPattern, entry.methodSignature)}<Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>`);
+    const gate = new URL('./backend-spotbugs-gate.mjs', import.meta.url).pathname;
+    const run = (identity, extra = []) => spawnSync(process.execPath, [gate, 'rebind', '--repo-root', directory, '--policy', policyPath, '--raw-xml', xmlPath, '--base-ref', 'HEAD', '--identity', identity, '--review-issue', REBINDING_REVIEW_ISSUE, '--reason', 'Backend #413 reviewed the unchanged constructor finding after a source edit.', ...extra], { encoding: 'utf8' });
+    const fixed = base.findings.find(({ disposition }) => disposition === 'FIXED');
+    const rejectedFixed = run(fixed.identity);
+    assert.notEqual(rejectedFixed.status, 0);
+    assert.match(rejectedFixed.stderr, /rebinding requires a suppression disposition/);
+    assert.equal(readFileSync(policyPath, 'utf8'), baseBytes);
+    const unknown = run('a'.repeat(64));
+    assert.notEqual(unknown.status, 0);
+    assert.match(unknown.stderr, /rebind identity is not in the base ledger/);
+    const result = run(REBINDING_TARGET);
+    assert.equal(result.status, 0, result.stderr);
+    const writtenBytes = readFileSync(policyPath, 'utf8');
+    const written = JSON.parse(writtenBytes);
+    assert.equal(writtenBytes, canonicalLedgerBytes(written));
+    const expected = rebindEntry(entry, { startLine: 64, endLine: 64, sourceSha256: digest(sourceText) }, { reason: 'Backend #413 reviewed the unchanged constructor finding after a source edit.' });
+    assert.deepEqual(written.findings[index], expected);
+    assert.deepEqual(written.findings.filter((_, position) => position !== index), base.findings.filter((_, position) => position !== index));
+    assert.equal(validatePolicy(written, REBINDING_TODAY), true);
+    assert.equal(validatePriorLedger(written, base), true);
+    const rerun = run(REBINDING_TARGET);
+    assert.equal(rerun.status, 0, rerun.stderr);
+    assert.equal(readFileSync(policyPath, 'utf8'), writtenBytes);
+    writeFileSync(xmlPath, `<?xml version="1.0" encoding="UTF-8"?><BugCollection>${bug(entry.bugPattern, '()V')}<Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>`);
+    const missing = run(REBINDING_TARGET);
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /rebind requires exactly one matching BugInstance/);
+    assert.equal(readFileSync(policyPath, 'utf8'), writtenBytes);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Backend #413 rebound suppressed findings keep line bindings inside the current source', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'spotbugs-rebound-lines-'));
+  try {
+    const path = join(directory, 'Example.java');
+    writeFileSync(path, 'a\nb\nc\n');
+    const rebinding = { foundationIdentity: 'a'.repeat(64), previousIdentity: 'b'.repeat(64), reviewIssueUrl: REBINDING_REVIEW_ISSUE, reason: 'reviewed' };
+    const finding = { sourcePath, sourceSha256: digest('a\nb\nc\n'), className: 'com.example.Example', methodName: '<init>', methodSignature: '()V', startLine: 2, endLine: 3, suppression: {}, rebinding };
+    const sourceEntries = [{ path, repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classEntries = [{ repositoryPath: 'backend/build/classes/java/main/com/example/Example.class' }];
+    const bindings = { classDirs: ['/classes'], auxClassPaths: [], javapPath: '/jdk/bin/javap', javaInstallationPath: '/jdk', memberInspector: () => new Map([['<init>\u0000()V', 1]]) };
+    assert.equal(validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings }), true);
+    assert.equal(validateSuppressedBindings({ findings: [{ ...finding, startLine: null, endLine: null }], sourceEntries, classEntries, ...bindings }), true);
+    for (const lines of [{ startLine: 4, endLine: 4 }, { startLine: 0, endLine: 1 }, { startLine: 3, endLine: 2 }, { startLine: 1.5, endLine: 2 }]) {
+      assert.throws(() => validateSuppressedBindings({ findings: [{ ...finding, ...lines }], sourceEntries, classEntries, ...bindings }), /rebound finding line binding is outside source/, JSON.stringify(lines));
+    }
+    assert.equal(validateSuppressedBindings({ findings: [{ ...finding, startLine: 9, endLine: 9, rebinding: undefined }].map(({ rebinding: _, ...rest }) => rest), sourceEntries, classEntries, ...bindings }), true);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
