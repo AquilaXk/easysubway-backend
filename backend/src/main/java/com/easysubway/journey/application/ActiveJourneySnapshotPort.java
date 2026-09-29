@@ -20,7 +20,8 @@ public interface ActiveJourneySnapshotPort {
 		boolean fresh,
 		ActiveServingEvidence servingEvidence,
 		SnapshotBoundaryReceipt boundaryReceipt,
-		SnapshotMeasurementReceipt measurementReceipt
+		SnapshotMeasurementReceipt measurementReceipt,
+		FacilityAvailabilityView facilityAvailability
 	) {
 		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 
@@ -42,6 +43,18 @@ public interface ActiveJourneySnapshotPort {
 			servingEvidence = Objects.requireNonNull(servingEvidence, "servingEvidence");
 			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
 			measurementReceipt = Objects.requireNonNull(measurementReceipt, "measurementReceipt");
+			facilityAvailability = facilityAvailability != null ? facilityAvailability
+				: FacilityAvailabilityView.unavailable();
+		}
+
+		public ActiveJourneySnapshot(String identity, String routeBundleId, String routeBundleSha256,
+			String timetableSnapshotId, String accessibilitySnapshotId, long generation,
+			JourneyRaptorRuntimeView runtimeView, Instant validUntil, boolean fresh,
+			ActiveServingEvidence servingEvidence, SnapshotBoundaryReceipt boundaryReceipt,
+			SnapshotMeasurementReceipt measurementReceipt) {
+			this(identity, routeBundleId, routeBundleSha256, timetableSnapshotId, accessibilitySnapshotId,
+				generation, runtimeView, validUntil, fresh, servingEvidence, boundaryReceipt,
+				measurementReceipt, FacilityAvailabilityView.unavailable());
 		}
 
 		public ActiveJourneySnapshot(String identity, String routeBundleId, String routeBundleSha256,
@@ -50,7 +63,7 @@ public interface ActiveJourneySnapshotPort {
 			ActiveServingEvidence servingEvidence, SnapshotBoundaryReceipt boundaryReceipt) {
 			this(identity, routeBundleId, routeBundleSha256, timetableSnapshotId, accessibilitySnapshotId,
 				generation, runtimeView, validUntil, fresh, servingEvidence, boundaryReceipt,
-				SnapshotMeasurementReceipt.unobservable());
+				SnapshotMeasurementReceipt.unobservable(), FacilityAvailabilityView.unavailable());
 		}
 
 		private static String requireSha256(String value) {

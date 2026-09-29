@@ -27,7 +27,15 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitT
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import com.easysubway.journey.application.FacilityAvailabilityPort;
+import com.easysubway.journey.application.FacilityAvailabilityView;
+import com.easysubway.journey.application.FacilityStatusUnavailableException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +46,143 @@ class JourneyRaptorAdapterTest {
 	private static final long GENERATION = 7;
 	private static final Instant EFFECTIVE = Instant.parse("2026-06-30T23:50:00Z");
 	private static final Instant VALID_UNTIL = Instant.parse("2026-07-01T02:00:00Z");
+
+	@Test
+	void timetableQueryOmitsCandidateWhenPathwayEdgeIsBlockedByFacility() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var blockedFacilityView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry"));
+		var adapter = new JourneyRaptorAdapter(() -> blockedFacilityView);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void timetableQueryDoesNotReflectTrainDelaysEvenWithFacilityAvailability() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var freshFacilityView = FacilityAvailabilityView.empty(EFFECTIVE);
+		var adapter = new JourneyRaptorAdapter(() -> freshFacilityView);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.realtimeDepartureTime()).isNull();
+			assertThat(candidate.realtimeArrivalTime()).isNull();
+			assertThat(candidate.plannedDepartureTime()).isEqualTo(EFFECTIVE);
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
+			assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.TIMETABLE);
+		});
+	}
+
+	@Test
+	void realtimeQueryReflectsBothTrainDelaysAndFacilityBlockades() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates("trip", 180, 180, false, "realtime-1"));
+		var realtimeObservation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+
+		// 1) With entry blocked by facility, the path cannot be traversed
+		var blockedFacilityView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry"));
+		var blockedAdapter = new JourneyRaptorAdapter(() -> blockedFacilityView);
+		var blockedResult = blockedAdapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			realtimeObservation,
+			measurement()
+		);
+		assertThat(blockedResult.candidates()).isEmpty();
+
+		// 2) With unblocked facility view, delay is reflected
+		var unblockedAdapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.empty(EFFECTIVE));
+		var normalResult = unblockedAdapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			realtimeObservation,
+			measurement()
+		);
+		assertThat(normalResult.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:14:00Z"));
+		});
+	}
+
+	@Test
+	void requiredTrueWithStepFreeAndStaleFacilityStatusThrowsFacilityStatusUnavailable() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var staleFacilityView = FacilityAvailabilityView.blocked(
+			EFFECTIVE.minus(Duration.ofMinutes(6)), Set.of());
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var adapter = new JourneyRaptorAdapter(() -> staleFacilityView, true, clock);
+
+		assertThatThrownBy(() -> adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		)).isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+	}
+
+	@Test
+	void requiredTrueWithStandardRequestAndStaleFacilityStatusReturnsNormalRoute() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var staleFacilityView = FacilityAvailabilityView.blocked(
+			EFFECTIVE.minus(Duration.ofMinutes(6)), Set.of());
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var adapter = new JourneyRaptorAdapter(() -> staleFacilityView, true, clock);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).isNotEmpty();
+	}
+
+	@Test
+	void requiredFalseWithStepFreeAndStaleFacilityStatusPreservesExistingBehavior() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var staleFacilityView = FacilityAvailabilityView.blocked(
+			EFFECTIVE.minus(Duration.ofMinutes(6)), Set.of());
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var adapter = new JourneyRaptorAdapter(() -> staleFacilityView, false, clock);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).isNotEmpty();
+	}
 
 	@Test
 	void plansOneTimetableCandidateFromTheCapturedCompiledRuntimeOnly() {

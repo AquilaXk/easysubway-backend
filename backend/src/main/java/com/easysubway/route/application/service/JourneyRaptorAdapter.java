@@ -22,20 +22,65 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import com.easysubway.journey.application.FacilityAvailabilityPort;
+import com.easysubway.journey.application.FacilityAvailabilityView;
+import com.easysubway.journey.application.FacilityStatusUnavailableException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 	private final RouteTimetableRaptorPlanner planner;
+	private final FacilityAvailabilityPort facilityAvailabilityPort;
+	private final boolean facilityStatusRequired;
+	private final Clock clock;
 
 	public JourneyRaptorAdapter() {
-		this(ScanWorkspacePool.shared());
+		this(ScanWorkspacePool.shared(), FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
 	}
 
 	public JourneyRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this(workspacePool, FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(
+		ScanWorkspacePool workspacePool,
+		FacilityAvailabilityPort facilityAvailabilityPort,
+		boolean facilityStatusRequired
+	) {
+		this(workspacePool, facilityAvailabilityPort, facilityStatusRequired, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(
+		ScanWorkspacePool workspacePool,
+		FacilityAvailabilityPort facilityAvailabilityPort,
+		boolean facilityStatusRequired,
+		Clock clock
+	) {
 		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+		this.facilityAvailabilityPort = Objects.requireNonNull(facilityAvailabilityPort, "facilityAvailabilityPort");
+		this.facilityStatusRequired = facilityStatusRequired;
+		this.clock = Objects.requireNonNull(clock, "clock");
+	}
+
+	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort) {
+		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, false, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired) {
+		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, facilityStatusRequired, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired, Clock clock) {
+		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, facilityStatusRequired, clock);
 	}
 
 	@Override
