@@ -1391,3 +1391,23 @@ test('Backend #413 rebind command recomputes the binding with the gate identity 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('Backend #413 rebound suppressed findings keep line bindings inside the current source', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'spotbugs-rebound-lines-'));
+  try {
+    const path = join(directory, 'Example.java');
+    writeFileSync(path, 'a\nb\nc\n');
+    const rebinding = { foundationIdentity: 'a'.repeat(64), previousIdentity: 'b'.repeat(64), reviewIssueUrl: REBINDING_REVIEW_ISSUE, reason: 'reviewed' };
+    const finding = { sourcePath, sourceSha256: digest('a\nb\nc\n'), className: 'com.example.Example', methodName: '<init>', methodSignature: '()V', startLine: 2, endLine: 3, suppression: {}, rebinding };
+    const sourceEntries = [{ path, repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classEntries = [{ repositoryPath: 'backend/build/classes/java/main/com/example/Example.class' }];
+    const bindings = { classDirs: ['/classes'], auxClassPaths: [], javapPath: '/jdk/bin/javap', javaInstallationPath: '/jdk', memberInspector: () => new Map([['<init>\u0000()V', 1]]) };
+    assert.equal(validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings }), true);
+    assert.equal(validateSuppressedBindings({ findings: [{ ...finding, startLine: null, endLine: null }], sourceEntries, classEntries, ...bindings }), true);
+    for (const lines of [{ startLine: 4, endLine: 4 }, { startLine: 0, endLine: 1 }, { startLine: 3, endLine: 2 }, { startLine: 1.5, endLine: 2 }]) {
+      assert.throws(() => validateSuppressedBindings({ findings: [{ ...finding, ...lines }], sourceEntries, classEntries, ...bindings }), /rebound finding line binding is outside source/, JSON.stringify(lines));
+    }
+    assert.equal(validateSuppressedBindings({ findings: [{ ...finding, startLine: 9, endLine: 9, rebinding: undefined }].map(({ rebinding: _, ...rest }) => rest), sourceEntries, classEntries, ...bindings }), true);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
