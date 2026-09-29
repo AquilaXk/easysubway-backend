@@ -48,6 +48,8 @@ class JourneyV3ErrorDispositionContractTest {
 			"필요한 실시간 정보를 확인할 수 없어요.", "journey.action.newSearch"),
 		entry("searchJourneys", 503, "ROUTING_IDENTITY_MISMATCH", "ROUTING_IDENTITY_FAILURE",
 			"경로 데이터 확인 중 문제가 발생했어요.", "journey.action.newSearch"),
+		entry("searchJourneys", 503, "FACILITY_STATUS_UNAVAILABLE", "ROUTING_DATA_UNAVAILABLE",
+			"시설 가동 정보를 확인할 수 없어요.", "journey.action.newSearch"),
 		entry("searchJourneys", 503, "ROUTE_SERVICE_UNAVAILABLE", "SERVICE_UNAVAILABLE",
 			"경로를 불러오지 못했어요. 잠시 후 다시 검색해 주세요.", "journey.action.newSearch"),
 		entry("searchJourneys", 504, "JOURNEY_SEARCH_TIMEOUT", "SEARCH_TIMEOUT",
