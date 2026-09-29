@@ -105,10 +105,10 @@ public record RouteSearchResult(
 		long realtimeSteps = steps.stream()
 			.filter(step -> EtaSource.REALTIME.name().equals(step.timeSource()))
 			.count();
-		boolean fallback = steps.stream()
-			.anyMatch(step -> EtaSource.FALLBACK.name().equals(step.timeSource()));
-		if (fallback) {
-			return EtaSource.FALLBACK;
+		boolean plannedWithoutRealtime = steps.stream()
+			.anyMatch(step -> isPlannedWithoutRealtime(step.timeSource()));
+		if (plannedWithoutRealtime) {
+			return EtaSource.PLANNED_WITHOUT_REALTIME;
 		}
 		if (realtimeSteps == 0) {
 			return steps.stream().allMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource()))
@@ -116,6 +116,10 @@ public record RouteSearchResult(
 				: EtaSource.STATIC_BACKEND_ESTIMATE;
 		}
 		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
+	}
+
+	private static boolean isPlannedWithoutRealtime(String timeSource) {
+		return "FALLBACK".equals(timeSource) || EtaSource.PLANNED_WITHOUT_REALTIME.name().equals(timeSource);
 	}
 
 	@JsonProperty("walkingDistanceMeters")

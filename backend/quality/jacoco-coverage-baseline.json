@@ -21,7 +21,7 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "aa94c7ac4da73933a98e328130a3590ae5cdf649f77b8998e214e3d6bbbecd17"
+    "sourceInventorySha256": "4263ed9442133dd83c0ef71a2ba93e555bcdd1b65d4157af8e6d3fc98f9bcbe1"
   },
   "scope": {
     "criticalSourceCount": 443,
@@ -375,7 +375,7 @@
     {"path":"backend/src/main/java/com/easysubway/route/domain/BoardingSlackPolicy.java","sha256":"3c0a4f5e4ab59b560379c190deb6be7b5b23442b54cb53fc47aa4257f9c6776b","packageName":"com.easysubway.route.domain","sourceFileName":"BoardingSlackPolicy.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":5,"total":5,"basisPoints":10000},"branch":{"missed":0,"covered":4,"total":4,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/ConstraintMode.java","sha256":"25acdc37705c697429e065b4166dd72d50d634e52ac62a7cc80baefecec0e24a","packageName":"com.easysubway.route.domain","sourceFileName":"ConstraintMode.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":5,"total":5,"basisPoints":10000},"branch":{"missed":0,"covered":2,"total":2,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/EtaConfidence.java","sha256":"f9a179513522dd23bf41c979bdc46dcc180d8dab5ca297246ac6b383ea8b1564","packageName":"com.easysubway.route.domain","sourceFileName":"EtaConfidence.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":4,"total":4,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
-    {"path":"backend/src/main/java/com/easysubway/route/domain/EtaSource.java","sha256":"8bb3eb7887c87ef19638ea30068d28aee893d5881e39359f774979b5e701850c","packageName":"com.easysubway.route.domain","sourceFileName":"EtaSource.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":6,"total":6,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
+    {"path":"backend/src/main/java/com/easysubway/route/domain/EtaSource.java","sha256":"00596c67babbde95f6de5418931bb00cb8ac5f4c82c221f992530388b187efda","packageName":"com.easysubway.route.domain","sourceFileName":"EtaSource.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":11,"total":11,"basisPoints":10000},"branch":{"missed":0,"covered":6,"total":6,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/InternalRouteResult.java","sha256":"c699f0e9b5953e99a166ca4e79cb1e7dbe767984d72a830accdb8a9c11e423e7","packageName":"com.easysubway.route.domain","sourceFileName":"InternalRouteResult.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":5,"total":5,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/InternalRouteStep.java","sha256":"7da342d1cf74d03e658b672b1f55e86ea1d3a9866fec740a9fe46f1088f14165","packageName":"com.easysubway.route.domain","sourceFileName":"InternalRouteStep.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/InvalidRouteFeedbackException.java","sha256":"e714bf8edc3f0fe05d8d63cecd4684e018ac7c73c410438834f51860944a1bca","packageName":"com.easysubway.route.domain","sourceFileName":"InvalidRouteFeedbackException.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":2,"total":2,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
@@ -491,15 +491,15 @@
       "missingSourceCount": 0,
       "line": {
         "missed": 1183,
-        "covered": 13206,
-        "total": 14389,
-        "basisPoints": 9177
+        "covered": 13211,
+        "total": 14394,
+        "basisPoints": 9178
       },
       "branch": {
         "missed": 1773,
-        "covered": 5194,
-        "total": 6967,
-        "basisPoints": 7455
+        "covered": 5200,
+        "total": 6973,
+        "basisPoints": 7457
       }
     },
     {

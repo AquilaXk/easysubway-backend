@@ -46,7 +46,7 @@ class RouteSearchAdminPageControllerTest {
 		saveRouteSearchPort.saveRouteSearch(foundRouteSearch(
 			"route-search-found-1",
 			MobilityType.SENIOR,
-			List.of(routeStep(EtaSource.FALLBACK)),
+			List.of(routeStep(EtaSource.PLANNED_WITHOUT_REALTIME)),
 			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE))
 		));
 		saveRouteSearchPort.saveRouteSearch(foundRouteSearch("route-search-found-2", MobilityType.WHEELCHAIR));
@@ -75,8 +75,8 @@ class RouteSearchAdminPageControllerTest {
 			.contains("도착 검색")
 			.contains("수도권")
 			.contains("도착 예정 출처 현황")
-			.contains("FALLBACK")
-			.contains("provider 지연/장애 fallback")
+			.contains("PLANNED_WITHOUT_REALTIME")
+			.contains("실시간 불가 · 계획 시각 안내")
 			.contains("대체 경로 사유별 현황")
 			.contains("LOW_DATA_CONFIDENCE")
 			.contains("품질 신호 구분")
