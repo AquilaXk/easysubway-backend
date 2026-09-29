@@ -1,0 +1,21 @@
+POINT readyAt=29000
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=origin to=origin dur=240 dist=100 stairs=false
+    LEG RIDE trip=origin-to-hub line=origin-line from=origin to=hub dep=2026-06-30T23:08:20Z arr=2026-06-30T23:08:20Z
+    LEG ACCESS kind=TRANSFER from=hub to=hub dur=8 dist=10 stairs=false
+    LEG RIDE trip=fast line=shared-line from=hub to=destination dep=2026-06-30T23:20:00Z arr=2026-06-30T23:23:20Z
+    LEG ACCESS kind=EXIT from=destination to=destination dur=60 dist=10 stairs=false
+    METRICS transfers=1 moveSec=308 dist=120 burden=0 slack=632
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=origin to=origin dur=240 dist=100 stairs=false
+    LEG RIDE trip=origin-to-hub line=origin-line from=origin to=hub dep=2026-06-30T23:08:20Z arr=2026-06-30T23:08:20Z
+    LEG ACCESS kind=TRANSFER from=hub to=hub dur=8 dist=10 stairs=false
+    LEG RIDE trip=safe line=shared-line from=hub to=destination dep=2026-06-30T23:26:40Z arr=2026-06-30T23:30:00Z
+    LEG ACCESS kind=EXIT from=destination to=destination dur=60 dist=10 stairs=false
+    METRICS transfers=1 moveSec=308 dist=120 burden=0 slack=1032
+OBSERVATIONS
+  FAIL_CLOSED_FRONTIER_CAPACITY_V1=0
+  FORWARD_DESTINATION_DOMINANCE_V1=0
+  FORWARD_STATE_DOMINANCE_V1=0
+  FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1=0
+  HARD_TRANSFER_ACCESS_ELIGIBILITY_V1=1

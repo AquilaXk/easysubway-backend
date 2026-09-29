@@ -1,0 +1,1779 @@
+POINT readyAt=25200
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=350
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=846
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1745
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2571
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2947
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3316
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3746
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4278
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-7 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:12:26Z arr=2026-06-30T22:22:26Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4303
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4900
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-7 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:12:26Z arr=2026-06-30T22:22:26Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5110
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-7 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:06:33Z arr=2026-06-30T22:16:33Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5717
+POINT readyAt=25006
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=459
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=697
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1007
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1193
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1540
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2092
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2918
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2924
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3294
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3398
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3663
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4093
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4625
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4644
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5003
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5247
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-6 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5810
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-6 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T22:00:46Z arr=2026-06-30T22:10:46Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6064
+POINT readyAt=24356
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-3 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:55:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-3 to=station-0-3 dur=315 dist=393 stairs=false
+    LEG RIDE trip=line-v-3-trip-7 line=line-v-3 from=station-0-3 to=station-5-3 dep=2026-06-30T22:03:12Z arr=2026-06-30T22:13:12Z
+    LEG ACCESS kind=TRANSFER from=station-5-3 to=station-5-3 dur=68 dist=84 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-3 to=station-5-5 dep=2026-06-30T22:16:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=2 moveSec=683 dist=657 burden=0 slack=58
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=525
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1347
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1843
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2742
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3568
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3944
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4313
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4743
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5275
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5897
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6714
+POINT readyAt=24282
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=474
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=525
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1183
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1347
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1731
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1843
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2264
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2742
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-11 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:49:12Z arr=2026-06-30T22:59:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2808
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3568
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3648
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3944
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4122
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4313
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4743
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5275
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5368
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5727
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5897
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6534
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-5 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:49:56Z arr=2026-06-30T21:59:56Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6714
+POINT readyAt=23905
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=132
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=474
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=976
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1183
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1798
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2294
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3193
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4019
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4395
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4764
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5194
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5726
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5727
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6348
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-5 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:48:42Z arr=2026-06-30T21:58:42Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6534
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7165
+POINT readyAt=23598
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-5 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:54:19Z arr=2026-06-30T22:04:19Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=199
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=132
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-6 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:00:47Z arr=2026-06-30T22:10:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=587
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1158
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=976
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1867
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1798
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2415
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2294
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2948
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3193
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-11 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:49:12Z arr=2026-06-30T22:59:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3492
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4019
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4332
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4395
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4806
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4764
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5194
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-14 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:21:27Z arr=2026-06-30T23:31:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5427
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5726
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6052
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6411
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6348
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7218
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-4 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:42:25Z arr=2026-06-30T21:52:25Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7165
+POINT readyAt=23118
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-5 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:44:38Z arr=2026-06-30T21:54:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=212
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=919
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1158
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1763
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1867
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2585
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3081
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3980
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4806
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5182
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5551
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5981
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6513
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7135
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-4 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:37:18Z arr=2026-06-30T21:47:18Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7218
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7952
+POINT readyAt=22958
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-4 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:43:36Z arr=2026-06-30T21:53:36Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=196
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-5 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:44:38Z arr=2026-06-30T21:54:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=212
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-5 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:54:19Z arr=2026-06-30T22:04:19Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=839
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=919
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-6 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:00:47Z arr=2026-06-30T22:10:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1227
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1798
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1763
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2507
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2585
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3055
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3081
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3588
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3980
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-11 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:49:12Z arr=2026-06-30T22:59:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4132
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4806
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4972
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5182
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5446
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5551
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5981
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-14 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:21:27Z arr=2026-06-30T23:31:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6067
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6513
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6692
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7051
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7135
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7858
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-3 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:29:18Z arr=2026-06-30T21:39:18Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7952
+POINT readyAt=22332
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-4 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:24:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-4 to=station-0-4 dur=106 dist=132 stairs=false
+    LEG RIDE trip=line-v-4-trip-3 line=line-v-4 from=station-0-4 to=station-5-4 dep=2026-06-30T21:27:29Z arr=2026-06-30T21:37:29Z
+    LEG ACCESS kind=TRANSFER from=station-5-4 to=station-5-4 dur=140 dist=175 stairs=false
+    LEG RIDE trip=line-h-5-trip-3 line=line-h-5 from=station-5-4 to=station-5-5 dep=2026-06-30T21:41:17Z arr=2026-06-30T21:43:17Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=2 moveSec=546 dist=487 burden=0 slack=28
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-4 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:33:21Z arr=2026-06-30T21:43:21Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=321
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-5 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:44:38Z arr=2026-06-30T21:54:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=998
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1705
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-3 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:26:38Z arr=2026-06-30T21:36:38Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1798
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2549
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3371
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3867
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4766
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5592
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5968
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6337
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6767
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7299
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7921
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=8738
+POINT readyAt=22078
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-3 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:33:17Z arr=2026-06-30T21:43:17Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=457
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-4 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:33:21Z arr=2026-06-30T21:43:21Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=321
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-4 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:43:36Z arr=2026-06-30T21:53:36Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1076
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-5 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:44:38Z arr=2026-06-30T21:54:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=998
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-5 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:54:19Z arr=2026-06-30T22:04:19Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1719
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1705
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-6 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:00:47Z arr=2026-06-30T22:10:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2107
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2678
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2549
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3387
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3371
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3935
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3867
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4468
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4766
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-11 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:49:12Z arr=2026-06-30T22:59:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5012
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5592
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5852
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5968
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6326
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6337
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6767
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-14 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:21:27Z arr=2026-06-30T23:31:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6947
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7299
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7572
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7931
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7921
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-2 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:11:58Z arr=2026-06-30T21:21:58Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=8738
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=8738
+POINT readyAt=21755
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-2 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:23:57Z arr=2026-06-30T21:33:57Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=220
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-3 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:33:17Z arr=2026-06-30T21:43:17Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=780
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-4 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:33:21Z arr=2026-06-30T21:43:21Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=321
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-4 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:43:36Z arr=2026-06-30T21:53:36Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1399
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-5 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:44:38Z arr=2026-06-30T21:54:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=998
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-5 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:54:19Z arr=2026-06-30T22:04:19Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2042
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1705
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-6 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:00:47Z arr=2026-06-30T22:10:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2430
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3001
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2549
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3710
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3371
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4258
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3867
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4791
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4766
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-11 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:49:12Z arr=2026-06-30T22:59:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=5335
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5592
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6175
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5968
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6649
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6337
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6767
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-14 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:21:27Z arr=2026-06-30T23:31:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7270
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7299
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7895
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=8254
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7921
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=9061
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-2 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:16:12Z arr=2026-06-30T21:26:12Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=8738
+POINT readyAt=21750
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-2 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:23:57Z arr=2026-06-30T21:33:57Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=220
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-3 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:25:02Z arr=2026-06-30T21:35:02Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=404
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-3 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:33:17Z arr=2026-06-30T21:43:17Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=780
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-4 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:33:21Z arr=2026-06-30T21:43:21Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=903
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-4 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:43:36Z arr=2026-06-30T21:53:36Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=1399
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-5 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:44:38Z arr=2026-06-30T21:54:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=1580
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-5 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T21:54:19Z arr=2026-06-30T22:04:19Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2042
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-6 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T21:56:25Z arr=2026-06-30T22:06:25Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=2287
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-6 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:00:47Z arr=2026-06-30T22:10:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=2430
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-7 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:10:18Z arr=2026-06-30T22:20:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3001
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-7 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:10:29Z arr=2026-06-30T22:20:29Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3131
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-8 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:22:07Z arr=2026-06-30T22:32:07Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=3710
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-8 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:24:11Z arr=2026-06-30T22:34:11Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=3953
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-9 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:31:15Z arr=2026-06-30T22:41:15Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4258
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-9 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:32:27Z arr=2026-06-30T22:42:27Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=4449
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-10 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T22:40:08Z arr=2026-06-30T22:50:08Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=4791
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-10 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T22:47:26Z arr=2026-06-30T22:57:26Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=5348
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-11 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:01:12Z arr=2026-06-30T23:11:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6174
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-12 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:03:12Z arr=2026-06-30T23:13:12Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6175
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-12 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:07:28Z arr=2026-06-30T23:17:28Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6550
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-13 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:11:06Z arr=2026-06-30T23:21:06Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=6649
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-13 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:13:37Z arr=2026-06-30T23:23:37Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=6919
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-14 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:20:47Z arr=2026-06-30T23:30:47Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7349
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-15 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:29:39Z arr=2026-06-30T23:39:39Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=7881
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-15 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:31:52Z arr=2026-06-30T23:41:52Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=7895
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-16 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:37:51Z arr=2026-06-30T23:47:51Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=8254
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-16 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:40:01Z arr=2026-06-30T23:50:01Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=8503
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-v-0-trip-1 line=line-v-0 from=station-0-0 to=station-5-0 dep=2026-06-30T21:06:35Z arr=2026-06-30T21:16:35Z
+    LEG ACCESS kind=TRANSFER from=station-5-0 to=station-5-0 dur=162 dist=202 stairs=false
+    LEG RIDE trip=line-h-5-trip-17 line=line-h-5 from=station-5-0 to=station-5-5 dep=2026-06-30T23:51:18Z arr=2026-07-01T00:01:18Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=462 dist=382 burden=0 slack=9061
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-0-0 to=station-0-0 dur=180 dist=100 stairs=false
+    LEG RIDE trip=line-h-0-trip-1 line=line-h-0 from=station-0-0 to=station-0-5 dep=2026-06-30T21:06:30Z arr=2026-06-30T21:16:30Z
+    LEG ACCESS kind=TRANSFER from=station-0-5 to=station-0-5 dur=48 dist=60 stairs=false
+    LEG RIDE trip=line-v-5-trip-17 line=line-v-5 from=station-0-5 to=station-5-5 dep=2026-06-30T23:53:38Z arr=2026-07-01T00:03:38Z
+    LEG ACCESS kind=EXIT from=station-5-5 to=station-5-5 dur=120 dist=80 stairs=false
+    METRICS transfers=1 moveSec=348 dist=240 burden=0 slack=9320
+OBSERVATIONS
+  FAIL_CLOSED_FRONTIER_CAPACITY_V1=0
+  FORWARD_DESTINATION_DOMINANCE_V1=2595
+  FORWARD_STATE_DOMINANCE_V1=55558
+  FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1=0
+  HARD_TRANSFER_ACCESS_ELIGIBILITY_V1=4610
