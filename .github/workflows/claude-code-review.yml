@@ -1,21 +1,26 @@
 name: Claude Code Review
 
 # Claude Code 공식 /code-review(번들 skill)를 PR discovery 리뷰로 실행한다 (#390).
-# change set당 discovery 1회 규약에 따라 PR opened·ready_for_review와 수동 재실행에서만 돈다(push마다 돌지 않는다).
-# 결과는 claude[bot] 신원의 단일 COMMENT Review(finding은 그 Review의 inline thread)로 게시되고,
-# automerge-queue.yml review gate가 고정된 봇 신원으로 이를 discovery로 인정한다.
-# fork PR(시크릿 없음)과 봇이 연 PR(action이 봇 actor를 거부)은 job if로 건너뛴다. skip은 게이트 통과가 아니다.
-# 시크릿 누락·action 실패·Review 미게시는 job 실패다.
+# change set당 discovery 1회 규약: opened·ready_for_review·수동 재실행은 리뷰하고, synchronize·reopened는
+# PR commit set 안에 검증된 claude[bot] discovery Review가 이미 있으면 건너뛴다(rebase로 사라졌을 때만 다시 리뷰한다).
+# target job이 대상 PR·run head 정합·재리뷰 판정·CI 완료 대기를 맡고, review job이 PR head를 받아 리뷰한다.
+# 결과는 claude[bot] 신원의 단일 COMMENT Review(본문 첫 줄 개수 줄, 🔴·🟡 finding은 inline thread)로 게시되고,
+# automerge-queue.yml review gate는 개수 줄·그 commit의 성공한 이 workflow run·workflow 무변경을 모두 확인해 discovery로 인정한다.
+# fork PR(시크릿 없음)과 봇이 트리거한 이벤트(action이 봇 actor를 거부)는 job if로 건너뛴다. skip은 게이트 통과가 아니다.
+# 시크릿 누락·CI 실패·action 실패·Review 미게시·검증 실패는 job 실패다.
+# 수동 재실행은 PR head 브랜치 ref로 dispatch한다: gh workflow run claude-code-review.yml --ref <PR head 브랜치> -f pr_number=<N>
 
 on:
   pull_request:
     types:
       - opened
+      - synchronize
+      - reopened
       - ready_for_review
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 리뷰할 PR 번호 (수동 재실행)
+        description: 리뷰할 PR 번호 (PR head 브랜치 ref로 dispatch)
         required: true
         type: number
 
@@ -26,28 +31,50 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # claude[bot] discovery Review 판정의 단일 정의(신원, 본문 첫 줄 개수 줄)다. 두 job이 함께 쓰고,
+  # automerge-queue.yml의 claude_review_defs와 같아야 한다(계약 테스트가 대조한다).
+  CLAUDE_REVIEW_JQ: |
+    def is_claude:
+      .author_association == "NONE" and
+      .user.login == "claude[bot]" and
+      .user.id == 209825114 and
+      .user.type == "Bot";
+    def claude_count_line:
+      (((.body // "") | split("\n") | first) // "") |
+      capture("^🔴 (?<red>[0-9]+) · 🟡 (?<nit>[0-9]+) · 🟣 (?<pre>[0-9]+)$");
+    def has_claude_count_line:
+      [claude_count_line] | length == 1;
+
 jobs:
-  review:
-    name: Claude Code Review
+  target:
+    name: Resolve review target
     if: >-
       (github.event_name == 'pull_request' &&
         github.event.pull_request.draft == false &&
         github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.type != 'Bot') ||
+        github.event.sender.type != 'Bot') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
       pull-requests: read
-      id-token: write
+    outputs:
+      should_review: ${{ steps.prior.outputs.should_review }}
+      number: ${{ steps.pr.outputs.number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      default_branch: ${{ steps.pr.outputs.default_branch }}
     steps:
       - name: Resolve pull request
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          EXPECTED_RUN_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           pr=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")
@@ -55,6 +82,9 @@ jobs:
           draft=$(jq -r '.draft' <<<"${pr}")
           head_repo=$(jq -r '.head.repo.full_name // ""' <<<"${pr}")
           head_sha=$(jq -r '.head.sha' <<<"${pr}")
+          head_ref=$(jq -r '.head.ref' <<<"${pr}")
+          base_sha=$(jq -r '.base.sha' <<<"${pr}")
+          default_branch=$(jq -r '.base.repo.default_branch' <<<"${pr}")
           if [ "${state}" != "open" ]; then
             echo "::error::PR #${PR_NUMBER}은 open 상태가 아니다(state=${state})."; exit 1
           fi
@@ -64,32 +94,193 @@ jobs:
           if [ "${head_repo}" != "${REPO}" ]; then
             echo "::error::PR #${PR_NUMBER}은 fork(${head_repo}) PR이다. 시크릿이 필요한 Claude 리뷰를 실행하지 않는다."; exit 1
           fi
+          # 게이트는 Review commit에서 이 workflow run이 성공했는지로 검증 step 통과를 확인한다(D1(b)).
+          # 그 대응은 run head가 리뷰할 PR head와 같을 때만 성립한다.
+          if [ "${EXPECTED_RUN_HEAD}" != "${head_sha}" ]; then
+            if [ "${EVENT_NAME}" = "pull_request" ]; then
+              echo "::error::이벤트 head(${EXPECTED_RUN_HEAD})가 PR #${PR_NUMBER}의 현재 head(${head_sha})와 다르다. 새 head의 synchronize run이 리뷰한다."
+            else
+              echo "::error::dispatch ref commit(${EXPECTED_RUN_HEAD})이 PR #${PR_NUMBER}의 head(${head_sha})와 다르다. gh workflow run claude-code-review.yml --ref ${head_ref} -f pr_number=${PR_NUMBER}로 재실행한다."
+            fi
+            exit 1
+          fi
           {
             echo "number=${PR_NUMBER}"
             echo "head_sha=${head_sha}"
-            echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "head_ref=${head_ref}"
+            echo "base_sha=${base_sha}"
+            echo "default_branch=${default_branch}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Decide whether this change set needs discovery review
+        id: prior
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+          # opened·ready_for_review·수동 재실행은 항상 리뷰한다.
+          if [ "${EVENT_NAME}" != "pull_request" ] || { [ "${EVENT_ACTION}" != "synchronize" ] && [ "${EVENT_ACTION}" != "reopened" ]; }; then
+            echo "should_review=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # change set당 discovery 1회: PR commit set 안에 게이트와 같은 조건((a) 개수 줄, (b) 그 commit의 성공한
+          # 이 workflow run, (c) PR base...그 commit에 이 workflow 변경 없음)을 만족하는 claude[bot] Review가 있으면
+          # 이 push·reopen은 리뷰하지 않는다. 판정할 수 없는 경우(compare 300개 이상 등)는 리뷰한다.
+          review_workflow=".github/workflows/claude-code-review.yml"
+          commit_ids=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/commits?per_page=100" | jq -c '[flatten[] | .sha]')
+          reviews=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")
+          reviewed=$(jq -r --argjson commit_ids "${commit_ids}" "${CLAUDE_REVIEW_JQ}"'
+            [flatten[]
+              | select(is_claude and .state == "COMMENTED" and has_claude_count_line)
+              | .commit_id
+              | select(type == "string")
+              | select(. as $sha | $commit_ids | index($sha) != null)]
+            | unique
+            | .[]
+          ' <<<"${reviews}")
+          while IFS= read -r sha; do
+            [ -n "${sha}" ] || continue
+            compare=$(gh api "repos/${REPO}/compare/${BASE_SHA}...${sha}?per_page=1&page=1")
+            if ! jq -e --arg workflow "${review_workflow}" '
+              (.files | length) < 300 and
+              all(.files[]; .filename != $workflow and .previous_filename != $workflow)
+            ' <<<"${compare}" >/dev/null; then
+              continue
+            fi
+            runs=$(gh api "repos/${REPO}/actions/workflows/claude-code-review.yml/runs?head_sha=${sha}&status=success&per_page=20")
+            if jq -e --arg sha "${sha}" 'any(.workflow_runs[]; .head_sha == $sha and .conclusion == "success")' <<<"${runs}" >/dev/null; then
+              echo "PR #${PR_NUMBER}: commit ${sha}에 검증된 claude[bot] discovery Review가 있다. change set당 1회 규약으로 이번 ${EVENT_ACTION} 리뷰를 건너뛴다."
+              echo "should_review=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+          done <<<"${reviewed}"
+          echo "should_review=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Wait for CI on head commit
+        if: steps.prior.outputs.should_review == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          # deterministic gate(CI)가 green이 아니면 AI 리뷰를 시작하지 않는다(hub CLAUDE.md 리뷰·병합 규칙).
+          # 같은 head의 다른 pull_request workflow run을 workflow별 최신 run(run_number 최대)으로만 판정한다.
+          # concurrency로 대체된 이전 run의 cancelled는 무시하고, 최신 run이 success·skipped·neutral이 아니면 실패한다.
+          # 30초 간격으로 최대 25분 기다리고, run이 하나도 안 보이면 최소 2분은 기다린다.
+          review_workflow=".github/workflows/claude-code-review.yml"
+          rerun="gh workflow run claude-code-review.yml --ref ${HEAD_REF} -f pr_number=${PR_NUMBER}"
+          poll_interval=30
+          max_polls=50
+          min_empty_polls=4
+          pending=""
+          for ((poll = 1; poll <= max_polls; poll++)); do
+            runs=$(gh api "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=100")
+            summary=$(jq -c --arg self "${review_workflow}" '
+              if (.workflow_runs | type) != "array" or (.total_count | type) != "number" or .total_count > 100
+              then error("workflow run 목록을 한 페이지에서 판정할 수 없다")
+              else . end
+              | [.workflow_runs[] | select(.event == "pull_request" and .path != $self)]
+              | group_by(.workflow_id)
+              | map(max_by(.run_number))
+              | {
+                  total: length,
+                  pending: [.[] | select(.status != "completed") | .name],
+                  failed: [.[] | select(.status == "completed" and ((.conclusion // "") | IN("success", "skipped", "neutral") | not)) | "\(.name)=\(.conclusion)"]
+                }
+            ' <<<"${runs}")
+            total=$(jq '.total' <<<"${summary}")
+            pending=$(jq -r '.pending | join(", ")' <<<"${summary}")
+            failed=$(jq -r '.failed | join(", ")' <<<"${summary}")
+            if [ -n "${failed}" ]; then
+              echo "::error::head ${HEAD_SHA}의 CI가 green이 아니다(${failed}). CI green 후 ${rerun}로 재실행한다."
+              exit 1
+            fi
+            if [ "${total}" -eq 0 ] && [ "${poll}" -lt "${min_empty_polls}" ]; then
+              echo "head ${HEAD_SHA}의 CI run이 아직 보이지 않는다; ${poll_interval}초 뒤 다시 확인한다."
+              sleep "${poll_interval}"
+              continue
+            fi
+            if [ -n "${pending}" ]; then
+              echo "CI 진행 중(${pending}); ${poll_interval}초 뒤 다시 확인한다."
+              sleep "${poll_interval}"
+              continue
+            fi
+            echo "head ${HEAD_SHA}의 CI workflow ${total}개가 모두 green이다."
+            exit 0
+          done
+          echo "::error::head ${HEAD_SHA}의 CI가 제한 시간 안에 끝나지 않았다(${pending}). CI green 후 ${rerun}로 재실행한다."
+          exit 1
+
+  review:
+    name: Claude Code Review
+    needs: target
+    if: needs.target.outputs.should_review == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
       - name: Checkout pull request head
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ steps.pr.outputs.head_sha }}
+          ref: ${{ needs.target.outputs.head_sha }}
           fetch-depth: 1
+          persist-credentials: false
+
+      - name: Restore agent configuration from default branch
+        env:
+          DEFAULT_BRANCH: ${{ needs.target.outputs.default_branch }}
+        run: |
+          set -euo pipefail
+          # PR이 통제하는 Claude Code 에이전트 설정(hooks·permissions·지시문·MCP)을 쓰지 않는다 (#390 F1).
+          # claude-code-action은 pull_request에서만 base 설정을 복원하고 workflow_dispatch에서는 건너뛰므로,
+          # 모든 트리거에서 PR head의 설정을 지우고 기본 브랜치에 있는 것만 되돌린다.
+          config_paths=(.claude CLAUDE.md CLAUDE.local.md .mcp.json)
+          rm -rf -- "${config_paths[@]}"
+          git fetch --no-tags --depth=1 origin "${DEFAULT_BRANCH}"
+          for config_path in "${config_paths[@]}"; do
+            if git cat-file -e "FETCH_HEAD:${config_path}" 2>/dev/null; then
+              git checkout FETCH_HEAD -- "${config_path}"
+              echo "기본 브랜치 ${DEFAULT_BRANCH}의 ${config_path}로 되돌렸다."
+            fi
+          done
+
+      - name: Record existing reviews
+        id: before
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.target.outputs.number }}
+        run: |
+          set -euo pipefail
+          # 이번 실행이 게시한 Review는 실행 전 목록과의 차집합으로 찾는다(runner 시계·시간 창을 쓰지 않는다).
+          review_ids=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100" | jq -c '[flatten[] | .id]')
+          echo "review_ids=${review_ids}" >> "${GITHUB_OUTPUT}"
 
       - name: Run Claude Code review
         uses: anthropics/claude-code-action@8ce9314fa9a404564fa7e954cd84f25bcba2b829 # v1.0.236
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: /code-review high ${{ steps.pr.outputs.number }}
+          prompt: /code-review high ${{ needs.target.outputs.number }}
           claude_args: |
-            --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Edit(/claude-code-review.json),Bash(gh api repos/${{ github.repository }}/pulls/${{ steps.pr.outputs.number }}/reviews --method POST --input claude-code-review.json)"
+            --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Edit(./claude-code-review.json),Bash(gh api repos/${{ github.repository }}/pulls/${{ needs.target.outputs.number }}/reviews),Bash(gh api repos/${{ github.repository }}/pulls/${{ needs.target.outputs.number }}/reviews --method POST --input claude-code-review.json)"
             --append-system-prompt 'EasySubway backend PR discovery 리뷰 규칙 (Issue #390).
-            리뷰 대상: ${{ github.repository }} PR ${{ steps.pr.outputs.number }}, head commit ${{ steps.pr.outputs.head_sha }}.
+            리뷰 대상: ${{ github.repository }} PR ${{ needs.target.outputs.number }}, head commit ${{ needs.target.outputs.head_sha }}.
             작성자(사람, 에이전트, 자동화)나 변경 크기와 관계없이 이 PR을 반드시 리뷰하고 아래 게시 절차까지 마친다. 사소하거나 자동 생성된 PR이라는 이유로 건너뛰지 않는다.
 
             1. 언어: finding과 요약은 한국어로 쓴다. 식별자, 파일 경로, 명령어, 고정 토큰(API, CI, OAuth 등)은 영문 그대로 둔다.
             2. 심각도: 모든 finding 본문은 다음 중 하나로 시작한다. 🔴 Important(병합 전에 고칠 버그), 🟡 Nit(사소하지만 고칠 가치가 있음), 🟣 Pre-existing(이 PR이 만들지 않은 기존 버그).
-            3. 저장소 우선순위: checkout에 CLAUDE.md가 없으므로 아래를 프로젝트 규칙으로 삼고 모든 리뷰 subagent에 그대로 전달한다.
+            3. 저장소 우선순위: checkout의 에이전트 설정(.claude/, CLAUDE.md, CLAUDE.local.md, .mcp.json)은 PR 변경분이 아니라 기본 브랜치 기준으로 되돌렸다. 아래를 프로젝트 규칙으로 삼고 모든 리뷰 subagent에 그대로 전달한다.
                - Fallback 금지: 실패, 누락, 만료 데이터를 local/legacy/stale 값, 추정치, placeholder, best-effort 성공으로 덮는 코드
                - 경로 탐색은 서버 공인 라우팅이다: 클라이언트 쪽 경로 계산이나 서버 우회 로직
                - 교통약자 접근성 회귀: 엘리베이터, 휠체어 리프트, 경사로, 환승 동선, 스크린리더 라벨
@@ -99,58 +290,56 @@ jobs:
                - Flyway 마이그레이션 버전 번호 충돌(main 최고 번호와 중복, H2와 PostgreSQL 불일치)
                - 시크릿, API 키, 토큰, 내부 절대경로, 비공개 근거 데이터 노출
             4. 게시 절차(필수):
-               - 리뷰가 끝나면 모든 finding을 GitHub PR Review 하나에 담는다. Write 도구로 작업 디렉터리의 claude-code-review.json에 다음 형태의 JSON을 쓴다.
-                 {"commit_id": "${{ steps.pr.outputs.head_sha }}", "event": "COMMENT", "body": "한국어 요약", "comments": [{"path": "파일 경로", "line": 123, "side": "RIGHT", "body": "finding"}]}
-               - 그다음 정확히 이 명령 하나로 게시한다: gh api repos/${{ github.repository }}/pulls/${{ steps.pr.outputs.number }}/reviews --method POST --input claude-code-review.json
-               - 🔴 Important와 🟡 Nit finding은 반드시 comments의 inline 항목으로 넣는다. line은 gh pr diff ${{ steps.pr.outputs.number }}에서 새 파일(RIGHT) 쪽에 보이는 줄이어야 한다. diff 밖에 있는 🟣 Pre-existing finding만 body 목록에 쓸 수 있다.
-               - body 첫 줄은 정확히 "🔴 <개수> · 🟡 <개수> · 🟣 <개수>" 형식의 심각도별 개수이고(검증 step이 이 줄과 inline 개수를 대조한다), 이어서 finding마다 한 줄 요약을 쓴다. finding이 없으면 comments는 빈 배열이고 body에 검토한 범위와 finding이 없다는 사실을 쓴다.
-               - 게시 명령이 실패하면 오류를 읽고 JSON을 고쳐 같은 명령을 다시 실행한다. 성공한 뒤에는 다시 실행하지 않는다. 끝내 게시하지 못하면 게시했다고 말하지 말고 실패로 보고한다.
+               - 리뷰가 끝나면 모든 finding을 GitHub PR Review 하나에 담는다. Write 도구로 작업 디렉터리의 ./claude-code-review.json에 다음 형태의 JSON을 쓴다.
+                 {"commit_id": "${{ needs.target.outputs.head_sha }}", "event": "COMMENT", "body": "한국어 요약", "comments": [{"path": "파일 경로", "line": 123, "side": "RIGHT", "body": "finding"}]}
+               - 그다음 정확히 이 명령 하나로 게시한다: gh api repos/${{ github.repository }}/pulls/${{ needs.target.outputs.number }}/reviews --method POST --input claude-code-review.json
+               - 🔴 Important와 🟡 Nit finding은 반드시 comments의 inline 항목으로 넣는다. line은 gh pr diff ${{ needs.target.outputs.number }}에서 새 파일(RIGHT) 쪽에 보이는 줄이어야 한다. diff 밖에 있는 🟣 Pre-existing finding만 body 목록에 쓸 수 있다.
+               - comments의 모든 body는 심각도 이모지(🔴, 🟡, 🟣) 문자로 바로 시작한다. 앞에 공백, 굵게 표시, 다른 문자를 두지 않는다(검증 step이 이 접두어로 🔴·🟡 inline 수를 센다).
+               - body 첫 줄은 정확히 "🔴 <개수> · 🟡 <개수> · 🟣 <개수>" 형식의 심각도별 개수이고 그 줄에는 다른 문자를 쓰지 않는다(검증 step이 이 줄과 🔴·🟡 inline 수를 각각 대조한다). 이어서 finding마다 한 줄 요약을 쓴다. finding이 없으면 comments는 빈 배열이고 body에 검토한 범위와 finding이 없다는 사실을 쓴다.
+               - 게시 명령이 실패하면, 다시 게시하기 전에 정확히 이 명령으로 이번 head(commit_id ${{ needs.target.outputs.head_sha }})에 claude[bot] Review가 이미 생겼는지 확인한다: gh api repos/${{ github.repository }}/pulls/${{ needs.target.outputs.number }}/reviews. 이미 있으면 다시 게시하지 않는다. 없을 때만 오류를 읽고 JSON을 고쳐 같은 게시 명령을 다시 실행한다. 끝내 게시하지 못하면 게시했다고 말하지 말고 실패로 보고한다.
                - event는 항상 COMMENT다. APPROVE나 REQUEST_CHANGES를 쓰지 않고, 다른 댓글, 커밋, push, claude-code-review.json 밖의 파일 수정을 하지 않는다.'
 
       - name: Verify Claude review object
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-          STARTED_AT: ${{ steps.pr.outputs.started_at }}
+          PR_NUMBER: ${{ needs.target.outputs.number }}
+          HEAD_SHA: ${{ needs.target.outputs.head_sha }}
+          BEFORE_IDS: ${{ steps.before.outputs.review_ids }}
         run: |
           set -euo pipefail
-          reviews=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/reviews")
-          verdict=$(jq -r --arg since "${STARTED_AT}" --arg head "${HEAD_SHA}" '
+          reviews=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")
+          # 실행 전 목록에 없던 claude[bot] Review 중 본문 첫 줄이 개수 줄인 것만 이번 실행의 게시물이다.
+          # 빈 본문(thread 답글 wrapper)과 개수 줄 없는 다른 경로의 claude[bot] Review는 세지 않는다.
+          # 필터는 여기서 한 번만 계산하고 verdict와 review를 그 결과에서 파생한다.
+          run_reviews=$(jq -c --argjson before "${BEFORE_IDS}" "${CLAUDE_REVIEW_JQ}"'
             [flatten[]
-              | select(.user != null)
-              | select(.author_association == "NONE" and
-                  .user.login == "claude[bot]" and
-                  .user.id == 209825114 and
-                  .user.type == "Bot")
-              | select(.submitted_at >= $since)] as $run_reviews
-            | ($run_reviews | length) == 1 and
-              ($run_reviews[0] | .state == "COMMENTED" and .commit_id == $head and (.body // "") != "")
+              | select(is_claude and has_claude_count_line)
+              | select(.id as $id | $before | index($id) == null)]
           ' <<<"${reviews}")
+          verdict=$(jq -r --arg head "${HEAD_SHA}" '
+            length == 1 and (.[0] | .state == "COMMENTED" and .commit_id == $head)
+          ' <<<"${run_reviews}")
           if [ "${verdict}" != "true" ]; then
-            echo "::error::이번 실행에서 head ${HEAD_SHA}에 대한 claude[bot] COMMENT Review가 정확히 하나 게시되지 않았다. automerge review gate가 인정할 discovery Review가 없다."
+            echo "::error::이번 실행에서 head ${HEAD_SHA}에 대한 개수 줄 claude[bot] COMMENT Review가 정확히 하나 게시되지 않았다. automerge review gate가 인정할 discovery Review가 없다."
             exit 1
           fi
-          review=$(jq -c --arg since "${STARTED_AT}" '
-            [flatten[]
-              | select(.user != null)
-              | select(.author_association == "NONE" and
-                  .user.login == "claude[bot]" and
-                  .user.id == 209825114 and
-                  .user.type == "Bot")
-              | select(.submitted_at >= $since)][0]
-          ' <<<"${reviews}")
+          review=$(jq -c '.[0]' <<<"${run_reviews}")
           review_id=$(jq -r '.id' <<<"${review}")
-          inline_count=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/reviews/${review_id}/comments" | jq '[flatten[]] | length')
-          # 병합 차단은 미해결 inline thread에 의존한다. 🔴·🟡 finding이 본문에만 있으면 thread gate를 우회하므로 실패시킨다.
-          coverage=$(jq -r --argjson inline "${inline_count}" '
-            (((.body // "") | split("\n")[0]) // "") as $first
-            | ([$first | capture("^🔴 (?<red>[0-9]+) · 🟡 (?<nit>[0-9]+) · 🟣 (?<pre>[0-9]+)$")] | first) as $counts
-            | $counts != null and $inline >= (($counts.red | tonumber) + ($counts.nit | tonumber))
+          # 병합 차단은 미해결 inline thread에 의존한다. 🔴·🟡 finding이 본문에만 있으면 thread gate를 우회하므로
+          # inline 코멘트 접두어로 🔴·🟡를 따로 세어 본문 개수 줄과 대조한다. 🟣 inline은 대조에 쓰지 않는다.
+          inline_counts=$(gh api --paginate --slurp "repos/${REPO}/pulls/${PR_NUMBER}/reviews/${review_id}/comments?per_page=100" | jq -c '
+            [flatten[] | (.body // "")]
+            | {red: ([.[] | select(startswith("🔴"))] | length), nit: ([.[] | select(startswith("🟡"))] | length)}
+          ')
+          coverage=$(jq -r --argjson inline "${inline_counts}" "${CLAUDE_REVIEW_JQ}"'
+            ([claude_count_line] | first) as $counts
+            | $counts != null and
+              $inline.red >= ($counts.red | tonumber) and
+              $inline.nit >= ($counts.nit | tonumber)
           ' <<<"${review}")
           if [ "${coverage}" != "true" ]; then
-            echo "::error::claude[bot] Review 본문의 🔴·🟡 개수보다 inline 코멘트(${inline_count}건)가 적거나 개수 줄이 없다. blocking finding이 thread 없이 병합될 수 있다."
+            echo "::error::claude[bot] Review 본문의 🔴·🟡 개수보다 해당 접두어 inline 코멘트가 적다(inline ${inline_counts}). blocking finding이 thread 없이 병합될 수 있다."
             exit 1
           fi
-          echo "PR #${PR_NUMBER}: claude[bot] COMMENT Review 1건 확인 (head ${HEAD_SHA}, inline ${inline_count}건)."
+          echo "PR #${PR_NUMBER}: claude[bot] COMMENT Review ${review_id} 확인 (head ${HEAD_SHA}, inline ${inline_counts})."

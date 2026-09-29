@@ -1875,6 +1875,8 @@ test('claude[bot] Review는 개수 줄·성공한 review run·workflow 무변경
     ['compare 응답 형식 오류', { compare: () => ({ status: 'ahead' }) }],
     ['compare 파일 항목 형식 오류', { compare: () => ({ status: 'ahead', files: [{ status: 'modified' }] }) }],
     ['compare 300개 파일(잘렸을 수 있음)', { compare: () => ({ status: 'ahead', files: truncatedFiles }) }],
+    // 후보 선별 jq가 형식 오류로 실패해도 set -e로 큐 전체를 멈추지 않고 이 후보만 닫는다.
+    ['claude[bot] Review 본문 형식 오류', { body: 5 }],
   ]) {
     const failed = runQueue([claudePr(1, options)]);
     assert.equal(failed.status, 0, `${label}: 큐를 멈추지 않는다 ${failed.stderr}`);
