@@ -171,4 +171,65 @@ class FacilityStatusOverlayProviderTest {
 		assertThat(view.blockedPathwayEdgeIds()).isEmpty();
 		assertThat(meterRegistry.find("easysubway.journey.facility-status.blocked-transitions").gauge().value()).isEqualTo(0.0);
 	}
+
+	@Test
+	@DisplayName("원천 수집 심장박동이 5분을 초과해 지연된 경우, DB 갱신 시각 대신 오래된 원천 수집 시각을 써 만료를 유도한다 (#419)")
+	void heartbeatOlderThanFiveMinutesForcesExpirationEvenIfDbRefreshed() {
+		var clock = new MutableClock(T0);
+		var meterRegistry = new SimpleMeterRegistry();
+		var requirements = TransitionFacilityRequirements.of(Map.of(
+			"t1", List.of(Set.of("fac-1"))
+		));
+		var statuses = Map.of("fac-1", AccessibilityFacilityStatus.NORMAL);
+
+		// Source collection succeeded 6 minutes ago
+		Instant sourceHeartbeat = T0.minus(Duration.ofMinutes(6));
+		var heartbeatPort = (com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort) () -> sourceHeartbeat;
+
+		var provider = new FacilityStatusOverlayProvider(
+			() -> statuses,
+			() -> requirements,
+			heartbeatPort,
+			clock,
+			meterRegistry
+		);
+
+		provider.refresh();
+
+		var view = provider.currentView();
+		assertThat(view.available()).isTrue();
+		// ObservedAt must reflect the older source collection timestamp (T0 - 6 min), NOT DB refresh time T0!
+		assertThat(view.observedAt()).isEqualTo(sourceHeartbeat);
+		// Freshness check against now: older than 5 minutes!
+		assertThat(view.observedAt().isBefore(clock.instant().minus(Duration.ofMinutes(5)))).isTrue();
+	}
+
+	@Test
+	@DisplayName("원천 수집이 한 번도 성공하지 않은 경우 observedAt이 비어있어 미가용으로 판정 (#419)")
+	void uninitializedHeartbeatRendersFacilityStatusUnavailable() {
+		var clock = new MutableClock(T0);
+		var meterRegistry = new SimpleMeterRegistry();
+		var requirements = TransitionFacilityRequirements.of(Map.of(
+			"t1", List.of(Set.of("fac-1"))
+		));
+		var statuses = Map.of("fac-1", AccessibilityFacilityStatus.NORMAL);
+
+		// Source collection never succeeded (heartbeat returns null)
+		var heartbeatPort = (com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort) () -> null;
+
+		var provider = new FacilityStatusOverlayProvider(
+			() -> statuses,
+			() -> requirements,
+			heartbeatPort,
+			clock,
+			meterRegistry
+		);
+
+		provider.refresh();
+
+		var view = provider.currentView();
+		// Must not be available or observedAt must be null so Raptor rejects step-free queries
+		assertThat(view.available() && view.observedAt() != null).isFalse();
+	}
 }
+
