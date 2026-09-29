@@ -1,5 +1,6 @@
 package com.easysubway.report.adapter.out.storage;
 
+import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
@@ -7,7 +8,6 @@ import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import com.easysubway.report.domain.InvalidFacilityReportException;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -16,7 +16,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
-import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -29,11 +28,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +37,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Profile("prod | staging | release | prod-like")
-public class ObjectStorageFacilityReportPhotoStorage implements
+public final class ObjectStorageFacilityReportPhotoStorage implements
 	StoreFacilityReportPhotoPort,
 	LoadFacilityReportPhotoPort,
 	DeleteFacilityReportPhotoPort,
@@ -165,7 +159,12 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 			if (contentLength > maxBytes) {
 				throw oversizedPhoto();
 			}
-			byte[] bytes = readBoundedWithTimeout(responseBody);
+			byte[] bytes = BoundedResponseBody.read(
+				responseBody,
+				Math.toIntExact(maxBytes),
+				requestTimeout,
+				this::oversizedPhoto
+			);
 			String contentType = response.headers()
 				.firstValue("content-type")
 				.map(value -> value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT))
@@ -275,57 +274,6 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		} catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("Interrupted while calling facility report object storage", exception);
-		}
-	}
-
-	private byte[] readBounded(InputStream inputStream) throws IOException {
-		ByteArrayOutputStream output = new ByteArrayOutputStream();
-		byte[] buffer = new byte[8192];
-		long totalBytes = 0L;
-		int readBytes;
-		while ((readBytes = inputStream.read(buffer)) != -1) {
-			totalBytes += readBytes;
-			if (totalBytes > maxBytes) {
-				throw oversizedPhoto();
-			}
-			output.write(buffer, 0, readBytes);
-		}
-		return output.toByteArray();
-	}
-
-	private byte[] readBoundedWithTimeout(InputStream inputStream) throws IOException {
-		AtomicBoolean timedOut = new AtomicBoolean(false);
-		ScheduledExecutorService timeoutExecutor = Executors.newSingleThreadScheduledExecutor(task -> {
-			Thread thread = new Thread(task, "facility-report-photo-body-timeout");
-			thread.setDaemon(true);
-			return thread;
-		});
-		ScheduledFuture<?> timeout = timeoutExecutor.schedule(() -> {
-			timedOut.set(true);
-			try {
-				inputStream.close();
-			} catch (IOException ignored) {
-				// The read path below reports the timeout with a stable exception type.
-			}
-		}, Math.max(1L, requestTimeout.toMillis()), TimeUnit.MILLISECONDS);
-		try {
-			byte[] bytes = readBounded(inputStream);
-			if (timedOut.get()) {
-				throw new HttpTimeoutException("Timed out while reading facility report photo object");
-			}
-			return bytes;
-		} catch (IOException exception) {
-			if (!timedOut.get() || exception instanceof HttpTimeoutException) {
-				throw exception;
-			}
-			HttpTimeoutException timeoutException = new HttpTimeoutException(
-				"Timed out while reading facility report photo object"
-			);
-			timeoutException.initCause(exception);
-			throw timeoutException;
-		} finally {
-			timeout.cancel(false);
-			timeoutExecutor.shutdownNow();
 		}
 	}
 

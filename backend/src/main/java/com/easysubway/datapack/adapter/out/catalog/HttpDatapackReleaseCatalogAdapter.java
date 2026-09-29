@@ -1,5 +1,6 @@
 package com.easysubway.datapack.adapter.out.catalog;
 
+import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,20 +45,31 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 	private final String baseUrl;
 	private final String publicKeyPem;
 	private final String keyId;
+	private final Duration timeout;
 
 	@org.springframework.beans.factory.annotation.Autowired
 	public HttpDatapackReleaseCatalogAdapter(
 		@Value("${easysubway.datapack.catalog-base-url:}") String baseUrl,
 		@Value("${easysubway.datapack.signing-public-key-pem:}") String publicKeyPem,
 		@Value("${easysubway.datapack.signing-key-id:production-v1}") String keyId) {
-		this(HttpClient.newBuilder().connectTimeout(TIMEOUT).build(), baseUrl, publicKeyPem, keyId);
+		this(HttpClient.newBuilder().connectTimeout(TIMEOUT).build(), baseUrl, publicKeyPem, keyId, TIMEOUT);
 	}
 
 	HttpDatapackReleaseCatalogAdapter(HttpClient httpClient, String baseUrl, String publicKeyPem, String keyId) {
+		this(httpClient, baseUrl, publicKeyPem, keyId, TIMEOUT);
+	}
+
+	HttpDatapackReleaseCatalogAdapter(
+		HttpClient httpClient,
+		String baseUrl,
+		String publicKeyPem,
+		String keyId,
+		Duration timeout) {
 		this.httpClient = httpClient;
 		this.baseUrl = baseUrl == null ? "" : baseUrl.replaceFirst("/+$", "");
 		this.publicKeyPem = publicKeyPem == null ? "" : publicKeyPem.trim();
 		this.keyId = keyId;
+		this.timeout = timeout == null ? TIMEOUT : timeout;
 	}
 
 	@Override
@@ -136,14 +148,12 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 		if (baseUrl.isBlank() || publicKeyPem.isBlank()) throw new Unavailable();
 		try {
 			var request = HttpRequest.newBuilder(URI.create(baseUrl + path))
-				.timeout(TIMEOUT).GET().build();
+				.timeout(timeout).GET().build();
 			var response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
 			try (var body = response.body()) {
 				if (response.statusCode() == 404) throw new NotFound();
 				if (response.statusCode() < 200 || response.statusCode() >= 300) throw new Unavailable();
-				var bytes = body.readNBytes(MAX_CATALOG_BYTES + 1);
-				if (bytes.length > MAX_CATALOG_BYTES) throw new Unavailable();
-				return bytes;
+				return BoundedResponseBody.read(body, MAX_CATALOG_BYTES, timeout, Unavailable::new);
 			}
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
