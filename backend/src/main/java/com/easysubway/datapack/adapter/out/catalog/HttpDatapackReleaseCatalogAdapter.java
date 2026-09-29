@@ -1,5 +1,6 @@
 package com.easysubway.datapack.adapter.out.catalog;
 
+import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -152,9 +153,7 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 			try (var body = response.body()) {
 				if (response.statusCode() == 404) throw new NotFound();
 				if (response.statusCode() < 200 || response.statusCode() >= 300) throw new Unavailable();
-				var bytes = body.readNBytes(MAX_CATALOG_BYTES + 1);
-				if (bytes.length > MAX_CATALOG_BYTES) throw new Unavailable();
-				return bytes;
+				return BoundedResponseBody.read(body, MAX_CATALOG_BYTES, timeout, Unavailable::new);
 			}
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
