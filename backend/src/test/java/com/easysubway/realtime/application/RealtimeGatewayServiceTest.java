@@ -1,5 +1,6 @@
 package com.easysubway.realtime.application;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -1463,6 +1464,42 @@ class RealtimeGatewayServiceTest {
 
 		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
 		assertThat(snapshot.outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("역전 폐기된 열차 위치 건수는 Micrometer 카운터 easysubway.realtime.positions.out_of_order.dropped로 노출된다")
+	void outOfOrderDropsIncrementMicrometerCounter() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			RealtimeArrivalArchivePort.NO_OP,
+			(providerId, now, zone, perMinute, perDay) -> true,
+			1,
+			800,
+			Runnable::run,
+			meterRegistry
+		);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		service.trainPositions(line4Query());
+		assertThat(meterRegistry.get("easysubway.realtime.positions.out_of_order.dropped").counter().count())
+			.isEqualTo(0.0);
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"
+		));
+		service.trainPositions(line4Query());
+
+		assertThat(meterRegistry.get("easysubway.realtime.positions.out_of_order.dropped").counter().count())
+			.isEqualTo(1.0);
 	}
 
 	@Test

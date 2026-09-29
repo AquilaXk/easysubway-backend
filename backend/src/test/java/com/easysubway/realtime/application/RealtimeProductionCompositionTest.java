@@ -1,5 +1,7 @@
 package com.easysubway.realtime.application;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -162,6 +164,8 @@ class RealtimeProductionCompositionTest {
 	) {
 		return new ApplicationContextRunner()
 			.withUserConfiguration(RealtimeComponentScan.class, dependencies)
+			// 운영에서는 actuator가 MeterRegistry를 구성한다. 조립 검증에는 같은 계약의 단순 레지스트리를 둔다.
+			.withBean(MeterRegistry.class, SimpleMeterRegistry::new)
 			.withUserConfiguration(additionalConfigurations)
 			.withPropertyValues("spring.profiles.active=" + profile);
 	}

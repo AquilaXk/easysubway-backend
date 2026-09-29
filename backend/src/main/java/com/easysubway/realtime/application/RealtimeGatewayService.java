@@ -9,6 +9,9 @@ import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.easysubway.realtime.domain.RealtimeTripMapping;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -75,6 +78,7 @@ public class RealtimeGatewayService {
 	private final Map<String, CompletableFuture<RealtimeArrivalResult>> arrivalRequests = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeTrainPositionResult>> trainPositionRequests = new ConcurrentHashMap<>();
 	private final Map<String, Instant> lastServedPositionAt = new ConcurrentHashMap<>();
+	private final Counter outOfOrderPositionDropCounter;
 	private volatile java.time.Instant quotaCircuitOpenUntil;
 
 	@Autowired
@@ -86,7 +90,8 @@ public class RealtimeGatewayService {
 		RealtimeProviderCallQuotaPort providerCallQuotaPort,
 		@Qualifier("realtimeArchiveExecutor") Executor archiveExecutor,
 		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_MINUTE:1}") int providerCallLimitPerMinute,
-		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}") int providerCallLimitPerDay
+		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}") int providerCallLimitPerDay,
+		MeterRegistry meterRegistry
 	) {
 		this(
 			provider,
@@ -97,7 +102,8 @@ public class RealtimeGatewayService {
 			providerCallQuotaPort,
 			providerCallLimitPerMinute,
 			providerCallLimitPerDay,
-			archiveExecutor
+			archiveExecutor,
+			meterRegistry
 		);
 	}
 
@@ -215,6 +221,35 @@ public class RealtimeGatewayService {
 		int providerCallLimitPerDay,
 		Executor archiveExecutor
 	) {
+		this(
+			provider,
+			clock,
+			mappingPort,
+			providerControl,
+			arrivalArchivePort,
+			providerCallQuotaPort,
+			providerCallLimitPerMinute,
+			providerCallLimitPerDay,
+			archiveExecutor,
+			new SimpleMeterRegistry()
+		);
+	}
+
+	RealtimeGatewayService(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl providerControl,
+		RealtimeArrivalArchivePort arrivalArchivePort,
+		RealtimeProviderCallQuotaPort providerCallQuotaPort,
+		int providerCallLimitPerMinute,
+		int providerCallLimitPerDay,
+		Executor archiveExecutor,
+		MeterRegistry meterRegistry
+	) {
+		this.outOfOrderPositionDropCounter = Counter.builder("easysubway.realtime.positions.out_of_order.dropped")
+			.description("Train positions dropped because they are older than a position already served")
+			.register(Objects.requireNonNull(meterRegistry, "meterRegistry must not be null"));
 		this.provider = provider;
 		this.clock = clock;
 		this.mappingPort = mappingPort;
@@ -573,6 +608,7 @@ public class RealtimeGatewayService {
 			Instant lastServed = lastServedPositionAt.get(key);
 			if (lastServed != null && parsed.isBefore(lastServed)) {
 				providerMetrics.recordOutOfOrderDrop();
+				outOfOrderPositionDropCounter.increment();
 				continue;
 			}
 			kept.add(position);
