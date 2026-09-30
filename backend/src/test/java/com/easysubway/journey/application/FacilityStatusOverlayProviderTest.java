@@ -178,6 +178,26 @@ class FacilityStatusOverlayProviderTest {
 	}
 
 	@Test
+	@DisplayName("같은 목록·매핑이면 계산한 뷰를 재사용하고, 목록이 같아도 활성 매핑이 바뀌면 다시 계산한다")
+	void reusesEvaluationUntilStatusOrActiveMappingChanges() {
+		store.heartbeat = T0;
+		store.rows.add(status(E1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.SEOUL_METRO_FEED));
+		provider.refresh();
+
+		FacilityAvailabilityView first = provider.currentView();
+		assertThat(provider.currentView()).isSameAs(first);
+
+		activeRequirements.set(TransitionFacilityRequirements.of(List.of(
+			new Requirement(ENTRY_B, "path-1", "station-a", TransitionFacilityRequirements.EXIT_ELEVATORS, E1),
+			new Requirement(ENTRY_B, "path-1", "station-a", TransitionFacilityRequirements.PLATFORM_DIRECTION_ELEVATORS, D1))));
+		FacilityAvailabilityView swapped = provider.currentView();
+
+		assertThat(swapped).isNotSameAs(first);
+		assertThat(swapped.blockedPathwayEdgeIds()).containsExactly(ENTRY_B);
+		assertThat(first.blockedPathwayEdgeIds()).containsExactly(EXIT_B);
+	}
+
+	@Test
 	@DisplayName("막힌 전환 수와 마지막 성공 이후 경과 초를 지표로 낸다")
 	void exposesBlockedTransitionCountAndSecondsSinceLastSuccess() {
 		assertThat(gauge("easysubway.journey.facility_status.blocked_transitions")).isNaN();

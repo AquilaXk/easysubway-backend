@@ -112,7 +112,7 @@ public final class FacilityStatusOverlayProvider implements FacilityAvailability
 			return FacilityAvailabilityView.unavailable();
 		}
 		TransitionFacilityRequirements requirements = activeRequirements.get();
-		if (requirements == null || !requirements.present()) {
+		if (!requirements.present()) {
 			return FacilityAvailabilityView.unavailable();
 		}
 		Evaluation cached = evaluation;
