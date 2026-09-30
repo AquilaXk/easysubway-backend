@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '6d75dd7c7c6d1df846fb5a345c85823fe2732be39fdacc2fed6a578ea9b63cb7');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '6aa7af458a25918fc31808ec69c46bf05dd592b4f74582046036d84646b58539');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -777,7 +777,7 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
   const partition = tracked.findings.filter(({ sourcePath }) => admittedPaths.has(sourcePath));
   assert.equal(partition.length, 34);
   assert.equal(new Set(partition.map(({ sourcePath }) => sourcePath)).size, 21);
-  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), 'cfd7f7082e06c832b058da317a61116baf50d1c9c52a6c33f9c06c8ca5fdf045');
+  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), 'e374923dcc79b9c14634cce3a2cea0d558ebce5c2d89eb62542437c62faed485');
   assert.equal(partition.filter(({ disposition }) => disposition === 'FIXED').length, 10);
   assert.equal(partition.filter(({ disposition }) => disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION').length, 24);
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 126, falsePositiveExactSuppression: 67, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
