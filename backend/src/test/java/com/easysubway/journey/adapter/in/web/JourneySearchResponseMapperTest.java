@@ -134,7 +134,8 @@ class JourneySearchResponseMapperTest {
 			          "plannedDepartureTime":"2026-08-12T00:01:00Z",
 			          "plannedArrivalTime":"2026-08-12T00:04:30Z",
 			          "realtimeDepartureTime":null,
-			          "realtimeArrivalTime":null
+			          "realtimeArrivalTime":null,
+			          "alightingCarDoors":[]
 			        },
 			        {"type":"TRANSFER","fromStationId":"station-transfer-a","toStationId":"station-transfer-b","durationSeconds":45},
 			        {"type":"EXIT","fromStationId":"station-destination","durationSeconds":20}
@@ -163,7 +164,8 @@ class JourneySearchResponseMapperTest {
 			        "plannedDepartureTime":"2026-08-12T00:02:00Z",
 			        "plannedArrivalTime":"2026-08-12T00:07:00Z",
 			        "realtimeDepartureTime":null,
-			        "realtimeArrivalTime":null
+			        "realtimeArrivalTime":null,
+			        "alightingCarDoors":[]
 			      }]
 			    }
 			  ]
@@ -246,6 +248,45 @@ class JourneySearchResponseMapperTest {
 			null,
 			journeys
 		))).path("requestPolicy").path("walkingPace").asText()).isEqualTo("FAST");
+	}
+
+	@Test
+	void mapsAlightingCarDoorsToExactWireShape() {
+		var journey = new JourneyCandidate(
+			"journey-doors",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			0,
+			10,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of()),
+			List.of(new JourneyCandidate.Ride(
+				"line-1",
+				"trip-1",
+				"station-direction",
+				"station-origin",
+				"station-destination",
+				PLANNED_DEPARTURE,
+				PLANNED_ARRIVAL,
+				null,
+				null,
+				List.of(new JourneyCandidate.AlightingCarDoor(3, 2, "TRANSFER"))
+			))
+		);
+		JsonNode actual = JSON.valueToTree(JourneySearchResponseMapper.map(success(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			null,
+			List.of(journey)
+		)));
+		JsonNode doors = actual.path("journeys").path(0).path("legs").path(0).path("alightingCarDoors");
+		assertThat(doors.isArray()).isTrue();
+		assertThat(doors.size()).isEqualTo(1);
+		assertThat(doors.get(0).path("carNumber").asInt()).isEqualTo(3);
+		assertThat(doors.get(0).path("doorNumber").asInt()).isEqualTo(2);
+		assertThat(doors.get(0).path("targetFacilityType").asText()).isEqualTo("TRANSFER");
 	}
 
 	private static JourneyExecutionResult.Success success(

@@ -2721,7 +2721,45 @@ public final class RouteTimetableRaptorPlanner {
 			boolean nextIsTransfer,
 			boolean stepFree
 		) {
-			return List.of();
+			if (stationId == null || lineId == null || directionId == null) {
+				return List.of();
+			}
+			String targetDirection;
+			if ("up".equals(directionId)) {
+				targetDirection = "UP";
+			} else if ("down".equals(directionId)) {
+				targetDirection = "DOWN";
+			} else {
+				return List.of();
+			}
+			List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint> allHints =
+				source.routeAccessData().carDoorHints();
+			if (allHints.isEmpty()) {
+				return List.of();
+			}
+			return allHints.stream()
+				.filter(h -> stationId.equals(h.stationId())
+					&& lineId.equals(h.lineId())
+					&& targetDirection.equals(h.direction()))
+				.filter(h -> {
+					if (nextIsTransfer) {
+						return "TRANSFER".equals(h.targetFacilityType());
+					} else {
+						if (stepFree) {
+							return "ELEVATOR".equals(h.targetFacilityType());
+						} else {
+							return "ELEVATOR".equals(h.targetFacilityType())
+								|| "ESCALATOR".equals(h.targetFacilityType())
+								|| "STAIR".equals(h.targetFacilityType());
+						}
+					}
+				})
+				.map(h -> new AlightingCarDoor(h.carNumber(), h.doorNumber(), h.targetFacilityType()))
+				.distinct()
+				.sorted(Comparator.comparing(AlightingCarDoor::targetFacilityType)
+					.thenComparingInt(AlightingCarDoor::carNumber)
+					.thenComparingInt(AlightingCarDoor::doorNumber))
+				.toList();
 		}
 
 		String tripDirection(String tripId) {
