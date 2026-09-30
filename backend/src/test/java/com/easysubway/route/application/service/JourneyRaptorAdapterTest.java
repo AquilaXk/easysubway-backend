@@ -283,6 +283,27 @@ class JourneyRaptorAdapterTest {
 		assertThat(defaultWired.candidates()).isEqualTo(explicitNoProvider.candidates());
 	}
 
+	@Test
+	void runtimeViewCarriesOnlyRequirementMappingsThatResolveToCompiledTransitions() {
+		var resolvable = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(List.of(
+			new com.easysubway.journey.bundle.TransitionFacilityRequirements.Requirement(
+				"entry", "path-1", "station-b",
+				com.easysubway.journey.bundle.TransitionFacilityRequirements.EXIT_ELEVATORS, "smrt-elev:0150:1:1번 출입구")));
+		var unresolvable = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(List.of(
+			new com.easysubway.journey.bundle.TransitionFacilityRequirements.Requirement(
+				"edge-from-another-bundle", "path-1", "station-b",
+				com.easysubway.journey.bundle.TransitionFacilityRequirements.EXIT_ELEVATORS, "smrt-elev:0150:1:1번 출입구")));
+
+		assertThat(RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable(), List.of(), resolvable)
+			.transitionFacilityRequirements()).isSameAs(resolvable);
+		assertThat(RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable())
+			.transitionFacilityRequirements().present()).isFalse();
+		assertThatThrownBy(() -> RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable(), List.of(), unresolvable))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("does not resolve to a compiled transition");
+	}
+
 	// 대체 진입 픽스처: 기본 선택은 최단 검증 거리 "entry"(120초·40m), 차단 시 "entry-alt"(300초·90m).
 	private static final Clock FACILITY_CLOCK = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
 

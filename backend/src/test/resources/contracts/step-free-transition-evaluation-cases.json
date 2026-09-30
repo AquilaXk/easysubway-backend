@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "specification": "무단차 전환 통과 판정(#418 QA 결정 추가 2). 요구 행은 transition_facility_requirement(transition_key, path_id, direction_next_station_id, group_kind, facility_id)다. group 안의 시설은 한 대 이상 가동이면 그 group이 통과하고, 경로는 모든 group이 통과할 때 통과하며, 전환은 요구 행이 있는 모든 방향(direction_next_station_id)에서 통과하는 경로가 하나 이상 있을 때만 통과한다. 요구 행이 없는 전환은 통과한다. 방향 목록은 다음 역 id의 로케일 무관 UTF-16 코드 단위 순이다(data codepointCompare, Java String.compareTo와 같다).",
+  "reference": "AquilaXk/easysubway-data tools/datapack/build-step-free-path-transitions.mjs evaluateStepFreeTransition(rows, isOperating)",
+  "operatingRule": "outOfService에 없는 시설은 가동이다(isOperating(id) = !outOfService.includes(id)).",
+  "cases": [
+    {
+      "id": "all-operating",
+      "descriptionKo": "모든 시설이 가동이면 두 방향 모두 통과한다",
+      "rows": [
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면10-4"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"]
+      ],
+      "outOfService": [],
+      "expected": {
+        "passable": true,
+        "directions": [
+          {"nextStationId": "station-down", "passable": true},
+          {"nextStationId": "station-up", "passable": true}
+        ]
+      }
+    },
+    {
+      "id": "one-of-two-direction-elevators-out",
+      "descriptionKo": "방향 엘리베이터 2대 중 1대 불가면 그 방향은 통과한다",
+      "rows": [
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면10-4"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"]
+      ],
+      "outOfService": ["smrt-elev:0448:4:하행역 방면9-1"],
+      "expected": {
+        "passable": true,
+        "directions": [
+          {"nextStationId": "station-down", "passable": true},
+          {"nextStationId": "station-up", "passable": true}
+        ]
+      }
+    },
+    {
+      "id": "all-direction-elevators-out",
+      "descriptionKo": "한 방향의 방향 엘리베이터가 모두 불가면 다른 방향이 통과해도 전환이 막힌다",
+      "rows": [
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면10-4"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"]
+      ],
+      "outOfService": ["smrt-elev:0448:4:하행역 방면9-1", "smrt-elev:0448:4:하행역 방면10-4"],
+      "expected": {
+        "passable": false,
+        "directions": [
+          {"nextStationId": "station-down", "passable": false},
+          {"nextStationId": "station-up", "passable": true}
+        ]
+      }
+    },
+    {
+      "id": "exit-group-out-excludes-only-that-path",
+      "descriptionKo": "출입구 묶음이 모두 불가면 그 경로만 빠지고, 같은 방향의 다른 경로가 통과하면 전환은 통과한다",
+      "rows": [
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:447:2", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:2번 출입구"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:447:2", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:449:2", "station-down", "EXIT_ELEVATORS", "smrt-elev:0448:4:2번 출입구"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:449:2", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"]
+      ],
+      "outOfService": ["smrt-elev:0448:4:1번 출입구"],
+      "expected": {
+        "passable": true,
+        "directions": [
+          {"nextStationId": "station-down", "passable": true},
+          {"nextStationId": "station-up", "passable": true}
+        ]
+      }
+    },
+    {
+      "id": "exit-group-out-without-alternative-in-one-direction",
+      "descriptionKo": "출입구 묶음 불가로 한 방향의 유일한 경로가 빠지면 전환이 막힌다",
+      "rows": [
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:2", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:2번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:2", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:449:1", "station-down", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"]
+      ],
+      "outOfService": ["smrt-elev:0448:4:1번 출입구"],
+      "expected": {
+        "passable": false,
+        "directions": [
+          {"nextStationId": "station-down", "passable": false},
+          {"nextStationId": "station-up", "passable": true}
+        ]
+      }
+    },
+    {
+      "id": "no-requirement-rows",
+      "descriptionKo": "요구 행이 없는 전환은 근거가 없으므로 통과한다",
+      "rows": [],
+      "outOfService": ["smrt-elev:0448:4:1번 출입구"],
+      "expected": {
+        "passable": true,
+        "directions": []
+      }
+    },
+    {
+      "id": "unrelated-facility-out",
+      "descriptionKo": "요구 행에 없는 시설의 불가는 판정에 영향이 없다",
+      "rows": [
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"]
+      ],
+      "outOfService": ["smrt-elev:0201:2:9번 출입구"],
+      "expected": {
+        "passable": true,
+        "directions": [
+          {"nextStationId": "station-up", "passable": true}
+        ]
+      }
+    },
+    {
+      "id": "direction-order-is-utf16-code-unit-order",
+      "descriptionKo": "방향 목록은 로케일 무관 UTF-16 코드 단위 순이다(보조 평면 U+1F687의 상위 대리 0xD83D가 U+FF21보다 앞선다)",
+      "rows": [
+        ["edge-entry-station-a-line-4", "path-emoji", "station-\uD83D\uDE87", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "path-emoji", "station-\uD83D\uDE87", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:상행역 방면1-1"],
+        ["edge-entry-station-a-line-4", "path-fullwidth", "station-\uFF21", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-entry-station-a-line-4", "path-fullwidth", "station-\uFF21", "PLATFORM_DIRECTION_ELEVATORS", "smrt-elev:0448:4:하행역 방면9-1"]
+      ],
+      "outOfService": ["smrt-elev:0448:4:하행역 방면9-1"],
+      "expected": {
+        "passable": false,
+        "directions": [
+          {"nextStationId": "station-\uD83D\uDE87", "passable": true},
+          {"nextStationId": "station-\uFF21", "passable": false}
+        ]
+      }
+    },
+    {
+      "id": "rows-of-multiple-transitions-are-rejected",
+      "descriptionKo": "한 번의 판정에는 한 전환의 요구 행만 넣는다",
+      "rows": [
+        ["edge-entry-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"],
+        ["edge-exit-station-a-line-4", "kric-mv:S1:4:448:447:1", "station-up", "EXIT_ELEVATORS", "smrt-elev:0448:4:1번 출입구"]
+      ],
+      "outOfService": [],
+      "expectedError": "single transition_key"
+    }
+  ]
+}
