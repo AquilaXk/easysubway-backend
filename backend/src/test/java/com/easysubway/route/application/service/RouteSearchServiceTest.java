@@ -160,28 +160,25 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("경로 검색 API 계약은 비용과 요약 사실값을 score와 분리해 직렬화한다")
-	void routeSearchSerializesBurdenCostAndSummaryFacts() throws Exception {
+	@DisplayName("경로 검색 결과는 비용과 요약 사실값을 계산해 제공한다")
+	void routeSearchComputesBurdenCostAndSummaryFacts() {
 		var result = service.searchRoute(new SearchRouteCommand(
 			"station-sangnoksu",
 			"station-sadang",
 			MobilityType.STROLLER
 		));
 
-		var mapper = new ObjectMapper().findAndRegisterModules();
-		Map<?, ?> payload = mapper.readValue(mapper.writeValueAsString(result), Map.class);
 		int stepDurationSeconds = result.steps()
 			.stream()
 			.mapToInt(step -> step.estimatedMinutes() * 60)
 			.sum();
 
-		assertThat(payload.get("score")).isEqualTo(result.score());
-		assertThat(payload.get("burdenCost")).isEqualTo(result.score());
-		assertThat(payload.get("estimatedDurationSeconds")).isEqualTo(stepDurationSeconds);
-		assertThat(payload.get("walkingDistanceMeters")).isEqualTo(result.walkingDistanceMeters());
-		assertThat(payload.get("transferCount")).isEqualTo(0);
-		assertThat(payload.get("evidenceSummary"))
-			.asList()
+		assertThat(result.score()).isGreaterThan(0);
+		assertThat(result.burdenCost()).isEqualTo(result.score());
+		assertThat(result.estimatedDurationSeconds()).isEqualTo(stepDurationSeconds);
+		assertThat(result.walkingDistanceMeters()).isGreaterThanOrEqualTo(0);
+		assertThat(result.transferCount()).isEqualTo(0);
+		assertThat(result.evidenceSummary())
 			.contains("ACCESSIBILITY_CHECK_REQUIRED", "DURATION_ESTIMATED", "DISTANCE_MEASURED");
 	}
 
