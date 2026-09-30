@@ -874,8 +874,7 @@ final class ReverseTimetableRaptorPlanner {
 				TraceRide ride = (TraceRide) leg;
 				RouteTimetableRaptorPlanner.RealtimeOverlay rideOverlay = ride.trip().realtimeOverlay();
 				boolean hasRealtimeEvidence = rideOverlay.evidence(ride.trip().scheduledTrip()) != null;
-				boolean nextIsTransfer = (index + 1 < legs.size())
-					&& (legs.get(index + 1) instanceof TraceAccess access && access.access() == Access.TRANSFER);
+				boolean nextIsTransfer = ((TraceAccess) legs.get(index + 1)).access() == Access.TRANSFER;
 				boolean stepFree = (query.mobilityPreset() == com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset.STEP_FREE);
 				List<RouteTimetableRaptorPlanner.AlightingCarDoor> alightingCarDoors = timetable.selectAlightingCarDoors(
 					ride.trip().stopTimes().get(ride.alightIndex()).stationId(),

@@ -1775,6 +1775,27 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("arriveBy에서 MobilityPreset.STEP_FREE 요청 시 역방향 여정의 하차 칸-문이 정상 투영된다")
+	void stepFreeArriveByProjectsCarDoors() {
+		var compiled = forward.compile(transferTimetableWithAlternativeTransfer());
+		var query = new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, WHEELCHAIR_PROFILE_BIT,
+			WHEELCHAIR_SLACK_SECONDS, MobilityPreset.STEP_FREE, 3_600, false, () -> false);
+		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).isNotEmpty();
+		var itinerary = result.itineraries().getFirst();
+		var rides = itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.toList();
+		assertThat(rides).hasSize(2);
+		assertThat(rides.getFirst().alightingCarDoors()).isNotNull();
+		assertThat(rides.getLast().alightingCarDoors()).isNotNull();
+	}
+
+	@Test
 	@DisplayName("환승역 승강기 고장 시 대체 환승 경로가 없으면 fail-closed(NO_OD_CONNECTION)로 거절한다")
 	void wheelchairArriveBy_whenTransferElevatorBlockedAndNoAlternative_failsClosedWithNoOdConnection() {
 		var compiled = forward.compile(transferTimetable());

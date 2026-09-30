@@ -1,6 +1,7 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
@@ -127,6 +128,8 @@ class RouteTimetableCarDoorHintsTest {
 			new JourneyRequestMeasurement("req-3"), "req-3", "bundle-sha", 1L);
 
 		var firstRide = (RouteTimetableRaptorPlanner.JourneyRideProjection) result.itineraries().getFirst().legs().get(1);
+		assertThat(firstRide.alightingCarDoors()).isNotEmpty();
+		assertThat(firstRide.alightingCarDoors()).extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::carNumber).contains(3, 5);
 		// hint 4 (station-b, line-1, DOWN, car 8, door 4) must be excluded because trip-1 has directionId "up"
 		assertThat(firstRide.alightingCarDoors()).noneMatch(d -> d.carNumber() == 8 && d.doorNumber() == 4);
 	}
@@ -172,6 +175,72 @@ class RouteTimetableCarDoorHintsTest {
 				assertThat(ride.alightingCarDoors()).isEmpty();
 			}
 		}
+	}
+
+	@Test
+	@DisplayName("(6) 동일한 (carNumber, doorNumber, targetFacilityType) hint 중복 행은 distinct하게 하나만 제공된다")
+	void deduplicatesIdenticalCarDoorHints() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var duplicatedHints = List.of(
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 3, 2),
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 3, 2),
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 5, 1)
+		);
+		var timetable = createBaseTimetable(duplicatedHints);
+		var compiled = planner.compile(timetable);
+
+		var query = JourneyRaptorQuery.from(createRequest("station-a", "station-c", JourneyRequest.ConstraintMode.NONE), DEPARTURE_INSTANT);
+		var result = planner.journeyItineraries(
+			query, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-6"), "req-6", "bundle-sha", 1L);
+
+		var firstRide = (RouteTimetableRaptorPlanner.JourneyRideProjection) result.itineraries().getFirst().legs().get(1);
+		assertThat(firstRide.alightingCarDoors()).hasSize(2);
+		assertThat(firstRide.alightingCarDoors()).containsExactly(
+			new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 2, "TRANSFER"),
+			new RouteTimetableRaptorPlanner.AlightingCarDoor(5, 1, "TRANSFER")
+		);
+	}
+
+	@Test
+	@DisplayName("(7) AlightingCarDoor 및 JourneyRideProjection 생성자 경계 검증")
+	void validatesAlightingCarDoorAndProjectionBoundary() {
+		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.AlightingCarDoor(0, 1, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.AlightingCarDoor(11, 1, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 0, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 5, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 1, null))
+			.isInstanceOf(NullPointerException.class);
+
+		var door = new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 2, "TRANSFER");
+		assertThat(door.carNumber()).isEqualTo(1);
+		assertThat(door.doorNumber()).isEqualTo(2);
+		assertThat(door.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(door).isEqualTo(new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 2, "TRANSFER"));
+		assertThat(door.hashCode()).isNotZero();
+		assertThat(door.toString()).contains("1");
+
+		var projection10Arg = new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			"l", "t", "d", "f", "to", DEPARTURE_INSTANT, DEPARTURE_INSTANT, null, null
+		);
+		assertThat(projection10Arg.alightingCarDoors()).isEmpty();
+
+		var projectionNullDoors = new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			"l", "t", "d", "f", "to", DEPARTURE_INSTANT, DEPARTURE_INSTANT, null, null, null
+		);
+		assertThat(projectionNullDoors.alightingCarDoors()).isEmpty();
+
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(createTimetableWithCarDoorHints());
+		assertThat(compiled.selectAlightingCarDoors(null, "l", "up", false, false)).isEmpty();
+		assertThat(compiled.selectAlightingCarDoors("s", null, "up", false, false)).isEmpty();
+		assertThat(compiled.selectAlightingCarDoors("s", "l", null, false, false)).isEmpty();
+		assertThat(compiled.selectAlightingCarDoors("s", "l", "unknown", false, false)).isEmpty();
+		assertThat(compiled.tripDirection("non-existent-trip-id")).isNull();
 	}
 
 	private static JourneyRequest createRequest(String origin, String destination, JourneyRequest.ConstraintMode constraintMode) {

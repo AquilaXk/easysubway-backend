@@ -31,7 +31,6 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -334,12 +333,11 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	private static List<CarDoorHint> loadCarDoorHints(Connection connection) throws SQLException {
-		DatabaseMetaData meta = connection.getMetaData();
-		try (ResultSet rs = meta.getTables(null, null, "station_car_door_hints", null)) {
-			if (!rs.next()) {
-				log.info("Accessibility bundle table station_car_door_hints does not exist; loaded 0 hints");
-				return List.of();
-			}
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_car_door_hints'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_car_door_hints does not exist; loaded 0 hints");
+			return List.of();
 		}
 		requireColumns(connection, "station_car_door_hints", List.of(
 			"id", "station_id", "line_id", "direction", "target_facility_type", "car_number", "door_number",
@@ -356,7 +354,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				hints.add(new CarDoorHint(
 					requireText(rows.getString(1), "station_car_door_hints station_id"),
 					requireText(rows.getString(2), "station_car_door_hints line_id"),
-					rows.getString(3) == null ? "" : rows.getString(3),
+					requireText(rows.getString(3), "station_car_door_hints direction"),
 					requireText(rows.getString(4), "station_car_door_hints target_facility_type"),
 					rows.getInt(5),
 					rows.getInt(6)

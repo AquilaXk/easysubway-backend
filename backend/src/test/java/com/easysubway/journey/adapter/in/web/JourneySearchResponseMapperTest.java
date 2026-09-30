@@ -287,6 +287,14 @@ class JourneySearchResponseMapperTest {
 		assertThat(doors.get(0).path("carNumber").asInt()).isEqualTo(3);
 		assertThat(doors.get(0).path("doorNumber").asInt()).isEqualTo(2);
 		assertThat(doors.get(0).path("targetFacilityType").asText()).isEqualTo("TRANSFER");
+
+		var resDoor = new JourneySearchResponseMapper.AlightingCarDoorResponse(3, 2, "TRANSFER");
+		assertThat(resDoor.carNumber()).isEqualTo(3);
+		assertThat(resDoor.doorNumber()).isEqualTo(2);
+		assertThat(resDoor.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(resDoor).isEqualTo(new JourneySearchResponseMapper.AlightingCarDoorResponse(3, 2, "TRANSFER"));
+		assertThat(resDoor.hashCode()).isNotZero();
+		assertThat(resDoor.toString()).contains("carNumber=3");
 	}
 
 	private static JourneyExecutionResult.Success success(

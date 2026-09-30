@@ -248,22 +248,6 @@ final class JourneySearchResponseMapper {
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 		List<AlightingCarDoorResponse> alightingCarDoors
 	) implements LegResponse {
-		public RideLegResponse(
-			String type,
-			String lineId,
-			String tripId,
-			String directionStationId,
-			String fromStationId,
-			String toStationId,
-			String plannedDepartureTime,
-			String plannedArrivalTime,
-			String realtimeDepartureTime,
-			String realtimeArrivalTime
-		) {
-			this(type, lineId, tripId, directionStationId, fromStationId, toStationId,
-				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				List.of());
-		}
 	}
 
 	record AlightingCarDoorResponse(
