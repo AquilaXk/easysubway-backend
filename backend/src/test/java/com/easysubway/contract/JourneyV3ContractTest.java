@@ -319,13 +319,20 @@ class JourneyV3ContractTest {
 
 		Set<String> journeyFields = Set.of("journeyId", "status", "planSource", "plannedDepartureTime",
 			"plannedArrivalTime", "realtimeDepartureTime", "realtimeArrivalTime", "durationSeconds",
-			"transferCount", "walkingDistanceMeters", "timeSource", "accessibility", "legs");
+			"transferCount", "walkingDistanceMeters", "timeSource", "accessibility", "fare", "legs");
 		assertClosedSchema(document, "Journey", journeyFields, journeyFields);
 		assertEnum(property(document, "Journey", "status"), "FOUND");
 		assertEnum(property(document, "Journey", "planSource"), "SERVER_TIMETABLE_RAPTOR");
 		assertEnum(property(document, "Journey", "timeSource"), "TIMETABLE", "REALTIME");
 		assertThat(property(document, "Journey", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
 		assertThat(property(document, "Journey", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
+		assertClosedSchema(
+			document,
+			"JourneyFare",
+			Set.of("status", "sourceSnapshotIds"),
+			Set.of("status", "adultCardWon", "adultCashWon", "youthCardWon", "youthCashWon", "childCardWon", "childCashWon", "sourceSnapshotIds")
+		);
+		assertEnum(property(document, "JourneyFare", "status"), "AVAILABLE", "UNAVAILABLE");
 		assertClosedSchema(document, "JourneyAccessibility",
 			Set.of("result", "stairFree", "reasonCodes"), Set.of("result", "stairFree", "reasonCodes"));
 		assertEnum(property(document, "JourneyAccessibility", "result"), "VERIFIED");

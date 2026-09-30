@@ -22,6 +22,8 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import java.time.Clock;
 import java.util.List;
@@ -108,7 +110,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
-			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary))
+			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()))
 			.toList();
 		if (new HashSet<>(candidates.stream().map(JourneyCandidate::journeyId).toList()).size()
 			!= candidates.size()) {
@@ -246,7 +248,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		List<JourneyCandidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
-			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary));
+			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()));
 		}
 
 		candidates.sort(Comparator
@@ -528,7 +530,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	private static JourneyCandidate toCandidate(
 		JourneyRequest request,
 		Instant effectiveInstant,
-		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		requireLegOrder(itinerary);
 		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
@@ -610,6 +613,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 		Instant plannedDeparture = effectiveInstant;
 		Instant realtimeDeparture = realtime ? effectiveInstant : null;
+		JourneyCandidate.Fare fare = calculateFare(legs, fareQuotes);
 		return new JourneyCandidate(
 			journeyId(request, plannedDeparture, itinerary),
 			plannedDeparture,
@@ -621,9 +625,73 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			walkingDistanceMeters,
 			realtime ? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
+			fare,
 			legs
 		);
 	}
+
+	static JourneyCandidate.Fare calculateFare(
+		List<JourneyCandidate.Leg> legs,
+		Map<String, OfficialFareQuote> fareQuotes
+	) {
+		if (fareQuotes.isEmpty()) {
+			return JourneyCandidate.Fare.unavailable();
+		}
+		// requireLegOrder가 Entry-Ride-(Transfer-Ride)*-Exit 순서를 보장하므로 구간은 항상 탑승으로 시작한다.
+		List<FareSection> sections = new ArrayList<>();
+		String currentOrigin = null;
+		String currentDestination = null;
+
+		for (JourneyCandidate.Leg leg : legs) {
+			if (leg instanceof JourneyCandidate.Ride ride) {
+				if (currentOrigin == null) {
+					currentOrigin = ride.fromStationId();
+				}
+				currentDestination = ride.toStationId();
+			} else if (leg instanceof JourneyCandidate.Transfer transfer
+				&& Boolean.TRUE.equals(transfer.farePenaltyApplies())) {
+				sections.add(new FareSection(currentOrigin, currentDestination));
+				currentOrigin = null;
+				currentDestination = null;
+			}
+		}
+		sections.add(new FareSection(currentOrigin, currentDestination));
+
+		int totalAdultCardWon = 0;
+		int totalAdultCashWon = 0;
+		int totalYouthCardWon = 0;
+		int totalYouthCashWon = 0;
+		int totalChildCardWon = 0;
+		int totalChildCashWon = 0;
+		Set<String> snapshotIds = new LinkedHashSet<>();
+
+		for (FareSection section : sections) {
+			String key = OfficialFareQuote.fareKey(section.origin(), section.destination());
+			OfficialFareQuote quote = fareQuotes.get(key);
+			if (quote == null) {
+				return JourneyCandidate.Fare.unavailable();
+			}
+			totalAdultCardWon = Math.addExact(totalAdultCardWon, quote.gnrlCardFare());
+			totalAdultCashWon = Math.addExact(totalAdultCashWon, quote.gnrlCashFare());
+			totalYouthCardWon = Math.addExact(totalYouthCardWon, quote.yungCardFare());
+			totalYouthCashWon = Math.addExact(totalYouthCashWon, quote.yungCashFare());
+			totalChildCardWon = Math.addExact(totalChildCardWon, quote.childCardFare());
+			totalChildCashWon = Math.addExact(totalChildCashWon, quote.childCashFare());
+			snapshotIds.add(quote.snapshotId());
+		}
+
+		return JourneyCandidate.Fare.available(
+			totalAdultCardWon,
+			totalAdultCashWon,
+			totalYouthCardWon,
+			totalYouthCashWon,
+			totalChildCardWon,
+			totalChildCashWon,
+			snapshotIds.stream().sorted().toList()
+		);
+	}
+
+	private record FareSection(String origin, String destination) {}
 
 	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> projections = itinerary.legs();

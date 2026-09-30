@@ -89,7 +89,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThat(planned.candidates()).singleElement().satisfies(candidate -> {
 			assertThat(candidate.legs()).hasSize(3);
 			assertThat(candidate.transferCount()).isZero();
-			assertThat(candidate.accessibility().stairFree()).isTrue();
+			assertThat(candidate.fare().status()).isEqualTo(com.easysubway.journey.application.JourneyCandidate.FareStatus.AVAILABLE);
+			assertThat(candidate.fare().adultCardWon()).isEqualTo(1400);
 		});
 	}
 
@@ -178,6 +179,80 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(blankName)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("bundle facility name");
+	}
+
+	@Test
+	void rejectsDuplicateOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-duplicate", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official-2", "snapshot-2", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("duplicate official_od_fare_quotes key");
+	}
+
+	@Test
+	void rejectsNullFareValuesInOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-null", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER,
+				 gnrl_cash_fare INTEGER, yung_card_fare INTEGER,
+				 yung_cash_fare INTEGER, child_card_fare INTEGER,
+				 child_cash_fare INTEGER)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), null, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare value is invalid");
+	}
+
+	@Test
+	void rejectsSameOriginAndDestinationInFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-same-od", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-a", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare origin and destination must differ");
 	}
 
 	@Test

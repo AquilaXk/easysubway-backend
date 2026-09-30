@@ -180,6 +180,70 @@ class JourneyCandidateTest {
 	}
 
 	@Test
+	void buildsAvailableFareWithSixAmountsAndCopiedSnapshotIds() {
+		var fare = JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("snap-1", "snap-2"));
+
+		assertThat(fare.status()).isEqualTo(JourneyCandidate.FareStatus.AVAILABLE);
+		assertThat(fare.adultCardWon()).isEqualTo(1400);
+		assertThat(fare.childCashWon()).isEqualTo(600);
+		assertThat(fare.sourceSnapshotIds()).containsExactly("snap-1", "snap-2");
+		var unavailable = JourneyCandidate.Fare.unavailable();
+		assertThat(unavailable.status()).isEqualTo(JourneyCandidate.FareStatus.UNAVAILABLE);
+		assertThat(unavailable.adultCardWon()).isNull();
+		assertThat(unavailable.sourceSnapshotIds()).isEmpty();
+		assertThat(new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, null, null, null).sourceSnapshotIds()).isEmpty();
+	}
+
+	@Test
+	void rejectsUnavailableFareCarryingAnyAmount() {
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			1, null, null, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, 1, null, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, 1, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, 1, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, 1, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, null, 1, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+	}
+
+	@Test
+	void rejectsAvailableFareWithMissingNegativeAmountOrNoSnapshot() {
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			null, 1, 1, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("adultCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, null, 1, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("adultCashWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, null, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("youthCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, null, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("youthCashWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, 1, null, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("childCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, 1, 1, null, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("childCashWon");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(-1, 1, 1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, -1, 1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, -1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, -1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, -1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, -1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, 1, List.of()))
+			.hasMessage("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, 1, null))
+			.hasMessage("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+	}
+
+	@Test
 	void rejectsCandidateAndRideRealtimeModeDrift() {
 		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
 		Instant realtimeArrival = ARRIVAL.plusSeconds(30);

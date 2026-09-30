@@ -17,6 +17,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.route.application.service.OfficialFareQuote;
 import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -87,7 +88,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	public RaptorRouteBundleRuntimeView compile(Input input) {
 		CompiledPayloads compiled = read(input);
 		return RaptorRouteBundleRuntimeView.compile(
-			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities());
+			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities(),
+			compiled.fareQuotes());
 	}
 
 	RouteTimetable readTimetable(Input input) {
@@ -129,11 +131,11 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var evaluations = validateAccessibility(accessibilityConn, topology);
 			var carDoorHints = loadCarDoorHints(accessibilityConn);
 			var platformGaps = loadPlatformGaps(accessibilityConn);
-			validateFare(byPath.get(FARE_PATH).connection());
+			Map<String, OfficialFareQuote> fareQuotes = loadFare(byPath.get(FARE_PATH).connection());
 			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
 			return new CompiledPayloads(loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
-				smrtElevatorFacilities);
+				smrtElevatorFacilities, fareQuotes);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -341,27 +343,49 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		return List.copyOf(facilities);
 	}
 
-	private static void validateFare(Connection connection) throws SQLException {
+	private static Map<String, OfficialFareQuote> loadFare(Connection connection) throws SQLException {
 		requireColumns(connection, "official_od_fare_quotes", List.of(
 			"origin_station_id", "destination_station_id", "source_id", "snapshot_id", "mapping_ledger_hash",
 			"gnrl_card_fare", "gnrl_cash_fare", "yung_card_fare", "yung_cash_fare",
 			"child_card_fare", "child_cash_fare"));
+		var fareQuotes = new HashMap<String, OfficialFareQuote>();
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
 			SELECT origin_station_id, destination_station_id, source_id, snapshot_id, mapping_ledger_hash,
 			 gnrl_card_fare, gnrl_cash_fare, yung_card_fare, yung_cash_fare, child_card_fare, child_cash_fare
 			FROM official_od_fare_quotes
 			""")) {
 			while (rows.next()) {
-				requireText(rows.getString(1), "fare origin station");
-				requireText(rows.getString(2), "fare destination station");
-				requireText(rows.getString(3), "fare source");
-				requireText(rows.getString(4), "fare snapshot");
-				requireSha256(rows.getString(5), "fare mapping ledger");
+				String origin = requireText(rows.getString(1), "fare origin station");
+				String destination = requireText(rows.getString(2), "fare destination station");
+				if (origin.equals(destination)) {
+					throw new IllegalArgumentException("fare origin and destination must differ");
+				}
+				String sourceId = requireText(rows.getString(3), "fare source");
+				String snapshotId = requireText(rows.getString(4), "fare snapshot");
+				String mappingLedgerHash = requireSha256(rows.getString(5), "fare mapping ledger");
 				for (int column = 6; column <= 11; column++) {
-					if (rows.getInt(column) < 0) throw new IllegalArgumentException("fare value is invalid");
+					int fareValue = rows.getInt(column);
+					if (rows.wasNull() || fareValue < 0) {
+						throw new IllegalArgumentException("fare value is invalid");
+					}
+				}
+				int gnrlCardFare = rows.getInt(6);
+				int gnrlCashFare = rows.getInt(7);
+				int yungCardFare = rows.getInt(8);
+				int yungCashFare = rows.getInt(9);
+				int childCardFare = rows.getInt(10);
+				int childCashFare = rows.getInt(11);
+
+				String key = OfficialFareQuote.fareKey(origin, destination);
+				var quote = new OfficialFareQuote(
+					origin, destination, sourceId, snapshotId, mappingLedgerHash,
+					gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare);
+				if (fareQuotes.put(key, quote) != null) {
+					throw new IllegalArgumentException("duplicate official_od_fare_quotes key: " + key);
 				}
 			}
 		}
+		return Map.copyOf(fareQuotes);
 	}
 
 	private static List<CarDoorHint> loadCarDoorHints(Connection connection) throws SQLException {
@@ -832,6 +856,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	private record CompiledPayloads(
-		RouteTimetable timetable, List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities) {
+		RouteTimetable timetable,
+		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities,
+		Map<String, OfficialFareQuote> fareQuotes) {
 	}
 }
