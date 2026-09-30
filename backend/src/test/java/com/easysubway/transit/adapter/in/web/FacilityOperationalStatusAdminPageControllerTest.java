@@ -162,7 +162,7 @@ class FacilityOperationalStatusAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("정규 smrt-elev id가 아니거나 상태가 없으면 400이고 기록하지 않는다")
+	@DisplayName("정규 smrt-elev id가 아니거나 상태가 없거나 알 수 없는 상태 값이면 400이고 기록하지 않는다")
 	void nonCanonicalIdentifierOrMissingStateIsRejected() throws Exception {
 		String html = mockMvc.perform(verify("smrt-elev:0201:2:대합실", "OUT_OF_SERVICE")
 				.with(httpBasic("admin-test", "admin-test-password")).with(commandToken()))
@@ -174,6 +174,9 @@ class FacilityOperationalStatusAdminPageControllerTest {
 				.with(commandToken())
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("facilityId", EXIT_1))
+			.andExpect(status().isBadRequest());
+		mockMvc.perform(verify(EXIT_1, "BROKEN")
+				.with(httpBasic("admin-test", "admin-test-password")).with(commandToken()))
 			.andExpect(status().isBadRequest());
 
 		assertThat(html).contains("번들 엘리베이터 목록에서 시설을 골라 주세요");
