@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -29,9 +30,9 @@ class JourneyProfileOracleComparisonTest {
 			"a", "a", 10, 5, false, true, "VERIFIED");
 		var exitLeg = new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
 			"b", "b", 20, 7, false, true, "VERIFIED");
-		var rideLeg = new JourneyProfileRaptorPort.RideLeg("line", "trip", "b", "a", "b",
+		var rideLeg = TestRides.profileRide("line", "trip", "b", "a", "b",
 			departure, arrival, null, null);
-		var wrongTrip = new JourneyProfileRaptorPort.RideLeg("line", "other", "b", "a", "b",
+		var wrongTrip = TestRides.profileRide("line", "other", "b", "a", "b",
 			departure, arrival, null, null);
 		var wrongExit = new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
 			"elsewhere", "elsewhere", 20, 7, false, true, "VERIFIED");
@@ -130,7 +131,7 @@ class JourneyProfileOracleComparisonTest {
 			"a", "a", 10, 5, false, true, "VERIFIED");
 		var exit = new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
 			"b", "b", 20, 7, false, true, "VERIFIED");
-		var rideLeg = new JourneyProfileRaptorPort.RideLeg("line", ride.tripId(), "b", "a", "b",
+		var rideLeg = TestRides.profileRide("line", ride.tripId(), "b", "a", "b",
 			ride.departureAt(), ride.arrivalAt(), null, null);
 		return itinerary(ride.serviceDate(), ride.departureAt(), ride.arrivalAt(), List.of(entry, rideLeg, exit));
 	}
@@ -143,7 +144,7 @@ class JourneyProfileOracleComparisonTest {
 				JourneyProfileRaptorPort.AccessKind.valueOf(access.kind().name()), access.fromStationId(), access.toStationId(),
 				access.durationSeconds(), access.walkingDistanceMeters(), false, true, "VERIFIED"));
 			var ride = candidate.rides().get(index);
-			legs.add(new JourneyProfileRaptorPort.RideLeg(ride.fromLineId(), ride.tripId(), ride.toStationId(),
+			legs.add(TestRides.profileRide(ride.fromLineId(), ride.tripId(), ride.toStationId(),
 				ride.fromStationId(), ride.toStationId(), ride.departureAt(), ride.arrivalAt(), null, null));
 		}
 		var exit = candidate.accesses().getLast();
@@ -184,7 +185,7 @@ class JourneyProfileOracleComparisonTest {
 		var actual = itinerary(candidate);
 		var legs = new java.util.ArrayList<>(actual.legs());
 		var ride = (JourneyProfileRaptorPort.RideLeg) legs.get(1);
-		legs.set(1, new JourneyProfileRaptorPort.RideLeg(ride.lineId(), "wrong-" + ride.tripId(), ride.directionStationId(),
+		legs.set(1, TestRides.profileRide(ride.lineId(), "wrong-" + ride.tripId(), ride.directionStationId(),
 			ride.fromStationId(), ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(), null, null));
 		return new JourneyProfileRaptorPort.Itinerary(actual.serviceDate(), actual.plannedReadyAt(), actual.plannedArrivalAtDestination(),
 			null, null, actual.metrics(), List.copyOf(legs));

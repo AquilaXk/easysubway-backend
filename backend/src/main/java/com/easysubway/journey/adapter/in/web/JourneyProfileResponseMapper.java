@@ -227,7 +227,8 @@ final class JourneyProfileResponseMapper {
 				}
 				legs.add(new JourneyCandidate.Ride(
 						ride.lineId(), ride.tripId(), ride.directionStationId(), ride.fromStationId(),
-						ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(), null, null));
+						ride.toStationId(), ride.servicePattern(), ride.plannedDepartureTime(), ride.plannedArrivalTime(),
+						null, null, ride.stops(), List.of(), List.of(), List.of()));
 				stage = 2;
 				last = ride.toStationId();
 				rideSeen = true;

@@ -1,8 +1,10 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyProfileExecutionResult;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
@@ -53,6 +55,39 @@ class JourneyProfileResponseMapperTest {
 	}
 
 	@Test
+	void carriesRealServicePatternAndServedStopsOfExpressRideIntoProfileJourney() {
+		var query = query(new JourneyRaptorQuery.DepartBetween(START, START.plusSeconds(60)));
+		var original = itinerary(true);
+		var legs = new java.util.ArrayList<>(original.legs());
+		legs.set(1, new JourneyProfileRaptorPort.RideLeg("line", "trip", "destination", "board", "platform",
+			"EXPRESS", START.plusSeconds(60), START.plusSeconds(540), null, null,
+			java.util.List.of(
+				new JourneyCandidate.Stop("board", null, START.plusSeconds(60), null, null),
+				new JourneyCandidate.Stop("mid-served", START.plusSeconds(300), START.plusSeconds(330), null, null),
+				new JourneyCandidate.Stop("platform", START.plusSeconds(540), null, null, null))));
+		var express = new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600),
+			null, null, original.metrics(), legs);
+		var plan = new JourneyProfileRaptorPort.DepartureWindowPlan(
+			(JourneyRaptorQuery.DepartBetween) query.temporalQuery(),
+			java.util.List.of(new JourneyProfileRaptorPort.DeparturePoint(DATE, START,
+				java.util.List.of(express), new JourneyRaptorPort.ScanMetrics(1, 1, 1))));
+
+		var json = JourneyProfileResponseMapper.map(query, success(query, plan), policy(), "express-query");
+
+		var ride = json.path("journeys").get(0).path("journey").path("legs").get(1);
+		assertThat(ride.path("type").asText()).isEqualTo("RIDE");
+		assertThat(ride.path("servicePattern").asText()).isEqualTo("EXPRESS");
+		assertThat(ride.path("stops")).hasSize(3);
+		assertThat(ride.path("stops").get(0).path("stationId").asText()).isEqualTo("board");
+		assertThat(ride.path("stops").get(0).path("plannedArrivalTime").isNull()).isTrue();
+		assertThat(ride.path("stops").get(1).path("stationId").asText()).isEqualTo("mid-served");
+		assertThat(ride.path("stops").get(1).path("plannedArrivalTime").asText()).isEqualTo(START.plusSeconds(300).toString());
+		assertThat(ride.path("stops").get(1).path("plannedDepartureTime").asText()).isEqualTo(START.plusSeconds(330).toString());
+		assertThat(ride.path("stops").get(2).path("stationId").asText()).isEqualTo("platform");
+		assertThat(ride.path("stops").get(2).path("plannedDepartureTime").isNull()).isTrue();
+	}
+
+	@Test
 	void mapsReverseProfilesWithoutDepartureSegments() {
 		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(600)));
 		var arriveJson = JourneyProfileResponseMapper.map(arriveBy, success(arriveBy,
@@ -93,7 +128,7 @@ class JourneyProfileResponseMapperTest {
 		var query = query(new JourneyRaptorQuery.LastConnection(DATE));
 		var original = itinerary(true);
 		var legs = new java.util.ArrayList<>(original.legs());
-		legs.set(1, new JourneyProfileRaptorPort.RideLeg("line", "late-trip", "destination", "board", "platform",
+		legs.set(1, TestRides.profileRide("line", "late-trip", "destination", "board", "platform",
 			ready.plusSeconds(60), ready.plusSeconds(540), null, null));
 		var late = new JourneyProfileRaptorPort.Itinerary(DATE, ready, ready.plusSeconds(600),
 			null, null, original.metrics(), legs);
@@ -144,11 +179,11 @@ class JourneyProfileResponseMapperTest {
 		var legs = new java.util.ArrayList<JourneyProfileRaptorPort.Leg>(java.util.List.of(
 			new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 				"origin", "board", 60, 10, false, true, "VERIFIED"),
-			new JourneyProfileRaptorPort.RideLeg("line-a", "trip-a", "interchange", "board", "interchange",
+			TestRides.profileRide("line-a", "trip-a", "interchange", "board", "interchange",
 				START.plusSeconds(60), START.plusSeconds(240), null, null),
 			new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER,
 				"interchange", "next-board", 60, 10, false, true, "VERIFIED"),
-			new JourneyProfileRaptorPort.RideLeg("line-b", "trip-b", "destination", "next-board", "platform",
+			TestRides.profileRide("line-b", "trip-b", "destination", "next-board", "platform",
 				START.plusSeconds(360), START.plusSeconds(540), null, null),
 			new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
 				"platform", "destination", 60, 10, false, true, "VERIFIED")));
@@ -219,7 +254,7 @@ class JourneyProfileResponseMapperTest {
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, 120, 20, 0, new JourneyProfileRaptorPort.NoTransfer()),
 			java.util.List.of(
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY, "origin", "board", 60, 10, false, verified, "VERIFIED"),
-				new JourneyProfileRaptorPort.RideLeg("line", "trip", "destination", "board", "platform", START.plusSeconds(60), START.plusSeconds(540), null, null),
+				TestRides.profileRide("line", "trip", "destination", "board", "platform", START.plusSeconds(60), START.plusSeconds(540), null, null),
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT, "platform", "destination", 60, 10, false, verified, "VERIFIED")));
 	}
 }

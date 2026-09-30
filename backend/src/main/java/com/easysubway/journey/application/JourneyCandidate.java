@@ -184,36 +184,6 @@ public record JourneyCandidate(
 			}
 		}
 
-		public Ride(
-			String lineId,
-			String tripId,
-			String directionStationId,
-			String fromStationId,
-			String toStationId,
-			Instant plannedDepartureTime,
-			Instant plannedArrivalTime,
-			Instant realtimeDepartureTime,
-			Instant realtimeArrivalTime
-		) {
-			this(
-				lineId,
-				tripId,
-				directionStationId,
-				fromStationId,
-				toStationId,
-				"LOCAL",
-				plannedDepartureTime,
-				plannedArrivalTime,
-				realtimeDepartureTime,
-				realtimeArrivalTime,
-				List.of(
-					new Stop(fromStationId, null, plannedDepartureTime, null, realtimeDepartureTime),
-					new Stop(toStationId, plannedArrivalTime, null, realtimeArrivalTime, null)
-				),
-				List.of(), List.of(), List.of()
-			);
-		}
-
 		@Override
 		public LegType type() {
 			return LegType.RIDE;

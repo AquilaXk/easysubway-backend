@@ -291,7 +291,7 @@ class JourneyProfileCandidateProjectionV1Test {
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"origin", "origin", 30, 20, accessibilityBurden > 0, true, "VERIFIED"),
-				new JourneyProfileRaptorPort.RideLeg("line-a", tripId, "terminal", "origin", "destination",
+				TestRides.profileRide("line-a", tripId, "terminal", "origin", "destination",
 					rideDeparture, rideArrival, null, null),
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
 					"destination", "destination", 30, 20, false, true, "VERIFIED")));
@@ -311,7 +311,7 @@ class JourneyProfileCandidateProjectionV1Test {
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"origin", "origin", 30, 20, false, true, "VERIFIED"),
-				new JourneyProfileRaptorPort.RideLeg("line-a", tripId, "terminal", "origin", "destination",
+				TestRides.profileRide("line-a", tripId, "terminal", "origin", "destination",
 					rideDeparture, rideArrival, null, null),
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
 					"destination", "destination", 30, 20, false, true, "VERIFIED")));

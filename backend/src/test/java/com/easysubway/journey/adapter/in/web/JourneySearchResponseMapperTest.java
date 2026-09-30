@@ -1,5 +1,6 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.journey.application.JourneyCandidate;
@@ -40,7 +41,7 @@ class JourneySearchResponseMapperTest {
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
 			List.of(
 				new JourneyCandidate.Entry("station-origin", 30),
-				new JourneyCandidate.Ride(
+				TestRides.candidateRide(
 					"line-1",
 					"trip-1",
 					"station-direction",
@@ -66,7 +67,7 @@ class JourneySearchResponseMapperTest {
 			20,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(false, List.of("STAIRS_PRESENT")),
-			List.of(new JourneyCandidate.Ride(
+			List.of(TestRides.candidateRide(
 				"line-2",
 				"trip-2",
 				"station-direction-2",
@@ -209,7 +210,7 @@ class JourneySearchResponseMapperTest {
 			10,
 			JourneyCandidate.TimeSource.REALTIME,
 			new JourneyCandidate.Accessibility(true, List.of()),
-			List.of(new JourneyCandidate.Ride(
+			List.of(TestRides.candidateRide(
 				"line-1",
 				"trip-1",
 				"station-direction",

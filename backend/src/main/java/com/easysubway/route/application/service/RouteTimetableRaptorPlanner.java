@@ -5356,36 +5356,6 @@ public final class RouteTimetableRaptorPlanner {
 		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> boardingPlatformGaps,
 		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> alightingPlatformGaps
 	) implements JourneyLegProjection {
-		public JourneyRideProjection(
-			String lineId,
-			String tripId,
-			String directionStationId,
-			String fromStationId,
-			String toStationId,
-			Instant plannedDepartureTime,
-			Instant plannedArrivalTime,
-			Instant realtimeDepartureTime,
-			Instant realtimeArrivalTime
-		) {
-			this(
-				lineId,
-				tripId,
-				directionStationId,
-				fromStationId,
-				toStationId,
-				"LOCAL",
-				plannedDepartureTime,
-				plannedArrivalTime,
-				realtimeDepartureTime,
-				realtimeArrivalTime,
-				List.of(
-					new JourneyStopProjection(fromStationId, null, plannedDepartureTime, null, realtimeDepartureTime),
-					new JourneyStopProjection(toStationId, plannedArrivalTime, null, realtimeArrivalTime, null)
-				),
-				List.of(), List.of(), List.of()
-			);
-		}
-
 		public JourneyRideProjection {
 			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
 			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);

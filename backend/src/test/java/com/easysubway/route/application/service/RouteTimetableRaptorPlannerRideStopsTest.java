@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 class RouteTimetableRaptorPlannerRideStopsTest {
 
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 6);
-	private static final ServiceCalendar DAILY = new ServiceCalendar(
+	static final ServiceCalendar DAILY = new ServiceCalendar(
 		"daily", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE.plusYears(1), "Asia/Seoul");
 
 	@Test
@@ -207,7 +207,7 @@ class RouteTimetableRaptorPlannerRideStopsTest {
 			.containsExactly("station-b", "station-b2", "station-c");
 	}
 
-	private static JourneyRaptorQuery query(String origin, String destination, Instant departure, int maxTransfers) {
+	static JourneyRaptorQuery query(String origin, String destination, Instant departure, int maxTransfers) {
 		return new JourneyRaptorQuery(
 			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			origin,
@@ -223,15 +223,15 @@ class RouteTimetableRaptorPlannerRideStopsTest {
 		);
 	}
 
-	private static TransitRoute route(String id, String lineId) {
+	static TransitRoute route(String id, String lineId) {
 		return new TransitRoute(id, lineId, id, id, id, "Asia/Seoul");
 	}
 
-	private static TransitTrip trip(String id, String routeId, String servicePattern) {
+	static TransitTrip trip(String id, String routeId, String servicePattern) {
 		return new TransitTrip(id, routeId, "daily", id, "0", servicePattern, 0);
 	}
 
-	private static TransitStopTime stop(
+	static TransitStopTime stop(
 		String tripId, int sequence, String stationId, String lineId,
 		int arrivalSeconds, int departureSeconds, int pickupType, int dropOffType
 	) {
@@ -239,7 +239,7 @@ class RouteTimetableRaptorPlannerRideStopsTest {
 			tripId, sequence, stationId, lineId, arrivalSeconds, departureSeconds, pickupType, dropOffType);
 	}
 
-	private static RouteAccessData accessData(List<String> stationLines, List<String> transferSpecs) {
+	static RouteAccessData accessData(List<String> stationLines, List<String> transferSpecs) {
 		List<PathwayNode> nodes = new ArrayList<>();
 		List<PathwayEdge> edges = new ArrayList<>();
 		List<RouteEdgeEvidence> evidence = new ArrayList<>();

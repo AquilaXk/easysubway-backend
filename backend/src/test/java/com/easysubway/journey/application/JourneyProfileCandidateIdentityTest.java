@@ -72,7 +72,7 @@ class JourneyProfileCandidateIdentityTest {
 					JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"station-a", "station-a", entryDurationSeconds, 50,
 					entryIncludesStairs, true, "VERIFIED"),
-				new JourneyProfileRaptorPort.RideLeg(
+				TestRides.profileRide(
 					"line-1", tripId, "terminal", "station-a", "station-b",
 					rideDeparture, rideArrival,
 					realtimeReadyAt == null ? null : rideDeparture.plusSeconds(30),

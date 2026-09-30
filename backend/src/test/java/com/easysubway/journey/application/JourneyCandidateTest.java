@@ -18,7 +18,7 @@ class JourneyCandidateTest {
 		List<String> reasons = new ArrayList<>(List.of("STEP_FREE_PATH"));
 		List<JourneyCandidate.Leg> legs = new ArrayList<>(List.of(
 			new JourneyCandidate.Entry("station-origin", 30),
-			new JourneyCandidate.Ride(
+			TestRides.candidateRide(
 				"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 				DEPARTURE, ARRIVAL, null, null
 			),
@@ -58,7 +58,7 @@ class JourneyCandidateTest {
 			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
 			JourneyCandidate.TimeSource.REALTIME,
 			new JourneyCandidate.Accessibility(true, List.of()),
-			List.of(new JourneyCandidate.Ride(
+			List.of(TestRides.candidateRide(
 				"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 				DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival
 			))
@@ -108,11 +108,11 @@ class JourneyCandidateTest {
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyCandidate.Transfer("station-a", "station-b", -1))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate.Ride(
+		assertThatThrownBy(() -> TestRides.candidateRide(
 			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 			ARRIVAL, DEPARTURE, null, null
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate.Ride(
+		assertThatThrownBy(() -> TestRides.candidateRide(
 			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 			DEPARTURE, ARRIVAL, DEPARTURE, null
 		)).isInstanceOf(IllegalArgumentException.class);
@@ -146,6 +146,12 @@ class JourneyCandidateTest {
 			), null, null, null
 		);
 		assertThat(rideWithNullDoors.alightingCarDoors()).isEmpty();
+	}
+
+	@Test
+	void rideAndProfileRideExposeOnlyTheirCanonicalConstructorSoNoServicePatternOrStopsAreFabricated() {
+		assertThat(JourneyCandidate.Ride.class.getDeclaredConstructors()).hasSize(1);
+		assertThat(JourneyProfileRaptorPort.RideLeg.class.getDeclaredConstructors()).hasSize(1);
 	}
 
 	@Test
@@ -299,7 +305,7 @@ class JourneyCandidateTest {
 	}
 
 	private static List<JourneyCandidate.Leg> legs(Instant realtimeDeparture, Instant realtimeArrival) {
-		return List.of(new JourneyCandidate.Ride(
+		return List.of(TestRides.candidateRide(
 			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 			DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival
 		));

@@ -257,7 +257,7 @@ class RouteTimetableCarDoorHintsTest {
 		assertThat(door.hashCode()).isNotZero();
 		assertThat(door.toString()).contains("1");
 
-		var projection10Arg = new RouteTimetableRaptorPlanner.JourneyRideProjection(
+		var projection10Arg = TestProjectionRides.projectionRide(
 			"l", "t", "d", "f", "to", DEPARTURE_INSTANT, DEPARTURE_INSTANT, null, null
 		);
 		assertThat(projection10Arg.alightingCarDoors()).isEmpty();

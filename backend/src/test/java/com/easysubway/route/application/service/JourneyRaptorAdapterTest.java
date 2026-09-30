@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -429,7 +430,7 @@ class JourneyRaptorAdapterTest {
 			assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:14:00Z"));
 			assertThat(candidate.legs()).containsExactly(
 				new JourneyCandidate.Entry("station-a", 300),
-				new JourneyCandidate.Ride("line", "trip", "station-b", "station-a", "station-b",
+				TestRides.candidateRide("line", "trip", "station-b", "station-a", "station-b",
 					Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"),
 					Instant.parse("2026-07-01T00:03:00Z"), Instant.parse("2026-07-01T00:13:00Z")),
 				new JourneyCandidate.Exit("station-b", 60));
@@ -486,7 +487,7 @@ class JourneyRaptorAdapterTest {
 			assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_VERIFIED");
 			assertThat(candidate.legs()).hasSize(3);
 			assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 120));
-			assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Ride(
+			assertThat(candidate.legs().get(1)).isEqualTo(TestRides.candidateRide(
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
 			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
@@ -717,11 +718,11 @@ class JourneyRaptorAdapterTest {
 		assertThat(candidate.walkingDistanceMeters()).isEqualTo(300);
 		assertThat(candidate.legs()).containsExactly(
 			new JourneyCandidate.Entry("station-a", 120),
-			new JourneyCandidate.Ride(
+			TestRides.candidateRide(
 				"line-a", "trip-first", "station-transfer", "station-a", "station-transfer",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null),
 			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 80),
-			new JourneyCandidate.Ride(
+			TestRides.candidateRide(
 				"line-b", "trip-second", "station-b", "station-transfer", "station-b",
 				Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null),
 			new JourneyCandidate.Exit("station-b", 60));
@@ -742,7 +743,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(candidate.walkingDistanceMeters()).isEqualTo(300);
 		assertThat(candidate.legs()).hasSize(5);
 		assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 120));
-		assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Ride(
+		assertThat(candidate.legs().get(1)).isEqualTo(TestRides.candidateRide(
 			"line-a", "trip-first", "station-transfer", "station-a", "station-transfer",
 			Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
 		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
@@ -753,7 +754,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(transfer.farePenaltyApplies()).isNull();
 		assertThat(transfer.additionalFareWon()).isNull();
 		assertThat(transfer.transferLimitMinutes()).isNull();
-		assertThat(candidate.legs().get(3)).isEqualTo(new JourneyCandidate.Ride(
+		assertThat(candidate.legs().get(3)).isEqualTo(TestRides.candidateRide(
 			"line-b", "trip-second", "station-b", "station-transfer", "station-b",
 			Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null));
 		assertThat(candidate.legs().get(4)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
@@ -774,7 +775,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(candidate.walkingDistanceMeters()).isEqualTo(200); // entry (100) + exit (100), 0 from dwell
 		assertThat(candidate.legs()).hasSize(5);
 		assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 120));
-		assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Ride(
+		assertThat(candidate.legs().get(1)).isEqualTo(TestRides.candidateRide(
 			"line-a", "trip-first", "station-via", "station-a", "station-via",
 			Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
 		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
@@ -783,7 +784,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(transfer.durationSeconds()).isZero();
 		assertThat(transfer.transferType()).isNull();
 		assertThat(transfer.farePenaltyApplies()).isNull();
-		assertThat(candidate.legs().get(3)).isEqualTo(new JourneyCandidate.Ride(
+		assertThat(candidate.legs().get(3)).isEqualTo(TestRides.candidateRide(
 			"line-a", "trip-second", "station-b", "station-via", "station-b",
 			Instant.parse("2026-07-01T00:20:00Z"), Instant.parse("2026-07-01T00:30:00Z"), null, null));
 		assertThat(candidate.legs().get(4)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
@@ -1067,7 +1068,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:12:00Z"));
 		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
 		assertThat(candidate.legs()).filteredOn(JourneyCandidate.Ride.class::isInstance)
-			.singleElement().isEqualTo(new JourneyCandidate.Ride(
+			.singleElement().isEqualTo(TestRides.candidateRide(
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"),
 				Instant.parse("2026-07-01T00:01:00Z"), Instant.parse("2026-07-01T00:11:00Z")));

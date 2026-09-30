@@ -343,10 +343,12 @@ public interface JourneyProfileRaptorPort {
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
-		Instant realtimeArrivalTime
+		Instant realtimeArrivalTime,
+		List<JourneyCandidate.Stop> stops
 	) implements Leg {
 		public RideLeg {
 			lineId = requireText(lineId, "lineId");
@@ -354,6 +356,8 @@ public interface JourneyProfileRaptorPort {
 			directionStationId = requireText(directionStationId, "directionStationId");
 			fromStationId = requireText(fromStationId, "fromStationId");
 			toStationId = requireText(toStationId, "toStationId");
+			servicePattern = requireText(servicePattern, "servicePattern");
+			stops = List.copyOf(Objects.requireNonNull(stops, "stops"));
 			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
 			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
 			if (plannedArrivalTime.isBefore(plannedDepartureTime)) {

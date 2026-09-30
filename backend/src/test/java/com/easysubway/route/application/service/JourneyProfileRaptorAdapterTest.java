@@ -1025,7 +1025,7 @@ class JourneyProfileRaptorAdapterTest {
 	private static RouteTimetableRaptorPlanner.JourneyRideProjection ride(
 		String tripId, Instant departure, Instant arrival
 	) {
-		return new RouteTimetableRaptorPlanner.JourneyRideProjection(
+		return TestProjectionRides.projectionRide(
 			"line", tripId, "terminal", "station", "station",
 			departure, arrival, null, null);
 	}
