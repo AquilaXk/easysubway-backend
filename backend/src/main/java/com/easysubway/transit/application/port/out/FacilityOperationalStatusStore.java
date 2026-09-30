@@ -2,6 +2,7 @@ package com.easysubway.transit.application.port.out;
 
 import com.easysubway.transit.domain.FacilityOperationalState;
 import com.easysubway.transit.domain.FacilityOperationalStatus;
+import com.easysubway.transit.domain.FacilityStatusSource;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -37,7 +38,19 @@ public interface FacilityOperationalStatusStore {
 	 * 관리자가 확인한 상태를 {@code ADMIN_VERIFIED}로 기록한다. {@code verifiedAt}보다 새 관측이 이미 있으면 기록하지 않고
 	 * {@code false}를 돌려준다.
 	 */
-	boolean recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt);
+	AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt);
+
+	record AdminVerifiedResult(
+		boolean recorded,
+		Optional<FacilityOperationalState> previousState,
+		Optional<FacilityStatusSource> previousSource
+	) {
+
+		public AdminVerifiedResult {
+			Objects.requireNonNull(previousState, "previousState");
+			Objects.requireNonNull(previousSource, "previousSource");
+		}
+	}
 
 	record FeedObservation(String facilityId, FacilityOperationalState state, String sourceCode) {
 

@@ -2,6 +2,7 @@ package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.AdminVerifiedResult;
 import com.easysubway.transit.application.port.out.LoadBundleElevatorFacilitiesPort.BundleElevatorFacility;
 import com.easysubway.transit.application.service.FacilityOperationalStatusAdminService;
 import com.easysubway.transit.application.service.FacilityOperationalStatusAdminService.CatalogUnavailableException;
@@ -67,12 +68,12 @@ class FacilityOperationalStatusAdminPageController {
 		HttpServletRequest request,
 		RedirectAttributes redirectAttributes
 	) {
-		boolean recorded;
+		AdminVerifiedResult result;
 		try {
 			if (bindingResult.hasErrors()) {
 				throw new IllegalArgumentException("verification form is invalid");
 			}
-			recorded = adminService.recordAdminVerified(form.facilityId(), form.state());
+			result = adminService.recordAdminVerified(form.facilityId(), form.state());
 		} catch (CatalogUnavailableException exception) {
 			audit(authentication, request, null, AdminAuditOutcome.FAILURE, "CATALOG_UNAVAILABLE");
 			render(model, response, form, HttpServletResponse.SC_SERVICE_UNAVAILABLE, UNAVAILABLE_MESSAGE);
@@ -82,7 +83,7 @@ class FacilityOperationalStatusAdminPageController {
 			render(model, response, form, HttpServletResponse.SC_BAD_REQUEST, INVALID_INPUT_MESSAGE);
 			return VIEW;
 		}
-		if (!recorded) {
+		if (!result.recorded()) {
 			audit(authentication, request, form.facilityId(), AdminAuditOutcome.FAILURE, "NEWER_OBSERVATION");
 			render(model, response, form, HttpServletResponse.SC_CONFLICT, CONFLICT_MESSAGE);
 			return VIEW;

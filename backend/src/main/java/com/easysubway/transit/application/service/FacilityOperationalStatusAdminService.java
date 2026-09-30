@@ -53,11 +53,11 @@ public class FacilityOperationalStatusAdminService {
 	}
 
 	/**
-	 * @return 기록했으면 {@code true}, 확인 시각보다 새 관측이 이미 있어 기록하지 않았으면 {@code false}
+	 * @return 관리자 확인 기록 결과
 	 * @throws IllegalArgumentException 정규 smrt-elev id가 아니거나, 활성 번들 목록에 없거나, 상태가 없을 때
 	 * @throws CatalogUnavailableException 활성 번들 목록을 읽을 수 없을 때
 	 */
-	public boolean recordAdminVerified(String facilityId, FacilityOperationalState state) {
+	public FacilityOperationalStatusStore.AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state) {
 		if (!SmrtElevatorFacilityIds.isCanonical(facilityId)) {
 			throw new IllegalArgumentException("facilityId must be a canonical smrt-elev identifier");
 		}

@@ -159,7 +159,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 		collector.collect();
 		assertThat(repository.recordAdminVerified(
 			"smrt-elev:0201:2:6번 출입구", FacilityOperationalState.OUT_OF_SERVICE, NOW.plusSeconds(30)
-		)).isTrue();
+		).recorded()).isTrue();
 		clock.advance(Duration.ofSeconds(60));
 		collector.collect();
 
@@ -356,6 +356,21 @@ class SeoulMetroElevatorStatusCollectorTest {
 		assertFailedWithoutApplying("INTERRUPTED");
 	}
 
+	@Test
+	@DisplayName("classify 도중 예상 밖의 RuntimeException이 발생하면 UNEXPECTED 실패 지표를 기록하고 심장박동은 옮기지 않는다")
+	void unexpectedExceptionRecordsUnexpectedMetricAndDoesNotAdvanceHeartbeat() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		var collector = new SeoulMetroElevatorStatusCollector(
+			"test-key", endpoint(), store, objectMapper, meterRegistry, httpClient(), clock, 1000, 1_048_576,
+			rows -> { throw new NullPointerException("simulated unexpected classifier bug"); }
+		);
+
+		collector.collect();
+
+		assertFailedWithoutApplying("UNEXPECTED");
+		assertThat(store.applied).isEmpty();
+	}
+
 	private void assertFailedWithoutApplying(String reason) {
 		assertThat(store.applied).isEmpty();
 		assertThat(counter("failure", reason)).isEqualTo(1.0);
@@ -470,8 +485,8 @@ class SeoulMetroElevatorStatusCollectorTest {
 		}
 
 		@Override
-		public boolean recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
-			return false;
+		public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+			return new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
 		}
 	}
 

@@ -57,6 +57,11 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 		this(dataSource, new DataSourceTransactionManager(dataSource));
 	}
 
+	JdbcFacilityOperationalStatusRepository(JdbcTemplate jdbcTemplate, TransactionTemplate transactions) {
+		this.jdbcTemplate = jdbcTemplate;
+		this.transactions = transactions;
+	}
+
 	@Override
 	public List<FacilityOperationalStatus> loadStatuses() {
 		return jdbcTemplate.query(SELECT_COLUMNS + " ORDER BY facility_id", JdbcFacilityOperationalStatusRepository::mapStatus);
@@ -155,7 +160,7 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 	}
 
 	@Override
-	public boolean recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+	public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
 		Boolean recorded = transactions.execute(status -> {
 			OffsetDateTime at = timestamp(verifiedAt);
 			int updated = jdbcTemplate.update(
@@ -186,7 +191,7 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 			);
 			return true;
 		});
-		return Boolean.TRUE.equals(recorded);
+		return new AdminVerifiedResult(Boolean.TRUE.equals(recorded), Optional.empty(), Optional.empty());
 	}
 
 	private void advanceHeartbeat(String feed, OffsetDateTime at) {

@@ -95,7 +95,7 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 	void adminVerifiedOutageSurvivesUnchangedFeed() {
 		repository.applyFeedCollection(FEED, List.of(new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")), T0);
 
-		assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT)).isTrue();
+		assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT).recorded()).isTrue();
 		FeedApplyResult result = repository.applyFeedCollection(FEED, List.of(
 			new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
 		), T1);
@@ -126,7 +126,7 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 	@Test
 	@DisplayName("원천 관측 전에 관리자 확인만 있던 시설은 첫 원천 코드를 기준값으로만 기록한다")
 	void adminOnlyStatusRecordsFirstFeedCodeAsBaseline() {
-		assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT)).isTrue();
+		assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT).recorded()).isTrue();
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.ADMIN_VERIFIED, null, ADMIN_AT, ADMIN_AT)
 		);
@@ -150,10 +150,66 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 	void adminRecordOlderThanExistingObservationIsRejected() {
 		repository.applyFeedCollection(FEED, List.of(new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")), T1);
 
-		assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT)).isFalse();
+		assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT).recorded()).isFalse();
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OPERATING, FacilityStatusSource.SEOUL_METRO_FEED, "M", T1, T1)
 		);
+	}
+
+	@Test
+	@DisplayName("관리자 확인 기록 시 이전 행이 있으면 이전 상태와 출처를 돌려주고 없으면 빈 값을 돌려준다")
+	void recordAdminVerifiedReturnsPreviousStateAndSource() {
+		var firstResult = repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OPERATING, ADMIN_AT);
+		assertThat(firstResult.recorded()).isTrue();
+		assertThat(firstResult.previousState()).isEmpty();
+		assertThat(firstResult.previousSource()).isEmpty();
+
+		repository.applyFeedCollection(FEED, List.of(
+			new FeedObservation(EXIT_2, FacilityOperationalState.OUT_OF_SERVICE, "S")
+		), T1);
+
+		var secondResult = repository.recordAdminVerified(EXIT_2, FacilityOperationalState.OPERATING, T1.plusSeconds(30));
+		assertThat(secondResult.recorded()).isTrue();
+		assertThat(secondResult.previousState()).contains(FacilityOperationalState.OUT_OF_SERVICE);
+		assertThat(secondResult.previousSource()).contains(FacilityStatusSource.SEOUL_METRO_FEED);
+	}
+
+	@Test
+	@DisplayName("행이 없는 시설에 다른 트랜잭션이 먼저 INSERT하면 recorded=false를 돌려주고 예외가 발생하지 않는다")
+	void concurrentInsertConflictYieldsRecordedFalseWithoutException() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:facility-status-conflict-" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		new ResourceDatabasePopulator(
+			new ClassPathResource("db/migration/h2/V76__facility_operational_status.sql")
+		).execute(dataSource);
+		var directJdbc = new JdbcTemplate(dataSource);
+		var spyJdbc = org.mockito.Mockito.spy(new JdbcTemplate(dataSource));
+		var customRepo = new JdbcFacilityOperationalStatusRepository(
+			spyJdbc,
+			new org.springframework.transaction.support.TransactionTemplate(
+				new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource)
+			)
+		);
+
+		org.mockito.Mockito.doAnswer(invocation -> {
+			Object res = invocation.callRealMethod();
+			directJdbc.update(
+				"INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+				EXIT_1, FacilityOperationalState.OPERATING.name(), FacilityStatusSource.SEOUL_METRO_FEED.name(), "M",
+				OffsetDateTime.ofInstant(ADMIN_AT, ZoneOffset.UTC), OffsetDateTime.ofInstant(ADMIN_AT, ZoneOffset.UTC)
+			);
+			return res;
+		}).when(spyJdbc).query(
+			org.mockito.ArgumentMatchers.contains("SELECT status, source FROM facility_operational_status"),
+			org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<?>>any(),
+			org.mockito.ArgumentMatchers.eq(EXIT_1)
+		);
+
+		var result = customRepo.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT);
+		assertThat(result.recorded()).isFalse();
 	}
 
 	@Test

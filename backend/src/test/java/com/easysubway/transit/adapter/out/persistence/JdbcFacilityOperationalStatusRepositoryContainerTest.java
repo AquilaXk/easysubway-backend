@@ -72,7 +72,7 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 			var repository = new JdbcFacilityOperationalStatusRepository(dataSource);
 
 			repository.applyFeedCollection(FEED, List.of(new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")), T0);
-			assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT)).isTrue();
+			assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT).recorded()).isTrue();
 			FeedApplyResult unchanged = repository.applyFeedCollection(FEED, List.of(
 				new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
 			), T1);
@@ -117,6 +117,33 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 			assertThatThrownBy(() -> jdbcTemplate.update(
 				"INSERT INTO facility_status_feed_heartbeat VALUES ('SEOUL_METRO_ELEVATOR', NULL)"
 			)).isInstanceOf(DataIntegrityViolationException.class);
+		}
+	}
+
+	@Test
+	@DisplayName("PostgreSQL에서도 동시 INSERT 경합 시 ON CONFLICT DO NOTHING으로 recorded=false를 돌려주고 예외가 발생하지 않는다")
+	void concurrentInsertConflictOnPostgresql() throws Exception {
+		try (var dataSource = dataSource()) {
+			var repository = new JdbcFacilityOperationalStatusRepository(dataSource);
+			var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+			try {
+				var latch = new java.util.concurrent.CountDownLatch(1);
+				var task1 = executor.submit(() -> {
+					latch.await();
+					return repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OPERATING, ADMIN_AT);
+				});
+				var task2 = executor.submit(() -> {
+					latch.await();
+					return repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT);
+				});
+				latch.countDown();
+				var result1 = task1.get(10, java.util.concurrent.TimeUnit.SECONDS);
+				var result2 = task2.get(10, java.util.concurrent.TimeUnit.SECONDS);
+				assertThat(result1.recorded() || result2.recorded()).isTrue();
+				assertThat(repository.loadStatuses()).hasSize(1);
+			} finally {
+				executor.shutdownNow();
+			}
 		}
 	}
 
