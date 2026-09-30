@@ -508,7 +508,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
 
 		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
-			.isInstanceOf(IllegalArgumentException.class);
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("SQLite table schema mismatch: station_platform_gaps");
 	}
 
 	private record GapRow(String id, String stationId, String lineId, String direction, String position,
@@ -522,6 +523,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 	private void commonAccessibility(Connection connection) throws Exception {
 		common(connection, identitySql());
+		facilities(connection);
 		execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 		var evaluation = evaluation(topologyEdges());
 		insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
