@@ -67,6 +67,7 @@ class JourneyProfileCandidateIdentityTest {
 			new JourneyProfileRaptorPort.ItineraryMetrics(
 				0, entryDurationSeconds + 180L, 125, entryIncludesStairs ? 1 : 0,
 				new JourneyProfileRaptorPort.NoTransfer()),
+			JourneyCandidate.Fare.unavailable(),
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(
 					JourneyProfileRaptorPort.AccessKind.ENTRY,

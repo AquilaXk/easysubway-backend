@@ -288,6 +288,7 @@ class JourneyProfileCandidateProjectionV1Test {
 			START.plusSeconds(destinationArrivalOffset), null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, walkingSeconds, walkingDistanceMeters,
 				accessibilityBurden, new JourneyProfileRaptorPort.NoTransfer()),
+			JourneyCandidate.Fare.unavailable(),
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"origin", "origin", 30, 20, accessibilityBurden > 0, true, "VERIFIED"),
@@ -308,6 +309,7 @@ class JourneyProfileCandidateProjectionV1Test {
 		return new JourneyProfileRaptorPort.Itinerary(serviceDate, readyAt, destinationArrival, null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, 120, 150, 1,
 				new JourneyProfileRaptorPort.NoTransfer()),
+			JourneyCandidate.Fare.unavailable(),
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"origin", "origin", 30, 20, false, true, "VERIFIED"),

@@ -13,6 +13,7 @@ import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +36,7 @@ class JourneyProfileRideStopsTest {
 		var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
 			query("station-a", "station-d", Instant.parse("2026-07-05T21:50:00Z"), 0), timetable);
 
-		var itinerary = JourneyProfileRaptorAdapter.itinerary(plan.itineraries().getFirst());
+		var itinerary = JourneyProfileRaptorAdapter.itinerary(plan.itineraries().getFirst(), Map.of());
 		var ride = itinerary.legs().stream()
 			.filter(JourneyProfileRaptorPort.RideLeg.class::isInstance)
 			.map(JourneyProfileRaptorPort.RideLeg.class::cast)

@@ -704,6 +704,7 @@ class JourneyProfileApplicationServiceTest {
 		return new JourneyProfileRaptorPort.Itinerary(LocalDate.of(2026, 9, 1), NOW, arrivalAtDestination,
 			null, null, new JourneyProfileRaptorPort.ItineraryMetrics(
 				0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()),
+			JourneyCandidate.Fare.unavailable(),
 			List.of(new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 				"station-a", "station-a", 0, 0, false, true, "VERIFIED")));
 	}

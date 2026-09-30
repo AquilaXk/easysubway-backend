@@ -706,7 +706,7 @@ class JourneyApplicationServiceTest {
 			? plannedDeparture.plusSeconds(30) : null;
 		Instant realtimeArrival = timeSource == JourneyCandidate.TimeSource.REALTIME
 			? plannedArrival.plusSeconds(30) : null;
-		return new JourneyCandidate(
+		return TestJourneyCandidates.unavailableFare(
 			journeyId,
 			plannedDeparture,
 			plannedArrival,

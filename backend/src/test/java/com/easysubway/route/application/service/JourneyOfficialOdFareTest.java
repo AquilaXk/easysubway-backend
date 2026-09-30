@@ -8,9 +8,11 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoun
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotMeasurementReceipt;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyCandidate.FareStatus;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
-import com.easysubway.journey.application.TestRides;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
@@ -86,9 +88,9 @@ class JourneyOfficialOdFareTest {
 	}
 
 	@Test
-	@DisplayName("(3) Normal transfer uses single O-D fare, while out-of-station penalty transfer sums fare sections")
-	void appliesSingleOdFareForNormalTransferAndSumsSectionsForOutOfStationPenaltyTransfer() {
-		// Part A: Normal transfer within limit (farePenaltyApplies == false) -> single O-D station-a -> station-b
+	@DisplayName("(3) Normal and out-of-station penalty transfers both use one first-boarding to final-alighting O-D quote")
+	void usesOneFirstBoardingToFinalAlightingQuoteForNormalAndPenaltyTransfers() {
+		// Part A: 제한 시간 안의 역 밖 환승(farePenaltyApplies == false)은 station-a -> station-b 한 번만 조회한다.
 		var quoteFull = quote("station-a", "station-b", "snap-full",
 			1400, 1500, 800, 900, 500, 600);
 		var runtimeNormal = RaptorRouteBundleRuntimeView.compile(
@@ -101,26 +103,19 @@ class JourneyOfficialOdFareTest {
 			waypointReq, snapshot(runtimeNormal, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
 		).candidates().getFirst();
 
-		assertThat(candidateNormal.fare().status()).isEqualTo(FareStatus.AVAILABLE);
-		assertThat(candidateNormal.fare().adultCardWon()).isEqualTo(1400);
-		assertThat(candidateNormal.fare().adultCashWon()).isEqualTo(1500);
-		assertThat(candidateNormal.fare().youthCardWon()).isEqualTo(800);
-		assertThat(candidateNormal.fare().youthCashWon()).isEqualTo(900);
-		assertThat(candidateNormal.fare().childCardWon()).isEqualTo(500);
-		assertThat(candidateNormal.fare().childCashWon()).isEqualTo(600);
-		assertThat(candidateNormal.fare().sourceSnapshotIds()).containsExactly("snap-full");
+		assertExactFare(candidateNormal.fare(), quoteFull);
 
-		// Part B: Out-of-station transfer exceeding limit (farePenaltyApplies == true) -> split into 2 sections:
-		// Section 1: station-a -> station-transfer
-		// Section 2: station-transfer -> station-b
+		// Part B: 제한 시간을 넘긴 역 밖 환승(farePenaltyApplies == true)도 구간을 나눠 합산하지 않는다.
+		// 구간 표가 함께 있어도 첫 승차역 -> 최종 하차역 한 건만 쓰며, 재승차 기본요금은 환승 구간의 additionalFareWon에만 남는다.
 		var quoteSec1 = quote("station-a", "station-transfer", "snap-sec1",
-			1400, 1500, 800, 900, 500, 600);
+			1250, 1350, 720, 820, 450, 550);
 		var quoteSec2 = quote("station-transfer", "station-b", "snap-sec2",
-			1400, 1500, 800, 900, 500, 600);
+			1350, 1450, 780, 880, 480, 580);
 		var runtimePenalty = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
 			waypointTimetable("OUT_OF_STATION", 120, 35_400, true), // 2,400s elapsed > 1,800s limit
 			Map.of(
+				OfficialFareQuote.fareKey("station-a", "station-b"), quoteFull,
 				OfficialFareQuote.fareKey("station-a", "station-transfer"), quoteSec1,
 				OfficialFareQuote.fareKey("station-transfer", "station-b"), quoteSec2
 			)
@@ -129,28 +124,27 @@ class JourneyOfficialOdFareTest {
 			waypointReq, snapshot(runtimePenalty, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
 		).candidates().getFirst();
 
-		assertThat(candidatePenalty.fare().status()).isEqualTo(FareStatus.AVAILABLE);
-		assertThat(candidatePenalty.fare().adultCardWon()).isEqualTo(2800);
-		assertThat(candidatePenalty.fare().adultCashWon()).isEqualTo(3000);
-		assertThat(candidatePenalty.fare().youthCardWon()).isEqualTo(1600);
-		assertThat(candidatePenalty.fare().youthCashWon()).isEqualTo(1800);
-		assertThat(candidatePenalty.fare().childCardWon()).isEqualTo(1000);
-		assertThat(candidatePenalty.fare().childCashWon()).isEqualTo(1200);
-		assertThat(candidatePenalty.fare().sourceSnapshotIds()).containsExactly("snap-sec1", "snap-sec2");
+		var penaltyTransfer = candidatePenalty.legs().stream()
+			.filter(JourneyCandidate.Transfer.class::isInstance).map(JourneyCandidate.Transfer.class::cast)
+			.findFirst().orElseThrow();
+		assertThat(penaltyTransfer.farePenaltyApplies()).isTrue();
+		assertThat(penaltyTransfer.additionalFareWon()).isEqualTo(1400);
+		assertExactFare(candidatePenalty.fare(), quoteFull);
 
-		// Part C: Penalty transfer with one section missing from fare table -> entire fare becomes UNAVAILABLE
-		var runtimePenaltyPartial = RaptorRouteBundleRuntimeView.compile(
+		// Part C: 구간 표만 있고 첫 승차역 -> 최종 하차역 표가 없으면 합산 없이 UNAVAILABLE이다.
+		var runtimePenaltySectionsOnly = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
 			waypointTimetable("OUT_OF_STATION", 120, 35_400, true),
-			Map.of(OfficialFareQuote.fareKey("station-a", "station-transfer"), quoteSec1)
+			Map.of(
+				OfficialFareQuote.fareKey("station-a", "station-transfer"), quoteSec1,
+				OfficialFareQuote.fareKey("station-transfer", "station-b"), quoteSec2
+			)
 		);
-		var candidatePartial = new JourneyRaptorAdapter().plan(
-			waypointReq, snapshot(runtimePenaltyPartial, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
+		var candidateSectionsOnly = new JourneyRaptorAdapter().plan(
+			waypointReq, snapshot(runtimePenaltySectionsOnly, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
 		).candidates().getFirst();
 
-		assertThat(candidatePartial.fare().status()).isEqualTo(FareStatus.UNAVAILABLE);
-		assertThat(candidatePartial.fare().adultCardWon()).isNull();
-		assertThat(candidatePartial.fare().sourceSnapshotIds()).isEmpty();
+		assertUnavailable(candidateSectionsOnly.fare());
 	}
 
 	@Test
@@ -246,89 +240,107 @@ class JourneyOfficialOdFareTest {
 	}
 
 	@Test
-	@DisplayName("(7) Complex multi-leg journey with two consecutive out-of-station penalty transfers sums three sections")
-	void complexMultiLegJourneyWithMultiplePenaltyTransfersSumsAllSections() {
-		List<JourneyCandidate.Leg> legs = List.of(
-			new JourneyCandidate.Entry("station-a", 60),
-			TestRides.candidateRide(
-				"line-1", "trip-1", "station-b", "station-a", "station-b",
-				EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null
-			),
-			new JourneyCandidate.Transfer("station-b", "station-b", 120, "OUT_OF_STATION", true, 1400, 30),
-			TestRides.candidateRide(
-				"line-2", "trip-2", "station-c", "station-b", "station-c",
-				EFFECTIVE.plusSeconds(420), EFFECTIVE.plusSeconds(720), null, null
-			),
-			new JourneyCandidate.Transfer("station-c", "station-c", 120, "OUT_OF_STATION", true, 1400, 30),
-			TestRides.candidateRide(
-				"line-3", "trip-3", "station-d", "station-c", "station-d",
-				EFFECTIVE.plusSeconds(840), EFFECTIVE.plusSeconds(1140), null, null
-			),
-			new JourneyCandidate.Exit("station-d", 60)
-		);
+	@DisplayName("(7) Multi-leg itinerary with normal and repeated penalty transfers is quoted once from first boarding to final alighting")
+	void multiLegItineraryWithRepeatedPenaltyTransfersIsQuotedOnce() {
+		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
+			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(1_200), null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(
+				3, 480, 400, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
+			List.of(
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null, null),
+				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
+					EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", false, null),
+				TestProjectionRides.projectionRide("line-2", "trip-2", "station-c", "station-b", "station-c",
+					EFFECTIVE.plusSeconds(360), EFFECTIVE.plusSeconds(600), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-c", "station-c", true, 1400),
+				TestProjectionRides.projectionRide("line-3", "trip-3", "station-d", "station-c", "station-d",
+					EFFECTIVE.plusSeconds(720), EFFECTIVE.plusSeconds(900), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true, 1400),
+				TestProjectionRides.projectionRide("line-4", "trip-4", "station-e", "station-d", "station-e",
+					EFFECTIVE.plusSeconds(1_000), EFFECTIVE.plusSeconds(1_140), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, "station-e", "station-e", null, null)));
+		var quoteAe = quote("station-a", "station-e", "snap-ae", 2050, 2150, 1300, 1400, 800, 900);
+		var sectionQuotes = Map.of(
+			OfficialFareQuote.fareKey("station-a", "station-c"), quote("station-a", "station-c", "snap-ac", 1700, 1800, 950, 1050, 650, 750),
+			OfficialFareQuote.fareKey("station-c", "station-d"), quote("station-c", "station-d", "snap-cd", 1400, 1500, 800, 900, 500, 600),
+			OfficialFareQuote.fareKey("station-d", "station-e"), quote("station-d", "station-e", "snap-de", 1400, 1500, 800, 900, 500, 600));
+		var withWholeJourneyQuote = new java.util.HashMap<>(sectionQuotes);
+		withWholeJourneyQuote.put(OfficialFareQuote.fareKey("station-a", "station-e"), quoteAe);
 
-		var quote1 = quote("station-a", "station-b", "snap-1", 1400, 1500, 800, 900, 500, 600);
-		var quote2 = quote("station-b", "station-c", "snap-2", 1500, 1600, 850, 950, 550, 650);
-		var quote3 = quote("station-c", "station-d", "snap-1", 1600, 1700, 900, 1000, 600, 700);
-
-		var quotes = Map.of(
-			OfficialFareQuote.fareKey("station-a", "station-b"), quote1,
-			OfficialFareQuote.fareKey("station-b", "station-c"), quote2,
-			OfficialFareQuote.fareKey("station-c", "station-d"), quote3
-		);
-
-		var fare = JourneyRaptorAdapter.calculateFare(legs, quotes);
-
-		assertThat(fare.status()).isEqualTo(FareStatus.AVAILABLE);
-		assertThat(fare.adultCardWon()).isEqualTo(1400 + 1500 + 1600);
-		assertThat(fare.adultCashWon()).isEqualTo(1500 + 1600 + 1700);
-		assertThat(fare.youthCardWon()).isEqualTo(800 + 850 + 900);
-		assertThat(fare.youthCashWon()).isEqualTo(900 + 950 + 1000);
-		assertThat(fare.childCardWon()).isEqualTo(500 + 550 + 600);
-		assertThat(fare.childCashWon()).isEqualTo(600 + 650 + 700);
-		assertThat(fare.sourceSnapshotIds()).containsExactly("snap-1", "snap-2");
+		assertExactFare(JourneyRaptorAdapter.calculateFare(itinerary, withWholeJourneyQuote), quoteAe);
+		assertUnavailable(JourneyRaptorAdapter.calculateFare(itinerary, sectionQuotes));
+		assertUnavailable(JourneyRaptorAdapter.calculateFare(itinerary, Map.of()));
 	}
 
 	@Test
-	@DisplayName("(8) Multi-leg journey with mixed transfers (normal transfer followed by penalty transfer) splits correctly")
-	void multiLegJourneyWithMixedTransfersSplitsCorrectly() {
-		List<JourneyCandidate.Leg> legs = List.of(
-			new JourneyCandidate.Entry("station-a", 60),
-			TestRides.candidateRide(
-				"line-1", "trip-1", "station-b", "station-a", "station-b",
-				EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null
-			),
-			new JourneyCandidate.Transfer("station-b", "station-b", 60, null, null, null, null),
-			TestRides.candidateRide(
-				"line-2", "trip-2", "station-c", "station-b", "station-c",
-				EFFECTIVE.plusSeconds(360), EFFECTIVE.plusSeconds(660), null, null
-			),
-			new JourneyCandidate.Transfer("station-c", "station-c", 120, "OUT_OF_STATION", true, 1400, 30),
-			TestRides.candidateRide(
-				"line-3", "trip-3", "station-d", "station-c", "station-d",
-				EFFECTIVE.plusSeconds(780), EFFECTIVE.plusSeconds(1080), null, null
-			),
-			new JourneyCandidate.Exit("station-d", 60)
-		);
+	@DisplayName("(8) Profile planning carries the same official O-D fare as point search, and UNAVAILABLE when the O-D is absent")
+	void profilePlanningCarriesTheSameOfficialFareAsPointSearch() {
+		var quote = quote("station-a", "station-b", "snapshot-official-1", 1400, 1500, 800, 900, 500, 600);
+		var quoted = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, singleRideTimetable(),
+			Map.of(OfficialFareQuote.fareKey("station-a", "station-b"), quote));
+		var unquoted = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, singleRideTimetable(),
+			Map.of(OfficialFareQuote.fareKey("station-x", "station-y"),
+				quote("station-x", "station-y", "snapshot-other", 1400, 1500, 800, 900, 500, 600)));
 
-		var quoteAc = quote("station-a", "station-c", "snap-ac", 1700, 1800, 950, 1050, 650, 750);
-		var quoteCd = quote("station-c", "station-d", "snap-cd", 1400, 1500, 800, 900, 500, 600);
+		var quotedItineraries = profileItineraries(quoted);
+		var unquotedItineraries = profileItineraries(unquoted);
 
-		var quotes = Map.of(
-			OfficialFareQuote.fareKey("station-a", "station-c"), quoteAc,
-			OfficialFareQuote.fareKey("station-c", "station-d"), quoteCd
-		);
+		assertThat(quotedItineraries).isNotEmpty().allSatisfy(itinerary -> assertExactFare(itinerary.fare(), quote));
+		assertThat(unquotedItineraries).isNotEmpty().allSatisfy(itinerary -> assertUnavailable(itinerary.fare()));
+		var pointFare = new JourneyRaptorAdapter().plan(
+			directRequest("station-a", "station-b"), snapshot(quoted, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null,
+			measurement()).candidates().getFirst().fare();
+		assertThat(quotedItineraries.getFirst().fare()).isEqualTo(pointFare);
+	}
 
-		var fare = JourneyRaptorAdapter.calculateFare(legs, quotes);
+	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(RaptorRouteBundleRuntimeView runtime) {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(EFFECTIVE, EFFECTIVE.plusSeconds(3_600)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+		var result = new JourneyProfileRaptorAdapter().planRuntime(
+			query, runtime, null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32));
+		assertThat(result).isInstanceOf(JourneyProfileRaptorPort.PlanningResult.Planned.class);
+		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan)
+			((JourneyProfileRaptorPort.PlanningResult.Planned) result).temporalPlan();
+		return plan.points().stream().flatMap(point -> point.itineraries().stream()).toList();
+	}
 
+	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(
+		RouteTimetableRaptorPlanner.JourneyAccessKind kind, String from, String to,
+		Boolean farePenaltyApplies, Integer additionalFareWon
+	) {
+		return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+			kind, from, to, 60, 100, false, true, "VERIFIED",
+			kind == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER ? "OUT_OF_STATION" : null,
+			farePenaltyApplies, additionalFareWon,
+			kind == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER ? 30 : null);
+	}
+
+	private static void assertExactFare(JourneyCandidate.Fare fare, OfficialFareQuote quote) {
 		assertThat(fare.status()).isEqualTo(FareStatus.AVAILABLE);
-		assertThat(fare.adultCardWon()).isEqualTo(1700 + 1400);
-		assertThat(fare.adultCashWon()).isEqualTo(1800 + 1500);
-		assertThat(fare.youthCardWon()).isEqualTo(950 + 800);
-		assertThat(fare.youthCashWon()).isEqualTo(1050 + 900);
-		assertThat(fare.childCardWon()).isEqualTo(650 + 500);
-		assertThat(fare.childCashWon()).isEqualTo(750 + 600);
-		assertThat(fare.sourceSnapshotIds()).containsExactly("snap-ac", "snap-cd");
+		assertThat(fare.adultCardWon()).isEqualTo(quote.gnrlCardFare());
+		assertThat(fare.adultCashWon()).isEqualTo(quote.gnrlCashFare());
+		assertThat(fare.youthCardWon()).isEqualTo(quote.yungCardFare());
+		assertThat(fare.youthCashWon()).isEqualTo(quote.yungCashFare());
+		assertThat(fare.childCardWon()).isEqualTo(quote.childCardFare());
+		assertThat(fare.childCashWon()).isEqualTo(quote.childCashFare());
+		assertThat(fare.sourceSnapshotIds()).containsExactly(quote.snapshotId());
+	}
+
+	private static void assertUnavailable(JourneyCandidate.Fare fare) {
+		assertThat(fare.status()).isEqualTo(FareStatus.UNAVAILABLE);
+		assertThat(fare.adultCardWon()).isNull();
+		assertThat(fare.adultCashWon()).isNull();
+		assertThat(fare.youthCardWon()).isNull();
+		assertThat(fare.youthCashWon()).isNull();
+		assertThat(fare.childCardWon()).isNull();
+		assertThat(fare.childCashWon()).isNull();
+		assertThat(fare.sourceSnapshotIds()).isEmpty();
 	}
 
 	private static OfficialFareQuote quote(

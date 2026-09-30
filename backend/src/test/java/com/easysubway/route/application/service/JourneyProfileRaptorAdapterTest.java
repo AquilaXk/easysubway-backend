@@ -105,9 +105,9 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(30_000));
 		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_720));
 		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected,
-			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isTrue();
+			measurement.result().itineraries().stream().map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList())).isTrue();
 		assertThat(JourneyProfileOracleComparison.requiredObjectiveLoss(expected,
-			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isZero();
+			measurement.result().itineraries().stream().map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList())).isZero();
 		var row = JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement, expected);
 		assertThat(row.keySet()).containsExactlyInAnyOrder("regionId", "queryClass", "expandedRoutes",
 			"expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes",

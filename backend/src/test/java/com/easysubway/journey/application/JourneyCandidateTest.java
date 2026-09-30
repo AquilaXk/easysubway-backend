@@ -26,7 +26,7 @@ class JourneyCandidateTest {
 			new JourneyCandidate.Exit("station-destination", 20)
 		));
 
-		JourneyCandidate candidate = new JourneyCandidate(
+		JourneyCandidate candidate = TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 1, 75,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, reasons),
@@ -54,7 +54,7 @@ class JourneyCandidateTest {
 	void acceptsOnlyCompleteRealtimePairsForRealtimeCandidatesAndRideLegs() {
 		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
 		Instant realtimeArrival = ARRIVAL.plusSeconds(30);
-		JourneyCandidate candidate = new JourneyCandidate(
+		JourneyCandidate candidate = TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
 			JourneyCandidate.TimeSource.REALTIME,
 			new JourneyCandidate.Accessibility(true, List.of()),
@@ -73,7 +73,7 @@ class JourneyCandidateTest {
 	void rejectsInvalidIdentityTimesMetricsModeAndCollections() {
 		assertThatThrownBy(() -> candidate(" ", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", ARRIVAL, DEPARTURE, null, null, 300, 0, 50,
 			JourneyCandidate.TimeSource.TIMETABLE, accessibility(), legs(null, null)
 		)).isInstanceOf(IllegalArgumentException.class);
@@ -92,7 +92,7 @@ class JourneyCandidateTest {
 		assertThatThrownBy(() -> candidate(
 			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, -1
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 0, 50,
 			JourneyCandidate.TimeSource.TIMETABLE, accessibility(), List.of()
 		)).isInstanceOf(IllegalArgumentException.class);
@@ -152,6 +152,12 @@ class JourneyCandidateTest {
 	void rideAndProfileRideExposeOnlyTheirCanonicalConstructorSoNoServicePatternOrStopsAreFabricated() {
 		assertThat(JourneyCandidate.Ride.class.getDeclaredConstructors()).hasSize(1);
 		assertThat(JourneyProfileRaptorPort.RideLeg.class.getDeclaredConstructors()).hasSize(1);
+	}
+
+	@Test
+	void candidateAndProfileItineraryExposeOnlyTheirCanonicalConstructorSoFareIsNeverDefaulted() {
+		assertThat(JourneyCandidate.class.getDeclaredConstructors()).hasSize(1);
+		assertThat(JourneyProfileRaptorPort.Itinerary.class.getDeclaredConstructors()).hasSize(1);
 	}
 
 	@Test
@@ -247,13 +253,13 @@ class JourneyCandidateTest {
 	void rejectsCandidateAndRideRealtimeModeDrift() {
 		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
 		Instant realtimeArrival = ARRIVAL.plusSeconds(30);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 0, 50,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			accessibility(),
 			legs(realtimeDeparture, realtimeArrival)
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
 			JourneyCandidate.TimeSource.REALTIME,
 			accessibility(),
@@ -358,7 +364,7 @@ class JourneyCandidateTest {
 		int transfers,
 		long walkingDistance
 	) {
-		return new JourneyCandidate(
+		return TestJourneyCandidates.unavailableFare(
 			id, DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, duration, transfers, walkingDistance,
 			source, accessibility(), legs(realtimeDeparture, realtimeArrival)
 		);

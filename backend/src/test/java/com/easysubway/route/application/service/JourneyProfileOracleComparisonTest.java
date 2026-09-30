@@ -4,6 +4,7 @@ import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -158,7 +159,7 @@ class JourneyProfileOracleComparisonTest {
 		return new JourneyProfileRaptorPort.Itinerary(candidate.rides().getFirst().serviceDate(), candidate.readyAt(),
 			candidate.arrivalAtDestination(), null, null, new JourneyProfileRaptorPort.ItineraryMetrics(
 				candidate.transfersUsed(), candidate.walkingSeconds(), candidate.walkingDistanceMeters(),
-				candidate.accessibilityBurden(), slack), List.copyOf(legs));
+				candidate.accessibilityBurden(), slack), JourneyCandidate.Fare.unavailable(), List.copyOf(legs));
 	}
 
 	private static JourneyProfileExactOracle.Candidate transferCandidate(
@@ -188,7 +189,7 @@ class JourneyProfileOracleComparisonTest {
 		legs.set(1, TestRides.profileRide(ride.lineId(), "wrong-" + ride.tripId(), ride.directionStationId(),
 			ride.fromStationId(), ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(), null, null));
 		return new JourneyProfileRaptorPort.Itinerary(actual.serviceDate(), actual.plannedReadyAt(), actual.plannedArrivalAtDestination(),
-			null, null, actual.metrics(), List.copyOf(legs));
+			null, null, actual.metrics(), actual.fare(), List.copyOf(legs));
 	}
 
 	private static JourneyProfileRaptorPort.Itinerary itinerary(
@@ -196,6 +197,6 @@ class JourneyProfileOracleComparisonTest {
 	) {
 		return new JourneyProfileRaptorPort.Itinerary(day, departure.minusSeconds(10), arrival.plusSeconds(20),
 			null, null, new JourneyProfileRaptorPort.ItineraryMetrics(0, 30, 12, 0,
-				new JourneyProfileRaptorPort.NoTransfer()), List.copyOf(legs));
+				new JourneyProfileRaptorPort.NoTransfer()), JourneyCandidate.Fare.unavailable(), List.copyOf(legs));
 	}
 }

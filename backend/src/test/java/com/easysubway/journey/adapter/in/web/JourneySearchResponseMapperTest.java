@@ -1,5 +1,6 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
 import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +29,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsOrderedTimetableSuccessAndAllFourLegsToExactWireShape() throws Exception {
-		var first = new JourneyCandidate(
+		var first = TestJourneyCandidates.unavailableFare(
 			"journey-first",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -56,7 +57,7 @@ class JourneySearchResponseMapperTest {
 				new JourneyCandidate.Exit("station-destination", 20)
 			)
 		);
-		var second = new JourneyCandidate(
+		var second = TestJourneyCandidates.unavailableFare(
 			"journey-second",
 			PLANNED_DEPARTURE.plusSeconds(60),
 			PLANNED_ARRIVAL.plusSeconds(60),
@@ -201,7 +202,7 @@ class JourneySearchResponseMapperTest {
 	void mapsRealtimeIdentityAndTimesWithoutTimetableSubstitution() throws Exception {
 		Instant realtimeDeparture = PLANNED_DEPARTURE.plusSeconds(20);
 		Instant realtimeArrival = PLANNED_ARRIVAL.plusSeconds(40);
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-realtime",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -243,7 +244,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsSlowAndFastWalkingPacesToTheirWireValues() {
-		var journeys = List.of(new JourneyCandidate(
+		var journeys = List.of(TestJourneyCandidates.unavailableFare(
 			"journey-pace",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -272,7 +273,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsAlightingCarDoorsToExactWireShape() {
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-doors",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -331,7 +332,7 @@ class JourneySearchResponseMapperTest {
 			new PlatformGap("본선 대야미 방면", null, null, GapGrade.NARROW, HeightDiffGrade.LOW, false));
 		var alighting = List.of(
 			new PlatformGap("2-1", 2, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false));
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-gap",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
