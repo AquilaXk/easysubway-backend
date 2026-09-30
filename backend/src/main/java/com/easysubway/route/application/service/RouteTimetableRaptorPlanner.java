@@ -2721,17 +2721,12 @@ public final class RouteTimetableRaptorPlanner {
 			boolean nextIsTransfer,
 			boolean stepFree
 		) {
-			if (stationId == null || lineId == null || directionId == null) {
+			if (stationId == null || lineId == null) {
 				return List.of();
 			}
-			String targetDirection;
-			if ("up".equals(directionId)) {
-				targetDirection = "UP";
-			} else if ("down".equals(directionId)) {
-				targetDirection = "DOWN";
-			} else {
-				return List.of();
-			}
+			// BOTH는 공식 원천이 방향 구분 없이 제공한 힌트라 모든 트립에 적용한다.
+			// UP/DOWN은 공식 up/down 트립에만 대응하며 INNER/OUTER와 그 외 방향은 추정하지 않는다.
+			String targetDirection = "up".equals(directionId) ? "UP" : "down".equals(directionId) ? "DOWN" : null;
 			List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint> allHints =
 				source.routeAccessData().carDoorHints();
 			if (allHints.isEmpty()) {
@@ -2740,7 +2735,7 @@ public final class RouteTimetableRaptorPlanner {
 			return allHints.stream()
 				.filter(h -> stationId.equals(h.stationId())
 					&& lineId.equals(h.lineId())
-					&& targetDirection.equals(h.direction()))
+					&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
 				.filter(h -> {
 					if (nextIsTransfer) {
 						return "TRANSFER".equals(h.targetFacilityType());

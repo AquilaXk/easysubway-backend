@@ -203,6 +203,39 @@ class RouteTimetableCarDoorHintsTest {
 	}
 
 	@Test
+	@DisplayName("(8) 방향 BOTH 힌트는 up/down/increasing/null 어느 트립에도 제공되고 INNER/OUTER는 제공되지 않는다")
+	void providesBothDirectionHintsForAnyTripDirection() {
+		var compiled = new RouteTimetableRaptorPlanner().compile(createBaseTimetable(List.of(
+			new CarDoorHint("station-b", "line-1", "BOTH", "ELEVATOR", 3, 1),
+			new CarDoorHint("station-b", "line-1", "UP", "ELEVATOR", 9, 2),
+			new CarDoorHint("station-b", "line-1", "INNER", "ELEVATOR", 1, 1),
+			new CarDoorHint("station-b", "line-1", "OUTER", "ELEVATOR", 2, 2),
+			new CarDoorHint("station-b", "line-2", "BOTH", "ELEVATOR", 7, 3)
+		)));
+		var both = new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 1, "ELEVATOR");
+		var up = new RouteTimetableRaptorPlanner.AlightingCarDoor(9, 2, "ELEVATOR");
+
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-1", "increasing", false, true)).containsExactly(both);
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-1", "decreasing", false, true)).containsExactly(both);
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-1", null, false, true)).containsExactly(both);
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-1", "up", false, true)).containsExactly(both, up);
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-1", "down", false, true)).containsExactly(both);
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-3", "increasing", false, true)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("(9) BOTH와 UP에 같은 칸-문-종류가 겹치면 한 건만 제공된다")
+	void deduplicatesBothAndDirectionalOverlap() {
+		var compiled = new RouteTimetableRaptorPlanner().compile(createBaseTimetable(List.of(
+			new CarDoorHint("station-b", "line-1", "BOTH", "ELEVATOR", 4, 4),
+			new CarDoorHint("station-b", "line-1", "UP", "ELEVATOR", 4, 4)
+		)));
+
+		assertThat(compiled.selectAlightingCarDoors("station-b", "line-1", "up", false, false))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(4, 4, "ELEVATOR"));
+	}
+
+	@Test
 	@DisplayName("(7) AlightingCarDoor 및 JourneyRideProjection 생성자 경계 검증")
 	void validatesAlightingCarDoorAndProjectionBoundary() {
 		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.AlightingCarDoor(0, 1, "TRANSFER"))
