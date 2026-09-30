@@ -1,6 +1,7 @@
 package com.easysubway.journey.config;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.FacilityStatusOverlayProvider;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationService;
 import com.easysubway.journey.application.JourneyProfileApplicationService;
@@ -33,6 +34,8 @@ import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.security.SecureRandom;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -158,7 +161,7 @@ public class JourneyProductionConfiguration {
 	JourneyProfileRaptorPort journeyProfileRaptorPort(
 		ScanWorkspacePool workspacePool,
 		com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort,
-		@Value("${easysubway.journey.facility-status.required:false}") boolean facilityStatusRequired
+		@Value("${easysubway.journey.facility-status.required:true}") boolean facilityStatusRequired
 	) {
 		return new JourneyProfileRaptorAdapter(workspacePool, facilityAvailabilityPort, facilityStatusRequired, CLOCK);
 	}
@@ -183,8 +186,17 @@ public class JourneyProductionConfiguration {
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	@org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(com.easysubway.journey.application.FacilityAvailabilityPort.class)
-	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort() {
-		return com.easysubway.journey.application.FacilityAvailabilityPort.unavailable();
+	FacilityStatusOverlayProvider facilityAvailabilityPort(
+		FacilityOperationalStatusStore facilityOperationalStatusStore,
+		RouteBundleActivationRegistry registry,
+		MeterRegistry meterRegistry
+	) {
+		// #418: 운영 상태 테이블의 불가 시설 + 활성 번들의 전환-시설 요구 매핑. 캐시 갱신은 @Scheduled(1분 이하)로 돈다.
+		return new FacilityStatusOverlayProvider(
+			facilityOperationalStatusStore,
+			FacilityStatusOverlayProvider.activeBundleRequirements(registry),
+			CLOCK,
+			meterRegistry);
 	}
 
 	@Bean
@@ -192,7 +204,7 @@ public class JourneyProductionConfiguration {
 	JourneyRaptorPort journeyRaptorPort(
 		ScanWorkspacePool workspacePool,
 		com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort,
-		@Value("${easysubway.journey.facility-status.required:false}") boolean facilityStatusRequired
+		@Value("${easysubway.journey.facility-status.required:true}") boolean facilityStatusRequired
 	) {
 		return new JourneyRaptorAdapter(workspacePool, facilityAvailabilityPort, facilityStatusRequired, CLOCK);
 	}
