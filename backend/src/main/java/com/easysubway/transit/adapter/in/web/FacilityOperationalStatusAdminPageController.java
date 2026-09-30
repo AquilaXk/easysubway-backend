@@ -90,7 +90,7 @@ class FacilityOperationalStatusAdminPageController {
 			render(model, response, form, HttpServletResponse.SC_CONFLICT, CONFLICT_MESSAGE);
 			return VIEW;
 		}
-		String reason = result.previousState().isPresent() && result.previousSource().isPresent()
+		String reason = result.previousState().isPresent()
 			? "from=" + result.previousState().get().name() + "/" + result.previousSource().get().name() + " to=" + form.state().name()
 			: "from=NONE to=" + form.state().name();
 		audit(authentication, request, form.facilityId(), AdminAuditOutcome.SUCCESS, reason);

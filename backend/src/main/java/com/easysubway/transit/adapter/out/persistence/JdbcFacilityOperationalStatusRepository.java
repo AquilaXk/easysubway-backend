@@ -162,7 +162,7 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	@Override
 	public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
-		AdminVerifiedResult result = transactions.execute(status -> {
+		return transactions.execute(status -> {
 			OffsetDateTime at = timestamp(verifiedAt);
 			List<PreviousStatus> previousRows = jdbcTemplate.query(
 				"SELECT status, source FROM facility_operational_status WHERE facility_id = ? FOR UPDATE",
@@ -189,22 +189,18 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 				);
 			}
 			try {
-				int inserted = jdbcTemplate.update(
+				jdbcTemplate.update(
 					"""
 						INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
 						VALUES (?, ?, ?, NULL, ?, ?)
 						""",
 					facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
 				);
-				if (inserted == 0) {
-					return new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
-				}
 				return new AdminVerifiedResult(true, Optional.empty(), Optional.empty());
 			} catch (DuplicateKeyException exception) {
 				return new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
 			}
 		});
-		return result != null ? result : new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
 	}
 
 	private record PreviousStatus(FacilityOperationalState state, FacilityStatusSource source) {
