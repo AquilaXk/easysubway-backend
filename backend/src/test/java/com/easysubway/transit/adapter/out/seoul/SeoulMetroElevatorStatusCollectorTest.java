@@ -489,9 +489,11 @@ class SeoulMetroElevatorStatusCollectorTest {
 
 	@SuppressWarnings("unchecked")
 	private void mockHttpResponse(int statusCode, String body) throws IOException, InterruptedException {
-		HttpResponse<InputStream> response = mock(HttpResponse.class);
-		when(response.statusCode()).thenReturn(statusCode);
-		when(response.body()).thenReturn(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
-		when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(response);
+		when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenAnswer(inv -> {
+			HttpResponse<InputStream> response = mock(HttpResponse.class);
+			when(response.statusCode()).thenReturn(statusCode);
+			when(response.body()).thenReturn(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+			return response;
+		});
 	}
 }
