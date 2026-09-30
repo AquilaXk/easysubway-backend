@@ -296,6 +296,21 @@ class JourneyOfficialOdFareTest {
 		assertThat(quotedItineraries.getFirst().fare()).isEqualTo(pointFare);
 	}
 
+	@Test
+	@DisplayName("(9) Itinerary without a ride is rejected instead of being quoted")
+	void itineraryWithoutRideIsRejectedInsteadOfQuoted() {
+		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
+			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(60), null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(0, 60, 100, 0, new JourneyProfileRaptorPort.NoTransfer()),
+			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null, null)));
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> JourneyRaptorAdapter.calculateFare(itinerary,
+				Map.of(OfficialFareQuote.fareKey("station-a", "station-b"),
+					quote("station-a", "station-b", "snap", 1400, 1500, 800, 900, 500, 600))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("Journey itinerary must contain a ride to quote a fare");
+	}
+
 	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(RaptorRouteBundleRuntimeView runtime) {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",

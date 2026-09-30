@@ -20,35 +20,6 @@ public record JourneyCandidate(
 	Fare fare,
 	List<Leg> legs
 ) {
-	public JourneyCandidate(
-		String journeyId,
-		Instant plannedDepartureTime,
-		Instant plannedArrivalTime,
-		Instant realtimeDepartureTime,
-		Instant realtimeArrivalTime,
-		long durationSeconds,
-		int transferCount,
-		long walkingDistanceMeters,
-		TimeSource timeSource,
-		Accessibility accessibility,
-		List<Leg> legs
-	) {
-		this(
-			journeyId,
-			plannedDepartureTime,
-			plannedArrivalTime,
-			realtimeDepartureTime,
-			realtimeArrivalTime,
-			durationSeconds,
-			transferCount,
-			walkingDistanceMeters,
-			timeSource,
-			accessibility,
-			Fare.unavailable(),
-			legs
-		);
-	}
-
 	public JourneyCandidate {
 		journeyId = requireText(journeyId, "journeyId");
 		plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");

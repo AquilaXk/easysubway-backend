@@ -244,6 +244,7 @@ public interface JourneyProfileRaptorPort {
 		Instant realtimeReadyAt,
 		Instant realtimeArrivalAtDestination,
 		ItineraryMetrics metrics,
+		JourneyCandidate.Fare fare,
 		List<Leg> legs
 	) {
 		public Itinerary {
@@ -261,6 +262,7 @@ public interface JourneyProfileRaptorPort {
 				throw new IllegalArgumentException("realtime itinerary times must be ordered");
 			}
 			metrics = Objects.requireNonNull(metrics, "metrics");
+			fare = Objects.requireNonNull(fare, "fare");
 			legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 			if (legs.isEmpty()) throw new IllegalArgumentException("itinerary legs must not be empty");
 		}

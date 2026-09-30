@@ -22,8 +22,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import java.time.Clock;
 import java.util.List;
@@ -613,7 +611,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 		Instant plannedDeparture = effectiveInstant;
 		Instant realtimeDeparture = realtime ? effectiveInstant : null;
-		JourneyCandidate.Fare fare = calculateFare(legs, fareQuotes);
+		JourneyCandidate.Fare fare = calculateFare(itinerary, fareQuotes);
 		return new JourneyCandidate(
 			journeyId(request, plannedDeparture, itinerary),
 			plannedDeparture,
@@ -630,68 +628,42 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		);
 	}
 
+	/**
+	 * 첫 승차역 -> 최종 하차역 공식 O-D 운임 한 건만 조회한다. 환승 구간을 나눠 합산하지 않으며,
+	 * 재승차 기본요금은 환승 구간의 additionalFareWon에만 남는다. 표에 없으면 UNAVAILABLE이다.
+	 * point 검색과 profile 계획이 같은 planner 투영으로 이 함수를 함께 쓴다.
+	 */
 	static JourneyCandidate.Fare calculateFare(
-		List<JourneyCandidate.Leg> legs,
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
 		Map<String, OfficialFareQuote> fareQuotes
 	) {
-		if (fareQuotes.isEmpty()) {
+		Objects.requireNonNull(fareQuotes, "fareQuotes");
+		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide = null;
+		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide = null;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
+				if (firstRide == null) firstRide = ride;
+				lastRide = ride;
+			}
+		}
+		if (firstRide == null) {
+			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
+		}
+		OfficialFareQuote quote = fareQuotes.get(
+			OfficialFareQuote.fareKey(firstRide.fromStationId(), lastRide.toStationId()));
+		if (quote == null) {
 			return JourneyCandidate.Fare.unavailable();
 		}
-		// requireLegOrder가 Entry-Ride-(Transfer-Ride)*-Exit 순서를 보장하므로 구간은 항상 탑승으로 시작한다.
-		List<FareSection> sections = new ArrayList<>();
-		String currentOrigin = null;
-		String currentDestination = null;
-
-		for (JourneyCandidate.Leg leg : legs) {
-			if (leg instanceof JourneyCandidate.Ride ride) {
-				if (currentOrigin == null) {
-					currentOrigin = ride.fromStationId();
-				}
-				currentDestination = ride.toStationId();
-			} else if (leg instanceof JourneyCandidate.Transfer transfer
-				&& Boolean.TRUE.equals(transfer.farePenaltyApplies())) {
-				sections.add(new FareSection(currentOrigin, currentDestination));
-				currentOrigin = null;
-				currentDestination = null;
-			}
-		}
-		sections.add(new FareSection(currentOrigin, currentDestination));
-
-		int totalAdultCardWon = 0;
-		int totalAdultCashWon = 0;
-		int totalYouthCardWon = 0;
-		int totalYouthCashWon = 0;
-		int totalChildCardWon = 0;
-		int totalChildCashWon = 0;
-		Set<String> snapshotIds = new LinkedHashSet<>();
-
-		for (FareSection section : sections) {
-			String key = OfficialFareQuote.fareKey(section.origin(), section.destination());
-			OfficialFareQuote quote = fareQuotes.get(key);
-			if (quote == null) {
-				return JourneyCandidate.Fare.unavailable();
-			}
-			totalAdultCardWon = Math.addExact(totalAdultCardWon, quote.gnrlCardFare());
-			totalAdultCashWon = Math.addExact(totalAdultCashWon, quote.gnrlCashFare());
-			totalYouthCardWon = Math.addExact(totalYouthCardWon, quote.yungCardFare());
-			totalYouthCashWon = Math.addExact(totalYouthCashWon, quote.yungCashFare());
-			totalChildCardWon = Math.addExact(totalChildCardWon, quote.childCardFare());
-			totalChildCashWon = Math.addExact(totalChildCashWon, quote.childCashFare());
-			snapshotIds.add(quote.snapshotId());
-		}
-
 		return JourneyCandidate.Fare.available(
-			totalAdultCardWon,
-			totalAdultCashWon,
-			totalYouthCardWon,
-			totalYouthCashWon,
-			totalChildCardWon,
-			totalChildCashWon,
-			snapshotIds.stream().sorted().toList()
+			quote.gnrlCardFare(),
+			quote.gnrlCashFare(),
+			quote.yungCardFare(),
+			quote.yungCashFare(),
+			quote.childCardFare(),
+			quote.childCashFare(),
+			List.of(quote.snapshotId())
 		);
 	}
-
-	private record FareSection(String origin, String destination) {}
 
 	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> projections = itinerary.legs();
