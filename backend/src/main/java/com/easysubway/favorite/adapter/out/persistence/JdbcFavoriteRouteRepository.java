@@ -10,6 +10,7 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
+import com.easysubway.route.adapter.out.persistence.RouteWarningJson;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -289,7 +290,7 @@ public class JdbcFavoriteRouteRepository implements
 			route.lineName(),
 			route.score(),
 			writeJson(route.steps()),
-			writeWarningsJson(route.warnings()),
+			writeJson(RouteWarningJson.fromAll(route.warnings())),
 			writeJson(route.blockedReasons()),
 			route.createdAt(),
 			favoriteRoute.addedAt()
@@ -357,7 +358,7 @@ public class JdbcFavoriteRouteRepository implements
 			resultSet.getString("line_name"),
 			resultSet.getInt("score"),
 			readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE),
-			readWarningsJson(resultSet.getString("warnings_json")),
+			RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE)),
 			readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE),
 			resultSet.getTimestamp("route_created_at").toLocalDateTime()
 		);
@@ -366,16 +367,6 @@ public class JdbcFavoriteRouteRepository implements
 			route,
 			resultSet.getTimestamp("added_at").toLocalDateTime()
 		);
-	}
-
-	private String writeWarningsJson(List<RouteWarning> warnings) {
-		List<RouteWarningJson> dtoList = warnings.stream().map(RouteWarningJson::from).toList();
-		return writeJson(dtoList);
-	}
-
-	private List<RouteWarning> readWarningsJson(String json) {
-		List<RouteWarningJson> dtoList = readJson(json, ROUTE_WARNINGS_TYPE);
-		return dtoList.stream().map(RouteWarningJson::toDomain).toList();
 	}
 
 	private String writeJson(Object value) {

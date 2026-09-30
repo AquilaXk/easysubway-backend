@@ -278,7 +278,7 @@ public class JdbcRouteSearchRepository
 				""",
 			(resultSet, rowNumber) -> {
 				List<RouteStep> steps = readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE);
-				List<RouteWarning> warnings = readWarningsJson(resultSet.getString("warnings_json"));
+				List<RouteWarning> warnings = RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE));
 				return new RouteSearchQualitySignals(
 					RouteSearchStatus.valueOf(resultSet.getString("status")),
 					etaSourceFromSteps(steps),
@@ -361,7 +361,7 @@ public class JdbcRouteSearchRepository
 			route.score(),
 			// 경로 단계와 경고처럼 구조가 자주 바뀌는 값은 운영 DB에서 JSON으로 보관한다.
 			writeJson(route.steps()),
-			writeWarningsJson(route.warnings()),
+			writeJson(RouteWarningJson.fromAll(route.warnings())),
 			writeJson(route.blockedReasons()),
 			route.createdAt()
 		);
@@ -408,7 +408,7 @@ public class JdbcRouteSearchRepository
 			route.lineName(),
 			route.score(),
 			writeJson(route.steps()),
-			writeWarningsJson(route.warnings()),
+			writeJson(RouteWarningJson.fromAll(route.warnings())),
 			writeJson(route.blockedReasons()),
 			route.createdAt()
 		);
@@ -509,7 +509,7 @@ public class JdbcRouteSearchRepository
 			resultSet.getString("line_name"),
 			resultSet.getInt("score"),
 			readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE),
-			readWarningsJson(resultSet.getString("warnings_json")),
+			RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE)),
 			readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE),
 			resultSet.getTimestamp("created_at").toLocalDateTime()
 		);
@@ -559,16 +559,6 @@ public class JdbcRouteSearchRepository
 
 	private static boolean isPlannedWithoutRealtime(String timeSource) {
 		return "FALLBACK".equals(timeSource) || EtaSource.PLANNED_WITHOUT_REALTIME.name().equals(timeSource);
-	}
-
-	private String writeWarningsJson(List<RouteWarning> warnings) {
-		List<RouteWarningJson> dtoList = warnings.stream().map(RouteWarningJson::from).toList();
-		return writeJson(dtoList);
-	}
-
-	private List<RouteWarning> readWarningsJson(String json) {
-		List<RouteWarningJson> dtoList = readJson(json, ROUTE_WARNINGS_TYPE);
-		return dtoList.stream().map(RouteWarningJson::toDomain).toList();
 	}
 
 	private String writeJson(Object value) {
