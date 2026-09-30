@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
@@ -135,7 +138,9 @@ class JourneySearchResponseMapperTest {
 			          "plannedArrivalTime":"2026-08-12T00:04:30Z",
 			          "realtimeDepartureTime":null,
 			          "realtimeArrivalTime":null,
-			          "alightingCarDoors":[]
+			          "alightingCarDoors":[],
+			          "boardingPlatformGaps":[],
+			          "alightingPlatformGaps":[]
 			        },
 			        {"type":"TRANSFER","fromStationId":"station-transfer-a","toStationId":"station-transfer-b","durationSeconds":45},
 			        {"type":"EXIT","fromStationId":"station-destination","durationSeconds":20}
@@ -165,7 +170,9 @@ class JourneySearchResponseMapperTest {
 			        "plannedArrivalTime":"2026-08-12T00:07:00Z",
 			        "realtimeDepartureTime":null,
 			        "realtimeArrivalTime":null,
-			        "alightingCarDoors":[]
+			        "alightingCarDoors":[],
+			        "boardingPlatformGaps":[],
+			        "alightingPlatformGaps":[]
 			      }]
 			    }
 			  ]
@@ -295,6 +302,51 @@ class JourneySearchResponseMapperTest {
 		assertThat(resDoor).isEqualTo(new JourneySearchResponseMapper.AlightingCarDoorResponse(3, 2, "TRANSFER"));
 		assertThat(resDoor.hashCode()).isNotZero();
 		assertThat(resDoor.toString()).contains("carNumber=3");
+	}
+
+	@Test
+	void mapsPlatformGapsToOfficialGradeWireShape() throws Exception {
+		var boarding = List.of(
+			new PlatformGap("본선 오이도 방면 1-3", 1, 3, GapGrade.WIDE, HeightDiffGrade.HIGH, true),
+			new PlatformGap("본선 대야미 방면", null, null, GapGrade.NARROW, HeightDiffGrade.LOW, false));
+		var alighting = List.of(
+			new PlatformGap("2-1", 2, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false));
+		var journey = new JourneyCandidate(
+			"journey-gap",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			1,
+			75,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
+			List.of(
+				new JourneyCandidate.Entry("station-origin", 30),
+				new JourneyCandidate.Ride(
+					"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+					PLANNED_DEPARTURE, PLANNED_ARRIVAL, null, null, List.of(), boarding, alighting),
+				new JourneyCandidate.Exit("station-destination", 20)
+			)
+		);
+
+		JsonNode root = JSON.readTree(JSON.writeValueAsString(JourneySearchResponseMapper.map(
+			success(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, null, List.of(journey))
+		)));
+
+		JsonNode rideLeg = root.path("journeys").get(0).path("legs").get(1);
+		assertThat(rideLeg.path("boardingPlatformGaps")).isEqualTo(JSON.readTree("""
+			[
+			  {"platformPosition":"본선 오이도 방면 1-3","carNumber":1,"doorNumber":3,
+			   "gapGrade":"WIDE","heightDiffGrade":"HIGH","curved":true},
+			  {"platformPosition":"본선 대야미 방면","gapGrade":"NARROW","heightDiffGrade":"LOW","curved":false}
+			]
+			"""));
+		assertThat(rideLeg.path("alightingPlatformGaps")).isEqualTo(JSON.readTree("""
+			[{"platformPosition":"2-1","carNumber":2,"doorNumber":1,
+			  "gapGrade":"NORMAL","heightDiffGrade":"NORMAL","curved":false}]
+			"""));
 	}
 
 	private static JourneyExecutionResult.Success success(

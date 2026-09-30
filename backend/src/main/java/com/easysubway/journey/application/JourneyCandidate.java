@@ -1,5 +1,6 @@
 package com.easysubway.journey.application;
 
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
@@ -139,7 +140,9 @@ public record JourneyCandidate(
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
-		List<AlightingCarDoor> alightingCarDoors
+		List<AlightingCarDoor> alightingCarDoors,
+		List<PlatformGap> boardingPlatformGaps,
+		List<PlatformGap> alightingPlatformGaps
 	) implements Leg {
 		public Ride(
 			String lineId,
@@ -154,7 +157,24 @@ public record JourneyCandidate(
 		) {
 			this(lineId, tripId, directionStationId, fromStationId, toStationId,
 				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				List.of());
+				List.of(), List.of(), List.of());
+		}
+
+		public Ride(
+			String lineId,
+			String tripId,
+			String directionStationId,
+			String fromStationId,
+			String toStationId,
+			Instant plannedDepartureTime,
+			Instant plannedArrivalTime,
+			Instant realtimeDepartureTime,
+			Instant realtimeArrivalTime,
+			List<AlightingCarDoor> alightingCarDoors
+		) {
+			this(lineId, tripId, directionStationId, fromStationId, toStationId,
+				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				alightingCarDoors, List.of(), List.of());
 		}
 
 		public Ride {
@@ -166,6 +186,8 @@ public record JourneyCandidate(
 			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
 			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
 			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
+			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);
+			alightingPlatformGaps = alightingPlatformGaps == null ? List.of() : List.copyOf(alightingPlatformGaps);
 			requireOrdered(plannedDepartureTime, plannedArrivalTime, "planned ride times");
 			requireOptionalPair(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
 			if (realtimeDepartureTime != null) {

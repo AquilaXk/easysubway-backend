@@ -242,7 +242,9 @@ public final class RouteTimetableRaptorPlanner {
 				ride.plannedArrivalTime(input.serviceDay()),
 				evidence == null ? null : ride.realtimeDepartureTime(input.serviceDay()),
 				evidence == null ? null : ride.realtimeArrivalTime(input.serviceDay()),
-				alightingCarDoors
+				alightingCarDoors,
+				timetable.platformGaps(ride.from().stationId(), ride.lineId(), ride.scheduledTrip().trip().directionId()),
+				timetable.platformGaps(ride.to().stationId(), ride.lineId(), ride.scheduledTrip().trip().directionId())
 			));
 		}
 		RideLeg lastRide = path.getLast();
@@ -2755,6 +2757,20 @@ public final class RouteTimetableRaptorPlanner {
 					.thenComparingInt(AlightingCarDoor::carNumber)
 					.thenComparingInt(AlightingCarDoor::doorNumber))
 				.toList();
+		}
+
+		// 공식 상·하행(up/down) trip만 UP/DOWN 행에 대응한다. increasing/decreasing 등은 방향 근거가 없어 싣지 않는다.
+		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> platformGaps(
+			String stationId, String lineId, String directionId
+		) {
+			String direction = "up".equals(directionId) ? "UP" : "down".equals(directionId) ? "DOWN" : null;
+			if (stationId == null || lineId == null || direction == null) {
+				return List.of();
+			}
+			return source.routeAccessData().platformGaps().getOrDefault(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey(
+					stationId, lineId, direction),
+				List.of());
 		}
 
 		String tripDirection(String tripId) {
@@ -5305,7 +5321,9 @@ public final class RouteTimetableRaptorPlanner {
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
-		List<AlightingCarDoor> alightingCarDoors
+		List<AlightingCarDoor> alightingCarDoors,
+		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> boardingPlatformGaps,
+		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> alightingPlatformGaps
 	) implements JourneyLegProjection {
 		public JourneyRideProjection(
 			String lineId,
@@ -5320,11 +5338,30 @@ public final class RouteTimetableRaptorPlanner {
 		) {
 			this(lineId, tripId, directionStationId, fromStationId, toStationId,
 				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				List.of());
+				List.of(), List.of(), List.of());
+		}
+
+		public JourneyRideProjection(
+			String lineId,
+			String tripId,
+			String directionStationId,
+			String fromStationId,
+			String toStationId,
+			Instant plannedDepartureTime,
+			Instant plannedArrivalTime,
+			Instant realtimeDepartureTime,
+			Instant realtimeArrivalTime,
+			List<AlightingCarDoor> alightingCarDoors
+		) {
+			this(lineId, tripId, directionStationId, fromStationId, toStationId,
+				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				alightingCarDoors, List.of(), List.of());
 		}
 
 		public JourneyRideProjection {
 			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
+			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);
+			alightingPlatformGaps = alightingPlatformGaps == null ? List.of() : List.copyOf(alightingPlatformGaps);
 		}
 	}
 

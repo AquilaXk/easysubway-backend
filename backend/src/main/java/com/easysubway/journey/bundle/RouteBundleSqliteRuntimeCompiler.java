@@ -1,8 +1,12 @@
 package com.easysubway.journey.bundle;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
@@ -124,10 +128,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var accessibilityConn = byPath.get(ACCESSIBILITY_PATH).connection();
 			var evaluations = validateAccessibility(accessibilityConn, topology);
 			var carDoorHints = loadCarDoorHints(accessibilityConn);
+			var platformGaps = loadPlatformGaps(accessibilityConn);
 			validateFare(byPath.get(FARE_PATH).connection());
 			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
 			return new CompiledPayloads(loadTimetable(
-				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints), smrtElevatorFacilities);
+				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
+				smrtElevatorFacilities);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -391,9 +397,61 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		return List.copyOf(hints);
 	}
 
+	private static Map<PlatformGapKey, List<PlatformGap>> loadPlatformGaps(Connection connection)
+		throws SQLException {
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_platform_gaps'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_platform_gaps does not exist; loaded 0 platform gaps");
+			return Map.of();
+		}
+		requireColumns(connection, "station_platform_gaps", List.of(
+			"id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number",
+			"gap_grade", "height_diff_grade", "curved", "source_snapshot_id"));
+		var grouped = new LinkedHashMap<PlatformGapKey, List<PlatformGap>>();
+		int count = 0;
+		try (var statement = connection.createStatement();
+			 var rows = statement.executeQuery("""
+				SELECT station_id, line_id, direction, platform_position, car_number, door_number,
+				       gap_grade, height_diff_grade, curved
+				FROM station_platform_gaps
+				""")) {
+			while (rows.next()) {
+				String direction = requireText(rows.getString(3), "station_platform_gaps direction");
+				if (!"UP".equals(direction) && !"DOWN".equals(direction)) {
+					throw new IllegalArgumentException("invalid platform gap direction: " + direction);
+				}
+				int curved = rows.getInt(9);
+				if (curved != 0 && curved != 1) {
+					throw new IllegalArgumentException("invalid platform gap curved: " + curved);
+				}
+				var key = new PlatformGapKey(
+					requireText(rows.getString(1), "station_platform_gaps station_id"),
+					requireText(rows.getString(2), "station_platform_gaps line_id"),
+					direction);
+				grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new PlatformGap(
+					requireText(rows.getString(4), "station_platform_gaps platform_position"),
+					rows.getObject(5) == null ? null : rows.getInt(5),
+					rows.getObject(6) == null ? null : rows.getInt(6),
+					GapGrade.fromCode(requireText(rows.getString(7), "station_platform_gaps gap_grade")),
+					HeightDiffGrade.fromCode(requireText(rows.getString(8), "station_platform_gaps height_diff_grade")),
+					curved == 1));
+				count++;
+			}
+		}
+		// 노출 순서: 간격 WIDE→NORMAL→NARROW, 같으면 높이차 HIGH→NORMAL→LOW, 그다음 위치 오름차순
+		var order = Comparator.comparing(PlatformGap::gapGrade)
+			.thenComparing(PlatformGap::heightDiffGrade)
+			.thenComparing(PlatformGap::platformPosition);
+		var sorted = new LinkedHashMap<PlatformGapKey, List<PlatformGap>>();
+		grouped.forEach((key, gaps) -> sorted.put(key, gaps.stream().sorted(order).toList()));
+		log.info("Loaded {} platform gaps from accessibility bundle", count);
+		return sorted;
+	}
+
 	private static RouteTimetable loadTimetable(
 		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
-		List<CarDoorHint> carDoorHints)
+		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps)
 		throws SQLException {
 		requireTimetableColumns(connection);
 		var calendars = new ArrayList<ServiceCalendar>();
@@ -455,12 +513,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 		return new RouteTimetable(
 			calendars, calendarDates, routes, trips, stopTimes, frequencies, List.of(), feedEndDate,
-			projectAccess(topology, evaluations, carDoorHints));
+			projectAccess(topology, evaluations, carDoorHints, platformGaps));
 	}
 
 	private static RouteAccessData projectAccess(
 		Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
-		List<CarDoorHint> carDoorHints) {
+		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps) {
 		var nodes = new LinkedHashMap<String, PathwayNode>();
 		var edges = new ArrayList<PathwayEdge>();
 		var rules = new ArrayList<TransferRule>();
@@ -508,7 +566,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				edge.id(), stationId, lineId, edge.id(), evidenceType, provenanceKind, verificationStatus, pass,
 				pass ? null : evaluation.reason()));
 		}
-		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence, carDoorHints);
+		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence, carDoorHints, platformGaps);
 	}
 
 	private static void requireEndpointShape(String type, Endpoint from, Endpoint to) {
