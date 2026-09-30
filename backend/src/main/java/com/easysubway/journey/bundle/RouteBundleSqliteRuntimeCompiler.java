@@ -81,12 +81,17 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	public RaptorRouteBundleRuntimeView compile(Input input) {
-		RouteTimetable timetable = readTimetable(input);
-		return RaptorRouteBundleRuntimeView.compile(input.routeBundleSha256(), input.generation(), timetable);
+		CompiledPayloads compiled = read(input);
+		return RaptorRouteBundleRuntimeView.compile(
+			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities());
+	}
+
+	RouteTimetable readTimetable(Input input) {
+		return read(input).timetable();
 	}
 
 	// 검증·해제 수명은 여기서 끝내고 탐색용 인덱스 생성과 분리한다.
-	RouteTimetable readTimetable(Input input) {
+	private CompiledPayloads read(Input input) {
 		Objects.requireNonNull(input, "input");
 		Map<String, byte[]> payloads = input.compressedPayloads();
 		if (!payloads.keySet().equals(PAYLOAD_PATHS)) {
@@ -120,8 +125,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var evaluations = validateAccessibility(accessibilityConn, topology);
 			var carDoorHints = loadCarDoorHints(accessibilityConn);
 			validateFare(byPath.get(FARE_PATH).connection());
-			return loadTimetable(
-				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints);
+			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
+			return new CompiledPayloads(loadTimetable(
+				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints), smrtElevatorFacilities);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -307,6 +313,26 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				throw new IllegalArgumentException("accessibility evidence JSON is invalid", exception);
 			}
 		}
+	}
+
+	// #419: 관리자 확인 기록이 고를 서울교통공사 엘리베이터 시설 목록. accessibility 구성요소가 소유한 facilities 표(data 계약)에서
+	// smrt-elev: 행만 읽는다. 표가 없거나 이름이 비면 번들 계약 위반이라 컴파일을 실패시킨다.
+	private static List<RouteBundleFacilityCatalog.Facility> loadSmrtElevatorFacilities(Connection connection)
+		throws SQLException {
+		var facilities = new ArrayList<RouteBundleFacilityCatalog.Facility>();
+		try (var statement = connection.prepareStatement(
+			"SELECT id, name FROM facilities WHERE substr(id, 1, ?) = ? ORDER BY id COLLATE BINARY")) {
+			statement.setInt(1, RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX.length());
+			statement.setString(2, RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX);
+			try (var rows = statement.executeQuery()) {
+				while (rows.next()) {
+					facilities.add(new RouteBundleFacilityCatalog.Facility(
+						requireText(rows.getString(1), "bundle facility id"),
+						requireText(rows.getString(2), "bundle facility name")));
+				}
+			}
+		}
+		return List.copyOf(facilities);
 	}
 
 	private static void validateFare(Connection connection) throws SQLException {
@@ -745,5 +771,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				throw new IllegalStateException("network edge canonicalization failed", exception);
 			}
 		}
+	}
+
+	private record CompiledPayloads(
+		RouteTimetable timetable, List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities) {
 	}
 }

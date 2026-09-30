@@ -94,6 +94,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-with-hints", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of());
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -129,6 +130,50 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThat(hint.targetFacilityType()).isEqualTo("TRANSFER");
 		assertThat(hint.carNumber()).isEqualTo(3);
 		assertThat(hint.doorNumber()).isEqualTo(2);
+	}
+
+	@Test
+	void exposesOnlySmrtElevatorFacilitiesFromTheAccessibilityComponentAsAReadOnlyCatalog() throws Exception {
+		RouteBundleRuntimeView runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime).isInstanceOf(RouteBundleFacilityCatalog.class);
+		assertThat(((RouteBundleFacilityCatalog) runtime).smrtElevatorFacilities()).containsExactly(
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0150:1:나역 방면1-1", "가역 엘리베이터 나역 방면1-1"),
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0201:2:9번 출입구", "나역 엘리베이터 9번 출입구"));
+		assertThatThrownBy(() -> ((RouteBundleFacilityCatalog) runtime).smrtElevatorFacilities().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void rejectsAccessibilityComponentWithoutFacilitiesOrWithBlankFacilityName() throws Exception {
+		var missing = payloads();
+		missing.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-no-facilities", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(missing)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("runtime compilation failed")
+			.cause().hasMessageContaining("facilities");
+
+		var blankName = payloads();
+		blankName.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-blank-name", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL)");
+			insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)", "smrt-elev:0201:2:9번 출입구", "station-b", "ELEVATOR", " ");
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(blankName)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("bundle facility name");
 	}
 
 	@Test
@@ -180,6 +225,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-drift", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var edges = topologyEdges();
 			edges.remove(edges.size() - 1);
@@ -199,6 +245,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-blocked", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of("entry-a", "BLOCKED"));
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -243,6 +290,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads(transferEdges, value -> value, "AVAILABLE");
 		var accessibility = sqlite("accessibility-transfers", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(transferEdges, states);
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -274,6 +322,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-distinct-candidate", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of(), "nationwide-candidate-20260909");
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -290,6 +339,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-blank-candidate", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of(), "   ");
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -316,6 +366,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads(transferEdges, value -> value, "UNKNOWN", "UNKNOWN", "UNKNOWN");
 		var accessibility = sqlite("accessibility-unknown", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(transferEdges, states);
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -461,6 +512,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		});
 		var accessibility = sqlite("accessibility", connection -> {
 			common(connection, identityTransform.apply(identitySql()));
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges());
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -523,6 +575,17 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-a", "line-1", 1);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-1", 2);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-2", 3);
+	}
+
+	// data 번들 accessibility 구성요소의 facilities 표(catalog-schema)에서 컴파일러가 읽는 열만 둔다.
+	private static void facilities(Connection connection) throws Exception {
+		execute(connection, "CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL)");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"smrt-elev:0201:2:9번 출입구", "station-b", "ELEVATOR", "나역 엘리베이터 9번 출입구");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"smrt-elev:0150:1:나역 방면1-1", "station-a", "ELEVATOR", "가역 엘리베이터 나역 방면1-1");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"facility-a-escalator", "station-a", "ESCALATOR", "가역 에스컬레이터");
 	}
 
 	private static String identitySql() {
