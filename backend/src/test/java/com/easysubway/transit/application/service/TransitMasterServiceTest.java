@@ -592,23 +592,6 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
-	@DisplayName("메모리 마스터 저장소는 존재하지 않는 시설이나 구조도 상태 갱신 요청을 안전하게 무시한다")
-	void inMemoryRepositoryIgnoresUnknownEntitiesSafely() {
-		transitRepository.saveFacilityStatus("non-existent-facility", AccessibilityFacilityStatus.BROKEN, LocalDate.now());
-		transitRepository.saveSimplifiedStationLayoutStatus(
-			"non-existent-layout",
-			SimplifiedStationLayoutStatus.PUBLISHED,
-			"admin",
-			LocalDate.now()
-		);
-
-		assertThat(transitRepository.loadAccessibilityFacilities())
-			.noneMatch(f -> "non-existent-facility".equals(f.id()));
-		assertThat(transitRepository.loadSimplifiedStationLayouts())
-			.noneMatch(l -> "non-existent-layout".equals(l.id()));
-	}
-
-	@Test
 	@DisplayName("마스터 데이터 override rollback은 대상과 수정자 식별자를 요구한다")
 	void rollbackMasterDataOverrideRequiresTargetAndUpdater() {
 		assertThatThrownBy(() -> service.rollbackMasterDataOverride("", "facility-id", "admin-user"))

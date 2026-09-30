@@ -1,73 +1,411 @@
 package com.easysubway.transit.adapter.out.seoul;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
-import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
-import com.easysubway.transit.domain.AccessibilityFacility;
-import com.easysubway.transit.domain.AccessibilityFacilityStatus;
-import com.easysubway.transit.domain.AccessibilityFacilityType;
-import com.easysubway.transit.domain.DataConfidenceLevel;
-import com.easysubway.transit.domain.DataSourceType;
-import com.easysubway.transit.domain.Station;
-import com.easysubway.transit.domain.StationExit;
-import com.easysubway.transit.domain.StationLine;
-import com.easysubway.transit.domain.SubwayLine;
-import com.easysubway.transit.domain.TransitOperator;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedApplyResult;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedObservation;
+import com.easysubway.transit.domain.FacilityOperationalState;
+import com.easysubway.transit.domain.FacilityOperationalStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.math.BigDecimal;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 
-@DisplayName("서울교통공사 엘리베이터 상태 수집기 단위 테스트 (#419)")
+@DisplayName("서울교통공사 엘리베이터 가동 정보 수집기")
 class SeoulMetroElevatorStatusCollectorTest {
 
-	private static final Instant T0 = Instant.parse("2026-09-30T09:00:00Z");
-	private static final LocalDate DATE_T0 = LocalDate.of(2026, 9, 30);
-	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+	private static final String FEED = "SEOUL_METRO_ELEVATOR";
+	private static final Instant NOW = Instant.parse("2026-09-30T01:00:00Z");
+	private static final String PAGE_ONE_ROWS = """
+		[
+		  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"1번 출입구","oprtngSitu":"M"},
+		  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"2번 출입구","oprtngSitu":"S"},
+		  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"대합실","oprtngSitu":"M"},
+		  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"3번 출입구","oprtngSitu":"D"},
+		  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"4번 출입구","oprtngSitu":"X"}
+		]
+		""";
 
-	private static class MutableClock extends Clock {
-		private Instant now;
+	private final ObjectMapper objectMapper = new ObjectMapper();
+	private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+	private final MutableClock clock = new MutableClock(NOW);
+	private final RecordingStore store = new RecordingStore();
+	private final List<URI> requests = new CopyOnWriteArrayList<>();
+	private HttpServer server;
 
-		MutableClock(Instant initial) {
-			this.now = initial;
+	@AfterEach
+	void stopServer() {
+		if (server != null) {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	@DisplayName("성공 수집은 식별된 시설 상태를 쓰고 심장박동·코드별·식별 불가 지표를 남긴다")
+	void successfulCollectionWritesStatusesHeartbeatAndMetrics() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		var collector = collector("test-key");
+
+		collector.collect();
+
+		assertThat(store.applied).containsExactly(new AppliedCollection(FEED, List.of(
+			new FeedObservation("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OPERATING, "M"),
+			new FeedObservation("smrt-elev:0201:2:2번 출입구", FacilityOperationalState.OUT_OF_SERVICE, "S")
+		), NOW));
+		assertThat(requests).hasSize(1);
+		assertThat(query(requests.getFirst())).containsExactly(
+			Map.entry("serviceKey", "test-key"),
+			Map.entry("pageNo", "1"),
+			Map.entry("numOfRows", "1000"),
+			Map.entry("dataType", "JSON")
+		);
+		assertThat(requests.getFirst().getPath()).isEqualTo("/B553766/facility/getFcElvtr");
+		assertThat(counter("success", "NONE")).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.facilities", "code", "M")).isEqualTo(2.0);
+		assertThat(gauge("easysubway.facility_status.feed.facilities", "code", "S")).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.facilities", "code", "D")).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.facilities", "code", "UNKNOWN")).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.facilities", "code", "T")).isZero();
+		assertThat(gauge("easysubway.facility_status.feed.unidentifiable", "reason", "LOCATION_FORMAT")).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.unidentifiable", "reason", "DUPLICATE")).isZero();
+		assertThat(gauge("easysubway.facility_status.feed.unidentifiable", "reason", "LINE_OR_STATION_CODE")).isZero();
+		assertThat(gauge("easysubway.facility_status.feed.admin_verified_kept", null, null)).isEqualTo(1.0);
+		assertThat(meterRegistry.get("easysubway.facility_status.feed.unknown_code").tag("feed", FEED).counter().count())
+			.isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.seconds_since_last_success", null, null)).isZero();
+
+		clock.advance(Duration.ofSeconds(90));
+
+		assertThat(gauge("easysubway.facility_status.feed.seconds_since_last_success", null, null)).isEqualTo(90.0);
+	}
+
+	@Test
+	@DisplayName("여러 페이지를 모두 받은 뒤에만 한 번에 반영한다")
+	void collectsAllPagesBeforeApplying() throws IOException {
+		startServer(exchange -> {
+			String pageNo = query(exchange.getRequestURI()).get("pageNo");
+			String row = "[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"" + pageNo
+				+ "번 출입구\",\"oprtngSitu\":\"M\"}]";
+			respond(exchange, 200, page(row, 2));
+		});
+		var collector = collector("test-key", 1, 1_048_576);
+
+		collector.collect();
+
+		assertThat(requests).extracting(uri -> query(uri).get("pageNo")).containsExactly("1", "2");
+		assertThat(store.applied).singleElement()
+			.extracting(AppliedCollection::observations)
+			.isEqualTo(List.of(
+				new FeedObservation("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OPERATING, "M"),
+				new FeedObservation("smrt-elev:0201:2:2번 출입구", FacilityOperationalState.OPERATING, "M")
+			));
+	}
+
+	@Test
+	@DisplayName("HTTP 오류는 그 회차를 반영하지 않고 심장박동도 기록하지 않는다")
+	void httpErrorDoesNotApplyOrAdvanceHeartbeat() throws IOException {
+		startServer(exchange -> respond(exchange, 503, "unavailable"));
+		var collector = collector("test-key");
+
+		collector.collect();
+
+		assertFailedWithoutApplying("HTTP_STATUS");
+		assertThat(gauge("easysubway.facility_status.feed.seconds_since_last_success", null, null)).isNaN();
+	}
+
+	@Test
+	@DisplayName("원천 결과 코드 오류는 그 회차를 반영하지 않는다")
+	void providerResultCodeErrorDoesNotApply() throws IOException {
+		startServer(exchange -> respond(exchange, 200,
+			"{\"response\":{\"header\":{\"resultCode\":\"30\",\"resultMsg\":\"SERVICE_KEY_IS_NOT_REGISTERED_ERROR\"}}}"));
+		var collector = collector("test-key");
+
+		collector.collect();
+
+		assertFailedWithoutApplying("PROVIDER_RESULT_CODE");
+	}
+
+	@Test
+	@DisplayName("응답 형식 오류(JSON·items·totalCount·빈 목록·페이지 부족·초과·행 형식·본문 상한)는 그 회차를 반영하지 않는다")
+	void malformedResponsesDoNotApply() throws IOException {
+		List<String> bodies = List.of(
+			"not-json",
+			"{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":{}},\"totalCount\":1}}}",
+			"{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":[]},\"totalCount\":\"x\"}}}",
+			"{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":[]},\"totalCount\":-1}}}",
+			page("[]", 0),
+			page("[]", 3),
+			page("[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"1번 출입구\",\"oprtngSitu\":\"M\"},"
+				+ "{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"2번 출입구\",\"oprtngSitu\":\"M\"}]", 1),
+			page("[{\"stnCd\":\"0201\",\"lineNm\":\"2호선\",\"dtlPstn\":\"1번 출입구\",\"oprtngSitu\":\"M\"}]", 1),
+			page(PAGE_ONE_ROWS, 5) + " ".repeat(64)
+		);
+		List<String> remaining = new ArrayList<>(bodies);
+		startServer(exchange -> respond(exchange, 200, remaining.removeFirst()));
+		var collector = collector("test-key", 1000, page(PAGE_ONE_ROWS, 5).getBytes(StandardCharsets.UTF_8).length + 32);
+
+		for (int attempt = 0; attempt < bodies.size(); attempt++) {
+			collector.collect();
 		}
 
-		void advance(Duration duration) {
+		assertThat(store.applied).isEmpty();
+		assertThat(counter("failure", "MALFORMED_RESPONSE")).isEqualTo(bodies.size());
+		assertThat(counter("success", "NONE")).isZero();
+	}
+
+	@Test
+	@DisplayName("페이지마다 totalCount가 다르면 응답 형식 오류다")
+	void inconsistentTotalCountAcrossPagesIsMalformed() throws IOException {
+		startServer(exchange -> {
+			boolean first = "1".equals(query(exchange.getRequestURI()).get("pageNo"));
+			respond(exchange, 200, page(
+				"[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"1번 출입구\",\"oprtngSitu\":\"M\"}]",
+				first ? 2 : 3
+			));
+		});
+		var collector = collector("test-key", 1, 1_048_576);
+
+		collector.collect();
+
+		assertFailedWithoutApplying("MALFORMED_RESPONSE");
+	}
+
+	@Test
+	@DisplayName("연결 실패는 전송 오류로 드러내고 반영하지 않는다")
+	void transportFailureDoesNotApply() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		URI endpoint = endpoint();
+		server.stop(0);
+		server = null;
+		var collector = new SeoulMetroElevatorStatusCollector(
+			"test-key", endpoint, store, objectMapper, meterRegistry, httpClient(), clock, 1000, 1_048_576
+		);
+
+		collector.collect();
+
+		assertFailedWithoutApplying("TRANSPORT");
+	}
+
+	@Test
+	@DisplayName("저장 실패는 심장박동 없이 실패로 센다")
+	void storeFailureIsCountedAsFailure() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		store.failWith = new IllegalStateException("db down");
+		var collector = collector("test-key");
+
+		collector.collect();
+
+		assertThat(counter("failure", "STORE_WRITE")).isEqualTo(1.0);
+		assertThat(counter("success", "NONE")).isZero();
+		assertThat(gauge("easysubway.facility_status.feed.seconds_since_last_success", null, null)).isNaN();
+	}
+
+	@Test
+	@DisplayName("실패 회차는 직전 성공 지표를 새 관측처럼 덮어쓰지 않고 경과 시간만 늘어난다")
+	void failureAfterSuccessKeepsLastSuccessTime() throws IOException {
+		List<Integer> statuses = new ArrayList<>(List.of(200, 500));
+		startServer(exchange -> respond(exchange, statuses.removeFirst(), page(PAGE_ONE_ROWS, 5)));
+		var collector = collector("test-key");
+
+		collector.collect();
+		clock.advance(Duration.ofSeconds(60));
+		collector.collect();
+
+		assertThat(store.applied).hasSize(1);
+		assertThat(counter("success", "NONE")).isEqualTo(1.0);
+		assertThat(counter("failure", "HTTP_STATUS")).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.seconds_since_last_success", null, null)).isEqualTo(60.0);
+	}
+
+	@Test
+	@DisplayName("인증키가 없으면 원천을 호출하지 않는다")
+	void blankServiceKeySkipsCollection() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		var collector = collector("  ");
+
+		collector.collect();
+
+		assertThat(requests).isEmpty();
+		assertThat(store.applied).isEmpty();
+		assertThat(meterRegistry.find("easysubway.facility_status.feed.collections").counters()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("URL 인코딩된 인증키는 한 번만 인코딩해 보낸다")
+	void encodedServiceKeyIsDecodedOnce() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		var collector = collector(" abc%2Bdef%3D%3D ");
+
+		collector.collect();
+
+		assertThat(requests.getFirst().getRawQuery()).startsWith("serviceKey=abc%2Bdef%3D%3D&");
+		assertThat(query(requests.getFirst())).containsEntry("serviceKey", "abc+def==");
+	}
+
+	@Test
+	@DisplayName("수집 중 인터럽트는 실패로 세고 인터럽트 상태를 되살린다")
+	void interruptionIsCountedAndRestored() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 5)));
+		var collector = collector("test-key");
+
+		Thread.currentThread().interrupt();
+		try {
+			collector.collect();
+			assertThat(Thread.currentThread().isInterrupted()).isTrue();
+		} finally {
+			Thread.interrupted();
+		}
+
+		assertFailedWithoutApplying("INTERRUPTED");
+	}
+
+	private void assertFailedWithoutApplying(String reason) {
+		assertThat(store.applied).isEmpty();
+		assertThat(counter("failure", reason)).isEqualTo(1.0);
+		assertThat(counter("success", "NONE")).isZero();
+	}
+
+	private SeoulMetroElevatorStatusCollector collector(String serviceKey) {
+		return collector(serviceKey, 1000, 1_048_576);
+	}
+
+	private SeoulMetroElevatorStatusCollector collector(String serviceKey, int pageSize, int maxResponseBytes) {
+		return new SeoulMetroElevatorStatusCollector(
+			serviceKey, endpoint(), store, objectMapper, meterRegistry, httpClient(), clock, pageSize, maxResponseBytes
+		);
+	}
+
+	private static HttpClient httpClient() {
+		return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+	}
+
+	private URI endpoint() {
+		return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/B553766/facility/getFcElvtr");
+	}
+
+	private void startServer(Handler handler) throws IOException {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/", exchange -> {
+			requests.add(exchange.getRequestURI());
+			handler.handle(exchange);
+		});
+		server.start();
+	}
+
+	private static void respond(HttpExchange exchange, int status, String body) throws IOException {
+		byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+		exchange.sendResponseHeaders(status, bytes.length);
+		try (var output = exchange.getResponseBody()) {
+			output.write(bytes);
+		}
+	}
+
+	private static String page(String items, int totalCount) {
+		return "{\"response\":{\"header\":{\"resultCode\":\"00\",\"resultMsg\":\"NORMAL_CODE\"},"
+			+ "\"body\":{\"items\":{\"item\":" + items + "},\"numOfRows\":1000,\"pageNo\":1,\"totalCount\":" + totalCount + "}}}";
+	}
+
+	private static Map<String, String> query(URI uri) {
+		Map<String, String> values = new LinkedHashMap<>();
+		for (String pair : uri.getRawQuery().split("&")) {
+			String[] parts = pair.split("=", 2);
+			values.put(parts[0], URLDecoder.decode(parts[1], StandardCharsets.UTF_8));
+		}
+		return values;
+	}
+
+	private double counter(String outcome, String reason) {
+		var counter = meterRegistry.find("easysubway.facility_status.feed.collections")
+			.tag("feed", FEED).tag("outcome", outcome).tag("reason", reason).counter();
+		return counter == null ? 0.0 : counter.count();
+	}
+
+	private double gauge(String name, String tagKey, String tagValue) {
+		var search = meterRegistry.get(name).tag("feed", FEED);
+		if (tagKey != null) {
+			search = search.tag(tagKey, tagValue);
+		}
+		return search.gauge().value();
+	}
+
+	@FunctionalInterface
+	private interface Handler {
+		void handle(HttpExchange exchange) throws IOException;
+	}
+
+	private record AppliedCollection(String feed, List<FeedObservation> observations, Instant observedAt) {
+	}
+
+	private static final class RecordingStore implements FacilityOperationalStatusStore {
+
+		private final List<AppliedCollection> applied = new ArrayList<>();
+		private RuntimeException failWith;
+
+		@Override
+		public List<FacilityOperationalStatus> loadStatuses() {
+			return List.of();
+		}
+
+		@Override
+		public Optional<Instant> lastSuccessfulCollectionAt(String feed) {
+			return Optional.empty();
+		}
+
+		@Override
+		public FeedApplyResult applyFeedCollection(String feed, List<FeedObservation> observations, Instant observedAt) {
+			if (failWith != null) {
+				throw failWith;
+			}
+			applied.add(new AppliedCollection(feed, List.copyOf(observations), observedAt));
+			return new FeedApplyResult(observations.size() - 1, 1);
+		}
+
+		@Override
+		public boolean recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+			return false;
+		}
+	}
+
+	private static final class MutableClock extends Clock {
+
+		private Instant now;
+
+		private MutableClock(Instant now) {
+			this.now = now;
+		}
+
+		private void advance(Duration duration) {
 			now = now.plus(duration);
 		}
 
 		@Override
-		public ZoneOffset getZone() {
+		public ZoneId getZone() {
 			return ZoneOffset.UTC;
 		}
 
 		@Override
-		public Clock withZone(java.time.ZoneId zone) {
+		public Clock withZone(ZoneId zone) {
 			return this;
 		}
 
@@ -75,425 +413,5 @@ class SeoulMetroElevatorStatusCollectorTest {
 		public Instant instant() {
 			return now;
 		}
-	}
-
-	private static class TestTransitMasterRepository implements LoadTransitMasterPort, SaveAccessibilityFacilityStatusPort {
-		final Map<String, AccessibilityFacility> facilities = new LinkedHashMap<>();
-		final List<StationLine> stationLines = new ArrayList<>();
-
-		@Override
-		public List<TransitOperator> loadOperators() { return List.of(); }
-		@Override
-		public List<SubwayLine> loadLines() { return List.of(); }
-		@Override
-		public List<Station> loadStations() { return List.of(); }
-		@Override
-		public List<StationLine> loadStationLines() { return List.copyOf(stationLines); }
-		@Override
-		public List<StationExit> loadStationExits() { return List.of(); }
-		@Override
-		public List<AccessibilityFacility> loadAccessibilityFacilities() { return List.copyOf(facilities.values()); }
-		@Override
-		public Optional<AccessibilityFacility> loadAccessibilityFacility(String facilityId) {
-			return Optional.ofNullable(facilities.get(facilityId));
-		}
-		@Override
-		public void saveAccessibilityFacility(AccessibilityFacility facility, String updatedBy) {
-			facilities.put(facility.id(), facility);
-		}
-		@Override
-		public void saveFacilityStatus(String facilityId, AccessibilityFacilityStatus status, LocalDate updatedAt) {
-			AccessibilityFacility existing = facilities.get(facilityId);
-			if (existing != null) {
-				facilities.put(facilityId, new AccessibilityFacility(
-					existing.id(), existing.stationId(), existing.exitId(), existing.type(), existing.name(),
-					existing.floorFrom(), existing.floorTo(), existing.latitude(), existing.longitude(),
-					existing.description(), status, existing.dataConfidence(), existing.dataSourceType(), updatedAt
-				));
-			}
-		}
-	}
-
-	private MutableClock clock;
-	private SimpleMeterRegistry meterRegistry;
-	private TestTransitMasterRepository repository;
-	private HttpClient httpClient;
-
-	@BeforeEach
-	void setUp() {
-		clock = new MutableClock(T0);
-		meterRegistry = new SimpleMeterRegistry();
-		repository = new TestTransitMasterRepository();
-		httpClient = mock(HttpClient.class);
-	}
-
-	@Test
-	@DisplayName("(1) 번 출입구 형식이고 KRIC 시설이 정확히 1대일 때 상태를 연결하여 갱신한다")
-	void linksSingleMatchingKricElevatorAndAppliesStatus() throws Exception {
-		repository.stationLines.add(new StationLine("station-seoul", "line-1", "0150", 1, ""));
-		var kricFacility = new AccessibilityFacility(
-			"kric-elev:S1:1:0150:1:1F-B1F:hash1",
-			"station-seoul",
-			"1",
-			AccessibilityFacilityType.ELEVATOR,
-			"1번 출구 엘리베이터",
-			"1F", "B1F",
-			BigDecimal.valueOf(37.555), BigDecimal.valueOf(126.970),
-			"1번 출입구 앞",
-			AccessibilityFacilityStatus.NORMAL,
-			DataConfidenceLevel.HIGH,
-			DataSourceType.OFFICIAL_API,
-			DATE_T0
-		);
-		repository.facilities.put(kricFacility.id(), kricFacility);
-
-		String json = """
-			{
-			  "response": {
-			    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
-			    "body": {
-			      "items": {
-			        "item": [
-			          {
-			            "stnCd": "0150",
-			            "stnNm": "서울역",
-			            "lineNm": "1호선",
-			            "dtlPstn": "1번 출입구",
-			            "oprtngSitu": "S"
-			          }
-			        ]
-			      },
-			      "numOfRows": 1000,
-			      "pageNo": 1,
-			      "totalCount": 1
-			    }
-			  }
-			}
-			""";
-		mockHttpResponse(200, json);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		collector.collect();
-
-		AccessibilityFacility updated = repository.facilities.get("kric-elev:S1:1:0150:1:1F-B1F:hash1");
-		assertThat(updated).isNotNull();
-		assertThat(updated.status()).isEqualTo(AccessibilityFacilityStatus.BROKEN);
-		assertThat(collector.linkedElevatorsCount()).isEqualTo(1);
-		assertThat(collector.unlinkedElevatorsCount()).isZero();
-		assertThat(meterRegistry.find("easysubway.collection.seoul-metro.elevator.linked-count").gauge().value()).isEqualTo(1.0);
-		assertThat(meterRegistry.find("easysubway.collection.seoul-metro.elevator.unlinked-ratio").gauge().value()).isEqualTo(0.0);
-	}
-
-	@Test
-	@DisplayName("(2) dtlPstn 형식이 '번 출입구'가 아니면 미연결로 처리하고 상태를 붙이지 않는다")
-	void marksUnlinkedWhenPositionFormatDoesNotMatch() throws Exception {
-		repository.stationLines.add(new StationLine("station-seoul", "line-1", "0150", 1, ""));
-		var kricFacility = new AccessibilityFacility(
-			"kric-elev:S1:1:0150:1:1F-B1F:hash1",
-			"station-seoul",
-			"1",
-			AccessibilityFacilityType.ELEVATOR,
-			"1번 출구 엘리베이터",
-			"1F", "B1F",
-			BigDecimal.valueOf(37.555), BigDecimal.valueOf(126.970),
-			"1번 출입구 앞",
-			AccessibilityFacilityStatus.NORMAL,
-			DataConfidenceLevel.HIGH,
-			DataSourceType.OFFICIAL_API,
-			DATE_T0
-		);
-		repository.facilities.put(kricFacility.id(), kricFacility);
-
-		String json = """
-			{
-			  "response": {
-			    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
-			    "body": {
-			      "items": {
-			        "item": [
-			          {
-			            "stnCd": "0150",
-			            "stnNm": "서울역",
-			            "lineNm": "1호선",
-			            "dtlPstn": "내부 환승통로",
-			            "oprtngSitu": "S"
-			          }
-			        ]
-			      },
-			      "numOfRows": 1000,
-			      "pageNo": 1,
-			      "totalCount": 1
-			    }
-			  }
-			}
-			""";
-		mockHttpResponse(200, json);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		collector.collect();
-
-		// Facility remains NORMAL (unmodified)
-		assertThat(repository.facilities.get("kric-elev:S1:1:0150:1:1F-B1F:hash1").status())
-			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
-		assertThat(collector.linkedElevatorsCount()).isZero();
-		assertThat(collector.unlinkedElevatorsCount()).isEqualTo(1);
-		assertThat(meterRegistry.find("easysubway.collection.seoul-metro.elevator.unlinked-ratio").gauge().value()).isEqualTo(1.0);
-	}
-
-	@Test
-	@DisplayName("(3) 해당 출입구의 KRIC 시설이 0대이면 미연결로 처리한다")
-	void marksUnlinkedWhenMatchingKricElevatorsCountIsZero() throws Exception {
-		repository.stationLines.add(new StationLine("station-seoul", "line-1", "0150", 1, ""));
-		// No facilities in repository
-
-		String json = """
-			{
-			  "response": {
-			    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
-			    "body": {
-			      "items": {
-			        "item": [
-			          {
-			            "stnCd": "0150",
-			            "stnNm": "서울역",
-			            "lineNm": "1호선",
-			            "dtlPstn": "3번 출입구",
-			            "oprtngSitu": "S"
-			          }
-			        ]
-			      },
-			      "numOfRows": 1000,
-			      "pageNo": 1,
-			      "totalCount": 1
-			    }
-			  }
-			}
-			""";
-		mockHttpResponse(200, json);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		collector.collect();
-
-		assertThat(collector.linkedElevatorsCount()).isZero();
-		assertThat(collector.unlinkedElevatorsCount()).isEqualTo(1);
-	}
-
-	@Test
-	@DisplayName("(4) 해당 출입구의 KRIC 시설이 2대 이상이면 모호하므로 상태를 붙이지 않고 미연결 처리한다")
-	void marksUnlinkedWhenMatchingKricElevatorsCountIsTwoOrMore() throws Exception {
-		repository.stationLines.add(new StationLine("station-seoul", "line-1", "0150", 1, ""));
-		// 2 elevators at exit 1
-		var kric1 = new AccessibilityFacility(
-			"kric-elev:S1:1:0150:1:1F-B1F:hash1", "station-seoul", "1", AccessibilityFacilityType.ELEVATOR,
-			"1번 엘리베이터 A", "1F", "B1F", BigDecimal.valueOf(37.555), BigDecimal.valueOf(126.970),
-			"", AccessibilityFacilityStatus.NORMAL, DataConfidenceLevel.HIGH, DataSourceType.OFFICIAL_API, DATE_T0
-		);
-		var kric2 = new AccessibilityFacility(
-			"kric-elev:S1:1:0150:1:B1F-B2F:hash2", "station-seoul", "1", AccessibilityFacilityType.ELEVATOR,
-			"1번 엘리베이터 B", "B1F", "B2F", BigDecimal.valueOf(37.555), BigDecimal.valueOf(126.970),
-			"", AccessibilityFacilityStatus.NORMAL, DataConfidenceLevel.HIGH, DataSourceType.OFFICIAL_API, DATE_T0
-		);
-		repository.facilities.put(kric1.id(), kric1);
-		repository.facilities.put(kric2.id(), kric2);
-
-		String json = """
-			{
-			  "response": {
-			    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
-			    "body": {
-			      "items": {
-			        "item": [
-			          {
-			            "stnCd": "0150",
-			            "stnNm": "서울역",
-			            "lineNm": "1호선",
-			            "dtlPstn": "1번 출입구",
-			            "oprtngSitu": "S"
-			          }
-			        ]
-			      },
-			      "numOfRows": 1000,
-			      "pageNo": 1,
-			      "totalCount": 1
-			    }
-			  }
-			}
-			""";
-		mockHttpResponse(200, json);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		collector.collect();
-
-		// Neither is modified (ambiguous)
-		assertThat(repository.facilities.get(kric1.id()).status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
-		assertThat(repository.facilities.get(kric2.id()).status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
-		assertThat(collector.linkedElevatorsCount()).isZero();
-		assertThat(collector.unlinkedElevatorsCount()).isEqualTo(1);
-	}
-
-	@Test
-	@DisplayName("(5) 역 이름(stnNm) 조인은 절대 수행하지 않으며, stnCd 미매핑 시 미연결 처리한다")
-	void neverJoinsByStationName() throws Exception {
-		// Only station line with code "0150" exists, but item has code "9999" (even if stnNm matches)
-		repository.stationLines.add(new StationLine("station-seoul", "line-1", "0150", 1, ""));
-		var kric = new AccessibilityFacility(
-			"kric-elev:S1:1:0150:1:1F-B1F:hash1", "station-seoul", "1", AccessibilityFacilityType.ELEVATOR,
-			"1번 엘리베이터", "1F", "B1F", BigDecimal.valueOf(37.555), BigDecimal.valueOf(126.970),
-			"", AccessibilityFacilityStatus.NORMAL, DataConfidenceLevel.HIGH, DataSourceType.OFFICIAL_API, DATE_T0
-		);
-		repository.facilities.put(kric.id(), kric);
-
-		String json = """
-			{
-			  "response": {
-			    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
-			    "body": {
-			      "items": {
-			        "item": [
-			          {
-			            "stnCd": "9999",
-			            "stnNm": "서울역",
-			            "lineNm": "1호선",
-			            "dtlPstn": "1번 출입구",
-			            "oprtngSitu": "S"
-			          }
-			        ]
-			      },
-			      "numOfRows": 1000,
-			      "pageNo": 1,
-			      "totalCount": 1
-			    }
-			  }
-			}
-			""";
-		mockHttpResponse(200, json);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		collector.collect();
-
-		assertThat(repository.facilities.get(kric.id()).status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
-		assertThat(collector.linkedElevatorsCount()).isZero();
-		assertThat(collector.unlinkedElevatorsCount()).isEqualTo(1);
-	}
-
-	@Test
-	@DisplayName("관리자 확인(ADMIN_VERIFIED) 시설은 관측일이 확인일보다 미래일 때만 공식 상태로 갱신된다")
-	void respectsAdminVerifiedPriority() throws Exception {
-		repository.stationLines.add(new StationLine("station-seoul", "line-1", "0150", 1, ""));
-		var adminFacility = new AccessibilityFacility(
-			"kric-elev:S1:1:0150:1:1F-B1F:hash1", "station-seoul", "1", AccessibilityFacilityType.ELEVATOR,
-			"1번 엘리베이터", "1F", "B1F", BigDecimal.valueOf(37.555), BigDecimal.valueOf(126.970),
-			"", AccessibilityFacilityStatus.ADMIN_VERIFIED, DataConfidenceLevel.HIGH, DataSourceType.ADMIN_VERIFIED,
-			LocalDate.of(2026, 9, 30) // Updated today by admin
-		);
-		repository.facilities.put(adminFacility.id(), adminFacility);
-
-		String json = """
-			{
-			  "response": {
-			    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
-			    "body": {
-			      "items": {
-			        "item": [
-			          {
-			            "stnCd": "0150",
-			            "stnNm": "서울역",
-			            "lineNm": "1호선",
-			            "dtlPstn": "1번 출입구",
-			            "oprtngSitu": "M"
-			          }
-			        ]
-			      },
-			      "numOfRows": 1000,
-			      "pageNo": 1,
-			      "totalCount": 1
-			    }
-			  }
-			}
-			""";
-		mockHttpResponse(200, json);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		// 1. Same day: ADMIN_VERIFIED retained
-		collector.collect();
-		assertThat(repository.facilities.get(adminFacility.id()).status())
-			.isEqualTo(AccessibilityFacilityStatus.ADMIN_VERIFIED);
-
-		// 2. Next day: Official API status applied
-		clock.advance(Duration.ofDays(1));
-		collector.collect();
-		assertThat(repository.facilities.get(adminFacility.id()).status())
-			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
-	}
-
-	@Test
-	@DisplayName("수집 성공 시 심장박동 갱신, 수집 실패 시 심장박동 미갱신 및 failureCounter 증가")
-	void heartbeatUpdatedOnSuccessAndPreservedOnFailure() throws Exception {
-		mockHttpResponse(500, "Internal Server Error");
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			new SeoulMetroElevatorStatusCollector.Configuration("valid-key", "https://api.test/getFcElvtr"),
-			repository, repository, OBJECT_MAPPER, httpClient, clock, meterRegistry
-		);
-
-		collector.collect();
-
-		assertThat(collector.lastSuccessfulSourceCollectionAt()).isNull();
-		assertThat(meterRegistry.find("easysubway.collection.seoul-metro.elevator.sync")
-			.tag("status", "failure").counter().count()).isEqualTo(1.0);
-	}
-
-	@ParameterizedTest
-	@CsvSource({
-		"M, NORMAL",
-		"S, BROKEN",
-		"T, BROKEN",
-		"I, BROKEN",
-		"B, UNDER_CONSTRUCTION"
-	})
-	@DisplayName("공식 상태 코드 매핑 검증")
-	void parsesOfficialStatusCodes(String code, AccessibilityFacilityStatus expectedStatus) {
-		assertThat(SeoulMetroElevatorStatusCollector.parseOperationStatus(code)).isEqualTo(expectedStatus);
-	}
-
-	@Test
-	@DisplayName("미등록 상태 코드는 UNKNOWN 카운터를 증가시킨다")
-	void incrementsUnknownCodeCounterOnInvalidStatus() {
-		assertThat(SeoulMetroElevatorStatusCollector.parseOperationStatus("X")).isNull();
-		assertThat(SeoulMetroElevatorStatusCollector.parseOperationStatus(null)).isNull();
-	}
-
-	@SuppressWarnings("unchecked")
-	private void mockHttpResponse(int statusCode, String body) throws IOException, InterruptedException {
-		when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenAnswer(inv -> {
-			HttpResponse<InputStream> response = mock(HttpResponse.class);
-			when(response.statusCode()).thenReturn(statusCode);
-			when(response.body()).thenReturn(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
-			return response;
-		});
 	}
 }
