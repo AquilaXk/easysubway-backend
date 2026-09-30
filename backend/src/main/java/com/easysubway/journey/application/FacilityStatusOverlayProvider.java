@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -48,8 +49,8 @@ public final class FacilityStatusOverlayProvider implements FacilityAvailability
 	private final FacilityOperationalStatusStore store;
 	private final Supplier<TransitionFacilityRequirements> activeRequirements;
 	private final Clock clock;
-	private volatile StatusSnapshot status;
-	private volatile Evaluation evaluation;
+	private final AtomicReference<StatusSnapshot> status = new AtomicReference<>();
+	private final AtomicReference<Evaluation> evaluation = new AtomicReference<>();
 
 	public FacilityStatusOverlayProvider(
 		FacilityOperationalStatusStore store,
@@ -94,12 +95,12 @@ public final class FacilityStatusOverlayProvider implements FacilityAvailability
 				.collect(Collectors.toUnmodifiableSet());
 			Instant refreshedAt = clock.instant();
 			if (heartbeat.isEmpty()) {
-				status = null;
+				status.set(null);
 				log.warn("Facility status feed has never succeeded; step-free facility status is unavailable");
 				return;
 			}
 			Instant feedAt = heartbeat.get();
-			status = new StatusSnapshot(outOfService, feedAt.isBefore(refreshedAt) ? feedAt : refreshedAt);
+			status.set(new StatusSnapshot(outOfService, feedAt.isBefore(refreshedAt) ? feedAt : refreshedAt));
 		} catch (RuntimeException exception) {
 			log.warn("Facility status refresh failed; keeping the last successful observation time", exception);
 		}
@@ -107,7 +108,7 @@ public final class FacilityStatusOverlayProvider implements FacilityAvailability
 
 	@Override
 	public FacilityAvailabilityView currentView() {
-		StatusSnapshot currentStatus = status;
+		StatusSnapshot currentStatus = status.get();
 		if (currentStatus == null) {
 			return FacilityAvailabilityView.unavailable();
 		}
@@ -115,14 +116,14 @@ public final class FacilityStatusOverlayProvider implements FacilityAvailability
 		if (!requirements.present()) {
 			return FacilityAvailabilityView.unavailable();
 		}
-		Evaluation cached = evaluation;
+		Evaluation cached = evaluation.get();
 		if (cached != null && cached.status() == currentStatus && cached.requirements() == requirements) {
 			return cached.view();
 		}
 		FacilityAvailabilityView view = FacilityAvailabilityView.blocked(
 			currentStatus.observedAt(),
 			StepFreeTransitionEvaluator.blockedTransitionKeys(requirements, currentStatus.outOfServiceFacilityIds()));
-		evaluation = new Evaluation(currentStatus, requirements, view);
+		evaluation.set(new Evaluation(currentStatus, requirements, view));
 		return view;
 	}
 
@@ -132,7 +133,7 @@ public final class FacilityStatusOverlayProvider implements FacilityAvailability
 	}
 
 	private double secondsSinceLastSuccess() {
-		StatusSnapshot currentStatus = status;
+		StatusSnapshot currentStatus = status.get();
 		return currentStatus == null
 			? Double.NaN
 			: Duration.between(currentStatus.observedAt(), clock.instant()).toSeconds();

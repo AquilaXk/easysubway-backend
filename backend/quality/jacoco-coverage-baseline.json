@@ -21,7 +21,7 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "78d9839dfb8b66ff7bb97b2fe9f1d6c5286640514d6b6e0fdde8bb3840fa2179"
+    "sourceInventorySha256": "1885d9340101b3c55203b904942d7eff81c1b061da87ab378dbce8f768d918ed"
   },
   "scope": {
     "criticalSourceCount": 469,
@@ -146,7 +146,7 @@
     {"path":"backend/src/main/java/com/easysubway/journey/application/ActiveJourneySnapshotPort.java","sha256":"1c3839445f3c7e8dfba120ee35200c946b5e11fd66201b23a4e5dfa97b8738f1","packageName":"com.easysubway.journey.application","sourceFileName":"ActiveJourneySnapshotPort.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":5,"covered":85,"total":90,"basisPoints":9444},"branch":{"missed":27,"covered":57,"total":84,"basisPoints":6785}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityAvailabilityPort.java","sha256":"36e8d361a2a288cee0f22b1e18c5700c0134764101d35caa8c9682b473311d51","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityAvailabilityPort.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityAvailabilityView.java","sha256":"25999305556470e466ddbb3c36674eac89c06a4c1b19c2588da0f54b36ce91d2","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityAvailabilityView.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":3,"total":3,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
-    {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityStatusOverlayProvider.java","sha256":"84cf074e16e42c1bd5f502af289d3733164aa51d7f1cfd0826d0d58beff1dfee","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityStatusOverlayProvider.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":58,"total":58,"basisPoints":10000},"branch":{"missed":0,"covered":22,"total":22,"basisPoints":10000}},
+    {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityStatusOverlayProvider.java","sha256":"a6648fae662cdee9a8063b881bae8df377df8e8138dde323dcb1e2be8fce43c4","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityStatusOverlayProvider.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":60,"total":60,"basisPoints":10000},"branch":{"missed":0,"covered":22,"total":22,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityStatusUnavailableException.java","sha256":"ca29d4854ff5bba42562a847efc0a8c5141bed272abb81c9d0f2f44cf5b21931","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityStatusUnavailableException.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":4,"total":4,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/JourneyApplicationDeadlineExecutor.java","sha256":"358f6013507bafa2e178cb73eb303827e9278476de2095ec9a1910bd16395088","packageName":"com.easysubway.journey.application","sourceFileName":"JourneyApplicationDeadlineExecutor.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":17,"covered":104,"total":121,"basisPoints":8595},"branch":{"missed":9,"covered":21,"total":30,"basisPoints":7000}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/JourneyApplicationService.java","sha256":"45531c147b9f267d0befca6772d41119b9487cba089408b23f104e5cf7efe81d","packageName":"com.easysubway.journey.application","sourceFileName":"JourneyApplicationService.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":2,"covered":119,"total":121,"basisPoints":9834},"branch":{"missed":13,"covered":79,"total":92,"basisPoints":8586}},
@@ -517,8 +517,8 @@
       "missingSourceCount": 0,
       "line": {
         "missed": 1152,
-        "covered": 15059,
-        "total": 16211,
+        "covered": 15061,
+        "total": 16213,
         "basisPoints": 9289
       },
       "branch": {
