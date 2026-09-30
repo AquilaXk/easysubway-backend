@@ -16,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.FacilityAvailabilityPort;
+import com.easysubway.journey.application.FacilityStatusOverlayProvider;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationService;
 import com.easysubway.journey.application.JourneyProfileApplicationService;
@@ -46,6 +48,9 @@ import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -123,6 +128,8 @@ class JourneyProductionConfigurationTest {
 				.isInstanceOf(RouteBundleActiveJourneySnapshotAdapter.class);
 			assertThat(context).hasSingleBean(JourneyRaptorPort.class);
 			assertThat(context.getBean(JourneyRaptorPort.class)).isInstanceOf(JourneyRaptorAdapter.class);
+			assertThat(context).hasSingleBean(FacilityAvailabilityPort.class);
+			assertThat(context.getBean(FacilityAvailabilityPort.class)).isInstanceOf(FacilityStatusOverlayProvider.class);
 			assertThat(context).hasSingleBean(JourneyRealtimePort.class);
 			assertThat(context.getBean(JourneyRealtimePort.class)).isInstanceOf(JourneyRealtimeAdapter.class);
 			assertThat(context).hasSingleBean(JourneyApplicationService.class);
@@ -814,6 +821,16 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		LoadRouteTimetablePort loadRouteTimetablePort() {
 			return mock(LoadRouteTimetablePort.class);
+		}
+
+		@Bean
+		FacilityOperationalStatusStore facilityOperationalStatusStore() {
+			return mock(FacilityOperationalStatusStore.class);
+		}
+
+		@Bean
+		MeterRegistry meterRegistry() {
+			return new SimpleMeterRegistry();
 		}
 	}
 

@@ -87,7 +87,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	public RaptorRouteBundleRuntimeView compile(Input input) {
 		CompiledPayloads compiled = read(input);
 		return RaptorRouteBundleRuntimeView.compile(
-			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities());
+			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities(),
+			compiled.transitionFacilityRequirements());
 	}
 
 	RouteTimetable readTimetable(Input input) {
@@ -131,9 +132,10 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var platformGaps = loadPlatformGaps(accessibilityConn);
 			validateFare(byPath.get(FARE_PATH).connection());
 			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
+			var transitionFacilityRequirements = loadTransitionFacilityRequirements(accessibilityConn, topology);
 			return new CompiledPayloads(loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
-				smrtElevatorFacilities);
+				smrtElevatorFacilities, transitionFacilityRequirements);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -339,6 +341,41 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			}
 		}
 		return List.copyOf(facilities);
+	}
+
+	// #418 QA 결정 추가 2: 무단차 전환 요구(data#836). 표가 없는 번들은 매핑 없음으로 명시한다. 표가 있으면 data 계약의 다섯 열·
+	// 비어 있지 않은 행·group_kind 두 값·역 단위 ENTRY/EXIT edge 참조를 모두 지켜야 하며, 어기면 번들 계약 위반으로 컴파일을 실패시킨다.
+	private static TransitionFacilityRequirements loadTransitionFacilityRequirements(
+		Connection connection, Map<String, TopologyEdge> topology) throws SQLException {
+		if (querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='transition_facility_requirement'") == 0) {
+			log.info("Accessibility bundle table transition_facility_requirement does not exist; step-free facility mapping is missing");
+			return TransitionFacilityRequirements.missing();
+		}
+		requireColumns(connection, "transition_facility_requirement", List.of(
+			"transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"));
+		var rows = new ArrayList<TransitionFacilityRequirements.Requirement>();
+		try (var statement = connection.createStatement(); var result = statement.executeQuery("""
+			SELECT transition_key, path_id, direction_next_station_id, group_kind, facility_id
+			FROM transition_facility_requirement
+			ORDER BY transition_key COLLATE BINARY, path_id COLLATE BINARY, group_kind COLLATE BINARY,
+			 facility_id COLLATE BINARY
+			""")) {
+			while (result.next()) {
+				var row = new TransitionFacilityRequirements.Requirement(
+					result.getString(1), result.getString(2), result.getString(3), result.getString(4),
+					result.getString(5));
+				TopologyEdge edge = topology.get(row.transitionKey());
+				if (edge == null || !("ENTRY".equals(edge.type()) || "EXIT".equals(edge.type()))) {
+					throw new IllegalArgumentException(
+						"transition_facility_requirement transition_key is not a station ENTRY/EXIT edge: " + row.transitionKey());
+				}
+				rows.add(row);
+			}
+		}
+		if (rows.isEmpty()) throw new IllegalArgumentException("transition_facility_requirement is empty");
+		log.info("Loaded {} transition facility requirement rows from accessibility bundle", rows.size());
+		return TransitionFacilityRequirements.of(rows);
 	}
 
 	private static void validateFare(Connection connection) throws SQLException {
@@ -832,6 +869,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	private record CompiledPayloads(
-		RouteTimetable timetable, List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities) {
+		RouteTimetable timetable, List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities,
+		TransitionFacilityRequirements transitionFacilityRequirements) {
 	}
 }

@@ -656,13 +656,13 @@ class JourneyProfileRaptorAdapterTest {
 	private static final Clock FACILITY_CLOCK = Clock.fixed(Instant.parse("2026-07-01T00:00:00Z"), ZoneOffset.UTC);
 
 	@Test
-	void profileQueriesAvoidAFreshlyBlockedEntryTransition() {
+	void stepFreeProfileQueriesAvoidAFreshlyBlockedEntryTransition() {
 		var captured = snapshot(alternateEntryTimetable());
 		var blocked = facilityAdapter(FacilityAvailabilityView.blocked(
 			FACILITY_CLOCK.instant().minusSeconds(60), Set.of("entry")), false);
 		var unblocked = facilityAdapter(FacilityAvailabilityView.empty(FACILITY_CLOCK.instant()), false);
-		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
-		var departBetween = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)));
+		var arriveBy = stepFreeQuery(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var departBetween = stepFreeQuery(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)));
 
 		// 진입 300초+출구 120초=420초·50m+50m=100m, 차단 시 진입 600초+120초=720초·80m+50m=130m.
 		assertThat(singleArriveByMetrics(unblocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
@@ -676,6 +676,44 @@ class JourneyProfileRaptorAdapterTest {
 			.isNotEmpty().allSatisfy(itinerary -> assertThat(itinerary.legs().getFirst()).isEqualTo(
 				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"station-a", "station-a", 600, 80, false, true, "VERIFIED"))));
+	}
+
+	@Test
+	void freshlyBlockedEntryTransitionDoesNotApplyToNoneOrPreferenceProfileQueries() {
+		// #418 QA 결정 추가 4: 막힌 전환은 REQUIRE_STEP_FREE 요청에만 적용한다.
+		var captured = snapshot(alternateEntryTimetable());
+		var arriveByWindow = new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000));
+		var departWindow = new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000));
+
+		var unblocked = facilityAdapter(FacilityAvailabilityView.empty(FACILITY_CLOCK.instant()), true);
+
+		for (boolean required : new boolean[] {false, true}) {
+			var blocked = facilityAdapter(FacilityAvailabilityView.blocked(
+				FACILITY_CLOCK.instant().minusSeconds(60), Set.of("entry")), required);
+			for (var profile : List.of(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.MobilityProfile.STEP_FREE)) {
+				// 선호 프로필은 보행 시간이 달라지므로 같은 질의의 "차단 없는 신선한 뷰" 결과와 비교한다.
+				assertThat(singleArriveByMetrics(blocked.plan(noneQuery(arriveByWindow, profile), captured, null,
+					policy().profilePlanningLimits())))
+					.as("%s, required=%s", profile, required)
+					.isEqualTo(singleArriveByMetrics(unblocked.plan(noneQuery(arriveByWindow, profile), captured, null,
+						policy().profilePlanningLimits())));
+				var window = (JourneyProfileRaptorPort.DepartureWindowPlan)
+					((JourneyProfileRaptorPort.PlanningResult.Planned) blocked.plan(
+						noneQuery(departWindow, profile), captured, null, policy().profilePlanningLimits())).temporalPlan();
+				var unblockedWindow = (JourneyProfileRaptorPort.DepartureWindowPlan)
+					((JourneyProfileRaptorPort.PlanningResult.Planned) unblocked.plan(
+						noneQuery(departWindow, profile), captured, null, policy().profilePlanningLimits())).temporalPlan();
+				assertThat(window.points()).as("%s, required=%s", profile, required)
+					.isNotEmpty().isEqualTo(unblockedWindow.points());
+			}
+			assertThat(singleArriveByMetrics(blocked.plan(noneQuery(arriveByWindow, JourneyRequest.MobilityProfile.STANDARD),
+				captured, null, policy().profilePlanningLimits())))
+				.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+			assertThat(singleArriveByMetrics(blocked.plan(stepFreeQuery(arriveByWindow), captured, null,
+				policy().profilePlanningLimits())))
+				.as("REQUIRE_STEP_FREE, required=%s", required)
+				.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 720, 130, 0, new JourneyProfileRaptorPort.NoTransfer()));
+		}
 	}
 
 	@Test
@@ -701,11 +739,17 @@ class JourneyProfileRaptorAdapterTest {
 	void requiredStaleFacilityStatusLeavesNonStepFreeProfileUnblocked() {
 		var stale = facilityAdapter(FacilityAvailabilityView.blocked(
 			FACILITY_CLOCK.instant().minus(Duration.ofMinutes(6)), Set.of("entry")), true);
-		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var window = new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000));
 
-		assertThat(singleArriveByMetrics(stale.plan(arriveBy, snapshot(alternateEntryTimetable()), null,
-			policy().profilePlanningLimits())))
+		var unblocked = facilityAdapter(FacilityAvailabilityView.empty(FACILITY_CLOCK.instant()), true);
+
+		assertThat(singleArriveByMetrics(stale.plan(noneQuery(window, JourneyRequest.MobilityProfile.STANDARD),
+			snapshot(alternateEntryTimetable()), null, policy().profilePlanningLimits())))
 			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+		assertThat(singleArriveByMetrics(stale.plan(noneQuery(window, JourneyRequest.MobilityProfile.STEP_FREE),
+			snapshot(alternateEntryTimetable()), null, policy().profilePlanningLimits())))
+			.isEqualTo(singleArriveByMetrics(unblocked.plan(noneQuery(window, JourneyRequest.MobilityProfile.STEP_FREE),
+				snapshot(alternateEntryTimetable()), null, policy().profilePlanningLimits())));
 	}
 
 	private static JourneyProfileRaptorAdapter facilityAdapter(FacilityAvailabilityView view, boolean required) {
@@ -721,6 +765,16 @@ class JourneyProfileRaptorAdapterTest {
 		var found = (JourneyProfileRaptorPort.ReversePlan.Found) plan.result();
 		assertThat(found.itineraries()).hasSize(1);
 		return found.itineraries().getFirst().metrics();
+	}
+
+	private static JourneyRaptorQuery noneQuery(
+		JourneyRaptorQuery.TemporalQuery temporalQuery,
+		JourneyRequest.MobilityProfile mobilityProfile
+	) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, mobilityProfile,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
 	}
 
 	private static JourneyRaptorQuery stepFreeQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {

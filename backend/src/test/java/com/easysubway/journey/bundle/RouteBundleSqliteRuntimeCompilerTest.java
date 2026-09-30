@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
+import com.easysubway.journey.application.FacilityStatusOverlayProvider;
+import com.easysubway.journey.application.FacilityStatusUnavailableException;
+import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
@@ -11,6 +14,11 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDi
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
+import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
+import com.easysubway.transit.adapter.out.persistence.JdbcFacilityOperationalStatusRepository;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedObservation;
+import com.easysubway.transit.domain.FacilityOperationalState;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -22,15 +30,26 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 class RouteBundleSqliteRuntimeCompilerTest {
 
@@ -39,6 +58,17 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	private static final String STATION_SET_SHA = "b".repeat(64);
 	private static final String BUNDLE_ID = "capital-20260812";
 	private static final Instant DEPARTURE = Instant.parse("2026-08-12T00:50:00Z");
+	// data emit-artifact-components.mjs의 transition_facility_requirement DDL과 같다.
+	private static final String REQUIREMENT_DDL = "CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL,"
+		+ " path_id TEXT NOT NULL, direction_next_station_id TEXT NOT NULL, group_kind TEXT NOT NULL"
+		+ " CHECK(group_kind IN ('EXIT_ELEVATORS','PLATFORM_DIRECTION_ELEVATORS')), facility_id TEXT NOT NULL,"
+		+ " PRIMARY KEY (transition_key, path_id, group_kind, facility_id))";
+	private static final String EXIT_GROUP = TransitionFacilityRequirements.EXIT_ELEVATORS;
+	private static final String DIRECTION_GROUP = TransitionFacilityRequirements.PLATFORM_DIRECTION_ELEVATORS;
+	private static final String E1_EXIT = "smrt-elev:0201:1:9번 출입구";
+	private static final String E2_EXIT = "smrt-elev:0201:1:10번 출입구";
+	private static final String D1 = "smrt-elev:0201:1:가역 방면1-1";
+	private static final String D2 = "smrt-elev:0201:1:가역 방면3-4";
 
 	@TempDir
 	Path temp;
@@ -178,6 +208,175 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(blankName)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("bundle facility name");
+	}
+
+	@Test
+	void loadsTransitionFacilityRequirementsIntoTheRuntimeView() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloadsWithRequirements(
+			REQUIREMENT_DDL, exitBRequirementRows())));
+
+		assertThat(runtime).isInstanceOf(TransitionFacilityRequirementSource.class);
+		var requirements = runtime.transitionFacilityRequirements();
+		assertThat(requirements.present()).isTrue();
+		assertThat(requirements.transitionKeys()).containsExactly("exit-b");
+		assertThat(requirements.requirementsFor("exit-b"))
+			.extracting(row -> String.join("|", row.transitionKey(), row.pathId(), row.directionNextStationId(),
+				row.groupKind(), row.facilityId()))
+			.containsExactly(
+				"exit-b|path-1|station-a|EXIT_ELEVATORS|" + E1_EXIT,
+				"exit-b|path-1|station-a|PLATFORM_DIRECTION_ELEVATORS|" + D1,
+				"exit-b|path-1|station-a|PLATFORM_DIRECTION_ELEVATORS|" + D2,
+				"exit-b|path-2|station-a|EXIT_ELEVATORS|" + E2_EXIT,
+				"exit-b|path-2|station-a|PLATFORM_DIRECTION_ELEVATORS|" + D1,
+				"exit-b|path-2|station-a|PLATFORM_DIRECTION_ELEVATORS|" + D2);
+		assertThat(requirements.requirementsFor("entry-a")).isEmpty();
+	}
+
+	@Test
+	void bundleWithoutRequirementTableCarriesAnExplicitMissingMapping() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime.transitionFacilityRequirements().present()).isFalse();
+		assertThat(runtime.transitionFacilityRequirements().transitionKeys()).isEmpty();
+	}
+
+	@Test
+	void rejectsRequirementTablesThatBreakTheDataContract() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var wrongColumns = payloadsWithRequirements(
+			"CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL, facility_id TEXT NOT NULL)",
+			List.of());
+		assertThatThrownBy(() -> compiler.compile(input(wrongColumns)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("SQLite table schema mismatch: transition_facility_requirement");
+
+		assertThatThrownBy(() -> compiler.compile(input(payloadsWithRequirements(REQUIREMENT_DDL, List.of()))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("transition_facility_requirement is empty");
+
+		String uncheckedDdl = "CREATE TABLE transition_facility_requirement (transition_key TEXT, path_id TEXT,"
+			+ " direction_next_station_id TEXT, group_kind TEXT, facility_id TEXT)";
+		assertThatThrownBy(() -> compiler.compile(input(payloadsWithRequirements(uncheckedDdl, List.<Object[]>of(
+			new Object[] {"exit-b", "path-1", "station-a", "ESCALATORS", E1_EXIT})))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("group_kind");
+		assertThatThrownBy(() -> compiler.compile(input(payloadsWithRequirements(uncheckedDdl, List.<Object[]>of(
+			new Object[] {"exit-b", "path-1", "station-a", EXIT_GROUP, " "})))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("facility_id");
+		for (String transitionKey : List.of("edge-not-in-topology", "ride-a-b")) {
+			assertThatThrownBy(() -> compiler.compile(input(payloadsWithRequirements(REQUIREMENT_DDL, List.<Object[]>of(
+				new Object[] {transitionKey, "path-1", "station-a", EXIT_GROUP, E1_EXIT})))))
+				.as(transitionKey)
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("not a station ENTRY/EXIT edge");
+		}
+	}
+
+	/**
+	 * 통합: 매핑을 담은 테스트 번들 + 운영 상태 테이블(H2, V76)에 대한 실제 수집 반영 → 공급자 갱신 → Journey 무단차 탐색.
+	 * exit-b의 요구는 경로 2개(출입구 E1·E2 각각 + 방향 D1·D2 공통)다.
+	 */
+	@Test
+	void stepFreeJourneyFollowsOperationalStatusThroughTheCompiledBundleMapping() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloadsWithRequirements(
+			REQUIREMENT_DDL, exitBRequirementRows())));
+		var repository = facilityStatusRepository();
+		var clock = new MutableClock(DEPARTURE);
+		var provider = new FacilityStatusOverlayProvider(
+			repository, runtime::transitionFacilityRequirements, clock, new SimpleMeterRegistry());
+		var adapter = new JourneyRaptorAdapter(provider, true, clock);
+		var stepFree = request(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
+		var snapshot = snapshot(runtime);
+
+		provider.refresh();
+		assertThatThrownBy(() -> plan(adapter, stepFree, snapshot))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+
+		collect(repository, provider, clock, Set.of());
+		var original = plan(adapter, stepFree, snapshot).candidates();
+		assertThat(original).singleElement().satisfies(candidate ->
+			assertThat(candidate.accessibility().stairFree()).isTrue());
+
+		// 방향 엘리베이터 2대 중 1대 불가 → 통과.
+		collect(repository, provider, clock, Set.of(D1));
+		assertThat(plan(adapter, stepFree, snapshot).candidates()).isEqualTo(original);
+
+		// 출입구 E1 불가 → path-1만 빠지고 path-2로 통과.
+		collect(repository, provider, clock, Set.of(E1_EXIT));
+		assertThat(plan(adapter, stepFree, snapshot).candidates()).isEqualTo(original);
+
+		// 두 출입구 모두 불가 → exit-b가 막혀 무단차 경로가 없다(빈 결과로 명시).
+		collect(repository, provider, clock, Set.of(E1_EXIT, E2_EXIT));
+		assertThat(provider.currentView().blockedPathwayEdgeIds()).containsExactly("exit-b");
+		assertThat(plan(adapter, stepFree, snapshot).candidates()).isEmpty();
+
+		// 고장 해제 → 원래 경로.
+		collect(repository, provider, clock, Set.of(E2_EXIT));
+		assertThat(plan(adapter, stepFree, snapshot).candidates()).isEqualTo(original);
+
+		// 원천 수집이 멈추면 캐시 갱신이 성공해도 5분을 넘긴 뒤 무단차 요청은 명시적 오류다.
+		clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+		provider.refresh();
+		assertThatThrownBy(() -> plan(adapter, stepFree, snapshot))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	/**
+	 * 통합(NONE 변형, #418 QA 결정 추가 4): 같은 번들·운영 상태 흐름에서 무단차 제약이 없는 요청은 운영 상태와 무관하다.
+	 * 뷰가 없거나(원천 미수집) 5분을 넘겨도 오류가 아니고, 불가 시설로 막힌 전환도 적용하지 않는다.
+	 */
+	@Test
+	void ordinaryJourneyIgnoresOperationalStatusThroughTheCompiledBundleMapping() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloadsWithRequirements(
+			REQUIREMENT_DDL, exitBRequirementRows())));
+		var repository = facilityStatusRepository();
+		var clock = new MutableClock(DEPARTURE);
+		var provider = new FacilityStatusOverlayProvider(
+			repository, runtime::transitionFacilityRequirements, clock, new SimpleMeterRegistry());
+		var adapter = new JourneyRaptorAdapter(provider, true, clock);
+		var ordinary = request(JourneyRequest.ConstraintMode.NONE);
+		var stepFree = request(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
+		var snapshot = snapshot(runtime);
+
+		// 원천 수집 전(뷰 사용 불가): 무단차 요청은 오류, 일반 요청은 정상 탐색.
+		provider.refresh();
+		assertThat(provider.currentView().available()).isFalse();
+		var original = plan(adapter, ordinary, snapshot).candidates();
+		assertThat(original).hasSize(1);
+		assertThatThrownBy(() -> plan(adapter, stepFree, snapshot))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+
+		// 두 출입구 모두 불가 → exit-b는 무단차 요청에서만 막힌다.
+		collect(repository, provider, clock, Set.of(E1_EXIT, E2_EXIT));
+		assertThat(provider.currentView().blockedPathwayEdgeIds()).containsExactly("exit-b");
+		assertThat(plan(adapter, stepFree, snapshot).candidates()).isEmpty();
+		assertThat(plan(adapter, ordinary, snapshot).candidates()).isEqualTo(original);
+
+		// 원천 수집이 멈춰 5분을 넘긴 뒤에도 일반 요청은 오류 없이 같은 경로다.
+		clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+		provider.refresh();
+		assertThatThrownBy(() -> plan(adapter, stepFree, snapshot))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+		assertThat(plan(adapter, ordinary, snapshot).candidates()).isEqualTo(original);
+	}
+
+	@Test
+	void bundleWithoutMappingFailsRequiredStepFreeJourneyButKeepsOrdinaryJourney() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+		var repository = facilityStatusRepository();
+		var clock = new MutableClock(DEPARTURE);
+		var provider = new FacilityStatusOverlayProvider(
+			repository, runtime::transitionFacilityRequirements, clock, new SimpleMeterRegistry());
+		var adapter = new JourneyRaptorAdapter(provider, true, clock);
+		collect(repository, provider, clock, Set.of(E1_EXIT));
+
+		assertThatThrownBy(() -> plan(adapter, request(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE), snapshot(runtime)))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+		assertThat(plan(adapter, request(JourneyRequest.ConstraintMode.NONE), snapshot(runtime)).candidates())
+			.hasSize(1);
 	}
 
 	@Test
@@ -566,6 +765,121 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
 		return input(payloads, payloadSha256s(payloads));
+	}
+
+	private static List<Object[]> exitBRequirementRows() {
+		return List.of(
+			new Object[] {"exit-b", "path-1", "station-a", EXIT_GROUP, E1_EXIT},
+			new Object[] {"exit-b", "path-1", "station-a", DIRECTION_GROUP, D1},
+			new Object[] {"exit-b", "path-1", "station-a", DIRECTION_GROUP, D2},
+			new Object[] {"exit-b", "path-2", "station-a", EXIT_GROUP, E2_EXIT},
+			new Object[] {"exit-b", "path-2", "station-a", DIRECTION_GROUP, D1},
+			new Object[] {"exit-b", "path-2", "station-a", DIRECTION_GROUP, D2});
+	}
+
+	private Map<String, byte[]> payloadsWithRequirements(String requirementDdl, List<Object[]> requirementRows)
+		throws Exception {
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-requirements", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			for (String facilityId : List.of(E1_EXIT, E2_EXIT, D1, D2)) {
+				insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)", facilityId, "station-b", "ELEVATOR",
+					"나역 엘리베이터 " + facilityId.substring(facilityId.lastIndexOf(':') + 1));
+			}
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+			execute(connection, requirementDdl);
+			for (Object[] row : requirementRows) {
+				insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?,?,?)", row);
+			}
+		}), 10));
+		return payloads;
+	}
+
+	private static JdbcFacilityOperationalStatusRepository facilityStatusRepository() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:bundle-facility-status-" + UUID.randomUUID()
+				+ ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa", "");
+		new ResourceDatabasePopulator(new ClassPathResource("db/migration/h2/V76__facility_operational_status.sql"))
+			.execute(dataSource);
+		return new JdbcFacilityOperationalStatusRepository(dataSource, new DataSourceTransactionManager(dataSource));
+	}
+
+	// 수집기 한 회차와 같이 모든 시설 관측을 한 번에 반영하고 30초 뒤 공급자가 캐시를 갱신한다.
+	private static void collect(
+		JdbcFacilityOperationalStatusRepository repository,
+		FacilityStatusOverlayProvider provider,
+		MutableClock clock,
+		Set<String> outOfService
+	) {
+		clock.advance(Duration.ofSeconds(30));
+		var observations = new ArrayList<FeedObservation>();
+		for (String facilityId : List.of(E1_EXIT, E2_EXIT, D1, D2)) {
+			boolean out = outOfService.contains(facilityId);
+			observations.add(new FeedObservation(facilityId,
+				out ? FacilityOperationalState.OUT_OF_SERVICE : FacilityOperationalState.OPERATING, out ? "S" : "M"));
+		}
+		repository.applyFeedCollection(FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED, observations, clock.instant());
+		provider.refresh();
+	}
+
+	private static JourneyRequest request(JourneyRequest.ConstraintMode constraintMode) {
+		return new JourneyRequest(
+			"01HZY3Q4J5K6M7N8P9Q0R1S2T3",
+			"station-a",
+			"station-b",
+			new JourneyRequest.Departure.Scheduled(DEPARTURE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			constraintMode,
+			0,
+			1,
+			() -> false);
+	}
+
+	private static ActiveJourneySnapshot snapshot(RaptorRouteBundleRuntimeView runtime) {
+		return new ActiveJourneySnapshot(
+			"active:7", BUNDLE_ID, SHA, "timetable", "accessibility", 7, runtime,
+			DEPARTURE.plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+	}
+
+	private static JourneyRaptorPort.PlanResult plan(
+		JourneyRaptorAdapter adapter, JourneyRequest request, ActiveJourneySnapshot snapshot) {
+		return adapter.plan(request, snapshot, DEPARTURE, null, new JourneyRequestMeasurement(request.requestId()));
+	}
+
+	private static final class MutableClock extends Clock {
+		private Instant now;
+
+		private MutableClock(Instant now) {
+			this.now = now;
+		}
+
+		void advance(Duration duration) {
+			now = now.plus(duration);
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			return now;
+		}
 	}
 
 	private RouteBundleSqliteRuntimeCompiler.Input input(
