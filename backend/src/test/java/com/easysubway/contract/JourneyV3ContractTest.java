@@ -352,6 +352,8 @@ class JourneyV3ContractTest {
 			"realtimeArrivalTime");
 		Set<String> rideProperties = new LinkedHashSet<>(rideRequired);
 		rideProperties.add("alightingCarDoors");
+		rideProperties.add("boardingPlatformGaps");
+		rideProperties.add("alightingPlatformGaps");
 		assertClosedSchema(document, "JourneyRideLeg", rideRequired, rideProperties);
 		assertEnum(property(document, "JourneyRideLeg", "type"), "RIDE");
 		assertThat(property(document, "JourneyRideLeg", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
@@ -367,6 +369,21 @@ class JourneyV3ContractTest {
 		);
 		assertEnum(property(document, "JourneyAlightingCarDoor", "targetFacilityType"),
 			"TRANSFER", "ELEVATOR", "ESCALATOR", "STAIR");
+
+		for (String field : List.of("boardingPlatformGaps", "alightingPlatformGaps")) {
+			assertThat(property(document, "JourneyRideLeg", field).get("type")).isEqualTo("array");
+			assertThat(map(property(document, "JourneyRideLeg", field).get("items")).get("$ref"))
+				.isEqualTo("#/components/schemas/JourneyPlatformGap");
+		}
+		assertClosedSchema(
+			document,
+			"JourneyPlatformGap",
+			Set.of("platformPosition", "gapGrade", "heightDiffGrade", "curved"),
+			Set.of("platformPosition", "carNumber", "doorNumber", "gapGrade", "heightDiffGrade", "curved")
+		);
+		assertEnum(property(document, "JourneyPlatformGap", "gapGrade"), "WIDE", "NORMAL", "NARROW");
+		assertEnum(property(document, "JourneyPlatformGap", "heightDiffGrade"), "HIGH", "NORMAL", "LOW");
+		assertThat(property(document, "JourneyPlatformGap", "curved").get("type")).isEqualTo("boolean");
 	}
 
 	@Test

@@ -6,6 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -407,6 +411,155 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
 		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void compilesOfficialPlatformGapGradesInDeclaredOrder() throws Exception {
+		var payloads = payloadsWithGaps(true,
+			gap("g1", "station-a", "line-1", "UP", "본선 2-1", 2, 1, "NARROW", "LOW", 0),
+			gap("g2", "station-a", "line-1", "UP", "본선 1-2", 1, 2, "NORMAL", "HIGH", 0),
+			gap("g3", "station-a", "line-1", "UP", "본선 1-1", 1, 1, "WIDE", "LOW", 1),
+			gap("g4", "station-a", "line-1", "UP", "본선 3-1", 3, 1, "NORMAL", "NORMAL", 0),
+			gap("g5", "station-a", "line-1", "UP", "본선 1-3", 1, 3, "NORMAL", "HIGH", 0),
+			gap("g6", "station-a", "line-1", "DOWN", "하선 오이도 방면", null, null, "WIDE", "HIGH", 1));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+
+		var up = timetable.routeAccessData().platformGaps().get(new PlatformGapKey("station-a", "line-1", "UP"));
+		// WIDE -> NORMAL -> NARROW, 같은 간격이면 HIGH -> NORMAL -> LOW, 그다음 platformPosition 오름차순
+		assertThat(up).containsExactly(
+			new PlatformGap("본선 1-1", 1, 1, GapGrade.WIDE, HeightDiffGrade.LOW, true),
+			new PlatformGap("본선 1-2", 1, 2, GapGrade.NORMAL, HeightDiffGrade.HIGH, false),
+			new PlatformGap("본선 1-3", 1, 3, GapGrade.NORMAL, HeightDiffGrade.HIGH, false),
+			new PlatformGap("본선 3-1", 3, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false),
+			new PlatformGap("본선 2-1", 2, 1, GapGrade.NARROW, HeightDiffGrade.LOW, false));
+		var down = timetable.routeAccessData().platformGaps()
+			.get(new PlatformGapKey("station-a", "line-1", "DOWN"));
+		assertThat(down).containsExactly(
+			new PlatformGap("하선 오이도 방면", null, null, GapGrade.WIDE, HeightDiffGrade.HIGH, true));
+	}
+
+	@Test
+	void treatsMissingPlatformGapTableAsNoGaps() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads()));
+
+		assertThat(timetable.routeAccessData().platformGaps()).isEmpty();
+	}
+
+	@Test
+	void treatsEmptyPlatformGapTableAsNoGaps() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloadsWithGaps(true)));
+
+		assertThat(timetable.routeAccessData().platformGaps()).isEmpty();
+	}
+
+	@Test
+	void rejectsUnknownGapGrade() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "좁음", "LOW", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap gap_grade: 좁음");
+	}
+
+	@Test
+	void rejectsUnknownHeightDiffGrade() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "WIDE", "HUGE", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap height_diff_grade: HUGE");
+	}
+
+	@Test
+	void rejectsInvalidCurvedFlag() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "WIDE", "LOW", 2));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap curved: 2");
+	}
+
+	@Test
+	void rejectsPlatformGapDirectionOutsideUpDown() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "EAST", "1-1", 1, 1, "WIDE", "LOW", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap direction: EAST");
+	}
+
+	@Test
+	void rejectsPlatformGapTableWithNumericMillimetreColumns() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-mm-gaps", connection -> {
+			commonAccessibility(connection);
+			execute(connection, """
+				CREATE TABLE station_platform_gaps (
+					id TEXT PRIMARY KEY, station_id TEXT NOT NULL, line_id TEXT NOT NULL, direction TEXT,
+					platform_position TEXT NOT NULL, car_number INTEGER, door_number INTEGER,
+					gap_mm INTEGER NOT NULL, height_diff_mm INTEGER NOT NULL, source_snapshot_id TEXT NOT NULL)
+				""");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	private record GapRow(String id, String stationId, String lineId, String direction, String position,
+		Integer car, Integer door, String gapGrade, String heightDiffGrade, int curved) {
+	}
+
+	private static GapRow gap(String id, String stationId, String lineId, String direction, String position,
+		Integer car, Integer door, String gapGrade, String heightDiffGrade, int curved) {
+		return new GapRow(id, stationId, lineId, direction, position, car, door, gapGrade, heightDiffGrade, curved);
+	}
+
+	private void commonAccessibility(Connection connection) throws Exception {
+		common(connection, identitySql());
+		execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+		var evaluation = evaluation(topologyEdges());
+		insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+			evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+	}
+
+	/** checked=true는 data 계약의 CHECK 제약을 그대로 두고, false는 계약 위반 값을 넣기 위해 제약을 뺀다. */
+	private Map<String, byte[]> payloadsWithGaps(boolean checked, GapRow... rows) throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-gaps", connection -> {
+			commonAccessibility(connection);
+			execute(connection, """
+				CREATE TABLE station_platform_gaps (
+					id TEXT PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					line_id TEXT NOT NULL,
+					direction TEXT %s,
+					platform_position TEXT NOT NULL,
+					car_number INTEGER,
+					door_number INTEGER,
+					gap_grade TEXT NOT NULL %s,
+					height_diff_grade TEXT NOT NULL %s,
+					curved INTEGER NOT NULL %s,
+					source_snapshot_id TEXT NOT NULL
+				)
+				""".formatted(
+				checked ? "CHECK (direction IN ('UP','DOWN'))" : "",
+				checked ? "CHECK (gap_grade IN ('NARROW','NORMAL','WIDE'))" : "",
+				checked ? "CHECK (height_diff_grade IN ('LOW','NORMAL','HIGH'))" : "",
+				checked ? "CHECK (curved IN (0,1))" : ""));
+			for (var row : rows) {
+				insert(connection, "INSERT INTO station_platform_gaps VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+					row.id(), row.stationId(), row.lineId(), row.direction(), row.position(), row.car(),
+					row.door(), row.gapGrade(), row.heightDiffGrade(), row.curved(), "snap-1");
+			}
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+		return payloads;
 	}
 
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
