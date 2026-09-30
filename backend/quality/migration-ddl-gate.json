@@ -51,6 +51,10 @@
     {
       "file": "V75__soft_drop_route_v2_tables.sql",
       "sha256": "c4ac7bf3ea74afa52455386e7edd9d3b928824778a0cf11197af66c0047dbb9d"
+    },
+    {
+      "file": "V76__facility_operational_status.sql",
+      "sha256": "421a6c2c2afac16e68833b8a9e5cc07bfa141b57bba812391fbb628496b9d9c8"
     }
   ],
   "allowlist": [
