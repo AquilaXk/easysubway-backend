@@ -1583,6 +1583,29 @@ components:
           type: string
           format: date-time
           nullable: true
+        alightingCarDoors:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyAlightingCarDoor"
+    JourneyAlightingCarDoor:
+      type: object
+      additionalProperties: false
+      required:
+        - carNumber
+        - doorNumber
+        - targetFacilityType
+      properties:
+        carNumber:
+          type: integer
+          minimum: 1
+          maximum: 10
+        doorNumber:
+          type: integer
+          minimum: 1
+          maximum: 4
+        targetFacilityType:
+          type: string
+          enum: [TRANSFER, ELEVATOR, ESCALATOR, STAIR]
     JourneyTransferLeg:
       type: object
       additionalProperties: false

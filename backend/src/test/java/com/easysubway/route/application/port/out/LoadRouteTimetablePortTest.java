@@ -95,4 +95,39 @@ class LoadRouteTimetablePortTest {
 		LoadRouteTimetablePort populated = () -> timetable;
 		assertThat(populated.hasActivatableRouteTimetable()).isTrue();
 	}
+
+	@Test
+	@DisplayName("CarDoorHint는 유효한 car/door 번호와 non-null 필드를 검증한다")
+	void carDoorHintValidatesInputs() {
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", "TRANSFER", 0, 1))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", "TRANSFER", 11, 1))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", "TRANSFER", 1, 0))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", "TRANSFER", 1, 5))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint(null, "l", "UP", "TRANSFER", 1, 1))
+			.isInstanceOf(NullPointerException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", null, "UP", "TRANSFER", 1, 1))
+			.isInstanceOf(NullPointerException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", "l", null, "TRANSFER", 1, 1))
+			.isInstanceOf(NullPointerException.class);
+		assertThatThrownBy(() -> new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", null, 1, 1))
+			.isInstanceOf(NullPointerException.class);
+
+		var hint = new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", "TRANSFER", 1, 1);
+		assertThat(hint.stationId()).isEqualTo("s");
+		assertThat(hint.lineId()).isEqualTo("l");
+		assertThat(hint.direction()).isEqualTo("UP");
+		assertThat(hint.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(hint.carNumber()).isEqualTo(1);
+		assertThat(hint.doorNumber()).isEqualTo(1);
+		assertThat(hint).isEqualTo(new LoadRouteTimetablePort.CarDoorHint("s", "l", "UP", "TRANSFER", 1, 1));
+		assertThat(hint.hashCode()).isNotZero();
+		assertThat(hint.toString()).contains("TRANSFER");
+
+		var accessData = new LoadRouteTimetablePort.RouteAccessData(List.of(), List.of(), List.of(), List.of(), null);
+		assertThat(accessData.carDoorHints()).isEmpty();
+	}
 }

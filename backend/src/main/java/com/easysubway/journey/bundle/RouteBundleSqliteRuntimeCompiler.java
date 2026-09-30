@@ -1,5 +1,6 @@
 package com.easysubway.journey.bundle;
 
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
@@ -46,9 +47,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Compiles already-admitted Data component bytes into one Journey RAPTOR runtime. */
 public final class RouteBundleSqliteRuntimeCompiler {
+
+	private static final Logger log = LoggerFactory.getLogger(RouteBundleSqliteRuntimeCompiler.class);
 
 	static final String TOPOLOGY_PATH = "payload/topology.sqlite.zst";
 	static final String TIMETABLE_PATH = "payload/timetable.sqlite.zst";
@@ -111,11 +116,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			components.forEach(component -> byPath.put(component.payloadPath(), component));
 			requireEqualReferences(components);
 			var topology = loadTopology(byPath.get(TOPOLOGY_PATH).connection());
-			var evaluations = validateAccessibility(
-				byPath.get(ACCESSIBILITY_PATH).connection(), topology);
+			var accessibilityConn = byPath.get(ACCESSIBILITY_PATH).connection();
+			var evaluations = validateAccessibility(accessibilityConn, topology);
+			var carDoorHints = loadCarDoorHints(accessibilityConn);
 			validateFare(byPath.get(FARE_PATH).connection());
 			return loadTimetable(
-				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations);
+				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -326,8 +332,42 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 	}
 
+	private static List<CarDoorHint> loadCarDoorHints(Connection connection) throws SQLException {
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_car_door_hints'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_car_door_hints does not exist; loaded 0 hints");
+			return List.of();
+		}
+		requireColumns(connection, "station_car_door_hints", List.of(
+			"id", "station_id", "line_id", "direction", "target_facility_type", "car_number", "door_number",
+			"source_id", "source_snapshot_id", "provider_record_hash", "provenance_kind", "verification_status",
+			"last_verified_at", "evidence_hash"));
+		var hints = new ArrayList<CarDoorHint>();
+		try (var statement = connection.createStatement();
+			 var rows = statement.executeQuery("""
+				SELECT station_id, line_id, direction, target_facility_type, car_number, door_number
+				FROM station_car_door_hints
+				ORDER BY station_id, line_id, direction, target_facility_type, car_number, door_number
+				""")) {
+			while (rows.next()) {
+				hints.add(new CarDoorHint(
+					requireText(rows.getString(1), "station_car_door_hints station_id"),
+					requireText(rows.getString(2), "station_car_door_hints line_id"),
+					requireText(rows.getString(3), "station_car_door_hints direction"),
+					requireText(rows.getString(4), "station_car_door_hints target_facility_type"),
+					rows.getInt(5),
+					rows.getInt(6)
+				));
+			}
+		}
+		log.info("Loaded {} car door hints from accessibility bundle", hints.size());
+		return List.copyOf(hints);
+	}
+
 	private static RouteTimetable loadTimetable(
-		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations)
+		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
+		List<CarDoorHint> carDoorHints)
 		throws SQLException {
 		requireTimetableColumns(connection);
 		var calendars = new ArrayList<ServiceCalendar>();
@@ -389,11 +429,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 		return new RouteTimetable(
 			calendars, calendarDates, routes, trips, stopTimes, frequencies, List.of(), feedEndDate,
-			projectAccess(topology, evaluations));
+			projectAccess(topology, evaluations, carDoorHints));
 	}
 
 	private static RouteAccessData projectAccess(
-		Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations) {
+		Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
+		List<CarDoorHint> carDoorHints) {
 		var nodes = new LinkedHashMap<String, PathwayNode>();
 		var edges = new ArrayList<PathwayEdge>();
 		var rules = new ArrayList<TransferRule>();
@@ -441,7 +482,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				edge.id(), stationId, lineId, edge.id(), evidenceType, provenanceKind, verificationStatus, pass,
 				pass ? null : evaluation.reason()));
 		}
-		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);
+		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence, carDoorHints);
 	}
 
 	private static void requireEndpointShape(String type, Endpoint from, Endpoint to) {

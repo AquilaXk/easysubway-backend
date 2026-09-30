@@ -4,6 +4,7 @@ import com.easysubway.route.application.model.PlannerIdentity;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 public interface LoadRouteTimetablePort {
@@ -135,16 +136,48 @@ public interface LoadRouteTimetablePort {
 		List<PathwayNode> pathwayNodes,
 		List<PathwayEdge> pathwayEdges,
 		List<TransferRule> transferRules,
-		List<RouteEdgeEvidence> routeEdgeEvidence
+		List<RouteEdgeEvidence> routeEdgeEvidence,
+		List<CarDoorHint> carDoorHints
 	) {
+		public RouteAccessData(
+			List<PathwayNode> pathwayNodes,
+			List<PathwayEdge> pathwayEdges,
+			List<TransferRule> transferRules,
+			List<RouteEdgeEvidence> routeEdgeEvidence
+		) {
+			this(pathwayNodes, pathwayEdges, transferRules, routeEdgeEvidence, List.of());
+		}
+
 		public RouteAccessData {
 			pathwayNodes = List.copyOf(pathwayNodes);
 			pathwayEdges = List.copyOf(pathwayEdges);
 			transferRules = List.copyOf(transferRules);
 			routeEdgeEvidence = List.copyOf(routeEdgeEvidence);
+			carDoorHints = carDoorHints == null ? List.of() : List.copyOf(carDoorHints);
 		}
 		public static RouteAccessData empty() {
-			return new RouteAccessData(List.of(), List.of(), List.of(), List.of());
+			return new RouteAccessData(List.of(), List.of(), List.of(), List.of(), List.of());
+		}
+	}
+	record CarDoorHint(
+		String stationId,
+		String lineId,
+		String direction,
+		String targetFacilityType,
+		int carNumber,
+		int doorNumber
+	) {
+		public CarDoorHint {
+			Objects.requireNonNull(stationId, "stationId");
+			Objects.requireNonNull(lineId, "lineId");
+			Objects.requireNonNull(direction, "direction");
+			Objects.requireNonNull(targetFacilityType, "targetFacilityType");
+			if (carNumber < 1 || carNumber > 10) {
+				throw new IllegalArgumentException("carNumber must be between 1 and 10");
+			}
+			if (doorNumber < 1 || doorNumber > 4) {
+				throw new IllegalArgumentException("doorNumber must be between 1 and 4");
+			}
 		}
 	}
 	record PathwayNode(String id, String stationId, String lineId, String nodeType) {

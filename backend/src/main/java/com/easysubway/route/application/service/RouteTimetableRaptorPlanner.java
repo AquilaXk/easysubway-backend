@@ -222,6 +222,16 @@ public final class RouteTimetableRaptorPlanner {
 				));
 			}
 			RealtimeEvidence evidence = ride.realtimeOverlay().evidence(ride.scheduledTrip());
+			boolean nextIsTransfer = (index + 1 < path.size());
+			boolean stepFree = (input.constraintMode() == ConstraintMode.STRICT_STEP_FREE
+				|| input.mobilityPreset() == MobilityPreset.STEP_FREE);
+			List<AlightingCarDoor> alightingCarDoors = timetable.selectAlightingCarDoors(
+				ride.to().stationId(),
+				ride.lineId(),
+				ride.scheduledTrip().trip().directionId(),
+				nextIsTransfer,
+				stepFree
+			);
 			legs.add(new JourneyRideProjection(
 				ride.lineId(),
 				ride.tripId(),
@@ -231,7 +241,8 @@ public final class RouteTimetableRaptorPlanner {
 				ride.plannedDepartureTime(input.serviceDay()),
 				ride.plannedArrivalTime(input.serviceDay()),
 				evidence == null ? null : ride.realtimeDepartureTime(input.serviceDay()),
-				evidence == null ? null : ride.realtimeArrivalTime(input.serviceDay())
+				evidence == null ? null : ride.realtimeArrivalTime(input.serviceDay()),
+				alightingCarDoors
 			));
 		}
 		RideLeg lastRide = path.getLast();
@@ -2703,6 +2714,55 @@ public final class RouteTimetableRaptorPlanner {
 		int unsupportedTransferCount() {
 			return accessTransitions.unsupportedTransferCount();
 		}
+		List<AlightingCarDoor> selectAlightingCarDoors(
+			String stationId,
+			String lineId,
+			String directionId,
+			boolean nextIsTransfer,
+			boolean stepFree
+		) {
+			if (stationId == null || lineId == null) {
+				return List.of();
+			}
+			// BOTH는 공식 원천이 방향 구분 없이 제공한 힌트라 모든 트립에 적용한다.
+			// UP/DOWN은 공식 up/down 트립에만 대응하며 INNER/OUTER와 그 외 방향은 추정하지 않는다.
+			String targetDirection = "up".equals(directionId) ? "UP" : "down".equals(directionId) ? "DOWN" : null;
+			List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint> allHints =
+				source.routeAccessData().carDoorHints();
+			if (allHints.isEmpty()) {
+				return List.of();
+			}
+			return allHints.stream()
+				.filter(h -> stationId.equals(h.stationId())
+					&& lineId.equals(h.lineId())
+					&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
+				.filter(h -> {
+					if (nextIsTransfer) {
+						return "TRANSFER".equals(h.targetFacilityType());
+					} else {
+						if (stepFree) {
+							return "ELEVATOR".equals(h.targetFacilityType());
+						} else {
+							return "ELEVATOR".equals(h.targetFacilityType())
+								|| "ESCALATOR".equals(h.targetFacilityType())
+								|| "STAIR".equals(h.targetFacilityType());
+						}
+					}
+				})
+				.map(h -> new AlightingCarDoor(h.carNumber(), h.doorNumber(), h.targetFacilityType()))
+				.distinct()
+				.sorted(Comparator.comparing(AlightingCarDoor::targetFacilityType)
+					.thenComparingInt(AlightingCarDoor::carNumber)
+					.thenComparingInt(AlightingCarDoor::doorNumber))
+				.toList();
+		}
+
+		String tripDirection(String tripId) {
+			Integer idx = tripIndex.get(tripId);
+			if (idx == null) return null;
+			return source.transitTrips().get(idx).directionId();
+		}
+
 		Set<String> coveredStationIds() {
 			return stationIndex.keySet();
 		}
@@ -5223,6 +5283,17 @@ public final class RouteTimetableRaptorPlanner {
 			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified, verificationStatus, null, null, null, null);
 		}
 	}
+	public record AlightingCarDoor(int carNumber, int doorNumber, String targetFacilityType) {
+		public AlightingCarDoor {
+			if (carNumber < 1 || carNumber > 10) {
+				throw new IllegalArgumentException("carNumber must be between 1 and 10");
+			}
+			if (doorNumber < 1 || doorNumber > 4) {
+				throw new IllegalArgumentException("doorNumber must be between 1 and 4");
+			}
+			Objects.requireNonNull(targetFacilityType, "targetFacilityType");
+		}
+	}
 
 	record JourneyRideProjection(
 		String lineId,
@@ -5233,8 +5304,28 @@ public final class RouteTimetableRaptorPlanner {
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
-		Instant realtimeArrivalTime
+		Instant realtimeArrivalTime,
+		List<AlightingCarDoor> alightingCarDoors
 	) implements JourneyLegProjection {
+		public JourneyRideProjection(
+			String lineId,
+			String tripId,
+			String directionStationId,
+			String fromStationId,
+			String toStationId,
+			Instant plannedDepartureTime,
+			Instant plannedArrivalTime,
+			Instant realtimeDepartureTime,
+			Instant realtimeArrivalTime
+		) {
+			this(lineId, tripId, directionStationId, fromStationId, toStationId,
+				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				List.of());
+		}
+
+		public JourneyRideProjection {
+			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
+		}
 	}
 
 	static final class RealtimeOverlay {

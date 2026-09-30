@@ -347,12 +347,26 @@ class JourneyV3ContractTest {
 		);
 		assertEnum(property(document, "JourneyTransferLeg", "type"), "TRANSFER");
 		assertEnum(property(document, "JourneyTransferLeg", "transferType"), "IN_STATION", "OUT_OF_STATION");
-		Set<String> rideFields = Set.of("type", "lineId", "tripId", "directionStationId", "fromStationId",
+		Set<String> rideRequired = Set.of("type", "lineId", "tripId", "directionStationId", "fromStationId",
 			"toStationId", "plannedDepartureTime", "plannedArrivalTime", "realtimeDepartureTime",
 			"realtimeArrivalTime");
-		assertLeg(document, "JourneyRideLeg", "RIDE", rideFields);
+		Set<String> rideProperties = new LinkedHashSet<>(rideRequired);
+		rideProperties.add("alightingCarDoors");
+		assertClosedSchema(document, "JourneyRideLeg", rideRequired, rideProperties);
+		assertEnum(property(document, "JourneyRideLeg", "type"), "RIDE");
 		assertThat(property(document, "JourneyRideLeg", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
 		assertThat(property(document, "JourneyRideLeg", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
+		assertThat(map(property(document, "JourneyRideLeg", "alightingCarDoors").get("items")).get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyAlightingCarDoor");
+
+		assertClosedSchema(
+			document,
+			"JourneyAlightingCarDoor",
+			Set.of("carNumber", "doorNumber", "targetFacilityType"),
+			Set.of("carNumber", "doorNumber", "targetFacilityType")
+		);
+		assertEnum(property(document, "JourneyAlightingCarDoor", "targetFacilityType"),
+			"TRANSFER", "ELEVATOR", "ESCALATOR", "STAIR");
 	}
 
 	@Test

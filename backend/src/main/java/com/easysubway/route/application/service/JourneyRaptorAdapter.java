@@ -348,9 +348,29 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
-		for (int i = 0; i < legs1.size() - 1; i++) {
+		for (int i = 0; i < legs1.size() - 2; i++) {
 			combinedLegs.add(legs1.get(i));
 		}
+		boolean stepFree = (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
+		List<RouteTimetableRaptorPlanner.AlightingCarDoor> transferHints = timetable.selectAlightingCarDoors(
+			lastRide1.toStationId(),
+			lastRide1.lineId(),
+			timetable.tripDirection(lastRide1.tripId()),
+			true,
+			stepFree
+		);
+		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			lastRide1.lineId(),
+			lastRide1.tripId(),
+			lastRide1.directionStationId(),
+			lastRide1.fromStationId(),
+			lastRide1.toStationId(),
+			lastRide1.plannedDepartureTime(),
+			lastRide1.plannedArrivalTime(),
+			lastRide1.realtimeDepartureTime(),
+			lastRide1.realtimeArrivalTime(),
+			transferHints
+		));
 		combinedLegs.add(junctionTransfer);
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs2 = leg2.legs();
 		for (int i = 1; i < legs2.size(); i++) {
@@ -561,7 +581,10 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				ride.plannedDepartureTime(),
 				ride.plannedArrivalTime(),
 				ride.realtimeDepartureTime(),
-				ride.realtimeArrivalTime()
+				ride.realtimeArrivalTime(),
+				ride.alightingCarDoors().stream()
+					.map(d -> new JourneyCandidate.AlightingCarDoor(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
+					.toList()
 			));
 		}
 		if (rideCount == 0 || transferCount != rideCount - 1) {

@@ -90,6 +90,48 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
+	void readsStationCarDoorHintsFromAccessibilityBundleWhenPresent() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-with-hints", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+			execute(connection, """
+				CREATE TABLE station_car_door_hints (
+					id TEXT NOT NULL PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					line_id TEXT NOT NULL,
+					direction TEXT NOT NULL,
+					target_facility_type TEXT NOT NULL,
+					car_number INTEGER NOT NULL,
+					door_number INTEGER NOT NULL,
+					source_id TEXT NOT NULL DEFAULT '',
+					source_snapshot_id TEXT NOT NULL DEFAULT '',
+					provider_record_hash TEXT NOT NULL DEFAULT '',
+					provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+					verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+					last_verified_at INTEGER NOT NULL DEFAULT 0,
+					evidence_hash TEXT NOT NULL DEFAULT ''
+				)
+				""");
+			insert(connection, "INSERT INTO station_car_door_hints (id, station_id, line_id, direction, target_facility_type, car_number, door_number) VALUES ('h1','station-b','line-1','UP','TRANSFER',3,2)");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		assertThat(timetable.routeAccessData().carDoorHints()).hasSize(1);
+		var hint = timetable.routeAccessData().carDoorHints().getFirst();
+		assertThat(hint.stationId()).isEqualTo("station-b");
+		assertThat(hint.lineId()).isEqualTo("line-1");
+		assertThat(hint.direction()).isEqualTo("UP");
+		assertThat(hint.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(hint.carNumber()).isEqualTo(3);
+		assertThat(hint.doorNumber()).isEqualTo(2);
+	}
+
+	@Test
 	void rejectsIncompleteCorruptOrIdentityMismatchedPayloads() throws Exception {
 		var compiler = new RouteBundleSqliteRuntimeCompiler();
 		var valid = payloads();

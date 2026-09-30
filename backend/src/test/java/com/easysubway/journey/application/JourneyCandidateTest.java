@@ -116,6 +116,32 @@ class JourneyCandidateTest {
 			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 			DEPARTURE, ARRIVAL, DEPARTURE, null
 		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(0, 1, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(11, 1, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 0, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 5, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 1, " "))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 1, null))
+			.isInstanceOf(NullPointerException.class);
+
+		var door = new JourneyCandidate.AlightingCarDoor(1, 2, "TRANSFER");
+		assertThat(door.carNumber()).isEqualTo(1);
+		assertThat(door.doorNumber()).isEqualTo(2);
+		assertThat(door.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(door).isEqualTo(new JourneyCandidate.AlightingCarDoor(1, 2, "TRANSFER"));
+		assertThat(door.hashCode()).isNotZero();
+		assertThat(door.toString()).contains("1");
+
+		var rideWithNullDoors = new JourneyCandidate.Ride(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			DEPARTURE, ARRIVAL, null, null, null
+		);
+		assertThat(rideWithNullDoors.alightingCarDoors()).isEmpty();
 	}
 
 	@Test

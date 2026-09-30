@@ -117,6 +117,18 @@ public record JourneyCandidate(
 		}
 	}
 
+	public record AlightingCarDoor(int carNumber, int doorNumber, String targetFacilityType) {
+		public AlightingCarDoor {
+			if (carNumber < 1 || carNumber > 10) {
+				throw new IllegalArgumentException("carNumber must be between 1 and 10");
+			}
+			if (doorNumber < 1 || doorNumber > 4) {
+				throw new IllegalArgumentException("doorNumber must be between 1 and 4");
+			}
+			targetFacilityType = requireText(targetFacilityType, "targetFacilityType");
+		}
+	}
+
 	public record Ride(
 		String lineId,
 		String tripId,
@@ -126,8 +138,25 @@ public record JourneyCandidate(
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
-		Instant realtimeArrivalTime
+		Instant realtimeArrivalTime,
+		List<AlightingCarDoor> alightingCarDoors
 	) implements Leg {
+		public Ride(
+			String lineId,
+			String tripId,
+			String directionStationId,
+			String fromStationId,
+			String toStationId,
+			Instant plannedDepartureTime,
+			Instant plannedArrivalTime,
+			Instant realtimeDepartureTime,
+			Instant realtimeArrivalTime
+		) {
+			this(lineId, tripId, directionStationId, fromStationId, toStationId,
+				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				List.of());
+		}
+
 		public Ride {
 			lineId = requireText(lineId, "lineId");
 			tripId = requireText(tripId, "tripId");
@@ -136,6 +165,7 @@ public record JourneyCandidate(
 			toStationId = requireText(toStationId, "toStationId");
 			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
 			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
+			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
 			requireOrdered(plannedDepartureTime, plannedArrivalTime, "planned ride times");
 			requireOptionalPair(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
 			if (realtimeDepartureTime != null) {
