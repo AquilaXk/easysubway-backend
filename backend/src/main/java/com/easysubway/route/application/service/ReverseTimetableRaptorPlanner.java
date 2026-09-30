@@ -895,7 +895,15 @@ final class ReverseTimetableRaptorPlanner {
 						rideOverlay.departureSeconds(ride.trip().scheduledTrip(), ride.boardIndex())),
 					!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
 						rideOverlay.arrivalSeconds(ride.trip().scheduledTrip(), ride.alightIndex())),
-					alightingCarDoors
+					alightingCarDoors,
+					timetable.platformGaps(
+						ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
+						ride.trip().scheduledTrip().route().lineId(),
+						ride.trip().scheduledTrip().trip().directionId()),
+					timetable.platformGaps(
+						ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
+						ride.trip().scheduledTrip().route().lineId(),
+						ride.trip().scheduledTrip().trip().directionId())
 				));
 			}
 		}

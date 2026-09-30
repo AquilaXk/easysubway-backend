@@ -118,7 +118,7 @@ class RouteTimetablePlatformGapsTest {
 			new PlatformGapKey(STATION_A, LINE_1, "UP"), up,
 			new PlatformGapKey(STATION_A, LINE_1, "DOWN"),
 			List.of(new PlatformGap("DOWN 9-9", null, null, GapGrade.NARROW, HeightDiffGrade.LOW, false)));
-		var compiled = planner.compile(createTimetable("up", gaps));
+		var compiled = planner.compile(createTimetable("up", gaps, false));
 
 		var result = new ReverseTimetableRaptorPlanner().arriveBy(
 			new ReverseTimetableRaptorPlanner.Query(
@@ -188,6 +188,11 @@ class RouteTimetablePlatformGapsTest {
 	}
 
 	private static RouteTimetable createTimetable(String directionId, Map<PlatformGapKey, List<PlatformGap>> platformGaps) {
+		return createTimetable(directionId, platformGaps, true);
+	}
+
+	private static RouteTimetable createTimetable(
+		String directionId, Map<PlatformGapKey, List<PlatformGap>> platformGaps, boolean withFrequency) {
 		var calendar = new ServiceCalendar("weekday", true, true, true, true, true, false, false,
 			DATE.minusDays(1), DATE.plusDays(30), "Asia/Seoul");
 		var route = new TransitRoute("route-1", LINE_1, "1", "Line 1", "station-b", "Asia/Seoul");
@@ -205,7 +210,7 @@ class RouteTimetablePlatformGapsTest {
 			List.of(route),
 			List.of(trip),
 			stopTimes,
-			List.of(frequency),
+			withFrequency ? List.of(frequency) : List.of(),
 			List.of(),
 			DATE.plusDays(30),
 			accessData

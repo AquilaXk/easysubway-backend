@@ -3,6 +3,7 @@ package com.easysubway.journey.adapter.in.web;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -93,7 +94,9 @@ final class JourneySearchResponseMapper {
 				wire(ride.realtimeArrivalTime()),
 				ride.alightingCarDoors().stream()
 					.map(d -> new AlightingCarDoorResponse(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
-					.toList()
+					.toList(),
+				platformGaps(ride.boardingPlatformGaps()),
+				platformGaps(ride.alightingPlatformGaps())
 			);
 			case JourneyCandidate.Transfer transfer -> new TransferLegResponse(
 				"TRANSFER",
@@ -246,8 +249,30 @@ final class JourneySearchResponseMapper {
 		String realtimeDepartureTime,
 		String realtimeArrivalTime,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-		List<AlightingCarDoorResponse> alightingCarDoors
+		List<AlightingCarDoorResponse> alightingCarDoors,
+		List<PlatformGapResponse> boardingPlatformGaps,
+		List<PlatformGapResponse> alightingPlatformGaps
 	) implements LegResponse {
+	}
+
+	private static List<PlatformGapResponse> platformGaps(List<PlatformGap> gaps) {
+		return gaps.stream()
+			.map(gap -> new PlatformGapResponse(
+				gap.platformPosition(), gap.carNumber(), gap.doorNumber(),
+				gap.gapGrade().name(), gap.heightDiffGrade().name(), gap.curved()))
+			.toList();
+	}
+
+	record PlatformGapResponse(
+		String platformPosition,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer carNumber,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer doorNumber,
+		String gapGrade,
+		String heightDiffGrade,
+		boolean curved
+	) {
 	}
 
 	record AlightingCarDoorResponse(

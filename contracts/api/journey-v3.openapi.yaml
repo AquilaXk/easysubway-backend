@@ -1587,6 +1587,40 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JourneyAlightingCarDoor"
+        boardingPlatformGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyPlatformGap"
+        alightingPlatformGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyPlatformGap"
+    JourneyPlatformGap:
+      type: object
+      additionalProperties: false
+      required:
+        - platformPosition
+        - gapGrade
+        - heightDiffGrade
+        - curved
+      properties:
+        platformPosition:
+          type: string
+          minLength: 1
+        carNumber:
+          type: integer
+          minimum: 1
+        doorNumber:
+          type: integer
+          minimum: 1
+        gapGrade:
+          type: string
+          enum: [WIDE, NORMAL, NARROW]
+        heightDiffGrade:
+          type: string
+          enum: [HIGH, NORMAL, LOW]
+        curved:
+          type: boolean
     JourneyAlightingCarDoor:
       type: object
       additionalProperties: false
