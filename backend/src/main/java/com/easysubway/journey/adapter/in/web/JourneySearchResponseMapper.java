@@ -90,7 +90,10 @@ final class JourneySearchResponseMapper {
 				ride.plannedDepartureTime().toString(),
 				ride.plannedArrivalTime().toString(),
 				wire(ride.realtimeDepartureTime()),
-				wire(ride.realtimeArrivalTime())
+				wire(ride.realtimeArrivalTime()),
+				ride.alightingCarDoors().stream()
+					.map(d -> new AlightingCarDoorResponse(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
+					.toList()
 			);
 			case JourneyCandidate.Transfer transfer -> new TransferLegResponse(
 				"TRANSFER",
@@ -241,8 +244,33 @@ final class JourneySearchResponseMapper {
 		String plannedDepartureTime,
 		String plannedArrivalTime,
 		String realtimeDepartureTime,
-		String realtimeArrivalTime
+		String realtimeArrivalTime,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		List<AlightingCarDoorResponse> alightingCarDoors
 	) implements LegResponse {
+		public RideLegResponse(
+			String type,
+			String lineId,
+			String tripId,
+			String directionStationId,
+			String fromStationId,
+			String toStationId,
+			String plannedDepartureTime,
+			String plannedArrivalTime,
+			String realtimeDepartureTime,
+			String realtimeArrivalTime
+		) {
+			this(type, lineId, tripId, directionStationId, fromStationId, toStationId,
+				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				List.of());
+		}
+	}
+
+	record AlightingCarDoorResponse(
+		int carNumber,
+		int doorNumber,
+		String targetFacilityType
+	) {
 	}
 
 	record TransferLegResponse(
