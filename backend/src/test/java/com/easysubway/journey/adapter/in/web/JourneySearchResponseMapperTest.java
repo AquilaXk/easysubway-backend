@@ -134,10 +134,15 @@ class JourneySearchResponseMapperTest {
 			          "directionStationId":"station-direction",
 			          "fromStationId":"station-origin",
 			          "toStationId":"station-transfer-a",
+			          "servicePattern":"LOCAL",
 			          "plannedDepartureTime":"2026-08-12T00:01:00Z",
 			          "plannedArrivalTime":"2026-08-12T00:04:30Z",
 			          "realtimeDepartureTime":null,
 			          "realtimeArrivalTime":null,
+			          "stops":[
+			            {"stationId":"station-origin","plannedArrivalTime":null,"plannedDepartureTime":"2026-08-12T00:01:00Z","realtimeArrivalTime":null,"realtimeDepartureTime":null},
+			            {"stationId":"station-transfer-a","plannedArrivalTime":"2026-08-12T00:04:30Z","plannedDepartureTime":null,"realtimeArrivalTime":null,"realtimeDepartureTime":null}
+			          ],
 			          "alightingCarDoors":[],
 			          "boardingPlatformGaps":[],
 			          "alightingPlatformGaps":[]
@@ -166,10 +171,15 @@ class JourneySearchResponseMapperTest {
 			        "directionStationId":"station-direction-2",
 			        "fromStationId":"station-origin",
 			        "toStationId":"station-destination",
+			        "servicePattern":"LOCAL",
 			        "plannedDepartureTime":"2026-08-12T00:02:00Z",
 			        "plannedArrivalTime":"2026-08-12T00:07:00Z",
 			        "realtimeDepartureTime":null,
 			        "realtimeArrivalTime":null,
+			        "stops":[
+			        {"stationId":"station-origin","plannedArrivalTime":null,"plannedDepartureTime":"2026-08-12T00:02:00Z","realtimeArrivalTime":null,"realtimeDepartureTime":null},
+			        {"stationId":"station-destination","plannedArrivalTime":"2026-08-12T00:07:00Z","plannedDepartureTime":null,"realtimeArrivalTime":null,"realtimeDepartureTime":null}
+			        ],
 			        "alightingCarDoors":[],
 			        "boardingPlatformGaps":[],
 			        "alightingPlatformGaps":[]
@@ -276,11 +286,18 @@ class JourneySearchResponseMapperTest {
 				"station-direction",
 				"station-origin",
 				"station-destination",
+				"LOCAL",
 				PLANNED_DEPARTURE,
 				PLANNED_ARRIVAL,
 				null,
 				null,
-				List.of(new JourneyCandidate.AlightingCarDoor(3, 2, "TRANSFER"))
+				List.of(
+					new JourneyCandidate.Stop("station-origin", null, PLANNED_DEPARTURE, null, null),
+					new JourneyCandidate.Stop("station-destination", PLANNED_ARRIVAL, null, null, null)
+				),
+				List.of(new JourneyCandidate.AlightingCarDoor(3, 2, "TRANSFER")),
+				List.of(),
+				List.of()
 			))
 		);
 		JsonNode actual = JSON.valueToTree(JourneySearchResponseMapper.map(success(
@@ -325,8 +342,12 @@ class JourneySearchResponseMapperTest {
 			List.of(
 				new JourneyCandidate.Entry("station-origin", 30),
 				new JourneyCandidate.Ride(
-					"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
-					PLANNED_DEPARTURE, PLANNED_ARRIVAL, null, null, List.of(), boarding, alighting),
+					"line-1", "trip-1", "station-direction", "station-origin", "station-destination", "LOCAL",
+					PLANNED_DEPARTURE, PLANNED_ARRIVAL, null, null,
+					List.of(
+						new JourneyCandidate.Stop("station-origin", null, PLANNED_DEPARTURE, null, null),
+						new JourneyCandidate.Stop("station-destination", PLANNED_ARRIVAL, null, null, null)),
+					List.of(), boarding, alighting),
 				new JourneyCandidate.Exit("station-destination", 20)
 			)
 		);

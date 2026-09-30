@@ -263,7 +263,7 @@ class RouteTimetableCarDoorHintsTest {
 		assertThat(projection10Arg.alightingCarDoors()).isEmpty();
 
 		var projectionNullDoors = new RouteTimetableRaptorPlanner.JourneyRideProjection(
-			"l", "t", "d", "f", "to", DEPARTURE_INSTANT, DEPARTURE_INSTANT, null, null, null
+			"l", "t", "d", "f", "to", "LOCAL", DEPARTURE_INSTANT, DEPARTURE_INSTANT, null, null, List.of(), null, null, null
 		);
 		assertThat(projectionNullDoors.alightingCarDoors()).isEmpty();
 

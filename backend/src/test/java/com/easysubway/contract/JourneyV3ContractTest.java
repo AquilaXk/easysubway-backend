@@ -348,18 +348,34 @@ class JourneyV3ContractTest {
 		assertEnum(property(document, "JourneyTransferLeg", "type"), "TRANSFER");
 		assertEnum(property(document, "JourneyTransferLeg", "transferType"), "IN_STATION", "OUT_OF_STATION");
 		Set<String> rideRequired = Set.of("type", "lineId", "tripId", "directionStationId", "fromStationId",
-			"toStationId", "plannedDepartureTime", "plannedArrivalTime", "realtimeDepartureTime",
-			"realtimeArrivalTime");
+			"toStationId", "servicePattern", "plannedDepartureTime", "plannedArrivalTime", "realtimeDepartureTime",
+			"realtimeArrivalTime", "stops");
 		Set<String> rideProperties = new LinkedHashSet<>(rideRequired);
 		rideProperties.add("alightingCarDoors");
 		rideProperties.add("boardingPlatformGaps");
 		rideProperties.add("alightingPlatformGaps");
 		assertClosedSchema(document, "JourneyRideLeg", rideRequired, rideProperties);
 		assertEnum(property(document, "JourneyRideLeg", "type"), "RIDE");
+		assertEnum(property(document, "JourneyRideLeg", "servicePattern"), "LOCAL", "EXPRESS");
 		assertThat(property(document, "JourneyRideLeg", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
 		assertThat(property(document, "JourneyRideLeg", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
 		assertThat(map(property(document, "JourneyRideLeg", "alightingCarDoors").get("items")).get("$ref"))
 			.isEqualTo("#/components/schemas/JourneyAlightingCarDoor");
+
+		Map<String, Object> stopsProperty = property(document, "JourneyRideLeg", "stops");
+		assertThat(stopsProperty.get("type")).isEqualTo("array");
+		assertThat(stopsProperty.get("minItems")).isEqualTo(2);
+
+		assertClosedSchema(
+			document,
+			"JourneyRideStop",
+			Set.of("stationId", "plannedArrivalTime", "plannedDepartureTime", "realtimeArrivalTime", "realtimeDepartureTime"),
+			Set.of("stationId", "plannedArrivalTime", "plannedDepartureTime", "realtimeArrivalTime", "realtimeDepartureTime")
+		);
+		assertThat(property(document, "JourneyRideStop", "plannedArrivalTime").get("nullable")).isEqualTo(true);
+		assertThat(property(document, "JourneyRideStop", "plannedDepartureTime").get("nullable")).isEqualTo(true);
+		assertThat(property(document, "JourneyRideStop", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
+		assertThat(property(document, "JourneyRideStop", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
 
 		assertClosedSchema(
 			document,

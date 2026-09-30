@@ -1546,10 +1546,12 @@ components:
         - directionStationId
         - fromStationId
         - toStationId
+        - servicePattern
         - plannedDepartureTime
         - plannedArrivalTime
         - realtimeDepartureTime
         - realtimeArrivalTime
+        - stops
       properties:
         type:
           type: string
@@ -1569,6 +1571,9 @@ components:
         toStationId:
           type: string
           minLength: 1
+        servicePattern:
+          type: string
+          enum: [LOCAL, EXPRESS]
         plannedDepartureTime:
           type: string
           format: date-time
@@ -1583,6 +1588,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/JourneyRideStop"
         alightingCarDoors:
           type: array
           items:
@@ -1621,6 +1631,35 @@ components:
           enum: [HIGH, NORMAL, LOW]
         curved:
           type: boolean
+    JourneyRideStop:
+      type: object
+      additionalProperties: false
+      required:
+        - stationId
+        - plannedArrivalTime
+        - plannedDepartureTime
+        - realtimeArrivalTime
+        - realtimeDepartureTime
+      properties:
+        stationId:
+          type: string
+          minLength: 1
+        plannedArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        plannedDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
     JourneyAlightingCarDoor:
       type: object
       additionalProperties: false

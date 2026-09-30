@@ -130,20 +130,60 @@ public record JourneyCandidate(
 		}
 	}
 
+	public record Stop(
+		String stationId,
+		Instant plannedArrivalTime,
+		Instant plannedDepartureTime,
+		Instant realtimeArrivalTime,
+		Instant realtimeDepartureTime
+	) {
+		public Stop {
+			stationId = requireText(stationId, "stationId");
+		}
+	}
+
 	public record Ride(
 		String lineId,
 		String tripId,
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
+		List<Stop> stops,
 		List<AlightingCarDoor> alightingCarDoors,
 		List<PlatformGap> boardingPlatformGaps,
 		List<PlatformGap> alightingPlatformGaps
 	) implements Leg {
+		public Ride {
+			lineId = requireText(lineId, "lineId");
+			tripId = requireText(tripId, "tripId");
+			directionStationId = requireText(directionStationId, "directionStationId");
+			fromStationId = requireText(fromStationId, "fromStationId");
+			toStationId = requireText(toStationId, "toStationId");
+			servicePattern = requireText(servicePattern, "servicePattern");
+			if (!"LOCAL".equals(servicePattern) && !"EXPRESS".equals(servicePattern)) {
+				throw new IllegalStateException("servicePattern must be LOCAL or EXPRESS, got: " + servicePattern);
+			}
+			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
+			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
+			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
+			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);
+			alightingPlatformGaps = alightingPlatformGaps == null ? List.of() : List.copyOf(alightingPlatformGaps);
+			requireOrdered(plannedDepartureTime, plannedArrivalTime, "planned ride times");
+			requireOptionalPair(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
+			if (realtimeDepartureTime != null) {
+				requireOrdered(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
+			}
+			stops = stops == null ? List.of() : List.copyOf(stops);
+			if (stops.size() < 2) {
+				throw new IllegalStateException("stops must contain at least 2 stops, got: " + stops.size());
+			}
+		}
+
 		public Ride(
 			String lineId,
 			String tripId,
@@ -155,44 +195,23 @@ public record JourneyCandidate(
 			Instant realtimeDepartureTime,
 			Instant realtimeArrivalTime
 		) {
-			this(lineId, tripId, directionStationId, fromStationId, toStationId,
-				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				List.of(), List.of(), List.of());
-		}
-
-		public Ride(
-			String lineId,
-			String tripId,
-			String directionStationId,
-			String fromStationId,
-			String toStationId,
-			Instant plannedDepartureTime,
-			Instant plannedArrivalTime,
-			Instant realtimeDepartureTime,
-			Instant realtimeArrivalTime,
-			List<AlightingCarDoor> alightingCarDoors
-		) {
-			this(lineId, tripId, directionStationId, fromStationId, toStationId,
-				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				alightingCarDoors, List.of(), List.of());
-		}
-
-		public Ride {
-			lineId = requireText(lineId, "lineId");
-			tripId = requireText(tripId, "tripId");
-			directionStationId = requireText(directionStationId, "directionStationId");
-			fromStationId = requireText(fromStationId, "fromStationId");
-			toStationId = requireText(toStationId, "toStationId");
-			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
-			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
-			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
-			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);
-			alightingPlatformGaps = alightingPlatformGaps == null ? List.of() : List.copyOf(alightingPlatformGaps);
-			requireOrdered(plannedDepartureTime, plannedArrivalTime, "planned ride times");
-			requireOptionalPair(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
-			if (realtimeDepartureTime != null) {
-				requireOrdered(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
-			}
+			this(
+				lineId,
+				tripId,
+				directionStationId,
+				fromStationId,
+				toStationId,
+				"LOCAL",
+				plannedDepartureTime,
+				plannedArrivalTime,
+				realtimeDepartureTime,
+				realtimeArrivalTime,
+				List.of(
+					new Stop(fromStationId, null, plannedDepartureTime, null, realtimeDepartureTime),
+					new Stop(toStationId, plannedArrivalTime, null, realtimeArrivalTime, null)
+				),
+				List.of(), List.of(), List.of()
+			);
 		}
 
 		@Override

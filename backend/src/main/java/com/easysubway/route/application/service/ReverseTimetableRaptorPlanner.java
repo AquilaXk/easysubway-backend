@@ -883,18 +883,38 @@ final class ReverseTimetableRaptorPlanner {
 					nextIsTransfer,
 					stepFree
 				);
+				List<RouteTimetableRaptorPlanner.JourneyStopProjection> stops = new ArrayList<>();
+				for (int i = ride.boardIndex(); i <= ride.alightIndex(); i++) {
+					if (i == ride.boardIndex() || i == ride.alightIndex()
+							|| ride.trip().allowsPickup(i) || ride.trip().allowsDropOff(i)) {
+						String stationId = ride.trip().stopTimes().get(i).stationId();
+						Instant plannedArr = i == ride.boardIndex() ? null
+							: serviceInstant(ride.trip().serviceDate(), ride.trip().arrivalSeconds(i));
+						Instant plannedDep = i == ride.alightIndex() ? null
+							: serviceInstant(ride.trip().serviceDate(), ride.trip().departureSeconds(i));
+						Instant realtimeArr = !hasRealtimeEvidence || i == ride.boardIndex() ? null
+							: serviceInstant(ride.trip().serviceDate(), rideOverlay.arrivalSeconds(ride.trip().scheduledTrip(), i));
+						Instant realtimeDep = !hasRealtimeEvidence || i == ride.alightIndex() ? null
+							: serviceInstant(ride.trip().serviceDate(), rideOverlay.departureSeconds(ride.trip().scheduledTrip(), i));
+						stops.add(new RouteTimetableRaptorPlanner.JourneyStopProjection(
+							stationId, plannedArr, plannedDep, realtimeArr, realtimeDep
+						));
+					}
+				}
 				projected.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
 					ride.trip().scheduledTrip().route().lineId(),
 					ride.trip().scheduledTrip().trip().id(),
 					ride.trip().stopTimes().getLast().stationId(),
 					ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
 					ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
+					ride.trip().scheduledTrip().trip().servicePattern(),
 					serviceInstant(ride.trip().serviceDate(), ride.trip().departureSeconds(ride.boardIndex())),
 					serviceInstant(ride.trip().serviceDate(), ride.trip().arrivalSeconds(ride.alightIndex())),
 					!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
 						rideOverlay.departureSeconds(ride.trip().scheduledTrip(), ride.boardIndex())),
 					!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
 						rideOverlay.arrivalSeconds(ride.trip().scheduledTrip(), ride.alightIndex())),
+					List.copyOf(stops),
 					alightingCarDoors,
 					timetable.platformGaps(
 						ride.trip().stopTimes().get(ride.boardIndex()).stationId(),

@@ -88,10 +88,18 @@ final class JourneySearchResponseMapper {
 				ride.directionStationId(),
 				ride.fromStationId(),
 				ride.toStationId(),
+				ride.servicePattern(),
 				ride.plannedDepartureTime().toString(),
 				ride.plannedArrivalTime().toString(),
 				wire(ride.realtimeDepartureTime()),
 				wire(ride.realtimeArrivalTime()),
+				ride.stops().stream().map(stop -> new RideStopResponse(
+					stop.stationId(),
+					wire(stop.plannedArrivalTime()),
+					wire(stop.plannedDepartureTime()),
+					wire(stop.realtimeArrivalTime()),
+					wire(stop.realtimeDepartureTime())
+				)).toList(),
 				ride.alightingCarDoors().stream()
 					.map(d -> new AlightingCarDoorResponse(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
 					.toList(),
@@ -244,10 +252,12 @@ final class JourneySearchResponseMapper {
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		String plannedDepartureTime,
 		String plannedArrivalTime,
 		String realtimeDepartureTime,
 		String realtimeArrivalTime,
+		List<RideStopResponse> stops,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 		List<AlightingCarDoorResponse> alightingCarDoors,
 		List<PlatformGapResponse> boardingPlatformGaps,
@@ -272,6 +282,15 @@ final class JourneySearchResponseMapper {
 		String gapGrade,
 		String heightDiffGrade,
 		boolean curved
+	) {
+	}
+
+	record RideStopResponse(
+		String stationId,
+		String plannedArrivalTime,
+		String plannedDepartureTime,
+		String realtimeArrivalTime,
+		String realtimeDepartureTime
 	) {
 	}
 
