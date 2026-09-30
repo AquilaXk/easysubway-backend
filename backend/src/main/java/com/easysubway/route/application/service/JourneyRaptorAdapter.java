@@ -365,10 +365,12 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			lastRide1.directionStationId(),
 			lastRide1.fromStationId(),
 			lastRide1.toStationId(),
+			lastRide1.servicePattern(),
 			lastRide1.plannedDepartureTime(),
 			lastRide1.plannedArrivalTime(),
 			lastRide1.realtimeDepartureTime(),
 			lastRide1.realtimeArrivalTime(),
+			lastRide1.stops(),
 			transferHints,
 			lastRide1.boardingPlatformGaps(),
 			lastRide1.alightingPlatformGaps()
@@ -580,10 +582,18 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				ride.directionStationId(),
 				ride.fromStationId(),
 				ride.toStationId(),
+				ride.servicePattern(),
 				ride.plannedDepartureTime(),
 				ride.plannedArrivalTime(),
 				ride.realtimeDepartureTime(),
 				ride.realtimeArrivalTime(),
+				ride.stops().stream().map(stop -> new JourneyCandidate.Stop(
+					stop.stationId(),
+					stop.plannedArrivalTime(),
+					stop.plannedDepartureTime(),
+					stop.realtimeArrivalTime(),
+					stop.realtimeDepartureTime()
+				)).toList(),
 				ride.alightingCarDoors().stream()
 					.map(d -> new JourneyCandidate.AlightingCarDoor(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
 					.toList(),

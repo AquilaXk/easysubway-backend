@@ -140,16 +140,20 @@ class RouteTimetablePlatformGapsTest {
 	@DisplayName("Ride와 RideProjection은 null 연단 간격을 빈 목록으로 다룬다")
 	void nullGapsBecomeEmpty() {
 		var ride = new JourneyCandidate.Ride(
-			LINE_1, "trip-1", "dir", STATION_A, STATION_B,
+			LINE_1, "trip-1", "dir", STATION_A, STATION_B, "LOCAL",
 			DATE.atTime(10, 0).toInstant(KST), DATE.atTime(10, 10).toInstant(KST),
-			null, null, null, null, null);
+			null, null,
+			List.of(
+				new JourneyCandidate.Stop(STATION_A, null, DATE.atTime(10, 0).toInstant(KST), null, null),
+				new JourneyCandidate.Stop(STATION_B, DATE.atTime(10, 10).toInstant(KST), null, null, null)),
+			null, null, null);
 		assertThat(ride.boardingPlatformGaps()).isEmpty();
 		assertThat(ride.alightingPlatformGaps()).isEmpty();
 
 		var projection = new JourneyRideProjection(
-			LINE_1, "trip-1", "dir", STATION_A, STATION_B,
+			LINE_1, "trip-1", "dir", STATION_A, STATION_B, "LOCAL",
 			DATE.atTime(10, 0).toInstant(KST), DATE.atTime(10, 10).toInstant(KST),
-			null, null, List.of(), null, null);
+			null, null, List.of(), List.of(), null, null);
 		assertThat(projection.boardingPlatformGaps()).isEmpty();
 		assertThat(projection.alightingPlatformGaps()).isEmpty();
 

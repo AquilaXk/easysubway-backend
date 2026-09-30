@@ -232,16 +232,36 @@ public final class RouteTimetableRaptorPlanner {
 				nextIsTransfer,
 				stepFree
 			);
+			List<JourneyStopProjection> stops = new ArrayList<>();
+			for (int i = ride.fromIndex(); i <= ride.toIndex(); i++) {
+				if (i == ride.fromIndex() || i == ride.toIndex()
+						|| ride.scheduledTrip().allowsPickup(i) || ride.scheduledTrip().allowsDropOff(i)) {
+					String stationId = ride.scheduledTrip().stopTimes().get(i).stationId();
+					Instant plannedArr = i == ride.fromIndex() ? null
+						: serviceInstant(ride.serviceDay(input.serviceDay()), ride.scheduledTrip().arrivalSeconds(i));
+					Instant plannedDep = i == ride.toIndex() ? null
+						: serviceInstant(ride.serviceDay(input.serviceDay()), ride.scheduledTrip().departureSeconds(i));
+					Instant realtimeArr = evidence == null || i == ride.fromIndex() ? null
+						: serviceInstant(ride.serviceDay(input.serviceDay()), ride.realtimeOverlay().arrivalSeconds(ride.scheduledTrip(), i));
+					Instant realtimeDep = evidence == null || i == ride.toIndex() ? null
+						: serviceInstant(ride.serviceDay(input.serviceDay()), ride.realtimeOverlay().departureSeconds(ride.scheduledTrip(), i));
+					stops.add(new JourneyStopProjection(
+						stationId, plannedArr, plannedDep, realtimeArr, realtimeDep
+					));
+				}
+			}
 			legs.add(new JourneyRideProjection(
 				ride.lineId(),
 				ride.tripId(),
 				ride.scheduledTrip().stopTimes().getLast().stationId(),
 				ride.from().stationId(),
 				ride.to().stationId(),
+				ride.trip().servicePattern(),
 				ride.plannedDepartureTime(input.serviceDay()),
 				ride.plannedArrivalTime(input.serviceDay()),
 				evidence == null ? null : ride.realtimeDepartureTime(input.serviceDay()),
 				evidence == null ? null : ride.realtimeArrivalTime(input.serviceDay()),
+				List.copyOf(stops),
 				alightingCarDoors,
 				timetable.platformGaps(ride.from().stationId(), ride.lineId(), ride.scheduledTrip().trip().directionId()),
 				timetable.platformGaps(ride.to().stationId(), ride.lineId(), ride.scheduledTrip().trip().directionId())
@@ -5311,53 +5331,31 @@ public final class RouteTimetableRaptorPlanner {
 		}
 	}
 
+	public record JourneyStopProjection(
+		String stationId,
+		Instant plannedArrivalTime,
+		Instant plannedDepartureTime,
+		Instant realtimeArrivalTime,
+		Instant realtimeDepartureTime
+	) {
+	}
+
 	record JourneyRideProjection(
 		String lineId,
 		String tripId,
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
+		List<JourneyStopProjection> stops,
 		List<AlightingCarDoor> alightingCarDoors,
 		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> boardingPlatformGaps,
 		List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap> alightingPlatformGaps
 	) implements JourneyLegProjection {
-		public JourneyRideProjection(
-			String lineId,
-			String tripId,
-			String directionStationId,
-			String fromStationId,
-			String toStationId,
-			Instant plannedDepartureTime,
-			Instant plannedArrivalTime,
-			Instant realtimeDepartureTime,
-			Instant realtimeArrivalTime
-		) {
-			this(lineId, tripId, directionStationId, fromStationId, toStationId,
-				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				List.of(), List.of(), List.of());
-		}
-
-		public JourneyRideProjection(
-			String lineId,
-			String tripId,
-			String directionStationId,
-			String fromStationId,
-			String toStationId,
-			Instant plannedDepartureTime,
-			Instant plannedArrivalTime,
-			Instant realtimeDepartureTime,
-			Instant realtimeArrivalTime,
-			List<AlightingCarDoor> alightingCarDoors
-		) {
-			this(lineId, tripId, directionStationId, fromStationId, toStationId,
-				plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				alightingCarDoors, List.of(), List.of());
-		}
-
 		public JourneyRideProjection {
 			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
 			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);

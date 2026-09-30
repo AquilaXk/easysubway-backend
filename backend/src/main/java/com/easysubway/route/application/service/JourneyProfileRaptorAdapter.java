@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import com.easysubway.journey.application.JourneyCandidate;
 import java.util.List;
 import java.util.Objects;
 
@@ -228,8 +229,12 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 				RouteTimetableRaptorPlanner.JourneyRideProjection ride =
 					(RouteTimetableRaptorPlanner.JourneyRideProjection) projection;
 				legs.add(new JourneyProfileRaptorPort.RideLeg(ride.lineId(), ride.tripId(), ride.directionStationId(),
-					ride.fromStationId(), ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(),
-					ride.realtimeDepartureTime(), ride.realtimeArrivalTime()));
+					ride.fromStationId(), ride.toStationId(), ride.servicePattern(),
+					ride.plannedDepartureTime(), ride.plannedArrivalTime(),
+					ride.realtimeDepartureTime(), ride.realtimeArrivalTime(),
+					ride.stops().stream().map(stop -> new JourneyCandidate.Stop(
+						stop.stationId(), stop.plannedArrivalTime(), stop.plannedDepartureTime(),
+						stop.realtimeArrivalTime(), stop.realtimeDepartureTime())).toList()));
 			}
 		}
 		return new JourneyProfileRaptorPort.Itinerary(

@@ -1,5 +1,6 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -549,7 +550,7 @@ class JourneySearchControllerTest {
 			"journey-1", departure, arrival, null, null, 300, 0, 0,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
-			List.of(new JourneyCandidate.Ride(
+			List.of(TestRides.candidateRide(
 				"line-1", "trip-1", "station-destination", "station-origin", "station-destination",
 				departure, arrival, null, null
 			))

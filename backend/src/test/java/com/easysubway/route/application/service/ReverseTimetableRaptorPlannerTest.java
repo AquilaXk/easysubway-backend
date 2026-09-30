@@ -157,6 +157,11 @@ class ReverseTimetableRaptorPlannerTest {
 				assertThat(ride.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:20:00Z"));
 				assertThat(ride.realtimeDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:11:00Z"));
 				assertThat(ride.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:21:00Z"));
+				assertThat(ride.stops()).containsExactly(
+					new RouteTimetableRaptorPlanner.JourneyStopProjection("station-a", null,
+						Instant.parse("2026-07-01T15:10:00Z"), null, Instant.parse("2026-07-01T15:11:00Z")),
+					new RouteTimetableRaptorPlanner.JourneyStopProjection("station-b",
+						Instant.parse("2026-07-01T15:20:00Z"), null, Instant.parse("2026-07-01T15:21:00Z"), null));
 			});
 		assertThat(result.itinerary().legs().get(2))
 			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, exit -> {
@@ -337,6 +342,30 @@ class ReverseTimetableRaptorPlannerTest {
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 		assertThat(arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180), delayed).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.DEADLINE_MISS);
+	}
+
+	@Test
+	@DisplayName("keeps boarding stops and omits pass-through stations in reverse ride stops")
+	void omitsPassThroughStationsFromRideStops() {
+		var compiled = forward.compile(timetable(
+			List.of(trip("via-pass", "line-a")),
+			List.of(
+				stop("via-pass", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("via-pass", 2, "station-mid", "line-a", 32_550, 0, 0),
+				stop("via-pass", 3, "station-pass", "line-a", 32_700, 1, 1),
+				stop("via-pass", 4, "station-b", "line-a", 33_000, 0, 0)),
+			access(true, true, 300, 180, false)));
+
+		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.singleElement().isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyRideProjection.class, ride -> {
+				assertThat(ride.servicePattern()).isEqualTo("LOCAL");
+				assertThat(ride.stops()).extracting(RouteTimetableRaptorPlanner.JourneyStopProjection::stationId)
+					.containsExactly("station-a", "station-mid", "station-b");
+			});
 	}
 
 	@Test

@@ -719,7 +719,7 @@ class JourneyApplicationServiceTest {
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
 			List.of(
 				new JourneyCandidate.Entry("station-origin", 30),
-				new JourneyCandidate.Ride(
+				TestRides.candidateRide(
 					"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 					plannedDeparture, plannedArrival, realtimeDeparture, realtimeArrival
 				),
