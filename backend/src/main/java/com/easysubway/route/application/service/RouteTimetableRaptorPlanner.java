@@ -1823,7 +1823,7 @@ public final class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits
 	) {
-		return departureProfile(query, timetable, ignored -> realtimeOverlay, planningLimits, null);
+		return departureProfile(query, timetable, ignored -> realtimeOverlay, realtimeOverlay, planningLimits, null);
 	}
 
 	List<JourneyDepartureProfilePoint> departureProfile(
@@ -1833,7 +1833,7 @@ public final class RouteTimetableRaptorPlanner {
 		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits,
 		JourneyProfilePruningObservationAccumulator observations
 	) {
-		return departureProfile(query, timetable, ignored -> realtimeOverlay, planningLimits, observations);
+		return departureProfile(query, timetable, ignored -> realtimeOverlay, realtimeOverlay, planningLimits, observations);
 	}
 
 	List<JourneyDepartureProfilePoint> departureProfile(
@@ -1844,13 +1844,16 @@ public final class RouteTimetableRaptorPlanner {
 		JourneyProfilePruningObservationAccumulator observations
 	) {
 		Objects.requireNonNull(realtimeRuntime, "realtimeRuntime must not be null");
-		return departureProfile(query, timetable, realtimeRuntime::realtimeOverlay, planningLimits, observations);
+		return departureProfile(query, timetable, realtimeRuntime::realtimeOverlay, RealtimeOverlay.empty(),
+			planningLimits, observations);
 	}
 
+	// accessOverlay는 진입·환승·출구 전환 선택에 적용하는 차단 집합이다(운행일과 무관).
 	private List<JourneyDepartureProfilePoint> departureProfile(
 		JourneyRaptorQuery query,
 		CompiledTimetable timetable,
 		Function<LocalDate, RealtimeOverlay> overlays,
+		RealtimeOverlay accessOverlay,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits,
 		JourneyProfilePruningObservationAccumulator observations
 	) {
@@ -1882,6 +1885,7 @@ public final class RouteTimetableRaptorPlanner {
 				serviceDate,
 				earliestReadyAtSeconds,
 				latestReadyAtSeconds,
+				Objects.requireNonNull(accessOverlay, "accessOverlay must not be null"),
 				limits));
 			if (serviceDate.equals(earliest.serviceDate())) break;
 		}
@@ -1933,6 +1937,7 @@ public final class RouteTimetableRaptorPlanner {
 		LocalDate serviceDate,
 		int earliestReadyAtSeconds,
 		int latestReadyAtSeconds,
+		RealtimeOverlay accessOverlay,
 		ProfileLimitTracker limits
 	) {
 		if (earliestReadyAtSeconds > latestReadyAtSeconds) {
@@ -1958,7 +1963,7 @@ public final class RouteTimetableRaptorPlanner {
 			0,
 			Integer.MAX_VALUE
 		).stream().map(event -> readyAtBreakpoint(
-			profileInput, timetable, origin, accessProfileBit, slackSeconds, event, limits.observations))
+			profileInput, timetable, origin, accessProfileBit, slackSeconds, event, accessOverlay, limits.observations))
 			.filter(OptionalIntValue::present)
 			.mapToInt(OptionalIntValue::value)
 			.filter(readyAt -> readyAt >= earliestReadyAtSeconds
@@ -1970,7 +1975,7 @@ public final class RouteTimetableRaptorPlanner {
 
 		limits.reserveBreakpoints(breakpoints.size());
 		ProfileMultiLabelForwardScan scan = new ProfileMultiLabelForwardScan(
-			profileInput, timetable, trips, limits);
+			profileInput, timetable, trips, accessOverlay, limits);
 		List<JourneyDepartureProfilePoint> profile = new ArrayList<>(breakpoints.size());
 		for (int readyAtSeconds : breakpoints) {
 			ScanInput input = scanInput(query, new ServiceDay(serviceDay.date(), readyAtSeconds));
@@ -2009,6 +2014,7 @@ public final class RouteTimetableRaptorPlanner {
 		int accessProfileBit,
 		int slackSeconds,
 		ProfileDepartureEvent event,
+		RealtimeOverlay accessOverlay,
 		JourneyProfilePruningObservationAccumulator observations
 	) {
 		int boardingLine = timetable.lineIndex(event.trip().scheduledTrip().lineId(event.stopIndex()));
@@ -2016,7 +2022,7 @@ public final class RouteTimetableRaptorPlanner {
 			return OptionalIntValue.empty();
 		}
 		int entryTransition = timetable.entryTransition(
-			origin, boardingLine, accessProfileBit, false, input.requiresVerifiedJourneyDistance());
+			origin, boardingLine, accessProfileBit, false, input.requiresVerifiedJourneyDistance(), accessOverlay);
 		if (entryTransition < 0) {
 			if (observations != null) observations.increment("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 			return OptionalIntValue.empty();
@@ -4769,6 +4775,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final ScanInput input;
 		private final CompiledTimetable timetable;
 		private final ProfileDatedTripView trips;
+		private final RealtimeOverlay accessOverlay;
 		private final ProfileLimitTracker limits;
 		private final PrimitiveProfileLabelPool pool = new PrimitiveProfileLabelPool(1024);
 		private final Map<ProfileStateKey, IntArrayList> labelsByState = new HashMap<>();
@@ -4781,11 +4788,13 @@ public final class RouteTimetableRaptorPlanner {
 			ScanInput input,
 			CompiledTimetable timetable,
 			ProfileDatedTripView trips,
+			RealtimeOverlay accessOverlay,
 			ProfileLimitTracker limits
 		) {
 			this.input = Objects.requireNonNull(input, "input");
 			this.timetable = Objects.requireNonNull(timetable, "timetable");
 			this.trips = Objects.requireNonNull(trips, "trips");
+			this.accessOverlay = Objects.requireNonNull(accessOverlay, "accessOverlay");
 			this.limits = Objects.requireNonNull(limits, "limits");
 		}
 
@@ -4824,9 +4833,9 @@ public final class RouteTimetableRaptorPlanner {
 					if (boardingLine < 0) continue;
 					int transition = labelBoardings == 0
 						? timetable.entryTransition(labelStation, boardingLine, input.accessProfileBit(), false,
-							input.requiresVerifiedJourneyDistance())
+							input.requiresVerifiedJourneyDistance(), accessOverlay)
 						: timetable.transferTransition(labelStation, labelIncomingLine, boardingLine,
-							input.accessProfileBit(), false, input.requiresVerifiedJourneyDistance());
+							input.accessProfileBit(), false, input.requiresVerifiedJourneyDistance(), accessOverlay);
 					if (transition < 0) {
 						limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 						continue;
@@ -4895,7 +4904,7 @@ public final class RouteTimetableRaptorPlanner {
 				ProfileStateKey state = entry.getKey();
 				if (state.station() != destination || state.boardings() == 0) continue;
 				int exit = timetable.exitTransition(destination, state.incomingLine(), accessProfileBit, false,
-					pointInput.requiresVerifiedJourneyDistance());
+					pointInput.requiresVerifiedJourneyDistance(), accessOverlay);
 				if (exit < 0) {
 					limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 					continue;
@@ -5268,6 +5277,14 @@ public final class RouteTimetableRaptorPlanner {
 			return EMPTY;
 		}
 
+		static RealtimeOverlay blockedOnly(BitSet blockedTransitions) {
+			if (blockedTransitions == null || blockedTransitions.isEmpty()) {
+				return EMPTY;
+			}
+			return new RealtimeOverlay(
+				null, false, new int[0], new int[0], new int[0], new boolean[0], new RealtimeEvidence[0], new int[0], blockedTransitions);
+		}
+
 		static RealtimeOverlay combine(RealtimeOverlay a, RealtimeOverlay b) {
 			if (a == null || a.isEmpty()) {
 				return b != null ? b : EMPTY;
@@ -5287,15 +5304,20 @@ public final class RouteTimetableRaptorPlanner {
 				.distinct().sorted().toArray();
 
 			String version = a.version != null ? a.version : b.version;
+			int[] tripIndexes = a.tripIndexes.length > 0 ? a.tripIndexes : b.tripIndexes;
+			int[] arrivalDeltas = a.tripIndexes.length > 0 ? a.arrivalDeltas : b.arrivalDeltas;
+			int[] departureDeltas = a.tripIndexes.length > 0 ? a.departureDeltas : b.departureDeltas;
+			boolean[] cancelled = a.tripIndexes.length > 0 ? a.cancelled : b.cancelled;
+			RealtimeEvidence[] evidence = a.evidence.length > 0 ? a.evidence : b.evidence;
 
 			return new RealtimeOverlay(
 				version,
 				a.available || b.available,
-				a.tripIndexes,
-				a.arrivalDeltas,
-				a.departureDeltas,
-				a.cancelled,
-				a.evidence,
+				tripIndexes,
+				arrivalDeltas,
+				departureDeltas,
+				cancelled,
+				evidence,
 				mergedPatterns,
 				mergedBlocked);
 		}

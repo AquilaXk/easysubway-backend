@@ -42,6 +42,7 @@ class JourneyV3ContractTest {
 		new ErrorPair("searchJourneys", 503, "TIMETABLE_STALE"),
 		new ErrorPair("searchJourneys", 503, "REALTIME_REQUIRED_UNAVAILABLE"),
 		new ErrorPair("searchJourneys", 503, "ROUTING_IDENTITY_MISMATCH"),
+		new ErrorPair("searchJourneys", 503, "FACILITY_STATUS_UNAVAILABLE"),
 		new ErrorPair("searchJourneys", 503, "ROUTE_SERVICE_UNAVAILABLE"),
 		new ErrorPair("searchJourneys", 504, "JOURNEY_SEARCH_TIMEOUT")
 	);
@@ -81,6 +82,7 @@ class JourneyV3ContractTest {
 		new ErrorPair("profileJourneys", 503, "ROUTING_BUNDLE_UNAVAILABLE"),
 		new ErrorPair("profileJourneys", 503, "ROUTING_BUNDLE_STALE"),
 		new ErrorPair("profileJourneys", 503, "ROUTING_IDENTITY_MISMATCH"),
+		new ErrorPair("profileJourneys", 503, "FACILITY_STATUS_UNAVAILABLE"),
 		new ErrorPair("profileJourneys", 503, "RAPTOR_FRONTIER_CAPACITY_EXCEEDED"),
 		new ErrorPair("profileJourneys", 504, "JOURNEY_PROFILE_TIMEOUT")
 	);

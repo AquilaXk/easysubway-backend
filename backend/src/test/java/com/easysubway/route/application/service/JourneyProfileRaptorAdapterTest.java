@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.FacilityAvailabilityView;
+import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.ObjectiveTag;
 import com.easysubway.journey.application.JourneyProfileCandidateProjectionV1;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
@@ -16,6 +18,7 @@ import com.easysubway.journey.bundle.JourneyProfileMeasurementInputs;
 import com.easysubway.journey.bundle.RouteBundleIdentity;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -647,6 +650,100 @@ class JourneyProfileRaptorAdapterTest {
 		assertThatThrownBy(() -> adapter.plan(query, snapshot(), null, policy().profilePlanningLimits()))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("TIMETABLE_REQUIRED");
+	}
+
+	// 대체 진입 픽스처: 기본 선택은 최단 검증 거리 "entry"(300초·50m), 차단 시 "entry-alt"(600초·80m).
+	private static final Clock FACILITY_CLOCK = Clock.fixed(Instant.parse("2026-07-01T00:00:00Z"), ZoneOffset.UTC);
+
+	@Test
+	void profileQueriesAvoidAFreshlyBlockedEntryTransition() {
+		var captured = snapshot(alternateEntryTimetable());
+		var blocked = facilityAdapter(FacilityAvailabilityView.blocked(
+			FACILITY_CLOCK.instant().minusSeconds(60), Set.of("entry")), false);
+		var unblocked = facilityAdapter(FacilityAvailabilityView.empty(FACILITY_CLOCK.instant()), false);
+		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var departBetween = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)));
+
+		// 진입 300초+출구 120초=420초·50m+50m=100m, 차단 시 진입 600초+120초=720초·80m+50m=130m.
+		assertThat(singleArriveByMetrics(unblocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+		assertThat(singleArriveByMetrics(blocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 720, 130, 0, new JourneyProfileRaptorPort.NoTransfer()));
+		var window = (JourneyProfileRaptorPort.DepartureWindowPlan)
+			((JourneyProfileRaptorPort.PlanningResult.Planned) blocked.plan(
+				departBetween, captured, null, policy().profilePlanningLimits())).temporalPlan();
+		assertThat(window.points()).isNotEmpty().allSatisfy(point -> assertThat(point.itineraries())
+			.isNotEmpty().allSatisfy(itinerary -> assertThat(itinerary.legs().getFirst()).isEqualTo(
+				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
+					"station-a", "station-a", 600, 80, false, true, "VERIFIED"))));
+	}
+
+	@Test
+	void requiredStepFreeProfileWithStaleFacilityStatusFailsExplicitly() {
+		var stale = facilityAdapter(FacilityAvailabilityView.blocked(
+			FACILITY_CLOCK.instant().minus(Duration.ofMinutes(6)), Set.of("entry")), true);
+		var stepFree = stepFreeQuery(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var lastConnection = stepFreeQuery(new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
+
+		assertThatThrownBy(() -> stale.plan(stepFree, snapshot(alternateEntryTimetable()), null,
+			policy().profilePlanningLimits()))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+		assertThatThrownBy(() -> stale.plan(lastConnection, snapshot(alternateEntryTimetable()), null,
+			policy().profilePlanningLimits()))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+		assertThatThrownBy(() -> stale.prepareLastConnection(lastConnection, snapshot(alternateEntryTimetable()),
+			policy().profilePlanningLimits()))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	@Test
+	void requiredStaleFacilityStatusLeavesNonStepFreeProfileUnblocked() {
+		var stale = facilityAdapter(FacilityAvailabilityView.blocked(
+			FACILITY_CLOCK.instant().minus(Duration.ofMinutes(6)), Set.of("entry")), true);
+		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+
+		assertThat(singleArriveByMetrics(stale.plan(arriveBy, snapshot(alternateEntryTimetable()), null,
+			policy().profilePlanningLimits())))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+	}
+
+	private static JourneyProfileRaptorAdapter facilityAdapter(FacilityAvailabilityView view, boolean required) {
+		return new JourneyProfileRaptorAdapter(
+			RouteTimetableRaptorPlanner.ScanWorkspacePool.shared(), () -> view, required, FACILITY_CLOCK);
+	}
+
+	private static JourneyProfileRaptorPort.ItineraryMetrics singleArriveByMetrics(
+		JourneyProfileRaptorPort.PlanningResult result
+	) {
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan)
+			((JourneyProfileRaptorPort.PlanningResult.Planned) result).temporalPlan();
+		var found = (JourneyProfileRaptorPort.ReversePlan.Found) plan.result();
+		assertThat(found.itineraries()).hasSize(1);
+		return found.itineraries().getFirst().metrics();
+	}
+
+	private static JourneyRaptorQuery stepFreeQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 0, 1, () -> false);
+	}
+
+	private static RouteTimetable alternateEntryTimetable() {
+		var base = timetable();
+		return new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(),
+			base.transitTrips(), base.transitStopTimes(), base.transitFrequencies(), List.of(), null,
+			new LoadRouteTimetablePort.RouteAccessData(
+				accessData().pathwayNodes(),
+				List.of(edge("entry", "entry-from", "entry-to", 300),
+					edge("entry-alt", "entry-from", "entry-to", 600, 80, false),
+					edge("exit", "exit-from", "exit-to", 120)),
+				List.of(),
+				List.of(
+					evidence("entry-evidence", "station-a", "entry", "ENTRY"),
+					evidence("entry-alt-evidence", "station-a", "entry-alt", "ENTRY"),
+					evidence("exit-evidence", "station-b", "exit", "EXIT"))));
 	}
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporalQuery) {
