@@ -154,6 +154,8 @@ class RouteTimetablePlatformGapsTest {
 		assertThat(projection.alightingPlatformGaps()).isEmpty();
 
 		assertThat(RouteAccessData.empty().platformGaps()).isEmpty();
+		assertThat(new RouteAccessData(List.of(), List.of(), List.of(), List.of(), List.of(), null).platformGaps())
+			.isEmpty();
 	}
 
 	private JourneyRideProjection firstRide(String directionId, Map<PlatformGapKey, List<PlatformGap>> gaps) {
