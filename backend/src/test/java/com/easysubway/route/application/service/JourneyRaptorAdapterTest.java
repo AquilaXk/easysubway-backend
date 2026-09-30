@@ -268,8 +268,18 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
-	void verifiesAdapterConstructorOverloads() {
-		assertThat(new JourneyRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared())).isNotNull();
+	void workspacePoolConstructorDefaultsToNoProviderAndNotRequired() {
+		// 기본 생성자 배선은 "공급자 없음 + required=false"와 같아야 한다: 무단차 요청도 오류 없이 같은 후보를 낸다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var request = request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
+		var defaultWired = new JourneyRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared())
+			.plan(request, snapshot(runtime), EFFECTIVE, null, measurement());
+		var explicitNoProvider = new JourneyRaptorAdapter(
+			RouteTimetableRaptorPlanner.ScanWorkspacePool.shared(), FacilityAvailabilityPort.unavailable(), false, FACILITY_CLOCK)
+			.plan(request, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(defaultWired.candidates()).isNotEmpty();
+		assertThat(defaultWired.candidates()).isEqualTo(explicitNoProvider.candidates());
 	}
 
 	// 대체 진입 픽스처: 기본 선택은 최단 검증 거리 "entry"(120초·40m), 차단 시 "entry-alt"(300초·90m).
