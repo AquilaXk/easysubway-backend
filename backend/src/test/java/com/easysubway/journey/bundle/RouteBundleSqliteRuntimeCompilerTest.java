@@ -323,6 +323,45 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			.isInstanceOf(FacilityStatusUnavailableException.class);
 	}
 
+	/**
+	 * 통합(NONE 변형, #418 QA 결정 추가 4): 같은 번들·운영 상태 흐름에서 무단차 제약이 없는 요청은 운영 상태와 무관하다.
+	 * 뷰가 없거나(원천 미수집) 5분을 넘겨도 오류가 아니고, 불가 시설로 막힌 전환도 적용하지 않는다.
+	 */
+	@Test
+	void ordinaryJourneyIgnoresOperationalStatusThroughTheCompiledBundleMapping() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloadsWithRequirements(
+			REQUIREMENT_DDL, exitBRequirementRows())));
+		var repository = facilityStatusRepository();
+		var clock = new MutableClock(DEPARTURE);
+		var provider = new FacilityStatusOverlayProvider(
+			repository, runtime::transitionFacilityRequirements, clock, new SimpleMeterRegistry());
+		var adapter = new JourneyRaptorAdapter(provider, true, clock);
+		var ordinary = request(JourneyRequest.ConstraintMode.NONE);
+		var stepFree = request(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
+		var snapshot = snapshot(runtime);
+
+		// 원천 수집 전(뷰 사용 불가): 무단차 요청은 오류, 일반 요청은 정상 탐색.
+		provider.refresh();
+		assertThat(provider.currentView().available()).isFalse();
+		var original = plan(adapter, ordinary, snapshot).candidates();
+		assertThat(original).hasSize(1);
+		assertThatThrownBy(() -> plan(adapter, stepFree, snapshot))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+
+		// 두 출입구 모두 불가 → exit-b는 무단차 요청에서만 막힌다.
+		collect(repository, provider, clock, Set.of(E1_EXIT, E2_EXIT));
+		assertThat(provider.currentView().blockedPathwayEdgeIds()).containsExactly("exit-b");
+		assertThat(plan(adapter, stepFree, snapshot).candidates()).isEmpty();
+		assertThat(plan(adapter, ordinary, snapshot).candidates()).isEqualTo(original);
+
+		// 원천 수집이 멈춰 5분을 넘긴 뒤에도 일반 요청은 오류 없이 같은 경로다.
+		clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+		provider.refresh();
+		assertThatThrownBy(() -> plan(adapter, stepFree, snapshot))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+		assertThat(plan(adapter, ordinary, snapshot).candidates()).isEqualTo(original);
+	}
+
 	@Test
 	void bundleWithoutMappingFailsRequiredStepFreeJourneyButKeepsOrdinaryJourney() throws Exception {
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));

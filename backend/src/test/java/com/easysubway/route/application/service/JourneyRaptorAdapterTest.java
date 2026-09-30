@@ -55,7 +55,7 @@ class JourneyRaptorAdapterTest {
 		var adapter = new JourneyRaptorAdapter(() -> blockedFacilityView, false, FACILITY_CLOCK);
 
 		var result = adapter.plan(
-			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
 			snapshot(runtime),
 			EFFECTIVE,
@@ -98,11 +98,11 @@ class JourneyRaptorAdapterTest {
 		var realtimeObservation = new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
 
-		// 1) With entry blocked by facility, the path cannot be traversed
+		// 1) With entry blocked by facility, the path cannot be traversed by a step-free request
 		var blockedFacilityView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry"));
 		var blockedAdapter = new JourneyRaptorAdapter(() -> blockedFacilityView, false, FACILITY_CLOCK);
 		var blockedResult = blockedAdapter.plan(
-			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
 			snapshot(runtime),
 			EFFECTIVE,
@@ -346,18 +346,77 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
-	void freshFacilityViewBlocksTransitionForNoneRequest() {
+	void freshFacilityViewBlocksTransitionOnlyForRequireStepFreeRequest() {
+		// #418 QA 결정 추가 4: 불가 시설로 막힌 전환은 REQUIRE_STEP_FREE 요청에만 적용한다.
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
 		var freshView = FacilityAvailabilityView.blocked(EFFECTIVE.minus(Duration.ofMinutes(1)), Set.of("entry"));
-		var adapter = new JourneyRaptorAdapter(() -> freshView, false, FACILITY_CLOCK);
+		// 선호 프로필(STEP_FREE + NONE)은 보행 시간이 달라지므로 같은 요청의 "차단 없는 신선한 뷰" 결과와 비교한다.
+		var preferenceUnblocked = new JourneyRaptorAdapter(
+			() -> FacilityAvailabilityView.empty(EFFECTIVE.minus(Duration.ofMinutes(1))), true, FACILITY_CLOCK).plan(
+				request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+					JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+				snapshot(runtime), EFFECTIVE, null, measurement()).candidates();
+		assertThat(preferenceUnblocked).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 180)));
 
-		var result = adapter.plan(
-			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
-			snapshot(runtime), EFFECTIVE, null, measurement());
+		for (boolean required : new boolean[] {false, true}) {
+			var adapter = new JourneyRaptorAdapter(() -> freshView, required, FACILITY_CLOCK);
+			var none = adapter.plan(
+				request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+					JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+				snapshot(runtime), EFFECTIVE, null, measurement());
+			var stepFreePreference = adapter.plan(
+				request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+					JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+				snapshot(runtime), EFFECTIVE, null, measurement());
+			var requireStepFree = adapter.plan(
+				request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+					JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+				snapshot(runtime), EFFECTIVE, null, measurement());
 
-		assertThat(result.candidates()).singleElement().satisfies(candidate ->
-			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 300)));
+			assertThat(none.candidates()).as("NONE, required=%s", required).singleElement().satisfies(candidate ->
+				assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
+			assertThat(stepFreePreference.candidates()).as("STEP_FREE preference, required=%s", required)
+				.isEqualTo(preferenceUnblocked);
+			assertThat(requireStepFree.candidates()).as("REQUIRE_STEP_FREE, required=%s", required)
+				.singleElement().satisfies(candidate ->
+					assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 300)));
+		}
+	}
+
+	@Test
+	void unusableFacilityViewNeitherFailsNorBlocksNoneOrPreferenceRequests() {
+		// 무단차 제약이 없는 요청에 시설 뷰는 무관하다: 사용할 수 없는 뷰에서도 오류·차단 없이 같은 후보를 낸다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, alternateEntryTimetable());
+		var staleBlocked = FacilityAvailabilityView.blocked(EFFECTIVE.minus(Duration.ofMinutes(6)), Set.of("entry"));
+		FacilityAvailabilityPort throwingPort = () -> {
+			throw new IllegalStateException("facility provider down");
+		};
+		var ports = new java.util.LinkedHashMap<String, FacilityAvailabilityPort>();
+		ports.put("unavailable", FacilityAvailabilityView::unavailable);
+		ports.put("stale", () -> staleBlocked);
+		ports.put("throwing", throwingPort);
+		var unblocked = new JourneyRaptorAdapter(
+			() -> FacilityAvailabilityView.empty(EFFECTIVE), true, FACILITY_CLOCK);
+
+		for (var port : ports.entrySet()) {
+			var adapter = new JourneyRaptorAdapter(port.getValue(), true, FACILITY_CLOCK);
+			for (var profile : List.of(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.MobilityProfile.STEP_FREE)) {
+				var request = request(profile, JourneyRequest.ConstraintMode.NONE, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
+				var expected = unblocked.plan(request, snapshot(runtime), EFFECTIVE, null, measurement()).candidates();
+				var result = adapter.plan(request, snapshot(runtime), EFFECTIVE, null, measurement());
+
+				assertThat(expected).as("%s baseline", profile).hasSize(1);
+				assertThat(result.candidates()).as("%s view, %s", port.getKey(), profile).isEqualTo(expected);
+			}
+			assertThatThrownBy(() -> adapter.plan(
+				request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+					JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+				snapshot(runtime), EFFECTIVE, null, measurement()))
+				.as("%s view, REQUIRE_STEP_FREE", port.getKey())
+				.isInstanceOf(FacilityStatusUnavailableException.class)
+				.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+		}
 	}
 
 	@Test
@@ -420,14 +479,14 @@ class JourneyRaptorAdapterTest {
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
 			snapshot(runtime), EFFECTIVE, null, measurement());
-		var withinSkewNone = new JourneyRaptorAdapter(() -> withinSkew, true, FACILITY_CLOCK).plan(
-			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+		var withinSkewStepFree = new JourneyRaptorAdapter(() -> withinSkew, true, FACILITY_CLOCK).plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
 			snapshot(runtime), EFFECTIVE, null, measurement());
 
 		assertThat(beyondSkewNone.candidates()).singleElement().satisfies(candidate ->
 			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 120)));
-		assertThat(withinSkewNone.candidates()).singleElement().satisfies(candidate ->
+		assertThat(withinSkewStepFree.candidates()).singleElement().satisfies(candidate ->
 			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 300)));
 	}
 
@@ -441,7 +500,7 @@ class JourneyRaptorAdapterTest {
 		var blockedView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry"));
 
 		var result = new JourneyRaptorAdapter(() -> blockedView, false, FACILITY_CLOCK).plan(
-			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
 			snapshot(runtime), EFFECTIVE, realtimeObservation, measurement());
 
