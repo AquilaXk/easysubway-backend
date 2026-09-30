@@ -61,7 +61,7 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 			new FeedObservation(EXIT_2, FacilityOperationalState.OUT_OF_SERVICE, "S")
 		), T0);
 
-		assertThat(result).isEqualTo(new FeedApplyResult(2, 0));
+		assertThat(result).isEqualTo(new FeedApplyResult(2, 0, 0, 0));
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OPERATING, FacilityStatusSource.SEOUL_METRO_FEED, "M", T0, T0),
 			new FacilityOperationalStatus(EXIT_2, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.SEOUL_METRO_FEED, "S", T0, T0)
@@ -82,8 +82,8 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 			new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
 		), T0);
 
-		assertThat(result).isEqualTo(new FeedApplyResult(1, 0));
-		assertThat(stale).isEqualTo(new FeedApplyResult(0, 0));
+		assertThat(result).isEqualTo(new FeedApplyResult(1, 0, 0, 0));
+		assertThat(stale).isEqualTo(new FeedApplyResult(0, 0, 0, 0));
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.SEOUL_METRO_FEED, "T", T1, T1)
 		);
@@ -100,7 +100,7 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 			new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
 		), T1);
 
-		assertThat(result).isEqualTo(new FeedApplyResult(0, 1));
+		assertThat(result).isEqualTo(new FeedApplyResult(0, 1, 0, 0));
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.ADMIN_VERIFIED, "M", ADMIN_AT, ADMIN_AT)
 		);
@@ -117,7 +117,7 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 			new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
 		), T1);
 
-		assertThat(result).isEqualTo(new FeedApplyResult(1, 0));
+		assertThat(result).isEqualTo(new FeedApplyResult(1, 0, 0, 0));
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OPERATING, FacilityStatusSource.SEOUL_METRO_FEED, "M", T1, T1)
 		);
@@ -138,8 +138,8 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 			new FeedObservation(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, "S")
 		), T2);
 
-		assertThat(baseline).isEqualTo(new FeedApplyResult(0, 1));
-		assertThat(changed).isEqualTo(new FeedApplyResult(1, 0));
+		assertThat(baseline).isEqualTo(new FeedApplyResult(0, 1, 0, 0));
+		assertThat(changed).isEqualTo(new FeedApplyResult(1, 0, 0, 0));
 		assertThat(repository.loadStatuses()).containsExactly(
 			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.SEOUL_METRO_FEED, "S", T2, T2)
 		);
@@ -159,14 +159,14 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 	@Test
 	@DisplayName("빈 수집 결과도 원천 호출이 성공했다면 심장박동만 기록한다")
 	void emptyObservationListOnlyAdvancesHeartbeat() {
-		assertThat(repository.applyFeedCollection(FEED, List.of(), T0)).isEqualTo(new FeedApplyResult(0, 0));
+		assertThat(repository.applyFeedCollection(FEED, List.of(), T0)).isEqualTo(new FeedApplyResult(0, 0, 0, 0));
 
 		assertThat(repository.loadStatuses()).isEmpty();
 		assertThat(repository.lastSuccessfulCollectionAt(FEED)).contains(T0);
 	}
 
 	@Test
-	@DisplayName("쓰기 도중 실패하면 상태와 심장박동을 함께 되돌린다")
+	@DisplayName("쓰기 도중 실패하면 상태와 심장박동을 함께 되돌리고, 그 회차에 없던 원천 행도 지우지 않는다")
 	void failedCollectionRollsBackStatusesAndHeartbeat() {
 		repository.applyFeedCollection(FEED, List.of(new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")), T0);
 
@@ -177,6 +177,42 @@ class JdbcFacilityOperationalStatusRepositoryTest {
 
 		assertThat(repository.loadStatuses()).extracting(FacilityOperationalStatus::facilityId).containsExactly(EXIT_1);
 		assertThat(repository.lastSuccessfulCollectionAt(FEED)).contains(T0);
+	}
+
+	@Test
+	@DisplayName("전체 수집 성공 회차에 없는 시설의 원천 행은 지운다")
+	void feedRowAbsentFromSuccessfulCollectionIsRemoved() {
+		repository.applyFeedCollection(FEED, List.of(
+			new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M"),
+			new FeedObservation(EXIT_2, FacilityOperationalState.OUT_OF_SERVICE, "S")
+		), T0);
+
+		FeedApplyResult result = repository.applyFeedCollection(FEED, List.of(
+			new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
+		), T1);
+
+		assertThat(result).isEqualTo(new FeedApplyResult(1, 0, 1, 0));
+		assertThat(repository.loadStatuses()).containsExactly(
+			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OPERATING, FacilityStatusSource.SEOUL_METRO_FEED, "M", T1, T1)
+		);
+		assertThat(repository.lastSuccessfulCollectionAt(FEED)).contains(T1);
+	}
+
+	@Test
+	@DisplayName("원천에서 빠진 시설의 관리자 확인 행은 지우지 않고 수만 센다")
+	void adminVerifiedRowAbsentFromCollectionIsKeptAndCounted() {
+		repository.applyFeedCollection(FEED, List.of(
+			new FeedObservation(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, "S"),
+			new FeedObservation(EXIT_2, FacilityOperationalState.OPERATING, "M")
+		), T0);
+		repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT);
+
+		FeedApplyResult result = repository.applyFeedCollection(FEED, List.of(), T1);
+
+		assertThat(result).isEqualTo(new FeedApplyResult(0, 0, 1, 1));
+		assertThat(repository.loadStatuses()).containsExactly(
+			new FacilityOperationalStatus(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.ADMIN_VERIFIED, "S", ADMIN_AT, ADMIN_AT)
+		);
 	}
 
 	@Test

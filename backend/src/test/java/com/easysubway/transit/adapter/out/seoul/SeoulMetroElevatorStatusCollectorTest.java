@@ -1,12 +1,15 @@
 package com.easysubway.transit.adapter.out.seoul;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.easysubway.transit.adapter.out.persistence.JdbcFacilityOperationalStatusRepository;
 import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
 import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedApplyResult;
 import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedObservation;
 import com.easysubway.transit.domain.FacilityOperationalState;
 import com.easysubway.transit.domain.FacilityOperationalStatus;
+import com.easysubway.transit.domain.FacilityStatusSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -27,10 +30,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 @DisplayName("서울교통공사 엘리베이터 가동 정보 수집기")
 class SeoulMetroElevatorStatusCollectorTest {
@@ -91,6 +99,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 		assertThat(gauge("easysubway.facility_status.feed.unidentifiable", "reason", "DUPLICATE")).isZero();
 		assertThat(gauge("easysubway.facility_status.feed.unidentifiable", "reason", "LINE_OR_STATION_CODE")).isZero();
 		assertThat(gauge("easysubway.facility_status.feed.admin_verified_kept", null, null)).isEqualTo(1.0);
+		assertThat(gauge("easysubway.facility_status.feed.admin_verified_absent", null, null)).isEqualTo(2.0);
 		assertThat(meterRegistry.get("easysubway.facility_status.feed.unknown_code").tag("feed", FEED).counter().count())
 			.isEqualTo(1.0);
 		assertThat(gauge("easysubway.facility_status.feed.seconds_since_last_success", null, null)).isZero();
@@ -120,6 +129,73 @@ class SeoulMetroElevatorStatusCollectorTest {
 				new FeedObservation("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OPERATING, "M"),
 				new FeedObservation("smrt-elev:0201:2:2번 출입구", FacilityOperationalState.OPERATING, "M")
 			));
+	}
+
+	@Test
+	@DisplayName("다음 성공 회차에서 D(삭제)가 된 시설과 목록에서 빠진 시설의 원천 행은 지우고, 관리자 확인 행은 남긴다")
+	void deletedOrRemovedFacilitiesLoseFeedRowsButKeepAdminRows() throws IOException {
+		var repository = h2Repository();
+		List<String> bodies = new ArrayList<>(List.of(
+			page("""
+				[
+				  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"1번 출입구","oprtngSitu":"S"},
+				  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"2번 출입구","oprtngSitu":"T"},
+				  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"5번 출입구","oprtngSitu":"M"},
+				  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"6번 출입구","oprtngSitu":"I"}
+				]
+				""", 4),
+			page("""
+				[
+				  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"1번 출입구","oprtngSitu":"D"},
+				  {"stnCd":"0201","stnNm":"가역","lineNm":"2호선","dtlPstn":"5번 출입구","oprtngSitu":"M"}
+				]
+				""", 2)
+		));
+		startServer(exchange -> respond(exchange, 200, bodies.removeFirst()));
+		var collector = new SeoulMetroElevatorStatusCollector(
+			"test-key", endpoint(), repository, objectMapper, meterRegistry, httpClient(), clock, 1000, 1_048_576
+		);
+
+		collector.collect();
+		assertThat(repository.recordAdminVerified(
+			"smrt-elev:0201:2:6번 출입구", FacilityOperationalState.OUT_OF_SERVICE, NOW.plusSeconds(30)
+		)).isTrue();
+		clock.advance(Duration.ofSeconds(60));
+		collector.collect();
+
+		assertThat(repository.loadStatuses()).extracting(FacilityOperationalStatus::facilityId, FacilityOperationalStatus::source)
+			.containsExactly(
+				tuple("smrt-elev:0201:2:5번 출입구", FacilityStatusSource.SEOUL_METRO_FEED),
+				tuple("smrt-elev:0201:2:6번 출입구", FacilityStatusSource.ADMIN_VERIFIED)
+			);
+		assertThat(repository.lastSuccessfulCollectionAt(FEED)).contains(NOW.plusSeconds(60));
+		assertThat(gauge("easysubway.facility_status.feed.admin_verified_absent", null, null)).isEqualTo(1.0);
+	}
+
+	@Test
+	@DisplayName("일부 페이지만 받은 회차는 원천 행을 하나도 지우지 않는다")
+	void partialCollectionRemovesNothing() throws IOException {
+		var repository = h2Repository();
+		List<Integer> pageTwoStatuses = new ArrayList<>(List.of(200, 503));
+		startServer(exchange -> {
+			String pageNo = query(exchange.getRequestURI()).get("pageNo");
+			int status = "2".equals(pageNo) ? pageTwoStatuses.removeFirst() : 200;
+			String row = "[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"" + pageNo
+				+ "번 출입구\",\"oprtngSitu\":\"S\"}]";
+			respond(exchange, status, page(row, 2));
+		});
+		var collector = new SeoulMetroElevatorStatusCollector(
+			"test-key", endpoint(), repository, objectMapper, meterRegistry, httpClient(), clock, 1, 1_048_576
+		);
+
+		collector.collect();
+		clock.advance(Duration.ofSeconds(60));
+		collector.collect();
+
+		assertThat(repository.loadStatuses()).extracting(FacilityOperationalStatus::facilityId)
+			.containsExactly("smrt-elev:0201:2:1번 출입구", "smrt-elev:0201:2:2번 출입구");
+		assertThat(repository.lastSuccessfulCollectionAt(FEED)).contains(NOW);
+		assertThat(counter("failure", "HTTP_STATUS")).isEqualTo(1.0);
 	}
 
 	@Test
@@ -286,6 +362,18 @@ class SeoulMetroElevatorStatusCollectorTest {
 		assertThat(counter("success", "NONE")).isZero();
 	}
 
+	private static JdbcFacilityOperationalStatusRepository h2Repository() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:elevator-collector-" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		new ResourceDatabasePopulator(
+			new ClassPathResource("db/migration/h2/V76__facility_operational_status.sql")
+		).execute(dataSource);
+		return new JdbcFacilityOperationalStatusRepository(dataSource, new DataSourceTransactionManager(dataSource));
+	}
+
 	private SeoulMetroElevatorStatusCollector collector(String serviceKey) {
 		return collector(serviceKey, 1000, 1_048_576);
 	}
@@ -378,7 +466,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 				throw failWith;
 			}
 			applied.add(new AppliedCollection(feed, List.copyOf(observations), observedAt));
-			return new FeedApplyResult(observations.size() - 1, 1);
+			return new FeedApplyResult(observations.size() - 1, 1, 3, 2);
 		}
 
 		@Override

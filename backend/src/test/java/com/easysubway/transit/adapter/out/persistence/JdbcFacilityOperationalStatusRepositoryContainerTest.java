@@ -66,7 +66,7 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 	}
 
 	@Test
-	@DisplayName("TIMESTAMPTZ 마이크로초 왕복, 관리자 확인 우선순위 양방향, 심장박동이 PostgreSQL에서도 같다")
+	@DisplayName("TIMESTAMPTZ 마이크로초 왕복, 관리자 확인 우선순위 양방향, 심장박동, 원천에서 빠진 행 제거가 PostgreSQL에서도 같다")
 	void appliesPriorityAndHeartbeatOnPostgresql() {
 		try (var dataSource = dataSource()) {
 			var repository = new JdbcFacilityOperationalStatusRepository(dataSource);
@@ -77,7 +77,7 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 				new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")
 			), T1);
 
-			assertThat(unchanged).isEqualTo(new FeedApplyResult(0, 1));
+			assertThat(unchanged).isEqualTo(new FeedApplyResult(0, 1, 0, 0));
 			assertThat(repository.loadStatuses()).containsExactly(new FacilityOperationalStatus(
 				EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.ADMIN_VERIFIED, "M", ADMIN_AT, ADMIN_AT
 			));
@@ -87,11 +87,16 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 				new FeedObservation(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, "S")
 			), T1.plusSeconds(60));
 
-			assertThat(changed).isEqualTo(new FeedApplyResult(1, 0));
+			assertThat(changed).isEqualTo(new FeedApplyResult(1, 0, 0, 0));
 			assertThat(repository.loadStatuses()).containsExactly(new FacilityOperationalStatus(
 				EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, FacilityStatusSource.SEOUL_METRO_FEED, "S",
 				T1.plusSeconds(60), T1.plusSeconds(60)
 			));
+
+			FeedApplyResult absent = repository.applyFeedCollection(FEED, List.of(), T1.plusSeconds(120));
+
+			assertThat(absent).isEqualTo(new FeedApplyResult(0, 0, 1, 0));
+			assertThat(repository.loadStatuses()).isEmpty();
 		}
 	}
 

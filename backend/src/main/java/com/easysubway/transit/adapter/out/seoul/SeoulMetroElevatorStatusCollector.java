@@ -42,7 +42,8 @@ import org.springframework.stereotype.Component;
  * 반영한다(#419).
  *
  * <ul>
- *   <li>한 회차는 모든 페이지를 받고 형식을 검사한 뒤에만 한 트랜잭션으로 반영하고, 그 커밋과 함께 심장박동을 옮긴다.</li>
+ *   <li>한 회차는 모든 페이지를 받고 형식을 검사한 뒤에만 한 트랜잭션으로 반영하고, 그 커밋과 함께 심장박동을 옮긴다.
+ *       그 회차 관측에 없는 시설의 원천 행은 같은 트랜잭션에서 지우고, 관리자 확인 행은 남겨 수만 지표로 낸다.</li>
  *   <li>전송·HTTP·결과 코드·응답 형식·저장 오류는 그 회차를 반영하지 않고 실패 지표·로그로 드러낸다. 이전 값을 새 관측으로
  *       다시 쓰지 않는다.</li>
  *   <li>자체 호출 한도는 두지 않는다(QA 결정). 수집 주기만 설정한다.</li>
@@ -73,6 +74,7 @@ public class SeoulMetroElevatorStatusCollector {
 	private final Map<String, AtomicInteger> facilitiesByCode = new ConcurrentHashMap<>();
 	private final Map<UnidentifiableReason, AtomicInteger> unidentifiable = new EnumMap<>(UnidentifiableReason.class);
 	private final AtomicInteger adminVerifiedKept = new AtomicInteger();
+	private final AtomicInteger adminVerifiedAbsent = new AtomicInteger();
 	private final AtomicReference<Instant> lastSuccessAt = new AtomicReference<>();
 	private final Counter unknownCodeCounter;
 
@@ -136,6 +138,10 @@ public class SeoulMetroElevatorStatusCollector {
 			.description("Facilities kept at a more recent admin-verified status in the last successful collection")
 			.tag("feed", FEED)
 			.register(meterRegistry);
+		Gauge.builder(METRIC_PREFIX + "admin_verified_absent", adminVerifiedAbsent, AtomicInteger::get)
+			.description("Admin-verified facilities kept although absent from the last successful collection")
+			.tag("feed", FEED)
+			.register(meterRegistry);
 		Gauge.builder(METRIC_PREFIX + "seconds_since_last_success", lastSuccessAt, this::secondsSinceLastSuccess)
 			.description("Seconds since the last successful collection in this process; NaN before the first success")
 			.tag("feed", FEED)
@@ -181,14 +187,18 @@ public class SeoulMetroElevatorStatusCollector {
 		classification.facilitiesByCode().forEach((code, count) -> facilitiesByCode.get(code).set(count));
 		classification.unidentifiable().forEach((reason, count) -> unidentifiable.get(reason).set(count));
 		adminVerifiedKept.set(result.keptAdminVerified());
+		adminVerifiedAbsent.set(result.adminVerifiedAbsent());
 		unknownCodeCounter.increment(classification.unknownCodeFacilities());
 		lastSuccessAt.set(observedAt);
 		collections("success", "NONE").increment();
 		log.info(
-			"Seoul Metro elevator status collected: observations={}, written={}, adminVerifiedKept={}, unidentifiable={}, unknownCode={}",
+			"Seoul Metro elevator status collected: observations={}, written={}, adminVerifiedKept={}, removed={}, "
+				+ "adminVerifiedAbsent={}, unidentifiable={}, unknownCode={}",
 			classification.observations().size(),
 			result.written(),
 			result.keptAdminVerified(),
+			result.removed(),
+			result.adminVerifiedAbsent(),
 			classification.unidentifiableTotal(),
 			classification.unknownCodeFacilities()
 		);

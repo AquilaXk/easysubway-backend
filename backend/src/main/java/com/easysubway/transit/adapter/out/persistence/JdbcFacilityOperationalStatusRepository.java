@@ -14,9 +14,11 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,6 +33,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>한 회차 반영은 하나의 트랜잭션이다. 현재 행을 읽어 {@link FacilityOperationalStatusPriority}로 행마다 동작을 정하고,
  * 갱신은 읽은 출처·관측 시각이 그대로일 때만 적용되게 조건을 건다(그 사이 관리자 기록이 끼어들면 그 행은 이번 회차에 건너뛴다).
  * 새 행 삽입이 동시에 겹치면 트랜잭션 전체가 실패해 심장박동도 옮기지 않는다.
+ *
+ * <p>이번 회차 관측에 없는 시설(원천에서 빠졌거나 {@code D}, 식별 불가·알 수 없는 코드가 된 시설)의 {@code SEOUL_METRO_FEED}
+ * 행은 같은 트랜잭션에서 지운다. 지우기도 읽은 출처·관측 시각이 그대로일 때만 적용한다. {@code ADMIN_VERIFIED} 행은 지우지 않고
+ * 수만 센다.
  */
 @Repository
 public class JdbcFacilityOperationalStatusRepository implements FacilityOperationalStatusStore {
@@ -77,7 +83,9 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 			List<Object[]> sourceCodes = new ArrayList<>();
 			int keptAdminVerified = 0;
 			OffsetDateTime at = timestamp(observedAt);
+			Set<String> observedFacilities = new HashSet<>();
 			for (FeedObservation observation : observations) {
+				observedFacilities.add(observation.facilityId());
 				FacilityOperationalStatus current = existing.get(observation.facilityId());
 				FeedAction action = FacilityOperationalStatusPriority.resolveFeed(current, observation.sourceCode(), observedAt);
 				if (action == FeedAction.INSERT) {
@@ -122,8 +130,27 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 					""",
 				sourceCodes
 			);
+			List<Object[]> absentFeedRows = new ArrayList<>();
+			int adminVerifiedAbsent = 0;
+			for (FacilityOperationalStatus row : existing.values()) {
+				if (observedFacilities.contains(row.facilityId())) {
+					continue;
+				}
+				if (row.source() == FacilityStatusSource.SEOUL_METRO_FEED) {
+					absentFeedRows.add(new Object[] {row.facilityId(), timestamp(row.observedAt())});
+				} else {
+					adminVerifiedAbsent++;
+				}
+			}
+			int removed = sum(jdbcTemplate.batchUpdate(
+				"""
+					DELETE FROM facility_operational_status
+					WHERE facility_id = ? AND source = 'SEOUL_METRO_FEED' AND observed_at = ?
+					""",
+				absentFeedRows
+			));
 			advanceHeartbeat(feed, at);
-			return new FeedApplyResult(written, keptAdminVerified);
+			return new FeedApplyResult(written, keptAdminVerified, removed, adminVerifiedAbsent);
 		});
 	}
 
