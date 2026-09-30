@@ -478,6 +478,7 @@ class JourneyV3RuntimeParityTest {
 			"journey-1", departure, arrival, null, null, 300, 0, 0,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
+			JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("timetable-1")),
 			List.of(TestRides.candidateRide(
 				"line-1", "trip-1", "station-destination", "station-origin", "station-destination",
 				departure, arrival, null, null

@@ -26,7 +26,7 @@ class JourneyCandidateTest {
 			new JourneyCandidate.Exit("station-destination", 20)
 		));
 
-		JourneyCandidate candidate = new JourneyCandidate(
+		JourneyCandidate candidate = TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 1, 75,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, reasons),
@@ -54,7 +54,7 @@ class JourneyCandidateTest {
 	void acceptsOnlyCompleteRealtimePairsForRealtimeCandidatesAndRideLegs() {
 		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
 		Instant realtimeArrival = ARRIVAL.plusSeconds(30);
-		JourneyCandidate candidate = new JourneyCandidate(
+		JourneyCandidate candidate = TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
 			JourneyCandidate.TimeSource.REALTIME,
 			new JourneyCandidate.Accessibility(true, List.of()),
@@ -73,7 +73,7 @@ class JourneyCandidateTest {
 	void rejectsInvalidIdentityTimesMetricsModeAndCollections() {
 		assertThatThrownBy(() -> candidate(" ", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", ARRIVAL, DEPARTURE, null, null, 300, 0, 50,
 			JourneyCandidate.TimeSource.TIMETABLE, accessibility(), legs(null, null)
 		)).isInstanceOf(IllegalArgumentException.class);
@@ -92,7 +92,7 @@ class JourneyCandidateTest {
 		assertThatThrownBy(() -> candidate(
 			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, -1
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 0, 50,
 			JourneyCandidate.TimeSource.TIMETABLE, accessibility(), List.of()
 		)).isInstanceOf(IllegalArgumentException.class);
@@ -155,6 +155,12 @@ class JourneyCandidateTest {
 	}
 
 	@Test
+	void candidateAndProfileItineraryExposeOnlyTheirCanonicalConstructorSoFareIsNeverDefaulted() {
+		assertThat(JourneyCandidate.class.getDeclaredConstructors()).hasSize(1);
+		assertThat(JourneyProfileRaptorPort.Itinerary.class.getDeclaredConstructors()).hasSize(1);
+	}
+
+	@Test
 	void rejectsUnknownServicePatternAndTooFewStops() {
 		List<JourneyCandidate.Stop> twoStops = List.of(
 			new JourneyCandidate.Stop("station-origin", null, DEPARTURE, null, null),
@@ -180,16 +186,80 @@ class JourneyCandidateTest {
 	}
 
 	@Test
+	void buildsAvailableFareWithSixAmountsAndCopiedSnapshotIds() {
+		var fare = JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("snap-1", "snap-2"));
+
+		assertThat(fare.status()).isEqualTo(JourneyCandidate.FareStatus.AVAILABLE);
+		assertThat(fare.adultCardWon()).isEqualTo(1400);
+		assertThat(fare.childCashWon()).isEqualTo(600);
+		assertThat(fare.sourceSnapshotIds()).containsExactly("snap-1", "snap-2");
+		var unavailable = JourneyCandidate.Fare.unavailable();
+		assertThat(unavailable.status()).isEqualTo(JourneyCandidate.FareStatus.UNAVAILABLE);
+		assertThat(unavailable.adultCardWon()).isNull();
+		assertThat(unavailable.sourceSnapshotIds()).isEmpty();
+		assertThat(new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, null, null, null).sourceSnapshotIds()).isEmpty();
+	}
+
+	@Test
+	void rejectsUnavailableFareCarryingAnyAmount() {
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			1, null, null, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, 1, null, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, 1, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, 1, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, 1, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, null, 1, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+	}
+
+	@Test
+	void rejectsAvailableFareWithMissingNegativeAmountOrNoSnapshot() {
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			null, 1, 1, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("adultCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, null, 1, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("adultCashWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, null, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("youthCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, null, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("youthCashWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, 1, null, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("childCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, 1, 1, null, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("childCashWon");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(-1, 1, 1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, -1, 1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, -1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, -1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, -1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, -1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, 1, List.of()))
+			.hasMessage("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, 1, null))
+			.hasMessage("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+	}
+
+	@Test
 	void rejectsCandidateAndRideRealtimeModeDrift() {
 		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
 		Instant realtimeArrival = ARRIVAL.plusSeconds(30);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 0, 50,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			accessibility(),
 			legs(realtimeDeparture, realtimeArrival)
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyCandidate(
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
 			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
 			JourneyCandidate.TimeSource.REALTIME,
 			accessibility(),
@@ -294,7 +364,7 @@ class JourneyCandidateTest {
 		int transfers,
 		long walkingDistance
 	) {
-		return new JourneyCandidate(
+		return TestJourneyCandidates.unavailableFare(
 			id, DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, duration, transfers, walkingDistance,
 			source, accessibility(), legs(realtimeDeparture, realtimeArrival)
 		);

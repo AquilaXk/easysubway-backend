@@ -17,6 +17,7 @@ public record JourneyCandidate(
 	long walkingDistanceMeters,
 	TimeSource timeSource,
 	Accessibility accessibility,
+	Fare fare,
 	List<Leg> legs
 ) {
 	public JourneyCandidate {
@@ -40,6 +41,7 @@ public record JourneyCandidate(
 			throw new IllegalArgumentException("timeSource does not match realtime fields");
 		}
 		accessibility = Objects.requireNonNull(accessibility, "accessibility");
+		fare = Objects.requireNonNull(fare, "fare");
 		legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 		if (legs.isEmpty()) throw new IllegalArgumentException("legs must not be empty");
 		boolean candidateHasRealtime = realtimeDepartureTime != null;
@@ -99,6 +101,72 @@ public record JourneyCandidate(
 
 		public AccessibilityResult result() {
 			return AccessibilityResult.VERIFIED;
+		}
+	}
+
+	public enum FareStatus {
+		AVAILABLE,
+		UNAVAILABLE
+	}
+
+	public record Fare(
+		FareStatus status,
+		Integer adultCardWon,
+		Integer adultCashWon,
+		Integer youthCardWon,
+		Integer youthCashWon,
+		Integer childCardWon,
+		Integer childCashWon,
+		List<String> sourceSnapshotIds
+	) {
+		public static Fare unavailable() {
+			return new Fare(FareStatus.UNAVAILABLE, null, null, null, null, null, null, List.of());
+		}
+
+		public static Fare available(
+			int adultCardWon,
+			int adultCashWon,
+			int youthCardWon,
+			int youthCashWon,
+			int childCardWon,
+			int childCashWon,
+			List<String> sourceSnapshotIds
+		) {
+			return new Fare(
+				FareStatus.AVAILABLE,
+				adultCardWon,
+				adultCashWon,
+				youthCardWon,
+				youthCashWon,
+				childCardWon,
+				childCashWon,
+				sourceSnapshotIds == null ? List.of() : List.copyOf(sourceSnapshotIds)
+			);
+		}
+
+		public Fare {
+			status = Objects.requireNonNull(status, "status");
+			sourceSnapshotIds = sourceSnapshotIds == null ? List.of() : List.copyOf(sourceSnapshotIds);
+			if (status == FareStatus.UNAVAILABLE) {
+				if (adultCardWon != null || adultCashWon != null || youthCardWon != null || youthCashWon != null
+					|| childCardWon != null || childCashWon != null) {
+					throw new IllegalArgumentException("fare amounts must be null when status is UNAVAILABLE");
+				}
+			} else {
+				Objects.requireNonNull(adultCardWon, "adultCardWon");
+				Objects.requireNonNull(adultCashWon, "adultCashWon");
+				Objects.requireNonNull(youthCardWon, "youthCardWon");
+				Objects.requireNonNull(youthCashWon, "youthCashWon");
+				Objects.requireNonNull(childCardWon, "childCardWon");
+				Objects.requireNonNull(childCashWon, "childCashWon");
+				if (adultCardWon < 0 || adultCashWon < 0 || youthCardWon < 0 || youthCashWon < 0
+					|| childCardWon < 0 || childCashWon < 0) {
+					throw new IllegalArgumentException("fare amounts must not be negative");
+				}
+				if (sourceSnapshotIds.isEmpty()) {
+					throw new IllegalArgumentException("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+				}
+			}
 		}
 	}
 

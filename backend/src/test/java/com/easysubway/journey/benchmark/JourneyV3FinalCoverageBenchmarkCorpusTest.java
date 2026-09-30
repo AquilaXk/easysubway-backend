@@ -1,5 +1,6 @@
 package com.easysubway.journey.benchmark;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
 import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -133,7 +134,7 @@ class JourneyV3FinalCoverageBenchmarkCorpusTest {
 		Instant realtimeArrival = timeSource == JourneyCandidate.TimeSource.REALTIME
 			? departure.plusSeconds(315)
 			: null;
-		var journey = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300),
+		var journey = TestJourneyCandidates.unavailableFare("journey-1", departure, departure.plusSeconds(300),
 			realtimeDeparture, realtimeArrival,
 			300, 0, 0, timeSource,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(

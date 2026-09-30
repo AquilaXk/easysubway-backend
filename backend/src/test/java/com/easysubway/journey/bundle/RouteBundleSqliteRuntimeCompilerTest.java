@@ -90,6 +90,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			assertThat(candidate.legs()).hasSize(3);
 			assertThat(candidate.transferCount()).isZero();
 			assertThat(candidate.accessibility().stairFree()).isTrue();
+			assertThat(candidate.fare().status()).isEqualTo(com.easysubway.journey.application.JourneyCandidate.FareStatus.AVAILABLE);
+			assertThat(candidate.fare().adultCardWon()).isEqualTo(1400);
 		});
 	}
 
@@ -178,6 +180,136 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(blankName)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("bundle facility name");
+	}
+
+	@Test
+	void rejectsDuplicateOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-duplicate", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official-2", "snapshot-2", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("duplicate official_od_fare_quotes key");
+	}
+
+	@Test
+	void loadsTheSixRealOfficialOdFareRowsFromTheFareComponent() throws Exception {
+		JsonNode realRows;
+		try (var input = RouteBundleSqliteRuntimeCompilerTest.class.getResourceAsStream(
+			"/route/fare/official-od-fare-quotes.json")) {
+			realRows = JSON.readTree(java.util.Objects.requireNonNull(input, "real fare quotes")).path("quotes");
+		}
+		var fare = sqlite("fare-real-rows", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL, PRIMARY KEY(origin_station_id,destination_station_id))
+				""");
+			for (JsonNode row : realRows) {
+				insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+					row.path("originStationId").textValue(), row.path("destinationStationId").textValue(),
+					row.path("sourceId").textValue(), row.path("snapshotId").textValue(),
+					row.path("mappingLedgerHash").textValue(), row.path("gnrlCardFare").intValue(),
+					row.path("gnrlCashFare").intValue(), row.path("yungCardFare").intValue(),
+					row.path("yungCashFare").intValue(), row.path("childCardFare").intValue(),
+					row.path("childCashFare").intValue());
+			}
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, Zstd.compress(fare, 10));
+
+		var quotes = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)).officialFareQuotes();
+
+		assertThat(realRows).hasSize(6);
+		assertThat(quotes).hasSize(6);
+		for (JsonNode row : realRows) {
+			var quote = quotes.get(com.easysubway.route.application.service.OfficialFareQuote.fareKey(
+				row.path("originStationId").textValue(), row.path("destinationStationId").textValue()));
+			assertThat(quote).isNotNull();
+			assertThat(List.of(quote.sourceId(), quote.snapshotId(), quote.mappingLedgerHash()))
+				.containsExactly(row.path("sourceId").textValue(), row.path("snapshotId").textValue(),
+					row.path("mappingLedgerHash").textValue());
+			assertThat(List.of(quote.gnrlCardFare(), quote.gnrlCashFare(), quote.yungCardFare(),
+				quote.yungCashFare(), quote.childCardFare(), quote.childCashFare()))
+				.containsExactly(row.path("gnrlCardFare").intValue(), row.path("gnrlCashFare").intValue(),
+					row.path("yungCardFare").intValue(), row.path("yungCashFare").intValue(),
+					row.path("childCardFare").intValue(), row.path("childCashFare").intValue());
+		}
+		var sangnoksuToSadang = quotes.get(
+			com.easysubway.route.application.service.OfficialFareQuote.fareKey("station-sangnoksu", "station-sadang"));
+		assertThat(List.of(sangnoksuToSadang.gnrlCardFare(), sangnoksuToSadang.gnrlCashFare(),
+			sangnoksuToSadang.yungCardFare(), sangnoksuToSadang.yungCashFare(),
+			sangnoksuToSadang.childCardFare(), sangnoksuToSadang.childCashFare()))
+			.containsExactly(1950, 2050, 1220, 2050, 750, 750);
+		assertThat(sangnoksuToSadang.snapshotId()).isEqualTo("seoul-metro-official-od-fares-20260712");
+	}
+
+	@Test
+	void rejectsNullFareValuesInOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-null", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER,
+				 gnrl_cash_fare INTEGER, yung_card_fare INTEGER,
+				 yung_cash_fare INTEGER, child_card_fare INTEGER,
+				 child_cash_fare INTEGER)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), null, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare value is invalid");
+	}
+
+	@Test
+	void rejectsSameOriginAndDestinationInFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-same-od", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-a", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare origin and destination must differ");
 	}
 
 	@Test

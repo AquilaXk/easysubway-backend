@@ -45,7 +45,7 @@ final class JourneyProfileMeasuredExecution {
 		if (regionId == null || regionId.isBlank()) throw new IllegalArgumentException("region is required");
 		Objects.requireNonNull(observation, "observation");
 		expected = List.copyOf(Objects.requireNonNull(expected, "expected"));
-		var actual = observation.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList();
+		var actual = observation.result().itineraries().stream().map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList();
 		boolean parity = JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, actual);
 		if (expected.isEmpty() || !parity) throw new Unobservable("point oracle frontier mismatch");
 		int loss = JourneyProfileOracleComparison.requiredObjectiveLoss(expected, actual);

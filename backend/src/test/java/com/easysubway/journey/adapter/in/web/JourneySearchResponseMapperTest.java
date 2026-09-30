@@ -1,5 +1,6 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
 import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +29,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsOrderedTimetableSuccessAndAllFourLegsToExactWireShape() throws Exception {
-		var first = new JourneyCandidate(
+		var first = TestJourneyCandidates.unavailableFare(
 			"journey-first",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -56,7 +57,7 @@ class JourneySearchResponseMapperTest {
 				new JourneyCandidate.Exit("station-destination", 20)
 			)
 		);
-		var second = new JourneyCandidate(
+		var second = TestJourneyCandidates.unavailableFare(
 			"journey-second",
 			PLANNED_DEPARTURE.plusSeconds(60),
 			PLANNED_ARRIVAL.plusSeconds(60),
@@ -126,6 +127,7 @@ class JourneySearchResponseMapperTest {
 			      "walkingDistanceMeters":75,
 			      "timeSource":"TIMETABLE",
 			      "accessibility":{"result":"VERIFIED","stairFree":true,"reasonCodes":["STEP_FREE_PATH"]},
+			      "fare":{"status":"UNAVAILABLE","sourceSnapshotIds":[]},
 			      "legs":[
 			        {"type":"ENTRY","fromStationId":"station-origin","durationSeconds":30},
 			        {
@@ -165,6 +167,7 @@ class JourneySearchResponseMapperTest {
 			      "walkingDistanceMeters":20,
 			      "timeSource":"TIMETABLE",
 			      "accessibility":{"result":"VERIFIED","stairFree":false,"reasonCodes":["STAIRS_PRESENT"]},
+			      "fare":{"status":"UNAVAILABLE","sourceSnapshotIds":[]},
 			      "legs":[{
 			        "type":"RIDE",
 			        "lineId":"line-2",
@@ -199,7 +202,7 @@ class JourneySearchResponseMapperTest {
 	void mapsRealtimeIdentityAndTimesWithoutTimetableSubstitution() throws Exception {
 		Instant realtimeDeparture = PLANNED_DEPARTURE.plusSeconds(20);
 		Instant realtimeArrival = PLANNED_ARRIVAL.plusSeconds(40);
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-realtime",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -241,7 +244,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsSlowAndFastWalkingPacesToTheirWireValues() {
-		var journeys = List.of(new JourneyCandidate(
+		var journeys = List.of(TestJourneyCandidates.unavailableFare(
 			"journey-pace",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -270,7 +273,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsAlightingCarDoorsToExactWireShape() {
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-doors",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -329,7 +332,7 @@ class JourneySearchResponseMapperTest {
 			new PlatformGap("본선 대야미 방면", null, null, GapGrade.NARROW, HeightDiffGrade.LOW, false));
 		var alighting = List.of(
 			new PlatformGap("2-1", 2, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false));
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-gap",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -369,6 +372,39 @@ class JourneySearchResponseMapperTest {
 			[{"platformPosition":"2-1","carNumber":2,"doorNumber":1,
 			  "gapGrade":"NORMAL","heightDiffGrade":"NORMAL","curved":false}]
 			"""));
+	}
+
+	@Test
+	void mapsAvailableFareWithAllSixAmountsAndSnapshotIds() {
+		var journey = new JourneyCandidate(
+			"journey-fare",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			0,
+			10,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of()),
+			JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("snap-1", "snap-2")),
+			List.of(new JourneyCandidate.Entry("station-origin", 30))
+		);
+		JsonNode actual = JSON.valueToTree(JourneySearchResponseMapper.map(success(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			null,
+			List.of(journey)
+		))).path("journeys").path(0).path("fare");
+
+		assertThat(actual.path("status").asText()).isEqualTo("AVAILABLE");
+		assertThat(actual.path("adultCardWon").asInt()).isEqualTo(1400);
+		assertThat(actual.path("adultCashWon").asInt()).isEqualTo(1500);
+		assertThat(actual.path("youthCardWon").asInt()).isEqualTo(800);
+		assertThat(actual.path("youthCashWon").asInt()).isEqualTo(900);
+		assertThat(actual.path("childCardWon").asInt()).isEqualTo(500);
+		assertThat(actual.path("childCashWon").asInt()).isEqualTo(600);
+		assertThat(actual.path("sourceSnapshotIds")).extracting(JsonNode::asText)
+			.containsExactly("snap-1", "snap-2");
 	}
 
 	private static JourneyExecutionResult.Success success(

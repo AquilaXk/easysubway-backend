@@ -1,5 +1,6 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
 import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -546,7 +547,7 @@ class JourneySearchControllerTest {
 	private static JourneyExecutionResult.Success success() {
 		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
 		Instant arrival = departure.plusSeconds(300);
-		var candidate = new JourneyCandidate(
+		var candidate = TestJourneyCandidates.unavailableFare(
 			"journey-1", departure, arrival, null, null, 300, 0, 0,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),

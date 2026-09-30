@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import com.easysubway.journey.application.JourneyCandidate;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -119,17 +120,18 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 			facilityBlocks.capture(requiredQuery.constraintMode(), timetable);
 		JourneyProfilePruningObservationAccumulator observations = new JourneyProfilePruningObservationAccumulator(
 			requiredQuery.requestId(), algorithmIdentity(requiredQuery));
+		Map<String, OfficialFareQuote> fareQuotes = runtime.officialFareQuotes();
 
 		try {
 			TemporalPlan plan = switch (requiredQuery.temporalQuery()) {
 				case JourneyRaptorQuery.DepartBetween range -> new DepartureWindowPlan(range,
 					forward.departureProfile(requiredQuery, timetable, overlay, requiredLimits, observations).stream()
-						.map(JourneyProfileRaptorAdapter::departurePoint)
+						.map(point -> departurePoint(point, fareQuotes))
 						.toList());
 				case JourneyRaptorQuery.ArriveBy arriveBy -> new ArriveByPlan(arriveBy,
-					reversePlan(requiredQuery, timetable, overlay, arriveBy, requiredLimits, observations));
+					reversePlan(requiredQuery, timetable, overlay, arriveBy, requiredLimits, observations, fareQuotes));
 				case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
-					requiredQuery, timetable, overlay, lastConnection, requiredLimits, observations);
+					requiredQuery, timetable, overlay, lastConnection, requiredLimits, observations, fareQuotes);
 				default -> throw new IllegalArgumentException(
 					"Journey profile adapter does not accept DEPART_AT");
 			};
@@ -160,7 +162,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
 		JourneyRaptorQuery.ArriveBy arriveBy,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
-		JourneyProfilePruningObservationAccumulator observations
+		JourneyProfilePruningObservationAccumulator observations,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		LocalDate anchorServiceDate = arriveBy.earliestReadyAt().atZone(ServiceDayResolver.ZONE).toLocalDate();
 		Instant anchorMidnight = anchorServiceDate.atStartOfDay(ServiceDayResolver.ZONE).toInstant();
@@ -173,7 +176,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		ReverseTimetableRaptorPlanner.Result result = reverse.arriveBy(
 			forward.reverseArriveByQuery(query, anchorServiceDate, earliestSeconds, deadlineSeconds),
 			timetable, firstPotentialServiceDate, lastPotentialServiceDate, overlay, limits, observations);
-		return reversePlan(result);
+		return reversePlan(result, fareQuotes);
 	}
 
 	private JourneyProfileRaptorPort.LastConnectionPlan lastConnectionPlan(
@@ -182,7 +185,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
 		JourneyRaptorQuery.LastConnection lastConnection,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
-		JourneyProfilePruningObservationAccumulator observations
+		JourneyProfilePruningObservationAccumulator observations,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		LocalDate serviceDate = lastConnection.serviceDate();
 		ReverseTimetableRaptorPlanner.LastConnectionResult result = reverse.lastConnection(
@@ -190,21 +194,27 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 			timetable, timetable.activeServiceDay(serviceDate), overlay, limits, observations);
 		Instant terminal = result.terminalArrivalAtDestinationSeconds() == null ? null
 			: serviceInstant(serviceDate, result.terminalArrivalAtDestinationSeconds());
-		return new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection, reversePlan(result.result()), terminal);
+		return new JourneyProfileRaptorPort.LastConnectionPlan(
+			lastConnection, reversePlan(result.result(), fareQuotes), terminal);
 	}
 
 	private static JourneyProfileRaptorPort.DeparturePoint departurePoint(
-		RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint point
+		RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint point,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		return new JourneyProfileRaptorPort.DeparturePoint(
 			point.serviceDate(), serviceInstant(point.serviceDate(), point.readyAtSeconds()),
-			point.itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList(), point.scanMetrics());
+			point.itineraries().stream().map(itinerary -> itinerary(itinerary, fareQuotes)).toList(),
+			point.scanMetrics());
 	}
 
-	private static JourneyProfileRaptorPort.ReversePlan reversePlan(ReverseTimetableRaptorPlanner.Result result) {
+	private static JourneyProfileRaptorPort.ReversePlan reversePlan(
+		ReverseTimetableRaptorPlanner.Result result,
+		Map<String, OfficialFareQuote> fareQuotes
+	) {
 		return switch (result.outcome()) {
 			case FOUND -> new JourneyProfileRaptorPort.ReversePlan.Found(
-				result.itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList());
+				result.itineraries().stream().map(itinerary -> itinerary(itinerary, fareQuotes)).toList());
 			case NO_ACTIVE_SERVICE, NO_VERIFIED_EXIT, DEADLINE_MISS, NO_OD_CONNECTION, CANCELLED ->
 				new JourneyProfileRaptorPort.ReversePlan.NotFound(
 					JourneyProfileRaptorPort.ReversePlan.Outcome.valueOf(result.outcome().name()));
@@ -213,7 +223,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 
 	// POINT 실측도 동일한 native projection을 사용하며 planner 실행 경로는 바꾸지 않는다.
 	static JourneyProfileRaptorPort.Itinerary itinerary(
-		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		List<JourneyProfileRaptorPort.Leg> legs = new ArrayList<>(itinerary.legs().size());
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection projection : itinerary.legs()) {
@@ -239,7 +250,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		}
 		return new JourneyProfileRaptorPort.Itinerary(
 			itinerary.serviceDate(), itinerary.plannedDepartureTime(), itinerary.plannedArrivalTime(),
-			itinerary.realtimeDepartureTime(), itinerary.realtimeArrivalTime(), itinerary.metrics(), legs);
+			itinerary.realtimeDepartureTime(), itinerary.realtimeArrivalTime(), itinerary.metrics(),
+			JourneyRaptorAdapter.calculateFare(itinerary, fareQuotes), legs);
 	}
 
 	private static Instant serviceInstant(LocalDate serviceDate, int secondsFromServiceDayStart) {

@@ -70,7 +70,21 @@ final class JourneySearchResponseMapper {
 				journey.accessibility().stairFree(),
 				List.copyOf(journey.accessibility().reasonCodes())
 			),
+			mapFare(journey.fare()),
 			journey.legs().stream().map(JourneySearchResponseMapper::mapLeg).toList()
+		);
+	}
+
+	private static FareResponse mapFare(JourneyCandidate.Fare fare) {
+		return new FareResponse(
+			fare.status().name(),
+			fare.adultCardWon(),
+			fare.adultCashWon(),
+			fare.youthCardWon(),
+			fare.youthCashWon(),
+			fare.childCardWon(),
+			fare.childCashWon(),
+			List.copyOf(fare.sourceSnapshotIds())
 		);
 	}
 
@@ -232,7 +246,26 @@ final class JourneySearchResponseMapper {
 		long walkingDistanceMeters,
 		String timeSource,
 		AccessibilityResponse accessibility,
+		FareResponse fare,
 		List<LegResponse> legs
+	) {
+	}
+
+	record FareResponse(
+		String status,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer adultCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer adultCashWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer youthCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer youthCashWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer childCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer childCashWon,
+		List<String> sourceSnapshotIds
 	) {
 	}
 

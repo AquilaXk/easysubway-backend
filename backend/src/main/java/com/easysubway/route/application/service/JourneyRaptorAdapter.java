@@ -108,7 +108,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
-			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary))
+			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()))
 			.toList();
 		if (new HashSet<>(candidates.stream().map(JourneyCandidate::journeyId).toList()).size()
 			!= candidates.size()) {
@@ -246,7 +246,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		List<JourneyCandidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
-			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary));
+			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()));
 		}
 
 		candidates.sort(Comparator
@@ -528,7 +528,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	private static JourneyCandidate toCandidate(
 		JourneyRequest request,
 		Instant effectiveInstant,
-		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		requireLegOrder(itinerary);
 		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
@@ -610,6 +611,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 		Instant plannedDeparture = effectiveInstant;
 		Instant realtimeDeparture = realtime ? effectiveInstant : null;
+		JourneyCandidate.Fare fare = calculateFare(itinerary, fareQuotes);
 		return new JourneyCandidate(
 			journeyId(request, plannedDeparture, itinerary),
 			plannedDeparture,
@@ -621,7 +623,45 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			walkingDistanceMeters,
 			realtime ? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
+			fare,
 			legs
+		);
+	}
+
+	/**
+	 * 첫 승차역 -> 최종 하차역 공식 O-D 운임 한 건만 조회한다. 환승 구간을 나눠 합산하지 않으며,
+	 * 재승차 기본요금은 환승 구간의 additionalFareWon에만 남는다. 표에 없으면 UNAVAILABLE이다.
+	 * point 검색과 profile 계획이 같은 planner 투영으로 이 함수를 함께 쓴다.
+	 */
+	static JourneyCandidate.Fare calculateFare(
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
+	) {
+		Objects.requireNonNull(fareQuotes, "fareQuotes");
+		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide = null;
+		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide = null;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
+				if (firstRide == null) firstRide = ride;
+				lastRide = ride;
+			}
+		}
+		if (firstRide == null) {
+			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
+		}
+		OfficialFareQuote quote = fareQuotes.get(
+			OfficialFareQuote.fareKey(firstRide.fromStationId(), lastRide.toStationId()));
+		if (quote == null) {
+			return JourneyCandidate.Fare.unavailable();
+		}
+		return JourneyCandidate.Fare.available(
+			quote.gnrlCardFare(),
+			quote.gnrlCashFare(),
+			quote.yungCardFare(),
+			quote.yungCashFare(),
+			quote.childCardFare(),
+			quote.childCashFare(),
+			List.of(quote.snapshotId())
 		);
 	}
 
