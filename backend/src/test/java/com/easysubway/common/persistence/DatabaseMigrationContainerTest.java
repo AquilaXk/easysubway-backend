@@ -125,9 +125,11 @@ class DatabaseMigrationContainerTest {
 				"route_service_station_catalog_evidence",
 				"train_catalog_cache",
 				"train_search_cache",
-				"train_provider_call_quota_state"
+				"train_provider_call_quota_state",
+				"facility_operational_status",
+				"facility_status_feed_heartbeat"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70", "75");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70", "75", "76");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i
