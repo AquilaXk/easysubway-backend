@@ -161,7 +161,7 @@ public class SeoulMetroElevatorStatusCollector {
 		try {
 			Classification classification = SeoulMetroElevatorFeed.classify(fetchAllRows());
 			FeedApplyResult result = apply(classification, observedAt);
-			record(classification, result, observedAt);
+			recordSuccess(classification, result, observedAt);
 		} catch (CollectionFailure failure) {
 			fail(failure.reason, failure.getCause());
 		} catch (SeoulMetroElevatorFeedException exception) {
@@ -177,7 +177,7 @@ public class SeoulMetroElevatorStatusCollector {
 		}
 	}
 
-	private void record(Classification classification, FeedApplyResult result, Instant observedAt) {
+	private void recordSuccess(Classification classification, FeedApplyResult result, Instant observedAt) {
 		classification.facilitiesByCode().forEach((code, count) -> facilitiesByCode.get(code).set(count));
 		classification.unidentifiable().forEach((reason, count) -> unidentifiable.get(reason).set(count));
 		adminVerifiedKept.set(result.keptAdminVerified());

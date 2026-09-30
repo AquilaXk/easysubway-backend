@@ -15,7 +15,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const POLICY_SHA256 = '78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b';
-const BASELINE_SHA256 = '1d83999acbc9ebaa8d3e19e49c8fdb6cf95bcf8c8225e757716a4ce73e543e51';
+const BASELINE_SHA256 = '9ab6328778ca6f3d2d991e3edfc14fecb886800aaeb275c370917235dd0774ff';
 const POLICY_PHASE_A = 'DISCOVERY_REMOTE_RED';
 const POLICY_PHASE_B = 'ENFORCED_DECREASE_ONLY';
 const BASELINE_PHASE_A = 'UNREVIEWED_DISCOVERY';

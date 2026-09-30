@@ -27,9 +27,10 @@ public final class SmrtElevatorFacilityIds {
 	private static final String NON_WHITESPACE = "[^" + JS_WHITESPACE + "]";
 	private static final String ANY_EXCEPT_LINE_TERMINATOR = "[^\\n\\r\\u2028\\u2029]";
 	private static final Pattern WHITESPACE_RUN = Pattern.compile("[" + JS_WHITESPACE + "]+");
-	private static final Pattern EDGE_WHITESPACE = Pattern.compile("^[" + JS_WHITESPACE + "]+|[" + JS_WHITESPACE + "]+\\z");
+	private static final Pattern EDGE_WHITESPACE =
+		Pattern.compile("(?:^[" + JS_WHITESPACE + "]+)|(?:[" + JS_WHITESPACE + "]+\\z)");
 	// 출입구형: "<N>번 출입구", "<N>,<M>[,...]번 출입구", 뒤에 " 사이"까지 허용한다.
-	private static final Pattern EXIT_LOCATION = Pattern.compile("^\\d+(?:,\\d+)*번 출입구(?: 사이)?\\z");
+	private static final Pattern EXIT_LOCATION = Pattern.compile("^\\d++(?:,\\d++)*+번 출입구(?: 사이)?\\z");
 	// 방면형: "<X> 방면<N>-<M>" 항목을 쉼표로 나열한다. "방면" 앞뒤 공백은 한 칸까지 허용한다.
 	private static final Pattern DIRECTION_ITEM = Pattern.compile(
 		"^" + NON_WHITESPACE + "(?:" + ANY_EXCEPT_LINE_TERMINATOR + "*" + NON_WHITESPACE + ")? ?방면 ?\\d+-\\d+\\z"

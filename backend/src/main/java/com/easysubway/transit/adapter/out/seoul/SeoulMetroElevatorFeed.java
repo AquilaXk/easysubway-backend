@@ -31,8 +31,8 @@ final class SeoulMetroElevatorFeed {
 	private static final String DELETED_CODE = "D";
 	private static final String MALFORMED_ROW = "MALFORMED_ROW";
 	private static final Pattern EDGE_WHITESPACE = Pattern.compile(
-		"^[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]+"
-			+ "|[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]+\\z"
+		"(?:^[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]+)"
+			+ "|(?:[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]+\\z)"
 	);
 	private static final Map<String, FacilityOperationalState> STATES = Map.of(
 		"M", FacilityOperationalState.OPERATING,
