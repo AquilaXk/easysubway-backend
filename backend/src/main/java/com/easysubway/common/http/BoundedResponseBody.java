@@ -4,9 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
@@ -25,6 +24,17 @@ import java.util.function.Supplier;
  */
 public final class BoundedResponseBody {
 
+	static final ScheduledThreadPoolExecutor TIMER;
+
+	static {
+		TIMER = new ScheduledThreadPoolExecutor(1, task -> {
+			Thread thread = new Thread(task, "bounded-response-body-timeout");
+			thread.setDaemon(true);
+			return thread;
+		});
+		TIMER.setRemoveOnCancelPolicy(true);
+	}
+
 	private BoundedResponseBody() {
 	}
 
@@ -39,30 +49,21 @@ public final class BoundedResponseBody {
 		}
 		AtomicBoolean timedOut = new AtomicBoolean();
 		byte[] bytes;
-		// shutdownNow로 예약 작업을 먼저 버리므로 try-with-resources의 close()는 기다리지 않고 바로 끝난다.
-		try (ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(task -> {
-			Thread thread = new Thread(task, "bounded-response-body-timeout");
-			thread.setDaemon(true);
-			return thread;
-		})) {
+		ScheduledFuture<?> closeOnTimeout = TIMER.schedule(() -> {
+			timedOut.set(true);
+			closeStalledBody(body);
+		}, timeout.toNanos(), TimeUnit.NANOSECONDS);
+		try {
 			try {
-				ScheduledFuture<?> closeOnTimeout = timer.schedule(() -> {
-					timedOut.set(true);
-					closeStalledBody(body);
-				}, timeout.toNanos(), TimeUnit.NANOSECONDS);
-				try {
-					bytes = body.readNBytes(maxBytes + 1);
-				} finally {
-					closeOnTimeout.cancel(false);
-				}
+				bytes = body.readNBytes(maxBytes + 1);
 			} catch (IOException exception) {
 				if (!timedOut.get()) {
 					throw exception;
 				}
 				throw timedOut(exception);
-			} finally {
-				timer.shutdownNow();
 			}
+		} finally {
+			closeOnTimeout.cancel(false);
 		}
 		if (timedOut.get()) {
 			throw timedOut(null);
