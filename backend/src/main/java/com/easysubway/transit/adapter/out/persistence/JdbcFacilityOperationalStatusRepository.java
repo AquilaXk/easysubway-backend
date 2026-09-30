@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
@@ -161,37 +162,52 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	@Override
 	public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
-		Boolean recorded = transactions.execute(status -> {
+		AdminVerifiedResult result = transactions.execute(status -> {
 			OffsetDateTime at = timestamp(verifiedAt);
-			int updated = jdbcTemplate.update(
-				"""
-					UPDATE facility_operational_status
-					SET status = ?, source = ?, observed_at = ?, updated_at = ?
-					WHERE facility_id = ? AND observed_at <= ?
-					""",
-				state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at, facilityId, at
-			);
-			if (updated == 1) {
-				return true;
-			}
-			boolean exists = !jdbcTemplate.queryForList(
-				"SELECT facility_id FROM facility_operational_status WHERE facility_id = ?",
-				String.class,
+			List<PreviousStatus> previousRows = jdbcTemplate.query(
+				"SELECT status, source FROM facility_operational_status WHERE facility_id = ? FOR UPDATE",
+				(rs, rowNum) -> new PreviousStatus(
+					FacilityOperationalState.valueOf(rs.getString("status")),
+					FacilityStatusSource.valueOf(rs.getString("source"))
+				),
 				facilityId
-			).isEmpty();
-			if (exists) {
-				return false;
-			}
-			jdbcTemplate.update(
-				"""
-					INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
-					VALUES (?, ?, ?, NULL, ?, ?)
-					""",
-				facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
 			);
-			return true;
+			if (!previousRows.isEmpty()) {
+				PreviousStatus previous = previousRows.get(0);
+				int updated = jdbcTemplate.update(
+					"""
+						UPDATE facility_operational_status
+						SET status = ?, source = ?, observed_at = ?, updated_at = ?
+						WHERE facility_id = ? AND observed_at <= ?
+						""",
+					state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at, facilityId, at
+				);
+				return new AdminVerifiedResult(
+					updated == 1,
+					Optional.of(previous.state()),
+					Optional.of(previous.source())
+				);
+			}
+			try {
+				int inserted = jdbcTemplate.update(
+					"""
+						INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
+						VALUES (?, ?, ?, NULL, ?, ?)
+						""",
+					facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
+				);
+				if (inserted == 0) {
+					return new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
+				}
+				return new AdminVerifiedResult(true, Optional.empty(), Optional.empty());
+			} catch (DuplicateKeyException exception) {
+				return new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
+			}
 		});
-		return new AdminVerifiedResult(Boolean.TRUE.equals(recorded), Optional.empty(), Optional.empty());
+		return result != null ? result : new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
+	}
+
+	private record PreviousStatus(FacilityOperationalState state, FacilityStatusSource source) {
 	}
 
 	private void advanceHeartbeat(String feed, OffsetDateTime at) {

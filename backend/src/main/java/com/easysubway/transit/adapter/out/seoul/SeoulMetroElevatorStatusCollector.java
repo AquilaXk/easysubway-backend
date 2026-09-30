@@ -202,6 +202,8 @@ public class SeoulMetroElevatorStatusCollector {
 			fail(failure.reason, failure.getCause());
 		} catch (SeoulMetroElevatorFeedException exception) {
 			fail("MALFORMED_RESPONSE", exception);
+		} catch (RuntimeException exception) {
+			fail("UNEXPECTED", exception);
 		}
 	}
 

@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,6 +60,7 @@ class FacilityOperationalStatusAdminPageController {
 
 	@PostMapping(PAGE + "/verify")
 	@PreAuthorize("hasAuthority('admin.report.review')")
+	@Transactional
 	String recordVerifiedState(
 		@ModelAttribute("verificationForm") VerificationForm form,
 		BindingResult bindingResult,
@@ -88,9 +90,12 @@ class FacilityOperationalStatusAdminPageController {
 			render(model, response, form, HttpServletResponse.SC_CONFLICT, CONFLICT_MESSAGE);
 			return VIEW;
 		}
-		audit(authentication, request, form.facilityId(), AdminAuditOutcome.SUCCESS, form.state().name());
-		log.info("Admin verified facility operational status recorded: facilityId={}, state={}, actor={}",
-			form.facilityId(), form.state(), authentication.getName());
+		String reason = result.previousState().isPresent() && result.previousSource().isPresent()
+			? "from=" + result.previousState().get().name() + "/" + result.previousSource().get().name() + " to=" + form.state().name()
+			: "from=NONE to=" + form.state().name();
+		audit(authentication, request, form.facilityId(), AdminAuditOutcome.SUCCESS, reason);
+		log.info("Admin verified facility operational status recorded: facilityId={}, state={}, actor={}, reason={}",
+			form.facilityId(), form.state(), authentication.getName(), reason);
 		redirectAttributes.addFlashAttribute("flashMessage", "확인한 가동 상태를 기록했습니다.");
 		redirectAttributes.addFlashAttribute("flashTone", "good");
 		return "redirect:" + PAGE;
