@@ -252,6 +252,36 @@ class JourneyProfileResponseMapperTest {
 			.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
 	}
 
+	@Test
+	void carriesOutOfStationTransferFareFieldsLikePointSearch() {
+		var query = query(new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(600)));
+		var metrics = new JourneyProfileRaptorPort.ItineraryMetrics(1, 180, 30, 0,
+			new JourneyProfileRaptorPort.MinimumTransferSeconds(60));
+		var itinerary = new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600),
+			null, null, metrics, JourneyCandidate.Fare.unavailable(), java.util.List.of(
+				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
+					"origin", "board", 60, 10, false, true, "VERIFIED"),
+				TestRides.profileRide("line-a", "trip-a", "interchange", "board", "interchange",
+					START.plusSeconds(60), START.plusSeconds(240), null, null),
+				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER,
+					"interchange", "next-board", 60, 10, false, true, "VERIFIED", "OUT_OF_STATION", true, 30),
+				TestRides.profileRide("line-b", "trip-b", "destination", "next-board", "platform",
+					START.plusSeconds(360), START.plusSeconds(540), null, null),
+				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
+					"platform", "destination", 60, 10, false, true, "VERIFIED")));
+		var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+			new JourneyProfileRaptorPort.ReversePlan.Found(java.util.List.of(itinerary)));
+
+		var transfer = JourneyProfileResponseMapper.map(query, success(query, plan), policy(), "out-of-station")
+			.path("journeys").get(0).path("journey").path("legs").get(2);
+
+		assertThat(transfer.path("type").asText()).isEqualTo("TRANSFER");
+		assertThat(transfer.path("transferType").asText()).isEqualTo("OUT_OF_STATION");
+		assertThat(transfer.path("farePenaltyApplies").isBoolean()).isTrue();
+		assertThat(transfer.path("farePenaltyApplies").asBoolean()).isTrue();
+		assertThat(transfer.path("transferLimitMinutes").asInt()).isEqualTo(30);
+	}
+
 	private static final LocalDate DATE = LocalDate.of(2026, 9, 1);
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporal) {

@@ -195,6 +195,20 @@ class JourneyOfficialOdFareTest {
 		var arriveBy = arriveByItineraries(runtime, EFFECTIVE.plusSeconds(7_200));
 		assertThat(arriveBy).isNotEmpty().allSatisfy(itinerary ->
 			assertThat(itinerary.fare()).isEqualTo(SECTION_SUM_FARE));
+		// profile 환승 구간도 point 응답처럼 역 밖 환승·재승차 판정·제한 시간을 싣는다.
+		assertThat(departureWindow).allSatisfy(JourneyOfficialOdFareTest::assertReboardingTransferLeg);
+		assertThat(arriveBy).allSatisfy(JourneyOfficialOdFareTest::assertReboardingTransferLeg);
+	}
+
+	private static void assertReboardingTransferLeg(JourneyProfileRaptorPort.Itinerary itinerary) {
+		var transfer = itinerary.legs().stream()
+			.filter(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
+			.map(JourneyProfileRaptorPort.AccessLeg.class::cast)
+			.filter(leg -> leg.kind() == JourneyProfileRaptorPort.AccessKind.TRANSFER)
+			.findFirst().orElseThrow();
+		assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(transfer.farePenaltyApplies()).isTrue();
+		assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
 	}
 
 	@Test
