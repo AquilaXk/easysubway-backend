@@ -17,7 +17,7 @@
   "schemaFingerprintSha256": "077beae456593c54ea6c8b99a2f41f7c263623812aab17ff4ae018ce8c68290c",
   "migrationInventorySha256": "297487464f3bebf687c38ccac80f22ba39cc12905597e0568f79adfbdefe9531",
   "migrationDdlPolicySha256": "16c9042c2dd2ac520426415878e70b137ecc9b7ac83559d52cdb1046eeb3f85b",
-  "productionConfigSha256": "0781ff6d894125914e2f83e9feb486557708a83a2692c8da742f166b34797410",
+  "productionConfigSha256": "7015e96718edb7bf6c2c7487e1fdedfe9c28614c1e2e993edfbb2558008e9d24",
   "advisoryLockKey": 4960703508659600721,
   "resultReasons": [
     "BASELINED",
