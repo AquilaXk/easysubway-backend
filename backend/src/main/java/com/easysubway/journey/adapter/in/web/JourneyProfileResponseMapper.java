@@ -206,7 +206,8 @@ final class JourneyProfileResponseMapper {
 							throw invalid();
 						}
 						legs.add(new JourneyCandidate.Transfer(
-								access.fromStationId(), access.toStationId(), access.durationSeconds()));
+								access.fromStationId(), access.toStationId(), access.durationSeconds(),
+								access.transferType(), access.farePenaltyApplies(), access.transferLimitMinutes()));
 						transfers++;
 						stage = 1;
 						last = access.toStationId();
@@ -227,7 +228,8 @@ final class JourneyProfileResponseMapper {
 				}
 				legs.add(new JourneyCandidate.Ride(
 						ride.lineId(), ride.tripId(), ride.directionStationId(), ride.fromStationId(),
-						ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(), null, null));
+						ride.toStationId(), ride.servicePattern(), ride.plannedDepartureTime(), ride.plannedArrivalTime(),
+						null, null, ride.stops(), List.of(), List.of(), List.of()));
 				stage = 2;
 				last = ride.toStationId();
 				rideSeen = true;
@@ -241,7 +243,8 @@ final class JourneyProfileResponseMapper {
 		}
 		return new JourneyCandidate(candidate.candidateId(), candidate.readyAt(), candidate.arrivalAtDestination(), null, null,
 			Duration.between(candidate.readyAt(), candidate.arrivalAtDestination()).toSeconds(), transfers, distance,
-			JourneyCandidate.TimeSource.TIMETABLE, new JourneyCandidate.Accessibility(!stairs, List.of("ACCESSIBILITY_VERIFIED")), legs);
+			JourneyCandidate.TimeSource.TIMETABLE, new JourneyCandidate.Accessibility(!stairs, List.of("ACCESSIBILITY_VERIFIED")),
+			itinerary.fare(), legs);
 	}
 
 	private sealed interface Projection permits Departure, ArriveBy, LastConnection {

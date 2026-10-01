@@ -1,5 +1,6 @@
 package com.easysubway.journey.application;
 
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
@@ -16,6 +17,7 @@ public record JourneyCandidate(
 	long walkingDistanceMeters,
 	TimeSource timeSource,
 	Accessibility accessibility,
+	Fare fare,
 	List<Leg> legs
 ) {
 	public JourneyCandidate {
@@ -39,6 +41,7 @@ public record JourneyCandidate(
 			throw new IllegalArgumentException("timeSource does not match realtime fields");
 		}
 		accessibility = Objects.requireNonNull(accessibility, "accessibility");
+		fare = Objects.requireNonNull(fare, "fare");
 		legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 		if (legs.isEmpty()) throw new IllegalArgumentException("legs must not be empty");
 		boolean candidateHasRealtime = realtimeDepartureTime != null;
@@ -101,6 +104,72 @@ public record JourneyCandidate(
 		}
 	}
 
+	public enum FareStatus {
+		AVAILABLE,
+		UNAVAILABLE
+	}
+
+	public record Fare(
+		FareStatus status,
+		Integer adultCardWon,
+		Integer adultCashWon,
+		Integer youthCardWon,
+		Integer youthCashWon,
+		Integer childCardWon,
+		Integer childCashWon,
+		List<String> sourceSnapshotIds
+	) {
+		public static Fare unavailable() {
+			return new Fare(FareStatus.UNAVAILABLE, null, null, null, null, null, null, List.of());
+		}
+
+		public static Fare available(
+			int adultCardWon,
+			int adultCashWon,
+			int youthCardWon,
+			int youthCashWon,
+			int childCardWon,
+			int childCashWon,
+			List<String> sourceSnapshotIds
+		) {
+			return new Fare(
+				FareStatus.AVAILABLE,
+				adultCardWon,
+				adultCashWon,
+				youthCardWon,
+				youthCashWon,
+				childCardWon,
+				childCashWon,
+				sourceSnapshotIds == null ? List.of() : List.copyOf(sourceSnapshotIds)
+			);
+		}
+
+		public Fare {
+			status = Objects.requireNonNull(status, "status");
+			sourceSnapshotIds = sourceSnapshotIds == null ? List.of() : List.copyOf(sourceSnapshotIds);
+			if (status == FareStatus.UNAVAILABLE) {
+				if (adultCardWon != null || adultCashWon != null || youthCardWon != null || youthCashWon != null
+					|| childCardWon != null || childCashWon != null) {
+					throw new IllegalArgumentException("fare amounts must be null when status is UNAVAILABLE");
+				}
+			} else {
+				Objects.requireNonNull(adultCardWon, "adultCardWon");
+				Objects.requireNonNull(adultCashWon, "adultCashWon");
+				Objects.requireNonNull(youthCardWon, "youthCardWon");
+				Objects.requireNonNull(youthCashWon, "youthCashWon");
+				Objects.requireNonNull(childCardWon, "childCardWon");
+				Objects.requireNonNull(childCashWon, "childCashWon");
+				if (adultCardWon < 0 || adultCashWon < 0 || youthCardWon < 0 || youthCashWon < 0
+					|| childCardWon < 0 || childCashWon < 0) {
+					throw new IllegalArgumentException("fare amounts must not be negative");
+				}
+				if (sourceSnapshotIds.isEmpty()) {
+					throw new IllegalArgumentException("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+				}
+			}
+		}
+	}
+
 	public sealed interface Leg permits Entry, Ride, Transfer, Exit {
 		LegType type();
 	}
@@ -117,16 +186,45 @@ public record JourneyCandidate(
 		}
 	}
 
+	public record AlightingCarDoor(int carNumber, int doorNumber, String targetFacilityType) {
+		public AlightingCarDoor {
+			if (carNumber < 1 || carNumber > 10) {
+				throw new IllegalArgumentException("carNumber must be between 1 and 10");
+			}
+			if (doorNumber < 1 || doorNumber > 4) {
+				throw new IllegalArgumentException("doorNumber must be between 1 and 4");
+			}
+			targetFacilityType = requireText(targetFacilityType, "targetFacilityType");
+		}
+	}
+
+	public record Stop(
+		String stationId,
+		Instant plannedArrivalTime,
+		Instant plannedDepartureTime,
+		Instant realtimeArrivalTime,
+		Instant realtimeDepartureTime
+	) {
+		public Stop {
+			stationId = requireText(stationId, "stationId");
+		}
+	}
+
 	public record Ride(
 		String lineId,
 		String tripId,
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
-		Instant realtimeArrivalTime
+		Instant realtimeArrivalTime,
+		List<Stop> stops,
+		List<AlightingCarDoor> alightingCarDoors,
+		List<PlatformGap> boardingPlatformGaps,
+		List<PlatformGap> alightingPlatformGaps
 	) implements Leg {
 		public Ride {
 			lineId = requireText(lineId, "lineId");
@@ -134,12 +232,23 @@ public record JourneyCandidate(
 			directionStationId = requireText(directionStationId, "directionStationId");
 			fromStationId = requireText(fromStationId, "fromStationId");
 			toStationId = requireText(toStationId, "toStationId");
+			servicePattern = requireText(servicePattern, "servicePattern");
+			if (!"LOCAL".equals(servicePattern) && !"EXPRESS".equals(servicePattern)) {
+				throw new IllegalStateException("servicePattern must be LOCAL or EXPRESS, got: " + servicePattern);
+			}
 			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
 			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
+			alightingCarDoors = alightingCarDoors == null ? List.of() : List.copyOf(alightingCarDoors);
+			boardingPlatformGaps = boardingPlatformGaps == null ? List.of() : List.copyOf(boardingPlatformGaps);
+			alightingPlatformGaps = alightingPlatformGaps == null ? List.of() : List.copyOf(alightingPlatformGaps);
 			requireOrdered(plannedDepartureTime, plannedArrivalTime, "planned ride times");
 			requireOptionalPair(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
 			if (realtimeDepartureTime != null) {
 				requireOrdered(realtimeDepartureTime, realtimeArrivalTime, "realtime ride times");
+			}
+			stops = stops == null ? List.of() : List.copyOf(stops);
+			if (stops.size() < 2) {
+				throw new IllegalStateException("stops must contain at least 2 stops, got: " + stops.size());
 			}
 		}
 
@@ -155,7 +264,6 @@ public record JourneyCandidate(
 		long durationSeconds,
 		String transferType,
 		Boolean farePenaltyApplies,
-		Integer additionalFareWon,
 		Integer transferLimitMinutes
 	) implements Leg {
 		public Transfer {
@@ -165,7 +273,7 @@ public record JourneyCandidate(
 		}
 
 		public Transfer(String fromStationId, String toStationId, long durationSeconds) {
-			this(fromStationId, toStationId, durationSeconds, null, null, null, null);
+			this(fromStationId, toStationId, durationSeconds, null, null, null);
 		}
 
 		@Override

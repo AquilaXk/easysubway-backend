@@ -4,7 +4,7 @@
   "sourceCatalog": {
     "path": "journey-v3-error-catalog.json",
     "schemaVersion": "JOURNEY_ERROR_CATALOG_V1",
-    "sha256": "894de4c24ac1e65abd8ef719667af3339d70a688b7f590fb205f6636e3b60ae5"
+    "sha256": "c09044cf62edebca1a2e826d0b7331b659effd86e3f0e7e5b4818d59d311f739"
   },
   "entries": [
     {
@@ -175,6 +175,23 @@
       "primaryActionKey": "journey.action.newSearch",
       "secondaryActionKey": null,
       "safeDiagnosticKey": "journey.diagnostic.routing_identity_mismatch",
+      "sensitiveDetailPolicy": "NEVER_PUBLIC"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "machineCode": "FACILITY_STATUS_UNAVAILABLE",
+      "semanticCategory": "ROUTING_DATA_UNAVAILABLE",
+      "exposure": "MOBILE_USER_VISIBLE",
+      "userVisible": true,
+      "publicMessageKey": "journey.error.facility_status_unavailable",
+      "canonicalKoreanCopy": "시설 가동 정보를 확인할 수 없어요.",
+      "mobileResourceKey": "journeyErrorFacilityStatusUnavailable",
+      "mobilePresentation": "FAILURE_SCREEN",
+      "retryDisposition": "FORBIDDEN",
+      "primaryActionKey": "journey.action.newSearch",
+      "secondaryActionKey": null,
+      "safeDiagnosticKey": "journey.diagnostic.facility_status_unavailable",
       "sensitiveDetailPolicy": "NEVER_PUBLIC"
     },
     {
@@ -583,6 +600,23 @@
       "primaryActionKey": "journey.action.newSearch",
       "secondaryActionKey": null,
       "safeDiagnosticKey": "journey.diagnostic.routing_identity_mismatch",
+      "sensitiveDetailPolicy": "NEVER_PUBLIC"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "machineCode": "FACILITY_STATUS_UNAVAILABLE",
+      "semanticCategory": "ROUTING_DATA_UNAVAILABLE",
+      "exposure": "MOBILE_USER_VISIBLE",
+      "userVisible": true,
+      "publicMessageKey": "journey.error.facility_status_unavailable",
+      "canonicalKoreanCopy": "시설 가동 정보를 확인할 수 없어요.",
+      "mobileResourceKey": "journeyErrorFacilityStatusUnavailable",
+      "mobilePresentation": "FAILURE_SCREEN",
+      "retryDisposition": "FORBIDDEN",
+      "primaryActionKey": "journey.action.newSearch",
+      "secondaryActionKey": null,
+      "safeDiagnosticKey": "journey.diagnostic.facility_status_unavailable",
       "sensitiveDetailPolicy": "NEVER_PUBLIC"
     },
     {
