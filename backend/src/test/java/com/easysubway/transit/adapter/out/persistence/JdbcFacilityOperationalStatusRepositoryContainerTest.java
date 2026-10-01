@@ -3,14 +3,24 @@ package com.easysubway.transit.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.AdminVerifiedResult;
 import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedApplyResult;
 import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.FeedObservation;
 import com.easysubway.transit.domain.FacilityOperationalState;
 import com.easysubway.transit.domain.FacilityOperationalStatus;
 import com.easysubway.transit.domain.FacilityStatusSource;
 import com.zaxxer.hikari.HikariDataSource;
+import java.sql.Connection;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,8 +30,10 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -38,6 +50,8 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 	private static final Instant T0 = Instant.parse("2026-09-30T01:00:00.123456Z");
 	private static final Instant ADMIN_AT = Instant.parse("2026-09-30T01:00:30.654321Z");
 	private static final Instant T1 = Instant.parse("2026-09-30T01:01:00Z");
+	private static final Instant FEED_BEFORE_ADMIN_AT = Instant.parse("2026-09-30T01:00:10Z");
+	private static final Duration WAIT = Duration.ofSeconds(10);
 
 	@Container
 	private static final PostgreSQLContainer<?> POSTGRES =
@@ -145,6 +159,67 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 				executor.shutdownNow();
 			}
 		}
+	}
+
+	@Test
+	@DisplayName("원천 갱신이 커밋 전이면 관리자 기록은 그 행 잠금을 기다렸다가, 실제로 덮어쓴 원천 갱신 후 상태·출처를 이전 값으로 돌려준다")
+	void adminRecordWaitsForInFlightFeedWriteAndReportsTheOverwrittenRow() throws Exception {
+		try (var dataSource = dataSource()) {
+			var transactionManager = new DataSourceTransactionManager(dataSource);
+			var repository = new JdbcFacilityOperationalStatusRepository(dataSource, transactionManager);
+			var outerTransaction = new TransactionTemplate(transactionManager);
+			var jdbcTemplate = new JdbcTemplate(dataSource);
+			assertThat(repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OPERATING, T0).recorded()).isTrue();
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			try (Connection feed = dataSource.getConnection()) {
+				feed.setAutoCommit(false);
+				try (var update = feed.prepareStatement("""
+					UPDATE facility_operational_status
+					SET status = 'OUT_OF_SERVICE', source = 'SEOUL_METRO_FEED', source_code = 'S', observed_at = ?, updated_at = ?
+					WHERE facility_id = ?
+					""")) {
+					OffsetDateTime feedAt = OffsetDateTime.ofInstant(FEED_BEFORE_ADMIN_AT, ZoneOffset.UTC);
+					update.setObject(1, feedAt);
+					update.setObject(2, feedAt);
+					update.setString(3, EXIT_1);
+					assertThat(update.executeUpdate()).isEqualTo(1);
+				}
+
+				Future<AdminVerifiedResult> admin = executor.submit(() -> outerTransaction.execute(status ->
+					repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OPERATING, ADMIN_AT)
+				));
+				awaitLockWaiter(jdbcTemplate);
+				assertThat(admin.isDone()).as("관리자 기록은 커밋 전 원천 갱신의 행 잠금을 기다린다").isFalse();
+				feed.commit();
+
+				assertThat(admin.get(WAIT.toSeconds(), TimeUnit.SECONDS)).isEqualTo(new AdminVerifiedResult(
+					true,
+					Optional.of(FacilityOperationalState.OUT_OF_SERVICE),
+					Optional.of(FacilityStatusSource.SEOUL_METRO_FEED)
+				));
+			} finally {
+				executor.shutdownNow();
+			}
+
+			assertThat(repository.loadStatuses()).containsExactly(new FacilityOperationalStatus(
+				EXIT_1, FacilityOperationalState.OPERATING, FacilityStatusSource.ADMIN_VERIFIED, "S", ADMIN_AT, ADMIN_AT
+			));
+		}
+	}
+
+	private static void awaitLockWaiter(JdbcTemplate jdbcTemplate) throws InterruptedException {
+		Instant deadline = Instant.now().plus(WAIT);
+		while (Instant.now().isBefore(deadline)) {
+			Integer waiting = jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+				Integer.class
+			);
+			if (waiting != null && waiting > 0) {
+				return;
+			}
+			Thread.sleep(20);
+		}
+		throw new AssertionError("행 잠금을 기다리는 세션이 " + WAIT + " 안에 생기지 않았다");
 	}
 
 	private static HikariDataSource dataSource() {
