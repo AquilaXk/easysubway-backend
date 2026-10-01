@@ -1737,9 +1737,6 @@ components:
         farePenaltyApplies:
           type: boolean
           default: false
-        additionalFareWon:
-          type: integer
-          default: 0
         transferLimitMinutes:
           type: integer
           minimum: 0

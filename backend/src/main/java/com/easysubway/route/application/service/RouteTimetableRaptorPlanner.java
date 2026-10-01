@@ -194,14 +194,12 @@ public final class RouteTimetableRaptorPlanner {
 				boolean isOutOfStation = timetable.isOutOfStationTransition(transferTransition);
 				String transferType = isOutOfStation ? "OUT_OF_STATION" : null;
 				Boolean farePenaltyApplies = null;
-				Integer additionalFareWon = null;
 				Integer transferLimitMinutes = null;
 				if (isOutOfStation) {
 					int elapsed = ride.departureSeconds() - previous.arrivalSeconds();
 					int limit = getTransferLimitSeconds(previous.arrivalSeconds(), ride.departureSeconds());
 					boolean timeout = elapsed > limit;
 					farePenaltyApplies = timeout;
-					additionalFareWon = timeout ? 1400 : 0;
 					transferLimitMinutes = limit / 60;
 				}
 				legs.add(new JourneyAccessProjection(
@@ -217,7 +215,6 @@ public final class RouteTimetableRaptorPlanner {
 					timetable.transitionVerificationStatus(transferTransition),
 					transferType,
 					farePenaltyApplies,
-					additionalFareWon,
 					transferLimitMinutes
 				));
 			}
@@ -5303,7 +5300,6 @@ public final class RouteTimetableRaptorPlanner {
 		String verificationStatus,
 		String transferType,
 		Boolean farePenaltyApplies,
-		Integer additionalFareWon,
 		Integer transferLimitMinutes
 	) implements JourneyLegProjection {
 		JourneyAccessProjection(
@@ -5316,7 +5312,7 @@ public final class RouteTimetableRaptorPlanner {
 			boolean verified,
 			String verificationStatus
 		) {
-			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified, verificationStatus, null, null, null, null);
+			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified, verificationStatus, null, null, null);
 		}
 	}
 	public record AlightingCarDoor(int carNumber, int doorNumber, String targetFacilityType) {

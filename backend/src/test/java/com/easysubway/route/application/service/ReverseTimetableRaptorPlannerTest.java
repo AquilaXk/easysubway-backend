@@ -495,7 +495,6 @@ class ReverseTimetableRaptorPlannerTest {
 			assertThat(transfer.toStationId()).isEqualTo("station-transfer-2");
 			assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
 			assertThat(transfer.farePenaltyApplies()).isFalse();
-			assertThat(transfer.additionalFareWon()).isEqualTo(0);
 		});
 	}
 
@@ -536,7 +535,6 @@ class ReverseTimetableRaptorPlannerTest {
 				.findFirst().orElseThrow();
 			assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
 			assertThat(transfer.farePenaltyApplies()).isTrue();
-			assertThat(transfer.additionalFareWon()).isEqualTo(1400);
 			assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
 		});
 	}

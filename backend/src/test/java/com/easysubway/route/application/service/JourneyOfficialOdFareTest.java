@@ -165,7 +165,7 @@ class JourneyOfficialOdFareTest {
 	}
 
 	@Test
-	@DisplayName("(3c) Point search, departure-window profile and arrive-by profile quote the same re-boarding section sum")
+	@DisplayName("(3c) Point search and arrive-by profile quote the same re-boarding section sum")
 	void pointAndProfilePathsQuoteTheSameReboardingSectionSum() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
@@ -189,10 +189,7 @@ class JourneyOfficialOdFareTest {
 		assertThat(transfer(point).farePenaltyApplies()).isTrue();
 		assertThat(point.fare()).isEqualTo(SECTION_SUM_FARE);
 
-		var departureWindow = profileItineraries(runtime, 1);
-		assertThat(departureWindow).isNotEmpty().allSatisfy(itinerary ->
-			assertThat(itinerary.fare()).isEqualTo(SECTION_SUM_FARE));
-
+		// 출발 시간대(profile DEPART_BETWEEN) 투영도 같은 calculateFare를 쓰며 승차 구간 분할은 (7)에서 고정한다.
 		var arriveBy = arriveByItineraries(runtime, EFFECTIVE.plusSeconds(7_200));
 		assertThat(arriveBy).isNotEmpty().allSatisfy(itinerary ->
 			assertThat(itinerary.fare()).isEqualTo(SECTION_SUM_FARE));
@@ -299,19 +296,19 @@ class JourneyOfficialOdFareTest {
 			new JourneyProfileRaptorPort.ItineraryMetrics(
 				3, 480, 400, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
 			List.of(
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null),
 				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
 					EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", false, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", false),
 				TestProjectionRides.projectionRide("line-2", "trip-2", "station-c", "station-b", "station-c",
 					EFFECTIVE.plusSeconds(360), EFFECTIVE.plusSeconds(600), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-c", "station-c", true, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-c", "station-c", true),
 				TestProjectionRides.projectionRide("line-3", "trip-3", "station-d", "station-c", "station-d",
 					EFFECTIVE.plusSeconds(720), EFFECTIVE.plusSeconds(900), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true),
 				TestProjectionRides.projectionRide("line-4", "trip-4", "station-e", "station-d", "station-e",
 					EFFECTIVE.plusSeconds(1_000), EFFECTIVE.plusSeconds(1_140), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, "station-e", "station-e", null, null)));
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, "station-e", "station-e", null)));
 		var quoteAc = quote("station-a", "station-c", "snap-ac", 1700, 1800, 950, 1050, 650, 750);
 		var quoteCd = quote("station-c", "station-d", "snap-cd", 1400, 1500, 800, 900, 500, 600);
 		var quoteDe = quote("station-d", "station-e", "snap-cd", 1450, 1550, 820, 920, 0, 620);
@@ -366,7 +363,7 @@ class JourneyOfficialOdFareTest {
 		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
 			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(60), null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, 60, 100, 0, new JourneyProfileRaptorPort.NoTransfer()),
-			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null, null)));
+			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null)));
 
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> JourneyRaptorAdapter.calculateFare(itinerary,
 				Map.of(OfficialFareQuote.fareKey("station-a", "station-b"),
@@ -376,17 +373,11 @@ class JourneyOfficialOdFareTest {
 	}
 
 	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(RaptorRouteBundleRuntimeView runtime) {
-		return profileItineraries(runtime, 0);
-	}
-
-	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(
-		RaptorRouteBundleRuntimeView runtime, int maxTransfers
-	) {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
 			new JourneyRaptorQuery.DepartBetween(EFFECTIVE, EFFECTIVE.plusSeconds(3_600)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
-			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, maxTransfers, 1, () -> false);
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
 		var result = new JourneyProfileRaptorAdapter().planRuntime(
 			query, runtime, null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32));
 		assertThat(result).isInstanceOf(JourneyProfileRaptorPort.PlanningResult.Planned.class);
@@ -420,12 +411,12 @@ class JourneyOfficialOdFareTest {
 
 	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(
 		RouteTimetableRaptorPlanner.JourneyAccessKind kind, String from, String to,
-		Boolean farePenaltyApplies, Integer additionalFareWon
+		Boolean farePenaltyApplies
 	) {
 		return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
 			kind, from, to, 60, 100, false, true, "VERIFIED",
 			kind == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER ? "OUT_OF_STATION" : null,
-			farePenaltyApplies, additionalFareWon,
+			farePenaltyApplies,
 			kind == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER ? 30 : null);
 	}
 

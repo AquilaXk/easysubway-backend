@@ -69,12 +69,11 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		assertThat(transferStep.toStationId()).isEqualTo(MID_IN);
 		assertThat(transferStep.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(transferStep.farePenaltyApplies()).isFalse();
-		assertThat(transferStep.additionalFareWon()).isEqualTo(0);
 		assertThat(transferStep.transferLimitMinutes()).isEqualTo(60);
 	}
 
 	@Test
-	@DisplayName("주간 14:00 하차 ↔ 14:40 승차(소요 40분): 주간 30분 초과에 따라 가상 비용 +600초 적용 및 2800원 요금 단언")
+	@DisplayName("주간 14:00 하차 ↔ 14:40 승차(소요 40분): 주간 30분 초과에 따라 가상 비용 +600초 적용 및 재승차 판정 단언")
 	void daytimeTransferExceedingThirtyMinutesAppliesPenalty() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var query = new JourneyRaptorQuery(
@@ -105,12 +104,11 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		assertThat(transferStep.toStationId()).isEqualTo(MID_IN);
 		assertThat(transferStep.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(transferStep.farePenaltyApplies()).isTrue();
-		assertThat(transferStep.additionalFareWon()).isEqualTo(1400);
 		assertThat(transferStep.transferLimitMinutes()).isEqualTo(30);
 	}
 
 	@Test
-	@DisplayName("journeyItineraries 투영에서 노외 환승의 transferType, farePenalty, additionalFare, transferLimit 단언")
+	@DisplayName("journeyItineraries 투영에서 노외 환승의 transferType, farePenalty, transferLimit 단언")
 	void journeyItinerariesProjectsOutOfStationTransferFields() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var timetable = timetable();
@@ -136,7 +134,6 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 			.findFirst().orElseThrow();
 		assertThat(dayTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(dayTransferLeg.farePenaltyApplies()).isTrue();
-		assertThat(dayTransferLeg.additionalFareWon()).isEqualTo(1400);
 		assertThat(dayTransferLeg.transferLimitMinutes()).isEqualTo(30);
 
 		// Nighttime query (elapsed 40 min <= limit 60 min -> timeout = false)
@@ -159,7 +156,6 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 			.findFirst().orElseThrow();
 		assertThat(nightTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(nightTransferLeg.farePenaltyApplies()).isFalse();
-		assertThat(nightTransferLeg.additionalFareWon()).isEqualTo(0);
 		assertThat(nightTransferLeg.transferLimitMinutes()).isEqualTo(60);
 	}
 

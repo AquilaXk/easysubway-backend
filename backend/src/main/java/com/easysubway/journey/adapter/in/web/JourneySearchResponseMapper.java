@@ -127,7 +127,6 @@ final class JourneySearchResponseMapper {
 				transfer.durationSeconds(),
 				transfer.transferType(),
 				transfer.farePenaltyApplies(),
-				transfer.additionalFareWon(),
 				transfer.transferLimitMinutes()
 			);
 			case JourneyCandidate.Exit exit -> new ExitLegResponse(
@@ -343,8 +342,6 @@ final class JourneySearchResponseMapper {
 		String transferType,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 		Boolean farePenaltyApplies,
-		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-		Integer additionalFareWon,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 		Integer transferLimitMinutes
 	) implements LegResponse {

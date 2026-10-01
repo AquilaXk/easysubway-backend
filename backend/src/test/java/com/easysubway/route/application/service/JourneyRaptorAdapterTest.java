@@ -752,7 +752,6 @@ class JourneyRaptorAdapterTest {
 		assertThat(transfer.durationSeconds()).isEqualTo(120);
 		assertThat(transfer.transferType()).isNull();
 		assertThat(transfer.farePenaltyApplies()).isNull();
-		assertThat(transfer.additionalFareWon()).isNull();
 		assertThat(transfer.transferLimitMinutes()).isNull();
 		assertThat(candidate.legs().get(3)).isEqualTo(TestRides.candidateRide(
 			"line-b", "trip-second", "station-b", "station-transfer", "station-b",
@@ -805,7 +804,6 @@ class JourneyRaptorAdapterTest {
 		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
 		assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(transfer.farePenaltyApplies()).isFalse();
-		assertThat(transfer.additionalFareWon()).isZero();
 		assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
 	}
 
@@ -824,7 +822,6 @@ class JourneyRaptorAdapterTest {
 		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
 		assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(transfer.farePenaltyApplies()).isTrue();
-		assertThat(transfer.additionalFareWon()).isEqualTo(1400);
 		assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
 	}
 

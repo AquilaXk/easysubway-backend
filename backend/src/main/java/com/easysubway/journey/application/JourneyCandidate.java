@@ -264,7 +264,6 @@ public record JourneyCandidate(
 		long durationSeconds,
 		String transferType,
 		Boolean farePenaltyApplies,
-		Integer additionalFareWon,
 		Integer transferLimitMinutes
 	) implements Leg {
 		public Transfer {
@@ -274,7 +273,7 @@ public record JourneyCandidate(
 		}
 
 		public Transfer(String fromStationId, String toStationId, long durationSeconds) {
-			this(fromStationId, toStationId, durationSeconds, null, null, null, null);
+			this(fromStationId, toStationId, durationSeconds, null, null, null);
 		}
 
 		@Override
