@@ -4908,12 +4908,6 @@ public final class RouteTimetableRaptorPlanner {
 				if (labelBoardings > input.maxTransfers()) continue;
 				int labelStation = pool.station[label];
 				int labelIncomingLine = pool.incomingLine[label];
-				int labelArrivalSeconds = pool.arrivalSeconds[label];
-				int labelAccessSeconds = pool.accessSeconds[label];
-				int labelAccessMeters = pool.accessDistanceMeters[label];
-				int labelStairs = pool.stairBurden[label];
-				int labelSlack = pool.slackSeconds[label];
-				byte labelWarnings = pool.warningBits[label];
 
 				for (int pattern : timetable.patternsByStop(labelStation)) {
 					limits.consumeWork();
@@ -4934,48 +4928,96 @@ public final class RouteTimetableRaptorPlanner {
 						continue;
 					}
 					if (labelBoardings > 0) expandedTransfers += 1;
-					JourneyAccessKind kind = labelBoardings == 0 ? JourneyAccessKind.ENTRY : JourneyAccessKind.TRANSFER;
-					int accessSeconds = journeyAccessSeconds(input, kind,
-						timetable.transitionDurationSeconds(transition), timetable.transitionDistanceMeters(transition));
-					int earliestDeparture = Math.addExact(Math.addExact(labelArrivalSeconds, accessSeconds),
-						input.boardingSlackSeconds());
-					for (ProfileDatedTrip trip : patternTrips) {
-						limits.consumeWork();
-						if (!trip.allowsPickup(position) || trip.cancelled()
-							|| trip.departureSeconds(position) < earliestDeparture) continue;
-						expandedTrips += 1;
-						long transferSlack = (long) trip.departureSeconds(position)
-							- labelArrivalSeconds - accessSeconds - input.boardingSlackSeconds();
-						if (transferSlack < 0) continue;
-						int childSlack = labelBoardings == 0
-							? PrimitiveProfileLabelPool.NO_TRANSFER_SLACK
-							: Math.min(labelSlack, (int) Math.min(transferSlack, Integer.MAX_VALUE - 1L));
-						byte warnings = (byte) (labelWarnings
-							| timetable.transitionWarningCodes(transition, input.accessProfileBit(), false));
-						for (int alight = position + 1; alight < trip.stopTimes().size(); alight += 1) {
-							limits.consumeWork();
-							if (!trip.allowsDropOff(alight)) continue;
-							int child = pool.allocate(
-								pool.startSeconds[label],
-								trip.arrivalSeconds(alight),
-								labelBoardings + 1,
-								timetable.stopsByPattern(pattern)[alight],
-								boardingLine,
-								warnings,
-								Math.addExact(labelAccessSeconds, accessSeconds),
-								Math.addExact(labelAccessMeters, timetable.transitionDistanceMeters(transition)),
-								Math.addExact(labelStairs, timetable.transitionIncludesStairs(transition) ? 1 : 0),
-								childSlack,
-								label,
-								trip.scheduledTrip().index(),
-								position,
-								alight,
-								transition,
-								trip.nativeServiceDate(),
-								trip);
-							admit(child);
-						}
-					}
+					boardPattern(label, pattern, position, boardingLine, transition, patternTrips);
+				}
+				if (labelBoardings > 0) {
+					propagateOutOfStationFootpaths(label, labelStation, labelIncomingLine);
+				}
+			}
+		}
+
+		// 역 밖 환승은 역 안 환승 목록이 아니라 footpath로 컴파일되므로 point·역방향 탐색처럼 따로 읽는다.
+		private void propagateOutOfStationFootpaths(int label, int labelStation, int labelIncomingLine) {
+			OutOfStationFootpath[] footpaths = timetable.footpathsFromStation(labelStation);
+			if (footpaths == null) return;
+			for (OutOfStationFootpath footpath : footpaths) {
+				if (footpath.fromLine() != labelIncomingLine) continue;
+				int transition = timetable.selectTransition(footpath.candidateTransitions(), input.accessProfileBit(),
+					false, input.requiresVerifiedJourneyDistance(), accessOverlay);
+				if (transition < 0) {
+					limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
+					continue;
+				}
+				for (int pattern : timetable.patternsByStop(footpath.toStation())) {
+					limits.consumeWork();
+					expandedRoutes += 1;
+					int position = indexOf(timetable.stopsByPattern(pattern), footpath.toStation());
+					if (position < 0) continue;
+					List<ProfileDatedTrip> patternTrips = trips.tripsByPattern(pattern);
+					if (patternTrips.isEmpty()
+						|| timetable.lineIndex(patternTrips.getFirst().scheduledTrip().lineId(position))
+							!= footpath.toLine()) continue;
+					expandedTransfers += 1;
+					boardPattern(label, pattern, position, footpath.toLine(), transition, patternTrips);
+				}
+			}
+		}
+
+		private void boardPattern(
+			int label,
+			int pattern,
+			int position,
+			int boardingLine,
+			int transition,
+			List<ProfileDatedTrip> patternTrips
+		) {
+			int labelBoardings = pool.boardings[label];
+			int labelArrivalSeconds = pool.arrivalSeconds[label];
+			int labelAccessSeconds = pool.accessSeconds[label];
+			int labelAccessMeters = pool.accessDistanceMeters[label];
+			int labelStairs = pool.stairBurden[label];
+			int labelSlack = pool.slackSeconds[label];
+			byte labelWarnings = pool.warningBits[label];
+			JourneyAccessKind kind = labelBoardings == 0 ? JourneyAccessKind.ENTRY : JourneyAccessKind.TRANSFER;
+			int accessSeconds = journeyAccessSeconds(input, kind,
+				timetable.transitionDurationSeconds(transition), timetable.transitionDistanceMeters(transition));
+			int earliestDeparture = Math.addExact(Math.addExact(labelArrivalSeconds, accessSeconds),
+				input.boardingSlackSeconds());
+			for (ProfileDatedTrip trip : patternTrips) {
+				limits.consumeWork();
+				if (!trip.allowsPickup(position) || trip.cancelled()
+					|| trip.departureSeconds(position) < earliestDeparture) continue;
+				expandedTrips += 1;
+				long transferSlack = (long) trip.departureSeconds(position)
+					- labelArrivalSeconds - accessSeconds - input.boardingSlackSeconds();
+				if (transferSlack < 0) continue;
+				int childSlack = labelBoardings == 0
+					? PrimitiveProfileLabelPool.NO_TRANSFER_SLACK
+					: Math.min(labelSlack, (int) Math.min(transferSlack, Integer.MAX_VALUE - 1L));
+				byte warnings = (byte) (labelWarnings
+					| timetable.transitionWarningCodes(transition, input.accessProfileBit(), false));
+				for (int alight = position + 1; alight < trip.stopTimes().size(); alight += 1) {
+					limits.consumeWork();
+					if (!trip.allowsDropOff(alight)) continue;
+					int child = pool.allocate(
+						pool.startSeconds[label],
+						trip.arrivalSeconds(alight),
+						labelBoardings + 1,
+						timetable.stopsByPattern(pattern)[alight],
+						boardingLine,
+						warnings,
+						Math.addExact(labelAccessSeconds, accessSeconds),
+						Math.addExact(labelAccessMeters, timetable.transitionDistanceMeters(transition)),
+						Math.addExact(labelStairs, timetable.transitionIncludesStairs(transition) ? 1 : 0),
+						childSlack,
+						label,
+						trip.scheduledTrip().index(),
+						position,
+						alight,
+						transition,
+						trip.nativeServiceDate(),
+						trip);
+					admit(child);
 				}
 			}
 		}
