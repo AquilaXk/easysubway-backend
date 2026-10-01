@@ -165,7 +165,7 @@ class JourneyOfficialOdFareTest {
 	}
 
 	@Test
-	@DisplayName("(3c) Point search and arrive-by profile quote the same re-boarding section sum")
+	@DisplayName("(3c) Point search, departure-window profile, and arrive-by profile quote the same re-boarding section sum")
 	void pointAndProfilePathsQuoteTheSameReboardingSectionSum() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
@@ -189,7 +189,9 @@ class JourneyOfficialOdFareTest {
 		assertThat(transfer(point).farePenaltyApplies()).isTrue();
 		assertThat(point.fare()).isEqualTo(SECTION_SUM_FARE);
 
-		// 출발 시간대(profile DEPART_BETWEEN) 투영도 같은 calculateFare를 쓰며 승차 구간 분할은 (7)에서 고정한다.
+		var departureWindow = profileItineraries(runtime, 1);
+		assertThat(departureWindow).isNotEmpty().allSatisfy(itinerary ->
+			assertThat(itinerary.fare()).isEqualTo(SECTION_SUM_FARE));
 		var arriveBy = arriveByItineraries(runtime, EFFECTIVE.plusSeconds(7_200));
 		assertThat(arriveBy).isNotEmpty().allSatisfy(itinerary ->
 			assertThat(itinerary.fare()).isEqualTo(SECTION_SUM_FARE));
@@ -390,11 +392,17 @@ class JourneyOfficialOdFareTest {
 	}
 
 	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(RaptorRouteBundleRuntimeView runtime) {
+		return profileItineraries(runtime, 0);
+	}
+
+	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(
+		RaptorRouteBundleRuntimeView runtime, int maxTransfers
+	) {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
 			new JourneyRaptorQuery.DepartBetween(EFFECTIVE, EFFECTIVE.plusSeconds(3_600)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
-			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, maxTransfers, 1, () -> false);
 		var result = new JourneyProfileRaptorAdapter().planRuntime(
 			query, runtime, null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32));
 		assertThat(result).isInstanceOf(JourneyProfileRaptorPort.PlanningResult.Planned.class);

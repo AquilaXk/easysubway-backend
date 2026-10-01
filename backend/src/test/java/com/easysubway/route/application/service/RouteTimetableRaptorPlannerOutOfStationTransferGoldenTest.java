@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -19,6 +20,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.Transfer
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.OfficialFare;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessKind;
@@ -157,6 +159,74 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		assertThat(nightTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(nightTransferLeg.farePenaltyApplies()).isFalse();
 		assertThat(nightTransferLeg.transferLimitMinutes()).isEqualTo(60);
+	}
+
+	@Test
+	@DisplayName("출발 시간대 profile도 노외 환승 여정을 반환하고 같은 준비시각 point 탐색과 같은 투영(재승차 판정 포함)을 낸다")
+	void departureProfileReturnsOutOfStationTransferJourneysMatchingPointSearch() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(timetable());
+
+		// 주간 13:00~13:40(KST): 14:00 하차 -> 14:40 승차(40분 > 30분)는 재승차다.
+		assertProfileMatchesPointAndCarriesTransfer(planner, compiled,
+			Instant.parse("2026-07-06T04:00:00Z"), Instant.parse("2026-07-06T04:40:00Z"), "t1_day", true, 30);
+		// 야간 20:00~20:30(KST): 20:50 하차 -> 21:30 승차(40분 <= 60분)는 정상 환승이다.
+		assertProfileMatchesPointAndCarriesTransfer(planner, compiled,
+			Instant.parse("2026-07-06T11:00:00Z"), Instant.parse("2026-07-06T11:30:00Z"), "t1_night", false, 60);
+	}
+
+	private static void assertProfileMatchesPointAndCarriesTransfer(
+		RouteTimetableRaptorPlanner planner,
+		RouteTimetableRaptorPlanner.CompiledTimetable compiled,
+		Instant earliestReadyAt,
+		Instant latestReadyAt,
+		String firstTripId,
+		boolean expectedFarePenalty,
+		int expectedLimitMinutes
+	) {
+		var profileQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION,
+			new JourneyRaptorQuery.DepartBetween(earliestReadyAt, latestReadyAt),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false);
+
+		var profile = planner.departureProfile(profileQuery, compiled,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32));
+
+		assertThat(profile).isNotEmpty();
+		assertThat(profile).allSatisfy(point -> {
+			var pointQuery = new JourneyRaptorQuery(
+				"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION,
+				new JourneyRaptorQuery.DepartAt(point.serviceDate().atStartOfDay(ZoneId.of("Asia/Seoul"))
+					.plusSeconds(point.readyAtSeconds()).toInstant()),
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.SLOW,
+				JourneyRequest.MobilityProfile.SLOW,
+				JourneyRequest.ConstraintMode.NONE,
+				1, 2, () -> false);
+			// profile frontier는 환승 여유가 더 큰 대안도 남기므로 point 결과를 포함하는지 본다.
+			var pointItineraries = planner.journeyItineraries(pointQuery, compiled).itineraries();
+			assertThat(pointItineraries).isNotEmpty();
+			assertThat(point.itineraries()).containsAll(pointItineraries);
+		});
+		var itinerary = profile.stream()
+			.flatMap(point -> point.itineraries().stream())
+			.filter(candidate -> candidate.legs().stream().anyMatch(leg ->
+				leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride && firstTripId.equals(ride.tripId())))
+			.findFirst().orElseThrow();
+		JourneyAccessProjection transferStep = itinerary.legs().stream()
+			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
+			.map(JourneyAccessProjection.class::cast)
+			.findFirst().orElseThrow();
+		assertThat(transferStep.fromStationId()).isEqualTo(MID_OUT);
+		assertThat(transferStep.toStationId()).isEqualTo(MID_IN);
+		assertThat(transferStep.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(transferStep.farePenaltyApplies()).isEqualTo(expectedFarePenalty);
+		assertThat(transferStep.transferLimitMinutes()).isEqualTo(expectedLimitMinutes);
 	}
 
 	@Test
