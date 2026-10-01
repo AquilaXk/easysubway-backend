@@ -1,0 +1,36 @@
+POINT readyAt=87000
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=405 dist=50 stairs=false
+    LEG RIDE trip=scheduled line=line from=station-a to=station-b dep=2026-07-02T00:10:00Z arr=2026-07-02T00:20:00Z
+    LEG ACCESS kind=EXIT from=station-b to=station-b dur=162 dist=50 stairs=false
+    METRICS transfers=0 moveSec=567 dist=100 burden=0 slack=NoTransfer
+POINT readyAt=86505
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=405 dist=50 stairs=false
+    LEG RIDE trip=overnight line=line from=station-a to=station-b dep=2026-07-01T15:10:00Z arr=2026-07-01T15:20:00Z
+    LEG ACCESS kind=EXIT from=station-b to=station-b dur=162 dist=50 stairs=false
+    METRICS transfers=0 moveSec=567 dist=100 burden=0 slack=NoTransfer
+POINT readyAt=33705
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=405 dist=50 stairs=false
+    LEG RIDE trip=frequency line=line from=station-a to=station-b dep=2026-07-01T00:30:00Z arr=2026-07-01T00:40:00Z
+    LEG ACCESS kind=EXIT from=station-b to=station-b dur=162 dist=50 stairs=false
+    METRICS transfers=0 moveSec=567 dist=100 burden=0 slack=NoTransfer
+POINT readyAt=33105
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=405 dist=50 stairs=false
+    LEG RIDE trip=frequency line=line from=station-a to=station-b dep=2026-07-01T00:20:00Z arr=2026-07-01T00:30:00Z
+    LEG ACCESS kind=EXIT from=station-b to=station-b dur=162 dist=50 stairs=false
+    METRICS transfers=0 moveSec=567 dist=100 burden=0 slack=NoTransfer
+POINT readyAt=32505
+  ITINERARY
+    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=405 dist=50 stairs=false
+    LEG RIDE trip=scheduled line=line from=station-a to=station-b dep=2026-07-01T00:10:00Z arr=2026-07-01T00:20:00Z
+    LEG ACCESS kind=EXIT from=station-b to=station-b dur=162 dist=50 stairs=false
+    METRICS transfers=0 moveSec=567 dist=100 burden=0 slack=NoTransfer
+OBSERVATIONS
+  FAIL_CLOSED_FRONTIER_CAPACITY_V1=0
+  FORWARD_DESTINATION_DOMINANCE_V1=10
+  FORWARD_STATE_DOMINANCE_V1=25
+  FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1=0
+  HARD_TRANSFER_ACCESS_ELIGIBILITY_V1=0

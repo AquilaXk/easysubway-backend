@@ -42,6 +42,7 @@ class JourneyV3ContractTest {
 		new ErrorPair("searchJourneys", 503, "TIMETABLE_STALE"),
 		new ErrorPair("searchJourneys", 503, "REALTIME_REQUIRED_UNAVAILABLE"),
 		new ErrorPair("searchJourneys", 503, "ROUTING_IDENTITY_MISMATCH"),
+		new ErrorPair("searchJourneys", 503, "FACILITY_STATUS_UNAVAILABLE"),
 		new ErrorPair("searchJourneys", 503, "ROUTE_SERVICE_UNAVAILABLE"),
 		new ErrorPair("searchJourneys", 504, "JOURNEY_SEARCH_TIMEOUT")
 	);
@@ -81,6 +82,7 @@ class JourneyV3ContractTest {
 		new ErrorPair("profileJourneys", 503, "ROUTING_BUNDLE_UNAVAILABLE"),
 		new ErrorPair("profileJourneys", 503, "ROUTING_BUNDLE_STALE"),
 		new ErrorPair("profileJourneys", 503, "ROUTING_IDENTITY_MISMATCH"),
+		new ErrorPair("profileJourneys", 503, "FACILITY_STATUS_UNAVAILABLE"),
 		new ErrorPair("profileJourneys", 503, "RAPTOR_FRONTIER_CAPACITY_EXCEEDED"),
 		new ErrorPair("profileJourneys", 504, "JOURNEY_PROFILE_TIMEOUT")
 	);
@@ -317,13 +319,20 @@ class JourneyV3ContractTest {
 
 		Set<String> journeyFields = Set.of("journeyId", "status", "planSource", "plannedDepartureTime",
 			"plannedArrivalTime", "realtimeDepartureTime", "realtimeArrivalTime", "durationSeconds",
-			"transferCount", "walkingDistanceMeters", "timeSource", "accessibility", "legs");
+			"transferCount", "walkingDistanceMeters", "timeSource", "accessibility", "fare", "legs");
 		assertClosedSchema(document, "Journey", journeyFields, journeyFields);
 		assertEnum(property(document, "Journey", "status"), "FOUND");
 		assertEnum(property(document, "Journey", "planSource"), "SERVER_TIMETABLE_RAPTOR");
 		assertEnum(property(document, "Journey", "timeSource"), "TIMETABLE", "REALTIME");
 		assertThat(property(document, "Journey", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
 		assertThat(property(document, "Journey", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
+		assertClosedSchema(
+			document,
+			"JourneyFare",
+			Set.of("status", "sourceSnapshotIds"),
+			Set.of("status", "adultCardWon", "adultCashWon", "youthCardWon", "youthCashWon", "childCardWon", "childCashWon", "sourceSnapshotIds")
+		);
+		assertEnum(property(document, "JourneyFare", "status"), "AVAILABLE", "UNAVAILABLE");
 		assertClosedSchema(document, "JourneyAccessibility",
 			Set.of("result", "stairFree", "reasonCodes"), Set.of("result", "stairFree", "reasonCodes"));
 		assertEnum(property(document, "JourneyAccessibility", "result"), "VERIFIED");
@@ -340,17 +349,64 @@ class JourneyV3ContractTest {
 			Set.of("type", "fromStationId", "toStationId", "durationSeconds"),
 			Set.of(
 				"type", "fromStationId", "toStationId", "durationSeconds",
-				"transferType", "farePenaltyApplies", "additionalFareWon", "transferLimitMinutes"
+				"transferType", "farePenaltyApplies", "transferLimitMinutes"
 			)
 		);
 		assertEnum(property(document, "JourneyTransferLeg", "type"), "TRANSFER");
 		assertEnum(property(document, "JourneyTransferLeg", "transferType"), "IN_STATION", "OUT_OF_STATION");
-		Set<String> rideFields = Set.of("type", "lineId", "tripId", "directionStationId", "fromStationId",
-			"toStationId", "plannedDepartureTime", "plannedArrivalTime", "realtimeDepartureTime",
-			"realtimeArrivalTime");
-		assertLeg(document, "JourneyRideLeg", "RIDE", rideFields);
+		Set<String> rideRequired = Set.of("type", "lineId", "tripId", "directionStationId", "fromStationId",
+			"toStationId", "servicePattern", "plannedDepartureTime", "plannedArrivalTime", "realtimeDepartureTime",
+			"realtimeArrivalTime", "stops");
+		Set<String> rideProperties = new LinkedHashSet<>(rideRequired);
+		rideProperties.add("alightingCarDoors");
+		rideProperties.add("boardingPlatformGaps");
+		rideProperties.add("alightingPlatformGaps");
+		assertClosedSchema(document, "JourneyRideLeg", rideRequired, rideProperties);
+		assertEnum(property(document, "JourneyRideLeg", "type"), "RIDE");
+		assertEnum(property(document, "JourneyRideLeg", "servicePattern"), "LOCAL", "EXPRESS");
 		assertThat(property(document, "JourneyRideLeg", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
 		assertThat(property(document, "JourneyRideLeg", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
+		assertThat(map(property(document, "JourneyRideLeg", "alightingCarDoors").get("items")).get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyAlightingCarDoor");
+
+		Map<String, Object> stopsProperty = property(document, "JourneyRideLeg", "stops");
+		assertThat(stopsProperty.get("type")).isEqualTo("array");
+		assertThat(stopsProperty.get("minItems")).isEqualTo(2);
+
+		assertClosedSchema(
+			document,
+			"JourneyRideStop",
+			Set.of("stationId", "plannedArrivalTime", "plannedDepartureTime", "realtimeArrivalTime", "realtimeDepartureTime"),
+			Set.of("stationId", "plannedArrivalTime", "plannedDepartureTime", "realtimeArrivalTime", "realtimeDepartureTime")
+		);
+		assertThat(property(document, "JourneyRideStop", "plannedArrivalTime").get("nullable")).isEqualTo(true);
+		assertThat(property(document, "JourneyRideStop", "plannedDepartureTime").get("nullable")).isEqualTo(true);
+		assertThat(property(document, "JourneyRideStop", "realtimeArrivalTime").get("nullable")).isEqualTo(true);
+		assertThat(property(document, "JourneyRideStop", "realtimeDepartureTime").get("nullable")).isEqualTo(true);
+
+		assertClosedSchema(
+			document,
+			"JourneyAlightingCarDoor",
+			Set.of("carNumber", "doorNumber", "targetFacilityType"),
+			Set.of("carNumber", "doorNumber", "targetFacilityType")
+		);
+		assertEnum(property(document, "JourneyAlightingCarDoor", "targetFacilityType"),
+			"TRANSFER", "ELEVATOR", "ESCALATOR", "STAIR");
+
+		for (String field : List.of("boardingPlatformGaps", "alightingPlatformGaps")) {
+			assertThat(property(document, "JourneyRideLeg", field).get("type")).isEqualTo("array");
+			assertThat(map(property(document, "JourneyRideLeg", field).get("items")).get("$ref"))
+				.isEqualTo("#/components/schemas/JourneyPlatformGap");
+		}
+		assertClosedSchema(
+			document,
+			"JourneyPlatformGap",
+			Set.of("platformPosition", "gapGrade", "heightDiffGrade", "curved"),
+			Set.of("platformPosition", "carNumber", "doorNumber", "gapGrade", "heightDiffGrade", "curved")
+		);
+		assertEnum(property(document, "JourneyPlatformGap", "gapGrade"), "WIDE", "NORMAL", "NARROW");
+		assertEnum(property(document, "JourneyPlatformGap", "heightDiffGrade"), "HIGH", "NORMAL", "LOW");
+		assertThat(property(document, "JourneyPlatformGap", "curved").get("type")).isEqualTo("boolean");
 	}
 
 	@Test

@@ -14,6 +14,7 @@ public sealed interface JourneyExecutionDisposition
 			case REALTIME_UNAVAILABLE, REALTIME_STALE -> publicFailure(503,
 				MachineCode.REALTIME_REQUIRED_UNAVAILABLE);
 			case REALTIME_IDENTITY_MISMATCH -> publicFailure(503, MachineCode.ROUTING_IDENTITY_MISMATCH);
+			case FACILITY_STATUS_UNAVAILABLE -> publicFailure(503, MachineCode.FACILITY_STATUS_UNAVAILABLE);
 			case RAPTOR_FAILED -> publicFailure(503, MachineCode.ROUTE_SERVICE_UNAVAILABLE);
 			case NO_ROUTE -> publicFailure(422, MachineCode.ROUTE_NOT_FOUND);
 			case CANCELLED -> new Cancelled();
@@ -35,7 +36,7 @@ public sealed interface JourneyExecutionDisposition
 			int expectedHttpStatus = switch (machineCode) {
 				case ROUTE_NOT_FOUND -> 422;
 				case ROUTING_BUNDLE_UNAVAILABLE, ROUTING_BUNDLE_STALE, REALTIME_REQUIRED_UNAVAILABLE,
-					ROUTING_IDENTITY_MISMATCH, ROUTE_SERVICE_UNAVAILABLE -> 503;
+					ROUTING_IDENTITY_MISMATCH, FACILITY_STATUS_UNAVAILABLE, ROUTE_SERVICE_UNAVAILABLE -> 503;
 			};
 			if (httpStatus != expectedHttpStatus) {
 				throw new IllegalArgumentException("httpStatus does not match machineCode");
@@ -51,6 +52,7 @@ public sealed interface JourneyExecutionDisposition
 		ROUTING_BUNDLE_STALE,
 		REALTIME_REQUIRED_UNAVAILABLE,
 		ROUTING_IDENTITY_MISMATCH,
+		FACILITY_STATUS_UNAVAILABLE,
 		ROUTE_SERVICE_UNAVAILABLE,
 		ROUTE_NOT_FOUND
 	}

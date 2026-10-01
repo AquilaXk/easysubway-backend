@@ -115,7 +115,7 @@ public class RouteSearchDashboardService implements RouteSearchDashboardUseCase 
 			if (row.status() == RouteSearchStatus.BLOCKED) {
 				countsByReason.merge("ROUTE_GRAPH_OR_STRICT_ACCESSIBILITY_BLOCK", 1L, Long::sum);
 			}
-			if (row.etaSource() == EtaSource.FALLBACK) {
+			if (row.etaSource() == EtaSource.PLANNED_WITHOUT_REALTIME) {
 				countsByReason.merge("PROVIDER_OUTAGE_OR_STALE_REALTIME", 1L, Long::sum);
 			}
 			for (RouteWarningCode warningCode : row.warningCodes()) {
@@ -139,7 +139,7 @@ public class RouteSearchDashboardService implements RouteSearchDashboardUseCase 
 	private List<RouteQualitySignalCount> routeQualitySignalCounts(List<RouteSearchQualitySignals> qualitySignals) {
 		Map<String, Long> countsBySignal = new HashMap<>();
 		for (RouteSearchQualitySignals row : qualitySignals) {
-			if (row.etaSource() == EtaSource.FALLBACK) {
+			if (row.etaSource() == EtaSource.PLANNED_WITHOUT_REALTIME) {
 				countsBySignal.merge("PROVIDER_OUTAGE", 1L, Long::sum);
 			}
 			if (row.status() == RouteSearchStatus.BLOCKED

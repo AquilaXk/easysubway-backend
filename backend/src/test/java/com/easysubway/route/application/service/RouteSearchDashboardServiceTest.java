@@ -130,7 +130,7 @@ class RouteSearchDashboardServiceTest {
 			"route-search-1",
 			MobilityType.SENIOR,
 			RouteSearchStatus.FOUND,
-			List.of(routeStep(EtaSource.FALLBACK)),
+			List.of(routeStep(EtaSource.PLANNED_WITHOUT_REALTIME)),
 			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE))
 		));
 		repository.saveRouteSearch(routeSearch(
@@ -146,7 +146,7 @@ class RouteSearchDashboardServiceTest {
 
 		assertThat(summary.etaSourceCounts())
 			.extracting("etaSource", "count")
-			.containsExactly(tuple(EtaSource.FALLBACK, 1L));
+			.containsExactly(tuple(EtaSource.PLANNED_WITHOUT_REALTIME, 1L));
 		assertThat(summary.fallbackReasonCounts())
 			.extracting("reason", "count")
 			.contains(

@@ -1,5 +1,7 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
+import com.easysubway.journey.application.TestRides;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -247,10 +249,10 @@ class JourneyBenchmarkObservationControllerTest {
 
 	private static JourneyCandidate candidate(String journeyId) {
 		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
-		return new JourneyCandidate(journeyId, departure, departure.plusSeconds(300), null, null,
+		return TestJourneyCandidates.unavailableFare(journeyId, departure, departure.plusSeconds(300), null, null,
 			300, 0, 0, JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(
-				new JourneyCandidate.Ride("line-1", "trip-1", "station-destination", "station-origin",
+				TestRides.candidateRide("line-1", "trip-1", "station-destination", "station-origin",
 					"station-destination", departure, departure.plusSeconds(300), null, null)));
 	}
 

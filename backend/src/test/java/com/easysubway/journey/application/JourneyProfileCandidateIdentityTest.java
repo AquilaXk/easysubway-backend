@@ -67,12 +67,13 @@ class JourneyProfileCandidateIdentityTest {
 			new JourneyProfileRaptorPort.ItineraryMetrics(
 				0, entryDurationSeconds + 180L, 125, entryIncludesStairs ? 1 : 0,
 				new JourneyProfileRaptorPort.NoTransfer()),
+			JourneyCandidate.Fare.unavailable(),
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(
 					JourneyProfileRaptorPort.AccessKind.ENTRY,
 					"station-a", "station-a", entryDurationSeconds, 50,
 					entryIncludesStairs, true, "VERIFIED"),
-				new JourneyProfileRaptorPort.RideLeg(
+				TestRides.profileRide(
 					"line-1", tripId, "terminal", "station-a", "station-b",
 					rideDeparture, rideArrival,
 					realtimeReadyAt == null ? null : rideDeparture.plusSeconds(30),

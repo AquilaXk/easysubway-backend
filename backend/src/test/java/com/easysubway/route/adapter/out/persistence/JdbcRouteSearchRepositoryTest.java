@@ -236,6 +236,29 @@ class JdbcRouteSearchRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("과거 저장된 FALLBACK eta_source 값을 PLANNED_WITHOUT_REALTIME으로 호환하여 읽는다")
+	void summarizeRouteFeedbacksMapsLegacyFallbackEtaSourceToPlannedWithoutRealtime() {
+		jdbcTemplate.update("""
+			INSERT INTO route_feedbacks (
+				feedback_id, route_search_id, user_id, rating, comment,
+				itinerary_id, mobility_type, constraint_mode, eta_source,
+				eta_offset_bucket, eta_feedback_opted_in, created_at
+			) VALUES (
+				'feedback-legacy-fallback', 'route-search-1', 'anonymous-user-1', 'HELPFUL', '도움이 되었습니다',
+				'route-search-1-primary', 'SENIOR', 'PREFER_STEP_FREE', 'FALLBACK',
+				'ON_TIME', TRUE, TIMESTAMP '2026-06-17 10:00:00'
+			)
+			""");
+
+		var summary = repository.summarizeRouteFeedbacks();
+
+		assertThat(summary.etaCalibrationBuckets())
+			.hasSize(1);
+		assertThat(summary.etaCalibrationBuckets().get(0).etaSource().name())
+			.isEqualTo("PLANNED_WITHOUT_REALTIME");
+	}
+
+	@Test
 	@DisplayName("최근 현장 차단 신고는 경로 검색 정보와 조인해 최신순으로 집계한다")
 	void summarizeRecentBlockedFeedbacksWithRouteSearchContext() {
 		repository.saveRouteSearch(directRouteSearch("route-search-1", "상록수", "사당"));
@@ -316,7 +339,7 @@ class JdbcRouteSearchRepositoryTest {
 			.containsExactly(
 				tuple(
 					RouteSearchStatus.FOUND,
-					EtaSource.FALLBACK,
+					EtaSource.PLANNED_WITHOUT_REALTIME,
 					List.of(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
 				),
 				tuple(
@@ -330,6 +353,22 @@ class JdbcRouteSearchRepositoryTest {
 						List.of(RouteWarningCode.LOW_DATA_CONFIDENCE)
 					)
 			);
+	}
+
+	@Test
+	@DisplayName("현재 이름 PLANNED_WITHOUT_REALTIME으로 저장된 step 시간 출처도 계획 시간 안내로 집계한다")
+	void loadRouteSearchQualitySignalsReadsCurrentPlannedWithoutRealtimeStepSource() {
+		repository.saveRouteSearch(routeSearchWithStepTimeSource("route-search-1", "PLANNED_WITHOUT_REALTIME"));
+
+		var rows = repository.loadRouteSearchQualitySignalsForDashboard();
+
+		assertThat(rows)
+			.extracting("status", "etaSource", "warningCodes")
+			.containsExactly(tuple(
+				RouteSearchStatus.FOUND,
+				EtaSource.PLANNED_WITHOUT_REALTIME,
+				List.of(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
+			));
 	}
 
 	private RouteSearchResult directRouteSearch(
@@ -398,6 +437,10 @@ class JdbcRouteSearchRepositoryTest {
 	}
 
 	private RouteSearchResult fallbackRouteSearch(String routeSearchId) {
+		return routeSearchWithStepTimeSource(routeSearchId, "FALLBACK");
+	}
+
+	private RouteSearchResult routeSearchWithStepTimeSource(String routeSearchId, String timeSource) {
 		return new RouteSearchResult(
 			routeSearchId,
 			"station-origin",
@@ -423,7 +466,7 @@ class JdbcRouteSearchRepositoryTest {
 				false,
 				"VERIFIED_STEP_FREE",
 				false,
-				EtaSource.FALLBACK.name(),
+				timeSource,
 				"ESTIMATED_CONSTANT",
 				"낮음"
 			)),

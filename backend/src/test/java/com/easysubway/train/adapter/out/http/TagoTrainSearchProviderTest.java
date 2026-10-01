@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -13,7 +14,9 @@ import com.easysubway.train.domain.TrainSearchModels.LegQuery;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -30,6 +33,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class TagoTrainSearchProviderTest {
@@ -287,7 +291,6 @@ class TagoTrainSearchProviderTest {
 	@Test
 	void mergesPagesAndAcceptsSingleItemShape() throws Exception {
 		var requestedPages = new java.util.concurrent.CopyOnWriteArrayList<String>();
-		var budgetCalls = new AtomicInteger();
 		var server = server(exchange -> {
 			if (respondEmptyForNextDay(exchange)) {
 				requestedPages.add("1");
@@ -300,12 +303,11 @@ class TagoTrainSearchProviderTest {
 			respond(exchange, paginatedResponse(items, 101, page));
 		});
 		try {
-			var provider = provider(server, "test-key", budgetCalls::incrementAndGet);
+			var provider = provider(server, "test-key");
 			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
 
 			assertThat(provider.search(query)).hasSize(101);
 			assertThat(requestedPages).containsExactly("1", "2", "1");
-			assertThat(budgetCalls).hasValue(3);
 		} finally {
 			server.stop(0);
 		}
@@ -314,19 +316,18 @@ class TagoTrainSearchProviderTest {
 	@Test
 	void retriesOneTransportFailureBeforeResponse() throws Exception {
 		var attempts = new AtomicInteger();
-		var budgetCalls = new AtomicInteger();
 		var httpClient = mock(HttpClient.class);
 		@SuppressWarnings("unchecked")
-		var response = (HttpResponse<String>) mock(HttpResponse.class);
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		@SuppressWarnings("unchecked")
-		var emptyResponse = (HttpResponse<String>) mock(HttpResponse.class);
+		var emptyResponse = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		when(response.statusCode()).thenReturn(200);
-		when(response.body()).thenReturn(paginatedResponse("""
+		when(response.body()).thenAnswer(ignored -> bodyStream(paginatedResponse("""
 			{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}
-			""", 1));
+			""", 1)));
 		when(emptyResponse.statusCode()).thenReturn(200);
-		when(emptyResponse.body()).thenReturn(paginatedResponse("[]", 0));
-		when(httpClient.<String>send(any(HttpRequest.class), any()))
+		when(emptyResponse.body()).thenAnswer(ignored -> bodyStream(paginatedResponse("[]", 0)));
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any()))
 			.thenAnswer(invocation -> {
 			if (attempts.incrementAndGet() == 1) {
 				throw new IOException("transient transport failure");
@@ -340,14 +341,12 @@ class TagoTrainSearchProviderTest {
 			httpClient,
 			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
 			URI.create("https://provider.example/"),
-			budgetCalls::incrementAndGet,
 			java.time.Duration.ZERO
 		);
 		var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
 
 		assertThat(provider.search(query)).hasSize(1);
 		assertThat(attempts).hasValue(3);
-		assertThat(budgetCalls).hasValue(3);
 	}
 
 	@Test
@@ -356,12 +355,12 @@ class TagoTrainSearchProviderTest {
 		var httpClient = mock(HttpClient.class);
 		var clock = mock(Clock.class);
 		@SuppressWarnings("unchecked")
-		var response = (HttpResponse<String>) mock(HttpResponse.class);
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		when(response.statusCode()).thenReturn(200);
-		when(response.body()).thenReturn(paginatedResponse("""
+		when(response.body()).thenAnswer(ignored -> bodyStream(paginatedResponse("""
 			{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}
-			""", 1));
-		when(httpClient.<String>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			""", 1)));
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
 			attempts.incrementAndGet();
 			return response;
 		});
@@ -374,7 +373,6 @@ class TagoTrainSearchProviderTest {
 			httpClient,
 			clock,
 			URI.create("https://provider.example/"),
-			() -> {},
 			java.time.Duration.ZERO
 		);
 
@@ -388,23 +386,17 @@ class TagoTrainSearchProviderTest {
 	}
 
 	@Test
-	void recomputesTheHttpTimeoutAfterQuotaWaiting() throws Exception {
+	void rejectsSearchWhenStartedAtOrAfterDeadline() throws Exception {
 		var attempts = new AtomicInteger();
-		var now = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-07-19T00:00:00Z"));
 		var httpClient = mock(HttpClient.class);
 		var clock = mock(Clock.class);
-		when(clock.instant()).thenAnswer(ignored -> now.get());
-		when(httpClient.<String>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
-			attempts.incrementAndGet();
-			throw new AssertionError("HTTP send must not start after the deadline");
-		});
+		when(clock.instant()).thenReturn(Instant.parse("2026-07-19T00:00:05Z"));
 		var provider = new TagoTrainSearchProvider(
 			"test-key",
 			JSON,
 			httpClient,
 			clock,
 			URI.create("https://provider.example/"),
-			() -> now.set(Instant.parse("2026-07-19T00:00:05Z")),
 			java.time.Duration.ZERO
 		);
 
@@ -421,7 +413,6 @@ class TagoTrainSearchProviderTest {
 	void retriesTransientHttpStatusesOnce() throws Exception {
 		for (int status : java.util.List.of(408, 429, 503)) {
 			var attempts = new AtomicInteger();
-			var budgetCalls = new AtomicInteger();
 			var server = server(exchange -> {
 				if (attempts.incrementAndGet() == 1) {
 					respond(exchange, status, "temporary");
@@ -438,9 +429,8 @@ class TagoTrainSearchProviderTest {
 					"서울", "대전"
 				);
 
-				assertThat(provider(server, "test-key", budgetCalls::incrementAndGet).search(query)).hasSize(1);
+				assertThat(provider(server, "test-key").search(query)).hasSize(1);
 				assertThat(attempts).hasValue(3);
-				assertThat(budgetCalls).hasValue(3);
 			} finally {
 				server.stop(0);
 			}
@@ -461,6 +451,132 @@ class TagoTrainSearchProviderTest {
 		} finally {
 			server.stop(0);
 		}
+	}
+
+	@Test
+	void rejectsPageBodyOverTwoMebibytesWithoutParsingTruncatedPrefix() throws Exception {
+		var requests = new AtomicInteger();
+		var server = server(exchange -> {
+			requests.incrementAndGet();
+			if (respondEmptyForNextDay(exchange)) return;
+			respond(exchange, paddedToBytes(paginatedResponse(journeyRow(101), 1), 2_097_153));
+		});
+		try {
+			var provider = provider(server, "test-key");
+			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
+
+			assertThatThrownBy(() -> provider.search(query))
+				.isInstanceOf(ProviderFailure.class)
+				.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+			assertThat(requests).hasValue(1);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void rejectsAnOversizedPageWithoutRetryingOrReadingTheBodyToTheEnd() throws Exception {
+		var attempts = new AtomicInteger();
+		var httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		var body = new CountingBody(paddedToBytes(paginatedResponse(journeyRow(101), 1), 4 * 1_048_576)
+			.getBytes(StandardCharsets.UTF_8));
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenReturn(body);
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			attempts.incrementAndGet();
+			return response;
+		});
+		var provider = new TagoTrainSearchProvider(
+			"test-key",
+			JSON,
+			httpClient,
+			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
+			URI.create("https://provider.example/"),
+			java.time.Duration.ZERO
+		);
+
+		assertThatThrownBy(() -> provider.search(legQuery(LocalDate.parse("2026-07-20"), "KTX", "00")))
+			.isInstanceOf(ProviderFailure.class)
+			.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+		assertThat(attempts).hasValue(1);
+		assertThat(body.bytesRead()).isLessThanOrEqualTo(2_097_153L).isLessThan(body.length());
+		assertThat(body.closed()).isTrue();
+	}
+
+	@Test
+	void doesNotReadTheBodyOfANonSuccessResponse() throws Exception {
+		for (int status : java.util.List.of(400, 503)) {
+			var attempts = new AtomicInteger();
+			var bodies = new java.util.concurrent.CopyOnWriteArrayList<CountingBody>();
+			var httpClient = mock(HttpClient.class);
+			@SuppressWarnings("unchecked")
+			var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+			when(response.statusCode()).thenReturn(status);
+			when(response.body()).thenAnswer(ignored -> {
+				var body = new CountingBody(paddedToBytes(paginatedResponse("[]", 0), 4 * 1_048_576)
+					.getBytes(StandardCharsets.UTF_8));
+				bodies.add(body);
+				return body;
+			});
+			when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+				attempts.incrementAndGet();
+				return response;
+			});
+			var provider = new TagoTrainSearchProvider(
+				"test-key",
+				JSON,
+				httpClient,
+				Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
+				URI.create("https://provider.example/"),
+				java.time.Duration.ZERO
+			);
+
+			assertThatThrownBy(() -> provider.search(legQuery(LocalDate.parse("2026-07-20"), "KTX", "00")))
+				.as("HTTP %d", status)
+				.isInstanceOf(ProviderFailure.class)
+				.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+			assertThat(attempts).as("HTTP %d", status).hasValue(status == 503 ? 2 : 1);
+			assertThat(bodies).as("HTTP %d", status).hasSize(attempts.get()).allSatisfy(body -> {
+				assertThat(body.bytesRead()).isZero();
+				assertThat(body.closed()).isTrue();
+			});
+		}
+	}
+
+	@Test
+	void rejectsAPageWhoseBodyFinishesAfterTheSearchDeadline() throws Exception {
+		var attempts = new AtomicInteger();
+		var deadline = Instant.parse("2026-07-19T00:00:05Z");
+		var now = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-07-19T00:00:00Z"));
+		var httpClient = mock(HttpClient.class);
+		var clock = mock(Clock.class);
+		when(clock.instant()).thenAnswer(ignored -> now.get());
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenAnswer(ignored -> new CountingBody(
+			paginatedResponse(journeyRow(101), 1).getBytes(StandardCharsets.UTF_8),
+			() -> now.set(deadline)
+		));
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			attempts.incrementAndGet();
+			return response;
+		});
+		var provider = new TagoTrainSearchProvider(
+			"test-key",
+			JSON,
+			httpClient,
+			clock,
+			URI.create("https://provider.example/"),
+			java.time.Duration.ZERO
+		);
+
+		assertThatThrownBy(() -> provider.search(legQuery(LocalDate.parse("2026-07-20"), "KTX", "00"), deadline))
+			.isInstanceOf(ProviderFailure.class)
+			.hasMessage("TRAIN_SEARCH_UNAVAILABLE");
+		assertThat(attempts).hasValue(1);
 	}
 
 	@Test
@@ -678,6 +794,30 @@ class TagoTrainSearchProviderTest {
 	}
 
 	@Test
+	@DisplayName("공공 API 자체 호출 한도가 제거되어 61회 검색 요청이 모두 원천에 도달한다")
+	void multipleSearchRequestsReachProviderWithoutBudgetExhaustion() throws Exception {
+		var requests = new AtomicInteger();
+		var server = server(exchange -> {
+			requests.incrementAndGet();
+			if (respondEmptyForNextDay(exchange)) return;
+			respond(exchange, paginatedResponse("""
+				[{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}]
+				""", 1));
+		});
+		try {
+			var provider = provider(server, "test-key");
+			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
+
+			for (int i = 0; i < 61; i++) {
+				assertThat(provider.search(query)).isNotEmpty();
+			}
+			assertThat(requests.get()).isGreaterThanOrEqualTo(61);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
 	void appliesThreeAmServiceDayBoundary() throws Exception {
 		var provider = new TagoTrainSearchProvider(
 			"never-print-service-key",
@@ -786,21 +926,12 @@ class TagoTrainSearchProviderTest {
 	}
 
 	private TagoTrainSearchProvider provider(HttpServer server, String serviceKey) {
-		return provider(server, serviceKey, () -> {});
-	}
-
-	private TagoTrainSearchProvider provider(
-		HttpServer server,
-		String serviceKey,
-		com.easysubway.train.application.TrainSearchProviderCallBudget budget
-	) {
 		return new TagoTrainSearchProvider(
 			serviceKey,
 			JSON,
 			HttpClient.newHttpClient(),
 			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
 			URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/"),
-			budget,
 			java.time.Duration.ZERO
 		);
 	}
@@ -836,6 +967,74 @@ class TagoTrainSearchProviderTest {
 	private String paginatedResponse(String items, int totalCount, int pageNo) {
 		return "{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":"
 			+ items + "},\"pageNo\":" + pageNo + ",\"numOfRows\":100,\"totalCount\":" + totalCount + "}}}";
+	}
+
+	private InputStream bodyStream(String body) {
+		return new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
+	 * 응답 본문을 흉내 내며 실제로 읽힌 바이트 수와 close 여부를 기록한다. onRead는 매 read 직전에 실행된다.
+	 */
+	private static final class CountingBody extends InputStream {
+		private final ByteArrayInputStream delegate;
+		private final int length;
+		private final Runnable onRead;
+		private final java.util.concurrent.atomic.AtomicLong bytesRead = new java.util.concurrent.atomic.AtomicLong();
+		private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+
+		private CountingBody(byte[] body) {
+			this(body, () -> {});
+		}
+
+		private CountingBody(byte[] body, Runnable onRead) {
+			this.delegate = new ByteArrayInputStream(body);
+			this.length = body.length;
+			this.onRead = onRead;
+		}
+
+		long bytesRead() {
+			return bytesRead.get();
+		}
+
+		long length() {
+			return length;
+		}
+
+		boolean closed() {
+			return closed.get();
+		}
+
+		@Override
+		public int read() {
+			onRead.run();
+			int value = delegate.read();
+			if (value != -1) {
+				bytesRead.incrementAndGet();
+			}
+			return value;
+		}
+
+		@Override
+		public int read(byte[] buffer, int offset, int count) {
+			onRead.run();
+			int read = delegate.read(buffer, offset, count);
+			if (read > 0) {
+				bytesRead.addAndGet(read);
+			}
+			return read;
+		}
+
+		@Override
+		public void close() {
+			closed.set(true);
+		}
+	}
+
+	private String paddedToBytes(String json, int totalBytes) {
+		int payloadBytes = json.getBytes(StandardCharsets.UTF_8).length;
+		assertThat(payloadBytes).isLessThan(totalBytes);
+		return json + " ".repeat(totalBytes - payloadBytes);
 	}
 
 	private String journeyRows(int start, int count) {

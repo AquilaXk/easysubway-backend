@@ -46,7 +46,7 @@ public class JdbcRouteSearchRepository
 
 	private static final TypeReference<List<RouteStep>> ROUTE_STEPS_TYPE = new TypeReference<>() {
 	};
-	private static final TypeReference<List<RouteWarning>> ROUTE_WARNINGS_TYPE = new TypeReference<>() {
+	private static final TypeReference<List<RouteWarningJson>> ROUTE_WARNINGS_TYPE = new TypeReference<>() {
 	};
 	private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
 	};
@@ -162,7 +162,7 @@ public class JdbcRouteSearchRepository
 			(resultSet, rowNumber) -> new EtaCalibrationBucket(
 				MobilityType.valueOf(resultSet.getString("mobility_type")),
 				ConstraintMode.valueOf(resultSet.getString("constraint_mode")),
-				EtaSource.valueOf(resultSet.getString("eta_source")),
+				EtaSource.fromStored(resultSet.getString("eta_source")),
 				RouteEtaOffsetBucket.valueOf(resultSet.getString("eta_offset_bucket")),
 				resultSet.getLong("count")
 			)
@@ -278,7 +278,7 @@ public class JdbcRouteSearchRepository
 				""",
 			(resultSet, rowNumber) -> {
 				List<RouteStep> steps = readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE);
-				List<RouteWarning> warnings = readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE);
+				List<RouteWarning> warnings = RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE));
 				return new RouteSearchQualitySignals(
 					RouteSearchStatus.valueOf(resultSet.getString("status")),
 					etaSourceFromSteps(steps),
@@ -361,7 +361,7 @@ public class JdbcRouteSearchRepository
 			route.score(),
 			// 경로 단계와 경고처럼 구조가 자주 바뀌는 값은 운영 DB에서 JSON으로 보관한다.
 			writeJson(route.steps()),
-			writeJson(route.warnings()),
+			writeJson(RouteWarningJson.fromAll(route.warnings())),
 			writeJson(route.blockedReasons()),
 			route.createdAt()
 		);
@@ -408,7 +408,7 @@ public class JdbcRouteSearchRepository
 			route.lineName(),
 			route.score(),
 			writeJson(route.steps()),
-			writeJson(route.warnings()),
+			writeJson(RouteWarningJson.fromAll(route.warnings())),
 			writeJson(route.blockedReasons()),
 			route.createdAt()
 		);
@@ -509,7 +509,7 @@ public class JdbcRouteSearchRepository
 			resultSet.getString("line_name"),
 			resultSet.getInt("score"),
 			readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE),
-			readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE),
+			RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE)),
 			readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE),
 			resultSet.getTimestamp("created_at").toLocalDateTime()
 		);
@@ -541,10 +541,10 @@ public class JdbcRouteSearchRepository
 		if (steps.isEmpty()) {
 			return EtaSource.PLANNED;
 		}
-		boolean fallback = steps.stream()
-			.anyMatch(step -> EtaSource.FALLBACK.name().equals(step.timeSource()));
-		if (fallback) {
-			return EtaSource.FALLBACK;
+		boolean plannedWithoutRealtime = steps.stream()
+			.anyMatch(step -> isPlannedWithoutRealtime(step.timeSource()));
+		if (plannedWithoutRealtime) {
+			return EtaSource.PLANNED_WITHOUT_REALTIME;
 		}
 		long realtimeSteps = steps.stream()
 			.filter(step -> EtaSource.REALTIME.name().equals(step.timeSource()))
@@ -555,6 +555,10 @@ public class JdbcRouteSearchRepository
 				: EtaSource.STATIC_BACKEND_ESTIMATE;
 		}
 		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
+	}
+
+	private static boolean isPlannedWithoutRealtime(String timeSource) {
+		return "FALLBACK".equals(timeSource) || EtaSource.PLANNED_WITHOUT_REALTIME.name().equals(timeSource);
 	}
 
 	private String writeJson(Object value) {

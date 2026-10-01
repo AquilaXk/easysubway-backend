@@ -13,6 +13,9 @@ public record RealtimeProviderHealthSnapshot(
 	double freshResultRatio,
 	double staleResultRatio,
 	double unsupportedRatio,
-	long averageProviderLatencyMs
+	long averageProviderLatencyMs,
+	long providerAuthRejectedCount,
+	long providerRequestRejectedCount,
+	long outOfOrderPositionDropCount
 ) {
 }

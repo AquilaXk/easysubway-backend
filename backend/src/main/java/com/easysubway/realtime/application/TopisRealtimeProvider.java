@@ -1,10 +1,12 @@
 package com.easysubway.realtime.application;
 
+import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -15,7 +17,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -23,9 +28,22 @@ import org.springframework.stereotype.Component;
 @Component
 final class TopisRealtimeProvider implements RealtimeProvider {
 
+	private static final Logger log = LoggerFactory.getLogger(TopisRealtimeProvider.class);
 	private static final URI TOPIS_BASE_URI = URI.create("http://swopenapi.seoul.go.kr/api/subway/");
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMillis(1500);
+	private static final int MAX_RESPONSE_BYTES = 1_048_576;
 	private static final Pattern ETA_PATTERN = Pattern.compile("(\\d+)\\s*분(?:\\s*(\\d+)\\s*초)?|(\\d+)\\s*초");
+
+	/**
+	 * 요청 쪽 오류 코드. 서울 열린데이터광장 OpenAPI 공통 오류코드 표(2026-09-29 확인,
+	 * https://data.gangseo.seoul.kr/openinf/openapiview.jsp?infId=OA-1263 의 서울시 공통 코드와 동일)와
+	 * swopenapi sample 키 실측 기준이다. ERROR-336은 "한 번에 1000건 초과 요청"이라 호출 한도가 아니다.
+	 * 표에는 일별 트래픽 한도 코드가 없으므로 호출 한도 초과는 HTTP 429로만 판정한다.
+	 */
+	private static final Set<String> REQUEST_REJECTED_CODES = Set.of(
+		"ERROR-300", "ERROR-301", "ERROR-310",
+		"ERROR-331", "ERROR-332", "ERROR-333", "ERROR-334", "ERROR-335", "ERROR-336"
+	);
 
 	private final String serviceKey;
 	private final ObjectMapper objectMapper;
@@ -58,23 +76,30 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		if (serviceKey.isBlank()) {
 			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 		}
-		JsonNode payload = request("realtimeStationArrival/0/5/%s".formatted(pathSegment(query.stationQueryName())));
-		return arrivalsFromPayload(payload, query);
+		// 역 단위 응답이라 환승역에서는 다른 노선 행이 섞인다. gateway가 조회 노선만 남기므로 조회 노선 행이
+		// 행 제한 밖으로 밀리지 않게 한 번의 호출(quota 동일)로 0~20행을 받는다.
+		JsonNode payload = request("realtimeStationArrival/0/20/%s".formatted(pathSegment(query.stationQueryName())));
+		return arrivalsFromPayload(payload);
 	}
 
-	List<RealtimeArrival> arrivalsFromPayload(JsonNode payload, RealtimeQuery query) {
+	List<RealtimeArrival> arrivalsFromPayload(JsonNode payload) {
 		JsonNode items = payload.path("realtimeArrivalList");
 		if (!items.isArray()) {
-			return List.of();
+			return emptyWhenNoData(payload);
 		}
 		List<RealtimeArrival> arrivals = new ArrayList<>();
 		for (JsonNode item : items) {
+			String lineId = stringOrEmpty(item, "subwayId");
+			String stationName = stringOrEmpty(item, "statnNm");
+			if (lineId.isBlank() || stationName.isBlank()) {
+				continue;
+			}
 			String arvlMsg2 = stringOrEmpty(item, "arvlMsg2");
 			Integer barvlDt = positiveInt(item, "barvlDt");
 			Integer etaSeconds = barvlDt != null ? barvlDt : parseEtaFromMessage(arvlMsg2);
 			arrivals.add(new RealtimeArrival(
-				stringOrFallback(item, "subwayId", query.lineId()),
-				stringOrFallback(item, "statnNm", query.stationQueryName()),
+				lineId,
+				stationName,
 				destination(item),
 				stringOrEmpty(item, "updnLine"),
 				stringOrEmpty(item, "btrainNo"),
@@ -85,7 +110,7 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 				stringOrEmpty(item, "btrainSttus")
 			));
 		}
-		return List.copyOf(arrivals);
+		return requiredItemsOnly("ARRIVALS", items.size(), arrivals);
 	}
 
 	@Override
@@ -96,21 +121,47 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		JsonNode payload = request("realtimePosition/0/10/%s".formatted(pathSegment(query.lineName())));
 		JsonNode items = payload.path("realtimePositionList");
 		if (!items.isArray()) {
-			return List.of();
+			return emptyWhenNoData(payload);
 		}
 		List<RealtimeTrainPosition> positions = new ArrayList<>();
 		for (JsonNode item : items) {
+			String lineId = stringOrEmpty(item, "subwayId");
+			String stationName = stringOrEmpty(item, "statnNm");
+			String trainNo = stringOrEmpty(item, "trainNo");
+			if (lineId.isBlank() || stationName.isBlank() || trainNo.isBlank()) {
+				continue;
+			}
 			positions.add(new RealtimeTrainPosition(
-				stringOrFallback(item, "subwayId", query.lineId()),
-				stringOrEmpty(item, "statnNm"),
-				stringOrEmpty(item, "trainNo"),
+				lineId,
+				stationName,
+				trainNo,
 				stringOrEmpty(item, "trainSttus"),
 				stringOrEmpty(item, "updnLine"),
 				stringOrEmpty(item, "statnTnm"),
 				stringOrEmpty(item, "recptnDt")
 			));
 		}
-		return List.copyOf(positions);
+		return requiredItemsOnly("TRAIN_POSITIONS", items.size(), positions);
+	}
+
+	/**
+	 * 필수 필드가 빠진 항목은 질의값·빈 문자열로 채우지 않고 버린다. 비어 있지 않은 원천 목록이 전부 버려지면
+	 * 스키마 이상을 "데이터 없음"으로 덮지 않도록 원천 불가로 닫는다. 로그에는 건수만 남기고 원천 값은 남기지 않는다.
+	 */
+	private <T> List<T> requiredItemsOnly(String capability, int receivedCount, List<T> kept) {
+		int droppedCount = receivedCount - kept.size();
+		if (droppedCount > 0) {
+			log.warn(
+				"TOPIS realtime items dropped for missing required fields. capability={}, receivedCount={}, droppedCount={}",
+				capability,
+				receivedCount,
+				droppedCount
+			);
+			if (kept.isEmpty()) {
+				throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+			}
+		}
+		return List.copyOf(kept);
 	}
 
 	private JsonNode request(String capabilityPath) {
@@ -119,17 +170,27 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 			.timeout(REQUEST_TIMEOUT)
 			.GET()
 			.build();
+		long startedAt = System.nanoTime();
 		try {
-			HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-			if (response.statusCode() == 429) {
-				throw new RealtimeProviderException("PROVIDER_QUOTA_EXCEEDED");
+			HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+			try (InputStream body = response.body()) {
+				if (response.statusCode() == 429) {
+					throw new RealtimeProviderException("PROVIDER_QUOTA_EXCEEDED");
+				}
+				if (response.statusCode() < 200 || response.statusCode() >= 300) {
+					throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+				}
+				// 헤더까지 쓴 시간을 뺀 요청 예산 안에서만 본문을 받는다. 넘기면 HttpTimeoutException → PROVIDER_TIMEOUT.
+				byte[] bytes = BoundedResponseBody.read(
+					body,
+					MAX_RESPONSE_BYTES,
+					REQUEST_TIMEOUT.minusNanos(System.nanoTime() - startedAt),
+					() -> new RealtimeProviderException("PROVIDER_UNAVAILABLE")
+				);
+				JsonNode payload = objectMapper.readTree(new String(bytes, StandardCharsets.UTF_8));
+				validateTopisStatus(payload);
+				return payload;
 			}
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
-			}
-			JsonNode payload = objectMapper.readTree(response.body());
-			validateTopisStatus(payload);
-			return payload;
 		} catch (RealtimeProviderException exception) {
 			throw exception;
 		} catch (HttpTimeoutException exception) {
@@ -142,24 +203,48 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		}
 	}
 
+	/**
+	 * 결과 코드 분류 근거는 {@link #REQUEST_REJECTED_CODES} 주석의 공통 오류코드 표다.
+	 *
+	 * INFO-000(정상)과 INFO-200(해당 데이터 없음)만 통과한다.
+	 * INFO-100(인증키 오류)은 PROVIDER_AUTH_REJECTED로 분류한다.
+	 * REQUEST_REJECTED_CODES는 요청 쪽 오류이므로 PROVIDER_REQUEST_REJECTED로 분류한다.
+	 * 그 외 서버/DB 오류(ERROR-500, 600, 601) 및 미확인 코드는 PROVIDER_UNAVAILABLE로 닫는다.
+	 */
 	void validateTopisStatus(JsonNode payload) {
-		String code = stringOrEmpty(payload.path("errorMessage"), "code");
-		if (code.isBlank() || "INFO-000".equals(code)) {
-			return;
+		String code = providerResultCode(payload);
+		if (code == null || code.isBlank()) {
+			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 		}
-		if ("INFO-200".equals(code)) {
-			return;
+		if (REQUEST_REJECTED_CODES.contains(code)) {
+			throw new RealtimeProviderException("PROVIDER_REQUEST_REJECTED");
 		}
-		throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+		switch (code) {
+			case "INFO-000", "INFO-200" -> {
+			}
+			case "INFO-100" -> throw new RealtimeProviderException("PROVIDER_AUTH_REJECTED");
+			case "ERROR-500", "ERROR-600", "ERROR-601" -> throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+			default -> throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+		}
 	}
 
 	private String pathSegment(String value) {
 		return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
 	}
 
-	private String stringOrFallback(JsonNode node, String fieldName, String fallback) {
-		String value = stringOrEmpty(node, fieldName);
-		return value.isBlank() ? fallback : value;
+	/**
+	 * 정상 응답은 {@code errorMessage.code}에, 해당 데이터 없음·오류 응답은 최상위 {@code code}에 결과 코드를 싣는다.
+	 */
+	private String providerResultCode(JsonNode payload) {
+		String code = stringOrEmpty(payload.path("errorMessage"), "code");
+		return code.isBlank() ? stringOrEmpty(payload, "code") : code;
+	}
+
+	private <T> List<T> emptyWhenNoData(JsonNode payload) {
+		if ("INFO-200".equals(providerResultCode(payload))) {
+			return List.of();
+		}
+		throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 	}
 
 	private String destination(JsonNode node) {

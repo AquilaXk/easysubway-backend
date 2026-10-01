@@ -22,20 +22,39 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import com.easysubway.journey.application.FacilityAvailabilityPort;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 	private final RouteTimetableRaptorPlanner planner;
+	private final JourneyFacilityBlockOverlay facilityBlocks;
 
 	public JourneyRaptorAdapter() {
-		this(ScanWorkspacePool.shared());
+		this(ScanWorkspacePool.shared(), FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
 	}
 
 	public JourneyRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this(workspacePool, FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(
+		ScanWorkspacePool workspacePool,
+		FacilityAvailabilityPort facilityAvailabilityPort,
+		boolean facilityStatusRequired,
+		Clock clock
+	) {
 		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+		this.facilityBlocks = new JourneyFacilityBlockOverlay(facilityAvailabilityPort, facilityStatusRequired, clock);
+	}
+
+	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired, Clock clock) {
+		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, facilityStatusRequired, clock);
 	}
 
 	@Override
@@ -53,6 +72,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityBlocks.capture(
+			requiredRequest.constraintMode(), routeRuntime.compiledTimetable());
 
 		if (requiredRequest.viaStationId() != null) {
 			return planChainedVia(
@@ -61,14 +82,15 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				requiredEffectiveInstant,
 				realtimeOrNull,
 				requiredMeasurement,
-				routeRuntime
+				routeRuntime,
+				facilityOverlay
 			);
 		}
 
 		JourneyRaptorQuery query = JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant);
 
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay = requireRealtimeOverlay(
-			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull, query);
+			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull, query, facilityOverlay);
 		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
 			query,
 			routeRuntime.compiledTimetable(),
@@ -88,7 +110,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
-			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary))
+			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()))
 			.toList();
 		if (new HashSet<>(candidates.stream().map(JourneyCandidate::journeyId).toList()).size()
 			!= candidates.size()) {
@@ -106,7 +128,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Instant requiredEffectiveInstant,
 		RealtimeObservation realtimeOrNull,
 		JourneyRequestMeasurement requiredMeasurement,
-		RaptorRouteBundleRuntimeView routeRuntime
+		RaptorRouteBundleRuntimeView routeRuntime,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
 		String viaStationId = requiredRequest.viaStationId();
 		var timetable = routeRuntime.compiledTimetable();
@@ -127,7 +150,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		);
 		JourneyRaptorQuery leg1Query = JourneyRaptorQuery.from(leg1Request, requiredEffectiveInstant);
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay1 = requireRealtimeOverlay(
-			leg1Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg1Query);
+			leg1Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg1Query, facilityOverlay);
 
 		RouteTimetableRaptorPlanner.JourneyPlan planned1 = planner.journeyItineraries(
 			leg1Query,
@@ -181,7 +204,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			);
 			JourneyRaptorQuery leg2Query = JourneyRaptorQuery.from(leg2Request, leg2ReadyAt);
 			RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay2 = requireRealtimeOverlay(
-				leg2Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg2Query);
+				leg2Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg2Query, facilityOverlay);
 
 			RouteTimetableRaptorPlanner.JourneyPlan planned2 = planner.journeyItineraries(
 				leg2Query,
@@ -225,7 +248,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		List<JourneyCandidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
-			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary));
+			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()));
 		}
 
 		candidates.sort(Comparator
@@ -266,7 +289,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		String status = "VERIFIED";
 		String transferType = null;
 		Boolean farePenaltyApplies = null;
-		Integer additionalFareWon = null;
 		Integer transferLimitMinutes = null;
 
 		int fromLine = timetable.lineIndex(lastRide1.lineId());
@@ -300,7 +322,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
 				boolean timeout = elapsed > limit;
 				farePenaltyApplies = timeout;
-				additionalFareWon = timeout ? 1400 : 0;
 				transferLimitMinutes = limit / 60;
 			}
 		}
@@ -321,15 +342,38 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				status,
 				transferType,
 				farePenaltyApplies,
-				additionalFareWon,
 				transferLimitMinutes
 			);
 
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
-		for (int i = 0; i < legs1.size() - 1; i++) {
+		for (int i = 0; i < legs1.size() - 2; i++) {
 			combinedLegs.add(legs1.get(i));
 		}
+		boolean stepFree = (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
+		List<RouteTimetableRaptorPlanner.AlightingCarDoor> transferHints = timetable.selectAlightingCarDoors(
+			lastRide1.toStationId(),
+			lastRide1.lineId(),
+			timetable.tripDirection(lastRide1.tripId()),
+			true,
+			stepFree
+		);
+		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			lastRide1.lineId(),
+			lastRide1.tripId(),
+			lastRide1.directionStationId(),
+			lastRide1.fromStationId(),
+			lastRide1.toStationId(),
+			lastRide1.servicePattern(),
+			lastRide1.plannedDepartureTime(),
+			lastRide1.plannedArrivalTime(),
+			lastRide1.realtimeDepartureTime(),
+			lastRide1.realtimeArrivalTime(),
+			lastRide1.stops(),
+			transferHints,
+			lastRide1.boardingPlatformGaps(),
+			lastRide1.alightingPlatformGaps()
+		));
 		combinedLegs.add(junctionTransfer);
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs2 = leg2.legs();
 		for (int i = 1; i < legs2.size(); i++) {
@@ -452,13 +496,14 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		ActiveJourneySnapshot snapshot,
 		RaptorRouteBundleRuntimeView routeRuntime,
 		RealtimeObservation realtimeOrNull,
-		JourneyRaptorQuery query
+		JourneyRaptorQuery query,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
 		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
 			if (realtimeOrNull != null) {
 				throw new IllegalArgumentException("timetable Journey request must not receive realtime");
 			}
-			return RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+			return facilityOverlay;
 		}
 		if (realtimeOrNull == null
 			|| !(realtimeOrNull.runtimeView() instanceof RaptorRealtimeRuntimeView realtimeRuntime)
@@ -468,7 +513,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			|| snapshot.generation() != realtimeRuntime.generation()) {
 			throw new IllegalArgumentException("realtime runtime view does not match captured Journey generation");
 		}
-		return realtimeRuntime.realtimeOverlay(serviceDate(query));
+		RouteTimetableRaptorPlanner.RealtimeOverlay trainOverlay = realtimeRuntime.realtimeOverlay(serviceDate(query));
+		return RouteTimetableRaptorPlanner.RealtimeOverlay.combine(trainOverlay, facilityOverlay);
 	}
 
 	private static java.time.LocalDate serviceDate(JourneyRaptorQuery query) {
@@ -481,7 +527,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	private static JourneyCandidate toCandidate(
 		JourneyRequest request,
 		Instant effectiveInstant,
-		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		requireLegOrder(itinerary);
 		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
@@ -512,7 +559,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 							access.durationSeconds(),
 							access.transferType(),
 							access.farePenaltyApplies(),
-							access.additionalFareWon(),
 							access.transferLimitMinutes()
 						));
 					}
@@ -535,10 +581,23 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				ride.directionStationId(),
 				ride.fromStationId(),
 				ride.toStationId(),
+				ride.servicePattern(),
 				ride.plannedDepartureTime(),
 				ride.plannedArrivalTime(),
 				ride.realtimeDepartureTime(),
-				ride.realtimeArrivalTime()
+				ride.realtimeArrivalTime(),
+				ride.stops().stream().map(stop -> new JourneyCandidate.Stop(
+					stop.stationId(),
+					stop.plannedArrivalTime(),
+					stop.plannedDepartureTime(),
+					stop.realtimeArrivalTime(),
+					stop.realtimeDepartureTime()
+				)).toList(),
+				ride.alightingCarDoors().stream()
+					.map(d -> new JourneyCandidate.AlightingCarDoor(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
+					.toList(),
+				ride.boardingPlatformGaps(),
+				ride.alightingPlatformGaps()
 			));
 		}
 		if (rideCount == 0 || transferCount != rideCount - 1) {
@@ -550,6 +609,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 		Instant plannedDeparture = effectiveInstant;
 		Instant realtimeDeparture = realtime ? effectiveInstant : null;
+		JourneyCandidate.Fare fare = calculateFare(itinerary, fareQuotes);
 		return new JourneyCandidate(
 			journeyId(request, plannedDeparture, itinerary),
 			plannedDeparture,
@@ -561,8 +621,66 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			walkingDistanceMeters,
 			realtime ? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
+			fare,
 			legs
 		);
+	}
+
+	/**
+	 * 재승차가 없으면 첫 승차역 -> 최종 하차역 공식 O-D 운임 한 건만 조회한다(#430).
+	 * 역 밖 환승 제한 시간을 넘긴 환승(farePenaltyApplies == true)이 있으면 그 지점에서 여정을 승차 구간으로 나누고,
+	 * 구간마다 공식 O-D 운임을 조회해 합한다(#444). 어느 구간이라도 표에 없으면 여정 전체가 UNAVAILABLE이다.
+	 * point 검색과 profile 계획이 같은 planner 투영으로 이 함수를 함께 쓴다.
+	 */
+	static JourneyCandidate.Fare calculateFare(
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
+	) {
+		Objects.requireNonNull(fareQuotes, "fareQuotes");
+		List<String> sectionKeys = new ArrayList<>();
+		RouteTimetableRaptorPlanner.JourneyRideProjection sectionFirstRide = null;
+		RouteTimetableRaptorPlanner.JourneyRideProjection sectionLastRide = null;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
+				if (sectionFirstRide == null) sectionFirstRide = ride;
+				sectionLastRide = ride;
+			} else if (Boolean.TRUE.equals(
+				((RouteTimetableRaptorPlanner.JourneyAccessProjection) leg).farePenaltyApplies())) {
+				// planner는 탑승 사이 TRANSFER 구간에만 재승차 여부를 싣는다.
+				if (sectionFirstRide == null) {
+					throw new IllegalArgumentException("Journey re-boarding transfer must follow a ride");
+				}
+				sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+				sectionFirstRide = null;
+			}
+		}
+		if (sectionFirstRide == null) {
+			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
+		}
+		sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+
+		int adultCard = 0;
+		int adultCash = 0;
+		int youthCard = 0;
+		int youthCash = 0;
+		int childCard = 0;
+		int childCash = 0;
+		Set<String> snapshotIds = new LinkedHashSet<>();
+		for (String key : sectionKeys) {
+			OfficialFareQuote quote = fareQuotes.get(key);
+			if (quote == null) {
+				return JourneyCandidate.Fare.unavailable();
+			}
+			adultCard = Math.addExact(adultCard, quote.gnrlCardFare());
+			adultCash = Math.addExact(adultCash, quote.gnrlCashFare());
+			youthCard = Math.addExact(youthCard, quote.yungCardFare());
+			youthCash = Math.addExact(youthCash, quote.yungCashFare());
+			childCard = Math.addExact(childCard, quote.childCardFare());
+			childCash = Math.addExact(childCash, quote.childCashFare());
+			snapshotIds.add(quote.snapshotId());
+		}
+		return JourneyCandidate.Fare.available(
+			adultCard, adultCash, youthCard, youthCash, childCard, childCash, List.copyOf(snapshotIds));
 	}
 
 	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {

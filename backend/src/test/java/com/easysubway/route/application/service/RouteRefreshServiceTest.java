@@ -49,7 +49,7 @@ class RouteRefreshServiceTest {
 	}
 
 	@Test
-	@DisplayName("stale provider 근거가 있는 저장 경로는 error 대신 stale fallback 상태를 반환한다")
+	@DisplayName("stale provider 근거가 있는 저장 경로는 error 대신 계획 시간 안내(PLANNED_WITHOUT_REALTIME) 상태를 반환한다")
 	void refreshRouteReturnsStaleFallbackForStaleStoredRoute() {
 		RouteSearchResult stored = routeSearchRepository.saveRouteSearch(routeSearch(
 			"route-stale",
@@ -59,8 +59,8 @@ class RouteRefreshServiceTest {
 
 		var refreshed = service.refreshRoute(stored.routeSearchId());
 
-		assertThat(refreshed.status()).isEqualTo(RouteRefreshStatus.STALE_FALLBACK);
-		assertThat(refreshed.reasonCodes()).contains("STALE_FALLBACK", "STALE_ACCESSIBILITY_DATA");
+		assertThat(refreshed.status()).isEqualTo(RouteRefreshStatus.PLANNED_WITHOUT_REALTIME);
+		assertThat(refreshed.reasonCodes()).contains("PLANNED_WITHOUT_REALTIME", "STALE_ACCESSIBILITY_DATA");
 		assertThat(refreshed.etaConfidence().name()).isEqualTo("LOW");
 	}
 

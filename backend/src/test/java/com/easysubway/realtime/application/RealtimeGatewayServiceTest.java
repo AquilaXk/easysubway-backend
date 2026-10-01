@@ -1,12 +1,12 @@
 package com.easysubway.realtime.application;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.realtime.adapter.out.persistence.InMemoryRealtimeMappingPort;
 import com.easysubway.realtime.application.port.out.RealtimeArrivalArchivePort;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
-import com.easysubway.realtime.application.port.out.RealtimeProviderCallQuotaPort;
 import com.easysubway.realtime.domain.RealtimeArrivalObservation;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
@@ -39,7 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 class RealtimeGatewayServiceTest {
 
 	@Test
-	@DisplayName("Spring constructor는 archive와 shared quota 포트를 필수 의존성으로 받는다")
+	@DisplayName("Spring constructor는 archive 포트를 필수 의존성으로 받는다")
 	void springConstructorRequiresProductionSafetyPorts() {
 		var parameterTypes = Arrays.stream(RealtimeGatewayService.class.getConstructors())
 			.filter(constructor -> constructor.isAnnotationPresent(Autowired.class))
@@ -48,7 +48,7 @@ class RealtimeGatewayServiceTest {
 			.orElseThrow();
 
 		assertThat(parameterTypes)
-			.contains(RealtimeArrivalArchivePort.class, RealtimeProviderCallQuotaPort.class)
+			.contains(RealtimeArrivalArchivePort.class)
 			.contains(Executor.class)
 			.doesNotContain(Optional.class);
 	}
@@ -87,7 +87,7 @@ class RealtimeGatewayServiceTest {
 	void normalizesProviderTimestampToIsoAtBoundary() {
 		// TOPIS recptnDt는 "yyyy-MM-dd HH:mm:ss"(KST). 17:00:00 KST = 08:00:00Z, clock과 20초 차 → fresh.
 		RealtimeProvider provider = query -> List.of(new RealtimeArrival(
-			"seoul-4",
+			"1004",
 			"상록수",
 			"사당",
 			"상행",
@@ -253,6 +253,63 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("환승역 도착 응답의 다른 노선(subwayId) 열차는 조회 노선의 FRESH 결과와 archive에 귀속하지 않는다")
+	void transferStationArrivalsOfOtherProviderLinesAreNotAttributedToQueriedLine() {
+		RealtimeProvider provider = query -> List.of(
+			euljiro3gaArrival("1002", "2001", "성수행 - 을지로4가방면", "내선", 60),
+			euljiro3gaArrival("1003", "3007", "오금행 - 충무로방면", "하행", 120),
+			euljiro3gaArrival("1002", "2002", "시청행 - 을지로입구방면", "외선", 150),
+			euljiro3gaArrival("1003", "3008", "대화행 - 종로3가방면", "상행", 180)
+		);
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			euljiro3gaLine3MappingPort(),
+			archive
+		);
+
+		RealtimeArrivalResult result = service.arrivals(euljiro3gaLine3Query());
+
+		assertThat(result.status()).isEqualTo(RealtimeStatus.FRESH);
+		assertThat(result.arrivals())
+			.extracting(RealtimeArrival::lineId, RealtimeArrival::trainNo)
+			.containsExactly(
+				org.assertj.core.api.Assertions.tuple("1003", "3007"),
+				org.assertj.core.api.Assertions.tuple("1003", "3008")
+			);
+		assertThat(archive.observations)
+			.extracting(RealtimeArrivalObservation::trainNo)
+			.containsExactly("3007", "3008");
+		assertThat(archive.observations)
+			.extracting(RealtimeArrivalObservation::lineId, RealtimeArrivalObservation::providerLineId)
+			.containsOnly(org.assertj.core.api.Assertions.tuple("seoul-3", "1003"));
+	}
+
+	@Test
+	@DisplayName("환승역 응답에 조회 노선 열차가 하나도 없으면 다른 노선 열차로 채우지도, 도착 없음으로 단정하지도 않는다")
+	void transferStationResponseWithoutQueriedLineIsUnavailableInsteadOfEmptyOrOtherLine() {
+		RealtimeProvider provider = query -> List.of(
+			euljiro3gaArrival("1002", "2001", "성수행 - 을지로4가방면", "내선", 60),
+			euljiro3gaArrival("1002", "2002", "시청행 - 을지로입구방면", "외선", 150)
+		);
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			euljiro3gaLine3MappingPort(),
+			archive
+		);
+
+		RealtimeArrivalResult result = service.arrivals(euljiro3gaLine3Query());
+
+		assertThat(result.status()).isEqualTo(RealtimeStatus.UNAVAILABLE);
+		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(result.arrivals()).isEmpty();
+		assertThat(archive.observations).isEmpty();
+	}
+
+	@Test
 	@DisplayName("운영 archive 저장은 fresh 응답 경로와 분리된다")
 	void dispatchesArchiveWithoutBlockingFreshResponse() {
 		CountingProvider provider = new CountingProvider();
@@ -264,9 +321,6 @@ class RealtimeGatewayServiceTest {
 			InMemoryRealtimeMappingPort.seededFixture(),
 			new RealtimeProviderControl(),
 			archive,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800,
 			executor
 		);
 
@@ -288,9 +342,6 @@ class RealtimeGatewayServiceTest {
 			InMemoryRealtimeMappingPort.seededFixture(),
 			new RealtimeProviderControl(),
 			new CapturingArrivalArchive(),
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800,
 			command -> { throw new IllegalStateException("archive executor unavailable"); }
 		);
 
@@ -341,7 +392,7 @@ class RealtimeGatewayServiceTest {
 	@DisplayName("archive 관측 생성 실패는 fresh 응답과 cache를 막지 않는다")
 	void archiveObservationFailureDoesNotBreakFreshResponse() {
 		RealtimeProvider provider = query -> List.of(new RealtimeArrival(
-			"4", "상록수", "당고개", "상행", "", 180, "3분 후", "전역 출발", "2026-06-26T08:00:00Z"
+			"1004", "상록수", "당고개", "상행", "", 180, "3분 후", "전역 출발", "2026-06-26T08:00:00Z"
 		));
 		CapturingArrivalArchive archive = new CapturingArrivalArchive();
 		RealtimeGatewayService service = service(
@@ -361,34 +412,6 @@ class RealtimeGatewayServiceTest {
 		assertThat(service.providerHealthSnapshot().archiveFailureCount()).isEqualTo(1);
 	}
 
-	@Test
-	@DisplayName("quota store 장애는 provider를 호출하지 않고 unavailable로 닫는다")
-	void quotaStoreFailureFailsClosedWithoutProviderCall() {
-		CountingProvider provider = new CountingProvider();
-		RealtimeProviderCallQuotaPort failingQuota = (providerId, now, zone, perMinute, perDay) -> {
-			throw new IllegalStateException("quota store unavailable");
-		};
-		RealtimeGatewayService service = new RealtimeGatewayService(
-			provider,
-			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			RealtimeArrivalArchivePort.NO_OP,
-			failingQuota,
-			1,
-			800
-		);
-
-		RealtimeArrivalResult arrivals = service.arrivals(sangnoksuQuery());
-		RealtimeTrainPositionResult positions = service.trainPositions(line4Query());
-
-		assertThat(arrivals.status()).hasToString("UNAVAILABLE");
-		assertThat(arrivals.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
-		assertThat(positions.status()).hasToString("UNAVAILABLE");
-		assertThat(positions.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
-		assertThat(provider.arrivalCalls).hasValue(0);
-		assertThat(provider.trainPositionCalls).hasValue(0);
-	}
 
 	@Test
 	@DisplayName("같은 도착 요청의 동시 cache miss는 provider 호출을 공유한다")
@@ -563,16 +586,7 @@ class RealtimeGatewayServiceTest {
 	void quotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = new RealtimeGatewayService(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			RealtimeArrivalArchivePort.NO_OP,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800
-		);
+		RealtimeGatewayService service = service(provider, clock);
 		RealtimeQuery arrivalQuery = sangnoksuQuery();
 		RealtimeQuery trainPositionQuery = line4Query();
 
@@ -599,30 +613,27 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("provider call rate limit은 cache가 있어도 payload 없는 unavailable로 종료한다")
-	void providerRateLimitReturnsUnavailableWithoutStaleCache() {
+	@DisplayName("quota 초과 응답 뒤 다른 캐시 키 요청도 circuit에 의해 원천 호출 없이 PROVIDER_QUOTA_EXCEEDED로 차단된다")
+	void quotaExceededCircuitBlocksSubsequentRequestsAcrossCacheKeys() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			1
-		);
-		RealtimeQuery query = sangnoksuQuery();
+		StubMappingPort mappingPort = new StubMappingPort();
+		mappingPort.add(mapping("station-sangnoksu", "seoul-4", "1004", "1004000448", "상록수", true, true, "OFFICIAL"));
+		mappingPort.add(mapping("station-euljiro-3ga", "seoul-3", "1003", "1003000329", "을지로3가", true, true, "OFFICIAL"));
+		RealtimeGatewayService service = service(provider, clock, mappingPort);
 
-		RealtimeArrivalResult first = service.arrivals(query);
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
-		provider.providerReceivedAt = "2026-06-26T08:00:30Z";
-		RealtimeArrivalResult limited = service.arrivals(query);
+		provider.failureCode = "PROVIDER_QUOTA_EXCEEDED";
 
-		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("UNAVAILABLE");
-		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		assertThat(limited.arrivals()).isEmpty();
+		RealtimeArrivalResult first = service.arrivals(sangnoksuQuery());
+		assertThat(first.status()).hasToString("UNAVAILABLE");
+		assertThat(first.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
 		assertThat(provider.arrivalCalls).hasValue(1);
-		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
+
+		clock.instant = clock.instant.plusSeconds(10);
+		RealtimeArrivalResult second = service.arrivals(euljiro3gaLine3Query());
+		assertThat(second.status()).hasToString("UNAVAILABLE");
+		assertThat(second.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(provider.arrivalCalls).hasValue(1);
 	}
 
 	@Test
@@ -650,135 +661,7 @@ class RealtimeGatewayServiceTest {
 			.doesNotContain("4123");
 	}
 
-	@Test
-	@DisplayName("provider call rate limit 설정은 안전 상한을 넘지 않는다")
-	void providerRateLimitIsCappedAtSafeDefault() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		StubMappingPort mappingPort = new StubMappingPort();
-		for (int index = 0; index < 2; index += 1) {
-			mappingPort.add(mapping(
-				"station-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"10040004%02d".formatted(index),
-				"상록수%02d".formatted(index),
-				true,
-				false,
-				"OFFICIAL"
-			));
-		}
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			mappingPort,
-			new RealtimeProviderControl(),
-			999
-		);
 
-		RealtimeArrivalResult result = null;
-		for (int index = 0; index < 2; index += 1) {
-			result = service.arrivals(new RealtimeQuery(
-				"station-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"상록수%02d".formatted(index),
-				null
-			));
-		}
-
-		assertThat(result.status()).hasToString("UNAVAILABLE");
-		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		assertThat(provider.arrivalCalls).hasValue(1);
-	}
-
-	@Test
-	@DisplayName("provider call rate limit은 KST 일일 안전 한도도 넘지 않는다")
-	void providerRateLimitBlocksDailyOverflow() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		StubMappingPort mappingPort = new StubMappingPort();
-		for (int index = 0; index < 4; index += 1) {
-			mappingPort.add(mapping(
-				"station-day-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"10040005%02d".formatted(index),
-				"상록수일일%02d".formatted(index),
-				true,
-				false,
-				"OFFICIAL"
-			));
-		}
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			mappingPort,
-			new RealtimeProviderControl(),
-			1,
-			2
-		);
-
-		RealtimeArrivalResult result = null;
-		List<Instant> sameKstDayInstants = List.of(
-			Instant.parse("2026-06-26T08:00:00Z"),
-			Instant.parse("2026-06-26T08:01:00Z"),
-			Instant.parse("2026-06-26T08:02:00Z")
-		);
-		for (int index = 0; index < sameKstDayInstants.size(); index += 1) {
-			clock.instant = sameKstDayInstants.get(index);
-			provider.providerReceivedAt = clock.instant.toString();
-			result = service.arrivals(new RealtimeQuery(
-				"station-day-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"상록수일일%02d".formatted(index),
-				null
-			));
-		}
-
-		assertThat(result.status()).hasToString("UNAVAILABLE");
-		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		clock.instant = Instant.parse("2026-06-26T15:00:00Z");
-		provider.providerReceivedAt = clock.instant.toString();
-		RealtimeArrivalResult nextKstDay = service.arrivals(new RealtimeQuery(
-			"station-day-03",
-			"seoul-4",
-			"1004",
-			"상록수일일03",
-			null
-		));
-
-		assertThat(nextKstDay.status()).hasToString("FRESH");
-		assertThat(provider.arrivalCalls).hasValue(3);
-	}
-
-	@Test
-	@DisplayName("열차 위치 provider call rate limit도 cache가 있어도 payload 없는 unavailable로 종료한다")
-	void trainPositionProviderRateLimitReturnsUnavailableWithoutStaleCache() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			1
-		);
-		RealtimeQuery query = line4Query();
-
-		RealtimeTrainPositionResult first = service.trainPositions(query);
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
-		provider.providerReceivedAt = "2026-06-26T08:00:30Z";
-		RealtimeTrainPositionResult limited = service.trainPositions(query);
-
-		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("UNAVAILABLE");
-		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		assertThat(limited.trainPositions()).isEmpty();
-		assertThat(provider.trainPositionCalls).hasValue(1);
-		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
-	}
 
 	@Test
 	@DisplayName("열차 위치 provider fallback code도 allowlist 밖 값을 API/metric으로 노출하지 않는다")
@@ -1149,6 +1032,316 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider health snapshot은 auth rejected 및 request rejected 카운트를 계측한다")
+	void providerHealthSnapshotRecordsAuthAndRequestRejectedCounts() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(provider, clock);
+
+		provider.failureCode = "PROVIDER_AUTH_REJECTED";
+		RealtimeArrivalResult authRejected = service.arrivals(sangnoksuQuery());
+
+		clock.instant = Instant.parse("2026-06-26T08:01:01Z");
+		provider.failureCode = "PROVIDER_REQUEST_REJECTED";
+		RealtimeTrainPositionResult requestRejected = service.trainPositions(line4Query());
+
+		// 내부 원인은 공개 응답에서 PROVIDER_ERROR로만 나간다.
+		assertThat(authRejected.status()).hasToString("UNAVAILABLE");
+		assertThat(authRejected.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(requestRejected.status()).hasToString("UNAVAILABLE");
+		assertThat(requestRejected.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+		assertThat(snapshot.providerAuthRejectedCount()).isEqualTo(1);
+		assertThat(snapshot.providerRequestRejectedCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("이전에 반환된 시각보다 이른 열차 위치 이벤트는 결과에서 폐기되고 전부 폐기되면 unavailable로 닫는다")
+	void trainPositionOlderThanPreviouslyServedIsDropped() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		RealtimeTrainPositionResult first = service.trainPositions(line4Query());
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(first.trainPositions()).hasSize(1);
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"
+		));
+		RealtimeTrainPositionResult second = service.trainPositions(line4Query());
+		assertThat(second.status()).hasToString("UNAVAILABLE");
+		assertThat(second.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(second.trainPositions()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("이전에 반환된 시각과 동일한 열차 위치 이벤트는 유지된다")
+	void trainPositionWithSameReceivedAtIsKept() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		RealtimeTrainPositionResult first = service.trainPositions(line4Query());
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(first.trainPositions()).hasSize(1);
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		RealtimeTrainPositionResult second = service.trainPositions(line4Query());
+		assertThat(second.status()).hasToString("FRESH");
+		assertThat(second.trainPositions()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("한 응답 안에서 동일 열차 키가 중복될 경우 가장 늦은 providerReceivedAt 1건만 유지한다")
+	void duplicateTrainInOneResponseKeepsLatest() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "한대앞", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"),
+			new RealtimeTrainPosition("4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().stationName()).isEqualTo("상록수");
+		assertThat(result.trainPositions().getFirst().providerReceivedAt()).isEqualTo("2026-06-26T08:00:50Z");
+	}
+
+	@Test
+	@DisplayName("한 응답 안에서 더 늦은 중복 건이 앞에 오고 이른 건이 뒤에 와도 가장 늦은 1건만 유지한다")
+	void duplicateTrainWithLatestFirstKeepsLatest() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"),
+			new RealtimeTrainPosition("4", "한대앞", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().stationName()).isEqualTo("상록수");
+		assertThat(result.trainPositions().getFirst().providerReceivedAt()).isEqualTo("2026-06-26T08:00:50Z");
+	}
+
+	@Test
+	@DisplayName("providerReceivedAt을 해석할 수 없는 열차 위치는 추정 없이 결과에서 제외한다")
+	void trainPositionWithUnparsableProviderReceivedAtIsDropped() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "한대앞", "3101", "운행중", "상행", "당고개", "not-a-time"),
+			new RealtimeTrainPosition("4", "중앙", "3102", "운행중", "상행", "당고개", null),
+			new RealtimeTrainPosition("4", "고잔", "3103", "운행중", "상행", "당고개", " "),
+			new RealtimeTrainPosition("4", "상록수", "3104", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().trainNo()).isEqualTo("3104");
+	}
+
+	@Test
+	@DisplayName("lineId, trainNo, direction이 null인 열차 위치도 서로 다른 키로 충돌 없이 처리하고 같은 키만 중복 제거한다")
+	void trainPositionsWithNullKeyPartsAreDeduplicatedPerKey() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition(null, "한대앞", null, "운행중", null, "당고개", "2026-06-26T08:00:40Z"),
+			new RealtimeTrainPosition(null, "상록수", null, "운행중", null, "당고개", "2026-06-26T08:00:50Z"),
+			new RealtimeTrainPosition("4", "중앙", null, "운행중", "상행", "당고개", "2026-06-26T08:00:45Z"),
+			new RealtimeTrainPosition("4", "고잔", "3101", "운행중", null, "당고개", "2026-06-26T08:00:46Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.trainPositions())
+			.extracting(RealtimeTrainPosition::stationName)
+			.containsExactlyInAnyOrder("상록수", "중앙", "고잔");
+	}
+
+	@Test
+	@DisplayName("추적 키가 상한을 넘으면 가장 오래된 키부터 제거되어 그 키의 이른 시각 위치가 다시 허용된다")
+	void lastServedStoreEvictsOldestKeysBeyondCapacity() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:30Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		// MAX_LAST_SERVED_POSITIONS(5000)를 1건 초과: 키 "T0"만 08:00:00으로 가장 오래됐다.
+		List<RealtimeTrainPosition> initial = new java.util.ArrayList<>();
+		initial.add(new RealtimeTrainPosition("4", "한대앞", "T0", "운행중", "상행", "당고개", "2026-06-26T08:00:00Z"));
+		for (int i = 1; i <= 5000; i++) {
+			initial.add(new RealtimeTrainPosition("4", "한대앞", "T" + i, "운행중", "상행", "당고개", "2026-06-26T08:00:10Z"));
+		}
+		provider.trainPositionsResponse = initial;
+		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(5001);
+
+		// 캐시 TTL(20초) 경과 후 두 키가 각자 마지막 서빙 시각보다 이른 시각으로 재도착한다.
+		// T0(서빙 08:00:00)은 07:59:58, T1(서빙 08:00:10)은 08:00:05. 상한 초과로 T0 기록이 제거됐을 때만 T0가 허용된다.
+		clock.instant = Instant.parse("2026-06-26T08:00:55Z");
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "T0", "운행중", "상행", "당고개", "2026-06-26T07:59:58Z"),
+			new RealtimeTrainPosition("4", "상록수", "T1", "운행중", "상행", "당고개", "2026-06-26T08:00:05Z")
+		);
+		RealtimeTrainPositionResult replay = service.trainPositions(line4Query());
+
+		assertThat(replay.trainPositions()).hasSize(1);
+		assertThat(replay.trainPositions().getFirst().trainNo()).isEqualTo("T0");
+		assertThat(service.providerHealthSnapshot().outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("추적 키가 상한을 넘을 때 만료(신선도 TTL의 2배)된 키는 정리되고 살아 있는 키의 순서 보호는 유지된다")
+	void lastServedStoreDropsExpiredKeysAndKeepsLiveKeys() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:30Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		// 08:00:00에 서빙된 키 5000건(상한 이내, 정리 없음).
+		List<RealtimeTrainPosition> initial = new java.util.ArrayList<>();
+		for (int i = 0; i < 5000; i++) {
+			initial.add(new RealtimeTrainPosition("4", "한대앞", "E" + i, "운행중", "상행", "당고개", "2026-06-26T08:00:00Z"));
+		}
+		provider.trainPositionsResponse = initial;
+		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(5000);
+
+		// 180초 초과 경과: 새 키 2건이 들어와 5002건이 되면 만료 키가 정리된다.
+		clock.instant = Instant.parse("2026-06-26T08:03:10Z");
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "L1", "운행중", "상행", "당고개", "2026-06-26T08:03:05Z"),
+			new RealtimeTrainPosition("4", "중앙", "L2", "운행중", "상행", "당고개", "2026-06-26T08:03:06Z")
+		);
+		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(2);
+
+		// 정리 뒤에도 살아 있는 L1의 더 이른 시각 위치는 폐기되고 L2의 최신 위치는 유지된다.
+		clock.instant = Instant.parse("2026-06-26T08:03:35Z");
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "고잔", "L1", "운행중", "상행", "당고개", "2026-06-26T08:03:00Z"),
+			new RealtimeTrainPosition("4", "초지", "L2", "운행중", "상행", "당고개", "2026-06-26T08:03:20Z")
+		);
+		RealtimeTrainPositionResult after = service.trainPositions(line4Query());
+
+		assertThat(after.trainPositions()).hasSize(1);
+		assertThat(after.trainPositions().getFirst().stationName()).isEqualTo("초지");
+		assertThat(service.providerHealthSnapshot().outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("역전 폐기된 열차 위치 건수는 provider health snapshot의 outOfOrderPositionDropCount로 계측된다")
+	void outOfOrderDropsAreCountedInHealthSnapshot() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		service.trainPositions(line4Query());
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"
+		));
+		service.trainPositions(line4Query());
+
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+		assertThat(snapshot.outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("역전 폐기된 열차 위치 건수는 Micrometer 카운터 easysubway.realtime.positions.out_of_order.dropped로 노출된다")
+	void outOfOrderDropsIncrementMicrometerCounter() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			RealtimeArrivalArchivePort.NO_OP,
+			Runnable::run,
+			meterRegistry
+		);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		service.trainPositions(line4Query());
+		assertThat(meterRegistry.get("easysubway.realtime.positions.out_of_order.dropped").counter().count())
+			.isEqualTo(0.0);
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"
+		));
+		service.trainPositions(line4Query());
+
+		assertThat(meterRegistry.get("easysubway.realtime.positions.out_of_order.dropped").counter().count())
+			.isEqualTo(1.0);
+	}
+
+	@Test
+	@DisplayName("공공 API 자체 호출 한도가 제거되어 여러 역 동시 요청이 제한 없이 처리된다")
+	void multipleConcurrentRequestsAreProcessedWithoutInternalRateLimit() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		StubMappingPort mappingPort = new StubMappingPort();
+		for (int index = 0; index < 5; index += 1) {
+			mappingPort.add(mapping(
+				"station-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"10040004%02d".formatted(index),
+				"상록수%02d".formatted(index),
+				true,
+				true,
+				"OFFICIAL"
+			));
+		}
+		RealtimeGatewayService service = service(provider, clock, mappingPort);
+
+		for (int index = 0; index < 5; index += 1) {
+			RealtimeArrivalResult result = service.arrivals(new RealtimeQuery(
+				"station-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"상록수%02d".formatted(index),
+				"4호선"
+			));
+			assertThat(result.status()).hasToString("FRESH");
+		}
+		assertThat(provider.arrivalCalls.get()).isEqualTo(5);
+
+		for (int index = 0; index < 5; index += 1) {
+			clock.instant = clock.instant.plusSeconds(21);
+			provider.providerReceivedAt = clock.instant.toString();
+			RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+			assertThat(result.status()).hasToString("FRESH");
+		}
+		assertThat(provider.trainPositionCalls.get()).isEqualTo(5);
+	}
+
+	@Test
 	@DisplayName("TOPIS provider는 backend service key가 없으면 unavailable로 낮춘다")
 	void topisProviderWithoutBackendServiceKeyIsUnavailableByDefault() {
 		TimeoutHttpClient httpClient = new TimeoutHttpClient();
@@ -1239,8 +1432,7 @@ class RealtimeGatewayServiceTest {
 				    }
 				  ]
 				}
-				"""),
-			sangnoksuQuery()
+				""")
 		);
 
 		assertThat(arrivals).hasSize(1);
@@ -1275,8 +1467,7 @@ class RealtimeGatewayServiceTest {
 				    }
 				  ]
 				}
-				"""),
-			sangnoksuQuery()
+				""")
 		);
 
 		assertThat(arrivals).hasSize(1);
@@ -1318,8 +1509,7 @@ class RealtimeGatewayServiceTest {
 				    }
 				  ]
 				}
-				"""),
-			sangnoksuQuery()
+				""")
 		);
 
 		assertThat(arrivals).hasSize(1);
@@ -1384,21 +1574,54 @@ class RealtimeGatewayServiceTest {
 		return new RealtimeQuery(null, "seoul-4", "1004", null, "4호선");
 	}
 
+	private RealtimeQuery euljiro3gaLine3Query() {
+		return new RealtimeQuery("station-euljiro-3ga", "seoul-3", "1003", "을지로3가", null);
+	}
+
+	private StubMappingPort euljiro3gaLine3MappingPort() {
+		StubMappingPort mappingPort = new StubMappingPort();
+		mappingPort.add(new RealtimeMapping(
+			"seoul-topis",
+			"station-euljiro-3ga",
+			"seoul-3",
+			"1003",
+			"1003000322",
+			"을지로3가",
+			"3호선",
+			true,
+			true,
+			"OFFICIAL",
+			1L
+		));
+		return mappingPort;
+	}
+
+	private RealtimeArrival euljiro3gaArrival(
+		String providerLineId,
+		String trainNo,
+		String destination,
+		String direction,
+		int etaSeconds
+	) {
+		return new RealtimeArrival(
+			providerLineId,
+			"을지로3가",
+			destination,
+			direction,
+			trainNo,
+			etaSeconds,
+			"%d분 후".formatted(etaSeconds / 60),
+			"전역 출발",
+			"2026-06-26T08:00:00Z"
+		);
+	}
+
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock) {
 		return service(provider, clock, InMemoryRealtimeMappingPort.seededFixture());
 	}
 
 	private RealtimeGatewayService serviceWithAlwaysAvailableQuota(RealtimeProvider provider, Clock clock) {
-		return new RealtimeGatewayService(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			RealtimeArrivalArchivePort.NO_OP,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800
-		);
+		return service(provider, clock);
 	}
 
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
@@ -1421,34 +1644,6 @@ class RealtimeGatewayServiceTest {
 		RealtimeProviderControl control
 	) {
 		return new RealtimeGatewayService(provider, clock, mappingPort, control);
-	}
-
-	private RealtimeGatewayService service(
-		RealtimeProvider provider,
-		Clock clock,
-		RealtimeMappingPort mappingPort,
-		RealtimeProviderControl control,
-		int providerCallLimitPerMinute
-	) {
-		return new RealtimeGatewayService(provider, clock, mappingPort, control, providerCallLimitPerMinute);
-	}
-
-	private RealtimeGatewayService service(
-		RealtimeProvider provider,
-		Clock clock,
-		RealtimeMappingPort mappingPort,
-		RealtimeProviderControl control,
-		int providerCallLimitPerMinute,
-		int providerCallLimitPerDay
-	) {
-		return new RealtimeGatewayService(
-			provider,
-			clock,
-			mappingPort,
-			control,
-			providerCallLimitPerMinute,
-			providerCallLimitPerDay
-		);
 	}
 
 	private RealtimeMapping mapping(
@@ -1535,6 +1730,7 @@ class RealtimeGatewayServiceTest {
 		private String failureCode;
 		private boolean emptyArrivals;
 		private String providerReceivedAt = "2026-06-26T08:00:00Z";
+		private List<RealtimeTrainPosition> trainPositionsResponse;
 
 		@Override
 		public List<RealtimeArrival> arrivals(RealtimeQuery query) {
@@ -1546,7 +1742,7 @@ class RealtimeGatewayServiceTest {
 				return List.of();
 			}
 			return List.of(new RealtimeArrival(
-				"4",
+				"1004",
 				"상록수",
 				"당고개",
 				"상행",
@@ -1563,6 +1759,9 @@ class RealtimeGatewayServiceTest {
 			trainPositionCalls.incrementAndGet();
 			if (failureCode != null) {
 				throw new RealtimeProviderException(failureCode);
+			}
+			if (trainPositionsResponse != null) {
+				return trainPositionsResponse;
 			}
 			return List.of(new RealtimeTrainPosition(
 				"4",
@@ -1620,7 +1819,7 @@ class RealtimeGatewayServiceTest {
 			arrivalEntered.countDown();
 			awaitRelease(releaseArrivals);
 			return List.of(new RealtimeArrival(
-				"4",
+				"1004",
 				"상록수",
 				"당고개",
 				"상행",

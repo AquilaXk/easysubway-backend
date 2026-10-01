@@ -24,6 +24,7 @@ public sealed interface JourneyProfileExecutionDisposition
 			case NO_ROUTE_ARRIVING_BY_DEADLINE -> publicFailure(422,
 				MachineCode.NO_ROUTE_ARRIVING_BY_DEADLINE);
 			case NO_LAST_CONNECTION -> publicFailure(422, MachineCode.NO_LAST_CONNECTION);
+			case FACILITY_STATUS_UNAVAILABLE -> publicFailure(503, MachineCode.FACILITY_STATUS_UNAVAILABLE);
 			case CANCELLED -> new Cancelled();
 			case RAPTOR_FAILED ->
 				new InternalFailure(failure.reason());
@@ -74,6 +75,7 @@ public sealed interface JourneyProfileExecutionDisposition
 		RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
 		NO_SERVICE_IN_DEPARTURE_WINDOW,
 		NO_ROUTE_ARRIVING_BY_DEADLINE,
-		NO_LAST_CONNECTION
+		NO_LAST_CONNECTION,
+		FACILITY_STATUS_UNAVAILABLE
 	}
 }

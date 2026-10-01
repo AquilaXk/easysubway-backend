@@ -28,7 +28,9 @@ class JourneyProfileExecutionDispositionTest {
 			JourneyProfileExecutionResult.Reason.NO_LAST_CONNECTION,
 			JourneyProfileExecutionDisposition.MachineCode.NO_LAST_CONNECTION,
 			JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
-			JourneyProfileExecutionDisposition.MachineCode.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
+			JourneyProfileExecutionDisposition.MachineCode.RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
+			JourneyProfileExecutionResult.Reason.FACILITY_STATUS_UNAVAILABLE,
+			JourneyProfileExecutionDisposition.MachineCode.FACILITY_STATUS_UNAVAILABLE);
 
 		expected.forEach((reason, machineCode) -> {
 			var disposition = JourneyProfileExecutionDisposition.from(

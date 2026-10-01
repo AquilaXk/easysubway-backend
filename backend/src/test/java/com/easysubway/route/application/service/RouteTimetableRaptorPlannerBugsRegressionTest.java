@@ -228,6 +228,9 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-sta1", "outside", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit-sta3", "platform-sta3", "outside-sta3", 60, 40, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
 		var evidence = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
@@ -235,12 +238,17 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 				"OFFICIAL_SOURCE", "VERIFIED", true, null),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
 				"exit-evidence", "sta-1", "line-circ", "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence-sta3", "sta-3", "line-circ", "exit-sta3", "EXIT",
 				"OFFICIAL_SOURCE", "VERIFIED", true, null));
 		return new RouteAccessData(
 			List.of(
 				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("entrance", "sta-1", null, "ENTRANCE"),
 				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-sta1", "sta-1", "line-circ", "PLATFORM"),
-				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "sta-1", null, "EXIT")),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "sta-1", null, "EXIT"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-sta3", "sta-3", "line-circ", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside-sta3", "sta-3", null, "EXIT")),
 			edges,
 			List.of(),
 			evidence
@@ -272,12 +280,12 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("generation must be positive");
 
-		// journeyItineraries 3-arg 오버로드 호출 시 measurement에 유효한 SHA-256과 generation이 전달됨을 검증
+		// journeyItineraries 3-arg 오버로드 호출 및 explicitCompiled 기반 여정 계획 결과 단언 (출발: sta-1, 도착: sta-3)
 		var query = new com.easysubway.journey.application.JourneyRaptorQuery(
 			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"sta-1",
 			"sta-3",
-			new com.easysubway.journey.application.JourneyRaptorQuery.DepartAt(java.time.Instant.parse("2026-07-06T08:00:00Z")),
+			new com.easysubway.journey.application.JourneyRaptorQuery.DepartAt(java.time.Instant.parse("2026-07-05T22:55:00Z")),
 			com.easysubway.journey.application.JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			com.easysubway.journey.application.JourneyRequest.WalkingPace.STANDARD,
 			com.easysubway.journey.application.JourneyRequest.MobilityProfile.STANDARD,
@@ -287,7 +295,25 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 			() -> false
 		);
 		var plan = planner.journeyItineraries(query, explicitCompiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
-		assertThat(plan).isNotNull();
-		assertThat(explicitCompiled.routeBundleSha256()).isNotEqualTo("test-bundle");
+		assertThat(plan.itineraries()).hasSize(1);
+		var itinerary = plan.itineraries().getFirst();
+		assertThat(itinerary.legs()).hasSize(3);
+		assertThat(itinerary.plannedDepartureTime()).isEqualTo(java.time.Instant.parse("2026-07-05T22:55:00Z"));
+		assertThat(itinerary.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:07:40Z"));
+
+		var entryLeg = (RouteTimetableRaptorPlanner.JourneyAccessProjection) itinerary.legs().get(0);
+		assertThat(entryLeg.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY);
+		assertThat(entryLeg.fromStationId()).isEqualTo("sta-1");
+
+		var rideLeg = (RouteTimetableRaptorPlanner.JourneyRideProjection) itinerary.legs().get(1);
+		assertThat(rideLeg.tripId()).isEqualTo("trip-c1");
+		assertThat(rideLeg.fromStationId()).isEqualTo("sta-1");
+		assertThat(rideLeg.toStationId()).isEqualTo("sta-3");
+		assertThat(rideLeg.plannedDepartureTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:01:00Z"));
+		assertThat(rideLeg.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:06:40Z"));
+
+		var exitLeg = (RouteTimetableRaptorPlanner.JourneyAccessProjection) itinerary.legs().get(2);
+		assertThat(exitLeg.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT);
+		assertThat(exitLeg.toStationId()).isEqualTo("sta-3");
 	}
 }

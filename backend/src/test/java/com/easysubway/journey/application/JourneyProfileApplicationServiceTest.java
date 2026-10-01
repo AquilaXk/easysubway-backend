@@ -497,6 +497,49 @@ class JourneyProfileApplicationServiceTest {
 	}
 
 	@Test
+	void mapsFacilityStatusUnavailableFromPlanningAndPreparationWithCancellationPrecedence() {
+		for (boolean cancelDuringPlanning : List.of(false, true)) {
+			var cancelled = new AtomicBoolean();
+			var original = query(new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600)));
+			var requested = new JourneyRaptorQuery(original.requestId(), original.originStationId(),
+				original.destinationStationId(), original.temporalQuery(), original.timePolicy(),
+				original.walkingPace(), original.mobilityProfile(), original.constraintMode(),
+				original.maxTransfers(), original.alternativeCount(), cancelled::get);
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
+				raptor((query, snapshot, realtime, limits) -> {
+					cancelled.set(cancelDuringPlanning);
+					throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: stale");
+				}), Clock.fixed(NOW, ZoneOffset.UTC));
+
+			assertThat(service.execute(requested, policy())).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(cancelDuringPlanning
+					? JourneyProfileExecutionResult.Reason.CANCELLED
+					: JourneyProfileExecutionResult.Reason.FACILITY_STATUS_UNAVAILABLE));
+		}
+		for (boolean cancelDuringPreparation : List.of(false, true)) {
+			var cancelled = new AtomicBoolean();
+			var original = query(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1)));
+			var requested = new JourneyRaptorQuery(original.requestId(), original.originStationId(),
+				original.destinationStationId(), original.temporalQuery(), JourneyRequest.TimePolicy.REALTIME_REQUIRED,
+				original.walkingPace(), original.mobilityProfile(), original.constraintMode(), original.maxTransfers(),
+				original.alternativeCount(), cancelled::get);
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(86_400)),
+				raptor((query, snapshot, realtime, limits) -> {
+					throw new AssertionError("realtime last-connection classification must not plan a route");
+				}, (query, snapshot, limits) -> {
+					cancelled.set(cancelDuringPreparation);
+					throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: stale");
+				}), Clock.fixed(NOW, ZoneOffset.UTC));
+
+			assertThat(((JourneyProfileExecutionResult.Failure) service.execute(requested, policy())).reason()).isEqualTo(
+				cancelDuringPreparation ? JourneyProfileExecutionResult.Reason.CANCELLED
+					: JourneyProfileExecutionResult.Reason.FACILITY_STATUS_UNAVAILABLE);
+		}
+	}
+
+	@Test
 	void rejectsPlanningEvidenceBoundToAnotherRequestOrTemporalAlgorithm() {
 		var temporalQuery = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600));
 		var requested = query(temporalQuery);
@@ -661,6 +704,7 @@ class JourneyProfileApplicationServiceTest {
 		return new JourneyProfileRaptorPort.Itinerary(LocalDate.of(2026, 9, 1), NOW, arrivalAtDestination,
 			null, null, new JourneyProfileRaptorPort.ItineraryMetrics(
 				0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()),
+			JourneyCandidate.Fare.unavailable(),
 			List.of(new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 				"station-a", "station-a", 0, 0, false, true, "VERIFIED")));
 	}

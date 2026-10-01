@@ -182,6 +182,13 @@ paths:
                     code: ROUTING_IDENTITY_MISMATCH
                     retryable: false
                     occurredAt: "2026-08-02T23:58:00.482+09:00"
+                facilityStatusUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: FACILITY_STATUS_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
                 routeServiceUnavailable:
                   value:
                     contractVersion: JOURNEY_ERROR_V1
@@ -375,6 +382,13 @@ paths:
                     contractVersion: JOURNEY_ERROR_V1
                     requestId: 01K1Y000000000000000000000
                     code: ROUTING_IDENTITY_MISMATCH
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                facilityStatusUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: FACILITY_STATUS_UNAVAILABLE
                     retryable: false
                     occurredAt: "2026-09-01T08:00:00+09:00"
                 frontierCapacityExceeded:
@@ -1442,6 +1456,7 @@ components:
         - walkingDistanceMeters
         - timeSource
         - accessibility
+        - fare
         - legs
       properties:
         journeyId:
@@ -1482,11 +1497,45 @@ components:
           enum: [TIMETABLE, REALTIME]
         accessibility:
           $ref: "#/components/schemas/JourneyAccessibility"
+        fare:
+          $ref: "#/components/schemas/JourneyFare"
         legs:
           type: array
           minItems: 1
           items:
             $ref: "#/components/schemas/JourneyLeg"
+    JourneyFare:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - sourceSnapshotIds
+      properties:
+        status:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE]
+        adultCardWon:
+          type: integer
+          minimum: 0
+        adultCashWon:
+          type: integer
+          minimum: 0
+        youthCardWon:
+          type: integer
+          minimum: 0
+        youthCashWon:
+          type: integer
+          minimum: 0
+        childCardWon:
+          type: integer
+          minimum: 0
+        childCashWon:
+          type: integer
+          minimum: 0
+        sourceSnapshotIds:
+          type: array
+          items:
+            type: string
     JourneyAccessibility:
       type: object
       additionalProperties: false
@@ -1532,10 +1581,12 @@ components:
         - directionStationId
         - fromStationId
         - toStationId
+        - servicePattern
         - plannedDepartureTime
         - plannedArrivalTime
         - realtimeDepartureTime
         - realtimeArrivalTime
+        - stops
       properties:
         type:
           type: string
@@ -1555,6 +1606,9 @@ components:
         toStationId:
           type: string
           minLength: 1
+        servicePattern:
+          type: string
+          enum: [LOCAL, EXPRESS]
         plannedDepartureTime:
           type: string
           format: date-time
@@ -1569,6 +1623,97 @@ components:
           type: string
           format: date-time
           nullable: true
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/JourneyRideStop"
+        alightingCarDoors:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyAlightingCarDoor"
+        boardingPlatformGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyPlatformGap"
+        alightingPlatformGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyPlatformGap"
+    JourneyPlatformGap:
+      type: object
+      additionalProperties: false
+      required:
+        - platformPosition
+        - gapGrade
+        - heightDiffGrade
+        - curved
+      properties:
+        platformPosition:
+          type: string
+          minLength: 1
+        carNumber:
+          type: integer
+          minimum: 1
+        doorNumber:
+          type: integer
+          minimum: 1
+        gapGrade:
+          type: string
+          enum: [WIDE, NORMAL, NARROW]
+        heightDiffGrade:
+          type: string
+          enum: [HIGH, NORMAL, LOW]
+        curved:
+          type: boolean
+    JourneyRideStop:
+      type: object
+      additionalProperties: false
+      required:
+        - stationId
+        - plannedArrivalTime
+        - plannedDepartureTime
+        - realtimeArrivalTime
+        - realtimeDepartureTime
+      properties:
+        stationId:
+          type: string
+          minLength: 1
+        plannedArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        plannedDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+    JourneyAlightingCarDoor:
+      type: object
+      additionalProperties: false
+      required:
+        - carNumber
+        - doorNumber
+        - targetFacilityType
+      properties:
+        carNumber:
+          type: integer
+          minimum: 1
+          maximum: 10
+        doorNumber:
+          type: integer
+          minimum: 1
+          maximum: 4
+        targetFacilityType:
+          type: string
+          enum: [TRANSFER, ELEVATOR, ESCALATOR, STAIR]
     JourneyTransferLeg:
       type: object
       additionalProperties: false
@@ -1592,9 +1737,6 @@ components:
         farePenaltyApplies:
           type: boolean
           default: false
-        additionalFareWon:
-          type: integer
-          default: 0
         transferLimitMinutes:
           type: integer
           minimum: 0
@@ -1625,6 +1767,7 @@ components:
         - TIMETABLE_STALE
         - REALTIME_REQUIRED_UNAVAILABLE
         - ROUTING_IDENTITY_MISMATCH
+        - FACILITY_STATUS_UNAVAILABLE
         - ROUTE_SERVICE_UNAVAILABLE
         - JOURNEY_SEARCH_TIMEOUT
         - STATION_LINE_NOT_FOUND

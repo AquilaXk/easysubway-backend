@@ -73,6 +73,9 @@ public final class JourneyProfileApplicationService {
 		JourneyProfileRaptorPort.PlanningResult planning;
 		try {
 			planning = raptorPort.plan(requiredQuery, snapshot, null, requiredPolicy.profilePlanningLimits());
+		} catch (FacilityStatusUnavailableException exception) {
+			return requiredQuery.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
+				: failure(JourneyProfileExecutionResult.Reason.FACILITY_STATUS_UNAVAILABLE);
 		} catch (RuntimeException exception) {
 			return requiredQuery.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
 				: failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
@@ -118,6 +121,9 @@ public final class JourneyProfileApplicationService {
 		JourneyProfileRaptorPort.LastConnectionPreparation preparation;
 		try {
 			preparation = raptorPort.prepareLastConnection(query, snapshot, resourcePolicy.profilePlanningLimits());
+		} catch (FacilityStatusUnavailableException exception) {
+			return query.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
+				: failure(JourneyProfileExecutionResult.Reason.FACILITY_STATUS_UNAVAILABLE);
 		} catch (RuntimeException exception) {
 			return query.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
 				: failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);

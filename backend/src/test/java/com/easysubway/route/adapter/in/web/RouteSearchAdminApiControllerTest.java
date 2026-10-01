@@ -47,7 +47,7 @@ class RouteSearchAdminApiControllerTest {
 		saveRouteSearchPort.saveRouteSearch(foundRouteSearch(
 			"route-search-found-1",
 			MobilityType.SENIOR,
-			List.of(routeStep(EtaSource.FALLBACK)),
+			List.of(routeStep(EtaSource.PLANNED_WITHOUT_REALTIME)),
 			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE))
 		));
 		saveRouteSearchPort.saveRouteSearch(foundRouteSearch("route-search-found-2", MobilityType.WHEELCHAIR));
@@ -72,8 +72,10 @@ class RouteSearchAdminApiControllerTest {
 			.andExpect(jsonPath("$.data.regionUsageRows[0].destinationCount").value(3))
 			.andExpect(jsonPath("$.data.blockedReasonRows[0].reason").value("계단 없는 역 접근 경로를 확인할 수 없습니다."))
 			.andExpect(jsonPath("$.data.blockedReasonRows[0].count").value(1))
-			.andExpect(jsonPath("$.data.etaSourceRows[0].code").value("FALLBACK"))
-			.andExpect(jsonPath("$.data.etaSourceRows[0].label").value("provider 지연/장애 fallback"))
+			.andExpect(jsonPath("$.data.etaSourceRows[0].code").value("PLANNED"))
+			.andExpect(jsonPath("$.data.etaSourceRows[0].label").value("시간표 기준"))
+			.andExpect(jsonPath("$.data.etaSourceRows[1].code").value("PLANNED_WITHOUT_REALTIME"))
+			.andExpect(jsonPath("$.data.etaSourceRows[1].label").value("실시간 불가 · 계획 시각 안내"))
 			.andExpect(jsonPath("$.data.fallbackReasonRows[0].reason").value("LOW_DATA_CONFIDENCE"))
 			.andExpect(jsonPath("$.data.routeQualitySignalRows[0].signal").value("ROUTE_GRAPH_DATA_QUALITY"))
 			.andExpect(jsonPath("$.data.alertThresholdRows[0].metric").value("route_not_found_rate"))

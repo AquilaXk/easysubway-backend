@@ -1,5 +1,7 @@
 package com.easysubway.realtime.application;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -8,10 +10,8 @@ import com.easysubway.realtime.adapter.out.persistence.DevelopmentRealtimeSafety
 import com.easysubway.realtime.adapter.out.persistence.InMemoryRealtimeMappingPort;
 import com.easysubway.realtime.adapter.out.persistence.JdbcRealtimeArrivalArchiveRepository;
 import com.easysubway.realtime.adapter.out.persistence.JdbcRealtimeMappingRepository;
-import com.easysubway.realtime.adapter.out.persistence.JdbcRealtimeProviderCallQuotaRepository;
 import com.easysubway.realtime.application.port.out.RealtimeArrivalArchivePort;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
-import com.easysubway.realtime.application.port.out.RealtimeProviderCallQuotaPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.Executor;
 import javax.sql.DataSource;
@@ -48,10 +48,6 @@ class RealtimeProductionCompositionTest {
 					.containsExactly("jdbcRealtimeArrivalArchiveRepository");
 				assertThat(context.getBean(RealtimeArrivalArchivePort.class))
 					.isInstanceOf(JdbcRealtimeArrivalArchiveRepository.class);
-				assertThat(context.getBeanNamesForType(RealtimeProviderCallQuotaPort.class))
-					.containsExactly("jdbcRealtimeProviderCallQuotaRepository");
-				assertThat(context.getBean(RealtimeProviderCallQuotaPort.class))
-					.isInstanceOf(JdbcRealtimeProviderCallQuotaRepository.class);
 				Executor archiveExecutor = context.getBean("realtimeArchiveExecutor", Executor.class);
 				assertThat(archiveExecutor).isInstanceOf(ThreadPoolTaskExecutor.class);
 				assertThat(ReflectionTestUtils.getField(
@@ -98,8 +94,8 @@ class RealtimeProductionCompositionTest {
 	}
 
 	@Test
-	@DisplayName("default·dev·test 프로필은 JDBC 대신 development archive·quota 포트만 조립한다")
-	void developmentProfilesUseOnlyDevelopmentSafetyPortsForArchiveAndQuota() {
+	@DisplayName("default·dev·test 프로필은 JDBC 대신 development archive 포트만 조립한다")
+	void developmentProfilesUseOnlyDevelopmentSafetyPortsForArchive() {
 		for (String profile : new String[] {"default", "dev", "test"}) {
 			realtimeRunner(profile, DevelopmentDependencies.class).run(context -> {
 				assertThat(context).hasNotFailed();
@@ -110,12 +106,9 @@ class RealtimeProductionCompositionTest {
 					.isInstanceOf(InMemoryRealtimeMappingPort.class);
 				assertThat(context.getBeanNamesForType(RealtimeArrivalArchivePort.class))
 					.containsExactly("developmentRealtimeSafetyPorts");
-				assertThat(context.getBeanNamesForType(RealtimeProviderCallQuotaPort.class))
-					.containsExactly("developmentRealtimeSafetyPorts");
 				assertThat(context).hasSingleBean(DevelopmentRealtimeSafetyPorts.class);
 				assertThat(context).doesNotHaveBean(JdbcRealtimeMappingRepository.class);
 				assertThat(context).doesNotHaveBean(JdbcRealtimeArrivalArchiveRepository.class);
-				assertThat(context).doesNotHaveBean(JdbcRealtimeProviderCallQuotaRepository.class);
 			});
 		}
 	}
@@ -128,7 +121,6 @@ class RealtimeProductionCompositionTest {
 			RealtimeProviderControl.class,
 			JdbcRealtimeMappingRepository.class,
 			JdbcRealtimeArrivalArchiveRepository.class,
-			JdbcRealtimeProviderCallQuotaRepository.class,
 			RealtimeInfrastructureConfiguration.class
 		}) {
 			productionRealtimeRunner("prod", ProductionDependencies.class)
@@ -146,7 +138,6 @@ class RealtimeProductionCompositionTest {
 			DuplicateProviderConfiguration.class,
 			DuplicateMappingConfiguration.class,
 			DuplicateArchiveConfiguration.class,
-			DuplicateQuotaConfiguration.class,
 			DuplicateArchiveExecutorConfiguration.class
 		}) {
 			productionRealtimeRunner("prod", ProductionDependencies.class, duplicate).run(context ->
@@ -162,6 +153,8 @@ class RealtimeProductionCompositionTest {
 	) {
 		return new ApplicationContextRunner()
 			.withUserConfiguration(RealtimeComponentScan.class, dependencies)
+			// 운영에서는 actuator가 MeterRegistry를 구성한다. 조립 검증에는 같은 계약의 단순 레지스트리를 둔다.
+			.withBean(MeterRegistry.class, SimpleMeterRegistry::new)
 			.withUserConfiguration(additionalConfigurations)
 			.withPropertyValues("spring.profiles.active=" + profile);
 	}
@@ -240,14 +233,6 @@ class RealtimeProductionCompositionTest {
 		}
 	}
 
-	@TestConfiguration(proxyBeanMethods = false)
-	static class DuplicateQuotaConfiguration {
-
-		@Bean
-		RealtimeProviderCallQuotaPort alternateRealtimeProviderCallQuotaPort() {
-			return mock(RealtimeProviderCallQuotaPort.class);
-		}
-	}
 
 	@TestConfiguration(proxyBeanMethods = false)
 	static class DuplicateArchiveExecutorConfiguration {

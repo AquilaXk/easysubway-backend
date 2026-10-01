@@ -55,6 +55,11 @@
     {
       "operation": "searchJourneys",
       "httpStatus": 503,
+      "code": "FACILITY_STATUS_UNAVAILABLE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
       "code": "ROUTE_SERVICE_UNAVAILABLE"
     },
     {
@@ -151,6 +156,11 @@
       "operation": "profileJourneys",
       "httpStatus": 503,
       "code": "ROUTING_IDENTITY_MISMATCH"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "code": "FACILITY_STATUS_UNAVAILABLE"
     },
     {
       "operation": "profileJourneys",

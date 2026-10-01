@@ -94,10 +94,5 @@ easysubway:
     seed:
       enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}
       includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}
-  route-v2:
-    origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}
-    session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}
-    play-integrity:
-      certificate-sha256: ${EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256:}
   play-integrity:
     credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}

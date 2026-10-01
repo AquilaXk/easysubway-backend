@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.realtime.adapter.out.persistence.ContractFixtureRealtimeMappings;
 import com.easysubway.realtime.application.RealtimeProvider;
 import com.easysubway.realtime.application.RealtimeQuery;
+import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -51,7 +53,7 @@ class RealtimeApiGoldenFixtureTest {
 		String body = mockMvc.perform(get("/api/v1/realtime/arrivals")
 				.param("stationId", "station-sangnoksu")
 				.param("lineId", "seoul-4")
-				.param("providerLineId", "1004")
+				.param("providerLineId", ContractFixtureRealtimeMappings.PROVIDER_LINE_ID)
 				.param("stationQueryName", "상록수"))
 			.andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsString();
@@ -64,7 +66,7 @@ class RealtimeApiGoldenFixtureTest {
 	void trainPositionsMatchGoldenFixture() throws Exception {
 		String body = mockMvc.perform(get("/api/v1/realtime/train-positions")
 				.param("lineId", "seoul-4")
-				.param("providerLineId", "1004")
+				.param("providerLineId", ContractFixtureRealtimeMappings.PROVIDER_LINE_ID)
 				.param("lineName", "4호선"))
 			.andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsString();
@@ -111,13 +113,22 @@ class RealtimeApiGoldenFixtureTest {
 
 	@TestConfiguration(proxyBeanMethods = false)
 	static class TestRealtimeProviderConfiguration {
+		/**
+		 * 계약 fixture의 도착 lineId("4")와 같은 provider_line_id로 등록된 상록수 4호선 매핑.
+		 */
+		@Bean
+		@Primary
+		RealtimeMappingPort contractFixtureRealtimeMappingPort() {
+			return ContractFixtureRealtimeMappings.sangnoksuLine4();
+		}
+
 		@Bean
 		@Primary
 		RealtimeProvider testRealtimeProvider() {
 			return new RealtimeProvider() {
 				@Override
 				public List<RealtimeArrival> arrivals(RealtimeQuery query) {
-					return List.of(new RealtimeArrival("4", "상록수", "당고개", "상행", "4123", 180,
+					return List.of(new RealtimeArrival(ContractFixtureRealtimeMappings.PROVIDER_LINE_ID, "상록수", "당고개", "상행", "4123", 180,
 						"3분 후", "전역 출발", Instant.now().toString()));
 				}
 
