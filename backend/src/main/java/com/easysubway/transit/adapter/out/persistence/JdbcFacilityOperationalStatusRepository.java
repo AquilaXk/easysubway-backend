@@ -17,11 +17,12 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
@@ -47,11 +48,11 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactions;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcFacilityOperationalStatusRepository(DataSource dataSource, PlatformTransactionManager transactionManager) {
-		this.jdbcTemplate = new JdbcTemplate(dataSource);
-		this.transactions = new TransactionTemplate(transactionManager);
+		this(new JdbcTemplate(dataSource), new TransactionTemplate(transactionManager));
 	}
 
 	JdbcFacilityOperationalStatusRepository(DataSource dataSource) {
@@ -61,6 +62,7 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 	JdbcFacilityOperationalStatusRepository(JdbcTemplate jdbcTemplate, TransactionTemplate transactions) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.transactions = transactions;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
@@ -188,19 +190,34 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 					Optional.of(previous.source())
 				);
 			}
-			try {
-				jdbcTemplate.update(
-					"""
-						INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
-						VALUES (?, ?, ?, NULL, ?, ?)
-						""",
-					facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
-				);
-				return new AdminVerifiedResult(true, Optional.empty(), Optional.empty());
-			} catch (DuplicateKeyException exception) {
-				return new AdminVerifiedResult(false, Optional.empty(), Optional.empty());
-			}
+			int inserted = insertAdminVerifiedIfAbsent(facilityId, state, at);
+			return new AdminVerifiedResult(inserted == 1, Optional.empty(), Optional.empty());
 		});
+	}
+
+	/**
+	 * 행이 없을 때만 넣고 넣은 행 수를 돌려준다. 다른 트랜잭션이 같은 시설을 먼저 넣었으면 0이다. 중복 키 예외를 잡지 않는다:
+	 * PostgreSQL은 문장이 실패하면 바깥 트랜잭션 전체를 중단(25P02)시켜, 뒤이은 감사 기록까지 실패한다(#442).
+	 */
+	private int insertAdminVerifiedIfAbsent(String facilityId, FacilityOperationalState state, OffsetDateTime at) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			return jdbcTemplate.update(
+				"""
+					INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
+					SELECT ?, ?, ?, NULL, ?, ?
+					WHERE NOT EXISTS (SELECT 1 FROM facility_operational_status WHERE facility_id = ?)
+					""",
+				facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at, facilityId
+			);
+		}
+		return jdbcTemplate.update(
+			"""
+				INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
+				VALUES (?, ?, ?, NULL, ?, ?)
+				ON CONFLICT (facility_id) DO NOTHING
+				""",
+			facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
+		);
 	}
 
 	private record PreviousStatus(FacilityOperationalState state, FacilityStatusSource source) {
@@ -240,5 +257,17 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	private static OffsetDateTime timestamp(Instant instant) {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+	}
+
+	private static DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		return Objects.requireNonNull(jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		}), "databaseDialect");
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }
