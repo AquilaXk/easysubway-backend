@@ -57,16 +57,13 @@ final class JourneyProfileExactOracle {
 			}
 		}
 		List<Candidate> candidates = new ArrayList<>();
+		// #454: 여정은 출발역 승강장에서 바로 탄다(진입 이동 없음).
 		for (Ride first : rides) {
 			work.consume();
-			if (!first.pickupAllowed()) continue;
-			for (Access entry : accesses) {
-				work.consume();
-				if (!matchesEntry(query, entry, first)) continue;
-				Instant readyAt = lastDeparture(first, entry, query.boardingSlackSeconds());
-				if (readyAt.isBefore(query.earliestReadyAt())) continue;
-				enumerate(query, rides, accesses, List.of(first), List.of(entry), candidates, work, readyAtMode, latestReadyAt);
-			}
+			if (!first.pickupAllowed() || !first.fromStationId().equals(query.originStationId())) continue;
+			Instant readyAt = lastDeparture(first, query.boardingSlackSeconds());
+			if (readyAt.isBefore(query.earliestReadyAt())) continue;
+			enumerate(query, rides, accesses, List.of(first), List.of(), candidates, work, readyAtMode, latestReadyAt);
 		}
 		return pareto(candidates, work);
 	}
@@ -83,14 +80,14 @@ final class JourneyProfileExactOracle {
 		Instant latestReadyAt
 	) {
 		Ride last = chain.getLast();
-		for (Access exit : accesses) {
+		// #454: 도착역 승강장에 내리면 도착이다(하차 이동 없음).
+		if (last.toStationId().equals(query.destinationStationId()) && last.dropOffAllowed()) {
 			work.consume();
-			if (!matchesExit(query, last, exit)) continue;
-			Instant readyAt = lastDeparture(chain.getFirst(), chainAccesses.getFirst(), query.boardingSlackSeconds());
-			Instant arrivalAt = last.arrivalAt().plusSeconds(exit.durationSeconds());
+			Instant readyAt = lastDeparture(chain.getFirst(), query.boardingSlackSeconds());
+			Instant arrivalAt = last.arrivalAt();
 			if (!readyAt.isBefore(query.earliestReadyAt()) && !arrivalAt.isAfter(query.arrivalDeadline())) {
 				work.consume();
-				candidates.add(candidate(chain, chainAccesses, exit,
+				candidates.add(candidate(chain, chainAccesses,
 					projectReadyAt(query, readyAt, readyAtMode, latestReadyAt), arrivalAt, query.boardingSlackSeconds()));
 			}
 		}
@@ -153,44 +150,41 @@ final class JourneyProfileExactOracle {
 				|| ConnectionSlack.compare(left.minimumConnectionSlack(), right.minimumConnectionSlack()) != 0);
 	}
 
+	/** {@code transfers.get(i)}는 {@code rides.get(i)}와 {@code rides.get(i + 1)} 사이의 환승이다. */
 	private static Candidate candidate(
-		List<Ride> rides, List<Access> accesses, Access exit, Instant readyAt, Instant arrivalAt, int boardingSlackSeconds
+		List<Ride> rides, List<Access> transfers, Instant readyAt, Instant arrivalAt, int boardingSlackSeconds
 	) {
-		long walkingSeconds = exit.durationSeconds();
-		long walkingDistance = exit.walkingDistanceMeters();
-		long burden = exit.accessibilityBurden();
+		long walkingSeconds = 0;
+		long walkingDistance = 0;
+		long burden = 0;
 		ConnectionSlack slack = new ConnectionSlack.NoTransfer();
-		for (int index = 0; index < accesses.size(); index += 1) {
-			Access access = accesses.get(index);
+		for (int index = 0; index < transfers.size(); index += 1) {
+			Access access = transfers.get(index);
 			walkingSeconds += access.durationSeconds();
 			walkingDistance += access.walkingDistanceMeters();
 			burden += access.accessibilityBurden();
-			if (index > 0) {
-				Ride previous = rides.get(index - 1);
-				Ride next = rides.get(index);
-				long seconds = next.departureAt().getEpochSecond() - previous.arrivalAt().getEpochSecond()
-					- access.durationSeconds() - boardingSlackSeconds;
-				ConnectionSlack current = new ConnectionSlack.MinimumTransferSeconds(seconds);
-				slack = slack instanceof ConnectionSlack.NoTransfer ? current
-					: new ConnectionSlack.MinimumTransferSeconds(Math.min(
-						((ConnectionSlack.MinimumTransferSeconds) slack).seconds(), seconds));
-			}
+			Ride previous = rides.get(index);
+			Ride next = rides.get(index + 1);
+			long seconds = next.departureAt().getEpochSecond() - previous.arrivalAt().getEpochSecond()
+				- access.durationSeconds() - boardingSlackSeconds;
+			ConnectionSlack current = new ConnectionSlack.MinimumTransferSeconds(seconds);
+			slack = slack instanceof ConnectionSlack.NoTransfer ? current
+				: new ConnectionSlack.MinimumTransferSeconds(Math.min(
+					((ConnectionSlack.MinimumTransferSeconds) slack).seconds(), seconds));
 		}
-		// 같은 열차를 타더라도 다른 접근 동선은 별도 후보다. 길이 접두사로 ID 구분자 충돌을 막는다.
+		// 같은 열차를 타더라도 다른 환승 동선은 별도 후보다. 길이 접두사로 ID 구분자 충돌을 막는다.
 		StringBuilder identity = new StringBuilder();
 		for (int index = 0; index < rides.size(); index++) {
-			identity.append(encode("access", accesses.get(index).id(), "ride", rides.get(index).identity()));
+			if (index > 0) identity.append(encode("transfer", transfers.get(index - 1).id()));
+			identity.append(encode("ride", rides.get(index).identity()));
 		}
-		identity.append(encode("exit", exit.id()));
 		String pathIdentity = identity.toString();
-		List<Access> completeAccesses = new ArrayList<>(accesses);
-		completeAccesses.add(exit);
 		return new Candidate(readyAt, arrivalAt, rides.size() - 1, walkingSeconds, walkingDistance, burden,
-			slack, pathIdentity, rides, completeAccesses);
+			slack, pathIdentity, rides, transfers);
 	}
 
-	private static Instant lastDeparture(Ride first, Access entry, int boardingSlackSeconds) {
-		return first.departureAt().minusSeconds(entry.durationSeconds()).minusSeconds(boardingSlackSeconds);
+	private static Instant lastDeparture(Ride first, int boardingSlackSeconds) {
+		return first.departureAt().minusSeconds(boardingSlackSeconds);
 	}
 
 	private static Instant projectReadyAt(Query query, Instant readyAt, ReadyAt mode, Instant latestReadyAt) {
@@ -202,20 +196,6 @@ final class JourneyProfileExactOracle {
 	}
 
 	private enum ReadyAt { PROFILE, FIXED, WINDOW }
-
-	private static boolean matchesEntry(Query query, Access access, Ride ride) {
-		return access.kind() == AccessKind.ENTRY && access.usable()
-			&& ride.fromStationId().equals(query.originStationId())
-			&& access.fromStationId().equals(query.originStationId()) && access.toStationId().equals(query.originStationId())
-			&& access.toLineId().equals(ride.fromLineId());
-	}
-
-	private static boolean matchesExit(Query query, Ride ride, Access access) {
-		return access.kind() == AccessKind.EXIT && access.usable()
-			&& ride.toStationId().equals(query.destinationStationId())
-			&& access.fromStationId().equals(query.destinationStationId()) && access.toStationId().equals(query.destinationStationId())
-			&& access.fromLineId().equals(ride.toLineId()) && ride.dropOffAllowed();
-	}
 
 	private static boolean matchesTransfer(Ride previous, Ride next, Access access) {
 		return access.kind() == AccessKind.TRANSFER && access.usable() && previous.dropOffAllowed()
@@ -261,7 +241,8 @@ final class JourneyProfileExactOracle {
 		}
 	}
 
-	enum AccessKind { ENTRY, TRANSFER, EXIT }
+	/** #454: 승강장 기준 여정의 이동은 승차 사이 환승뿐이다. */
+	enum AccessKind { TRANSFER }
 
 	record Access(
 		String id, AccessKind kind, String fromStationId, String fromLineId, String toStationId, String toLineId,
@@ -272,8 +253,8 @@ final class JourneyProfileExactOracle {
 			kind = Objects.requireNonNull(kind, "kind");
 			fromStationId = text(fromStationId, "fromStationId");
 			toStationId = text(toStationId, "toStationId");
-			fromLineId = line(fromLineId, "fromLineId", kind == AccessKind.ENTRY);
-			toLineId = line(toLineId, "toLineId", kind == AccessKind.EXIT);
+			fromLineId = text(fromLineId, "fromLineId");
+			toLineId = text(toLineId, "toLineId");
 			if (durationSeconds < 0 || walkingDistanceMeters < 0 || accessibilityBurden < 0) {
 				throw new IllegalArgumentException("access facts must not be negative");
 			}
@@ -291,7 +272,7 @@ final class JourneyProfileExactOracle {
 			readyAt = Objects.requireNonNull(readyAt, "readyAt"); arrivalAtDestination = Objects.requireNonNull(arrivalAtDestination, "arrivalAtDestination");
 			minimumConnectionSlack = Objects.requireNonNull(minimumConnectionSlack, "minimumConnectionSlack");
 			pathIdentity = text(pathIdentity, "pathIdentity");
-			// 집계 값이 같아도 다른 승차·접근 동선일 수 있으므로 원본 trace를 보존한다.
+			// 집계 값이 같아도 다른 승차·환승 동선일 수 있으므로 원본 trace를 보존한다.
 			rides = List.copyOf(rides);
 			accesses = List.copyOf(accesses);
 		}
@@ -334,14 +315,6 @@ final class JourneyProfileExactOracle {
 	private static String text(String value, String name) {
 		if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must be nonblank");
 		return value;
-	}
-
-	private static String line(String value, String name, boolean permitsNull) {
-		if (value == null) {
-			if (permitsNull) return null;
-			throw new IllegalArgumentException(name + " is required");
-		}
-		return text(value, name);
 	}
 
 	private static String encode(String... parts) {

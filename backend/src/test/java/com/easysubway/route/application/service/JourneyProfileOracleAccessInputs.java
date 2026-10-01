@@ -11,7 +11,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Test-only raw route access normalizer. Missing evidence is not an oracle alternative. */
+/**
+ * Test-only raw route access normalizer. Missing evidence is not an oracle alternative.
+ *
+ * <p>#454: 여정은 승강장에서 시작해 승강장에서 끝나므로 ENTRY/EXIT evidence는 무시하고 환승만 정규화한다.</p>
+ */
 final class JourneyProfileOracleAccessInputs {
 	private JourneyProfileOracleAccessInputs() { }
 
@@ -34,10 +38,7 @@ final class JourneyProfileOracleAccessInputs {
 			String tuple = encode(text(item.edgeType(), "evidence type"), text(item.stationId(), "evidence station"),
 				text(item.lineId(), "evidence line"), text(item.edgeId(), "evidence edge"));
 			if (!evidenceTuples.add(tuple)) throw unavailable("ambiguous evidence tuple");
-			if ("ENTRY".equals(item.edgeType()) || "EXIT".equals(item.edgeType())) requireCapacity(result, maximumAccesses);
-			if ("ENTRY".equals(item.edgeType())) result.add(entryOrExit(item, edge(edges, item.edgeId()), nodes, profile, constraint, true));
-			else if ("EXIT".equals(item.edgeType())) result.add(entryOrExit(item, edge(edges, item.edgeId()), nodes, profile, constraint, false));
-			else if (!"TRANSFER".equals(item.edgeType())) throw unavailable("unsupported evidence type");
+			if (!Set.of("ENTRY", "EXIT", "TRANSFER").contains(item.edgeType())) throw unavailable("unsupported evidence type");
 		}
 		for (LoadRouteTimetablePort.TransferRule rule : rules.values()) {
 			if (!"IN_STATION".equals(rule.transferType())) throw unavailable("unsupported transfer rule");
@@ -62,23 +63,6 @@ final class JourneyProfileOracleAccessInputs {
 
 	private static void requireCapacity(List<?> values, int maximum) {
 		if (values.size() >= maximum) throw unavailable("maximum accesses exceeded");
-	}
-
-	private static JourneyProfileExactOracle.Access entryOrExit(
-		LoadRouteTimetablePort.RouteEdgeEvidence evidence, LoadRouteTimetablePort.PathwayEdge edge,
-		Map<String, LoadRouteTimetablePort.PathwayNode> nodes, MobilityProfile profile, ConstraintMode constraint, boolean entry
-	) {
-		Direction direction = entry ? directionTo(edge, nodes, evidence.stationId(), evidence.lineId())
-			: directionFrom(edge, nodes, evidence.stationId(), evidence.lineId());
-		int seconds = entryExitSeconds(edge.durationSeconds(), profile);
-		boolean strict = strictEligible(edge, evidence, constraint) && !edge.includesStairs();
-		boolean allowed = allowed(edge, constraint, strict);
-		var from = node(nodes, direction == Direction.FORWARD ? edge.fromNodeId() : edge.toNodeId());
-		var to = node(nodes, direction == Direction.FORWARD ? edge.toNodeId() : edge.fromNodeId());
-		return access(entry ? JourneyProfileExactOracle.AccessKind.ENTRY : JourneyProfileExactOracle.AccessKind.EXIT,
-			evidence.id(), "", edge, direction, from.stationId(), from.lineId(),
-			to.stationId(), to.lineId(), seconds, edge.distanceMeters(), edge.includesStairs() ? 1 : 0,
-			verified(edge, evidence), allowed);
 	}
 
 	private static void addTransfer(
@@ -112,16 +96,17 @@ final class JourneyProfileOracleAccessInputs {
 	private static boolean verified(LoadRouteTimetablePort.PathwayEdge edge, LoadRouteTimetablePort.RouteEdgeEvidence evidence) {
 		return "VERIFIED".equals(text(edge.verificationStatus(), "edge verification")) && "VERIFIED".equals(text(evidence.verificationStatus(), "evidence verification"));
 	}
-	private static int entryExitSeconds(int baseline, MobilityProfile profile) {
-		if (baseline < 0) throw unavailable("negative baseline");
-		int percent = switch (profile) { case STANDARD, STEP_FREE -> 100; case SLOW -> 135; case NO_STAIRS -> 120; };
-		long scaled = ceil(Math.multiplyExact((long) baseline, percent), 100);
-		if (profile == MobilityProfile.STEP_FREE) scaled = Math.addExact(scaled, 60L);
-		return Math.toIntExact(scaled);
-	}
+	/** 거리가 있으면 거리 ÷ 걸음 속도, 거리 없이 실측 시간만 있으면 실측 시간을 하한으로 1.2 m/s 배율을 적용한다(#454). */
 	private static int transferSeconds(LoadRouteTimetablePort.PathwayEdge edge, int speed, MobilityProfile profile) {
-		if (edge.distanceMeters() <= 0) throw unavailable("transfer distance is required");
-		long seconds = ceil(Math.multiplyExact((long) edge.distanceMeters(), 3600L), speed);
+		long seconds;
+		if (edge.distanceMeters() > 0) {
+			seconds = ceil(Math.multiplyExact((long) edge.distanceMeters(), 3600L), speed);
+		} else if (edge.durationSeconds() > 0) {
+			seconds = speed >= 4_320 ? edge.durationSeconds()
+				: ceil(Math.multiplyExact((long) edge.durationSeconds(), 4_320L), speed);
+		} else {
+			throw unavailable("transfer distance or measured duration is required");
+		}
 		if (profile == MobilityProfile.STEP_FREE) seconds = Math.addExact(seconds, 60L);
 		return Math.toIntExact(seconds);
 	}
@@ -133,16 +118,6 @@ final class JourneyProfileOracleAccessInputs {
 		return new JourneyProfileExactOracle.Access(encode(kind.name(), evidenceId, ruleId, edge.id(), direction.name()), kind,
 			fromStation, fromLine, toStation, toLine, seconds, distance, stairs, verified, allowed);
 	}
-	private static Direction directionTo(LoadRouteTimetablePort.PathwayEdge edge, Map<String, LoadRouteTimetablePort.PathwayNode> nodes, String station, String line) {
-		if (matches(node(nodes, edge.toNodeId()), station, line) && outer(node(nodes, edge.fromNodeId()), station, line)) return Direction.FORWARD;
-		if (edge.bidirectional() && matches(node(nodes, edge.fromNodeId()), station, line) && outer(node(nodes, edge.toNodeId()), station, line)) return Direction.REVERSE;
-		throw unavailable("entry direction");
-	}
-	private static Direction directionFrom(LoadRouteTimetablePort.PathwayEdge edge, Map<String, LoadRouteTimetablePort.PathwayNode> nodes, String station, String line) {
-		if (matches(node(nodes, edge.fromNodeId()), station, line) && outer(node(nodes, edge.toNodeId()), station, line)) return Direction.FORWARD;
-		if (edge.bidirectional() && matches(node(nodes, edge.toNodeId()), station, line) && outer(node(nodes, edge.fromNodeId()), station, line)) return Direction.REVERSE;
-		throw unavailable("exit direction");
-	}
 	private static Direction directionBetween(LoadRouteTimetablePort.PathwayEdge edge, Map<String, LoadRouteTimetablePort.PathwayNode> nodes,
 		String fromStation, String fromLine, String toStation, String toLine) {
 		if (matches(node(nodes, edge.fromNodeId()), fromStation, fromLine) && matches(node(nodes, edge.toNodeId()), toStation, toLine)) return Direction.FORWARD;
@@ -150,9 +125,6 @@ final class JourneyProfileOracleAccessInputs {
 		throw unavailable("transfer direction");
 	}
 	private static boolean matches(LoadRouteTimetablePort.PathwayNode node, String station, String line) { return station.equals(node.stationId()) && Objects.equals(line, node.lineId()); }
-	private static boolean outer(LoadRouteTimetablePort.PathwayNode node, String station, String line) {
-		return station.equals(node.stationId()) && (node.lineId() == null || line.equals(node.lineId()));
-	}
 	private static LoadRouteTimetablePort.PathwayNode node(Map<String, LoadRouteTimetablePort.PathwayNode> nodes, String id) { return require(nodes.get(id), "pathway node"); }
 	private static LoadRouteTimetablePort.PathwayEdge edge(Map<String, LoadRouteTimetablePort.PathwayEdge> edges, String id) { return require(edges.get(id), "pathway edge"); }
 	private static <T> T require(T value, String label) { if (value == null) throw unavailable("missing " + label); return value; }

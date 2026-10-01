@@ -158,9 +158,9 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 	@Test
 	@DisplayName("OD3 EXPRESS 를 놓친 조회는 다음 LOCAL 열차(더 긴 승차)에 정직하게 앵커된다")
 	void od3_missedExpressAnchorsToNextLocalTrain() {
-		// SENIOR 진입 도보(240×1.35=324s)+slack 90s = 414s. 06:55 출발이면 ready 06:55+414s=07:01:54 라
+		// #454: 출발역 승강장에서 바로 타므로 승차 여유(SENIOR 90s)만 더한다. 06:59 출발이면 07:00:30 이후 탑승이라
 		// EXPRESS K4422(07:00) 는 놓치고 LOCAL K4308(07:03 출발→사당 07:44 도착)에 탑승한다.
-		JourneyItinerary best = firstResult(SANGNOKSU, SADANG, weekday(6, 55));
+		JourneyItinerary best = firstResult(SANGNOKSU, SADANG, weekday(6, 59));
 
 		var ride = best.legs().stream()
 			.filter(JourneyRideProjection.class::isInstance)

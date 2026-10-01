@@ -2,7 +2,6 @@ package com.easysubway.route.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,15 +13,12 @@ import org.junit.jupiter.api.Test;
 
 class JourneyProfileOracleAccessInputsTest {
 	@Test
-	void retainsEveryPhysicalEntryAlternative() {
+	void ignoresEntryAndExitEvidenceBecauseJourneysStartAndEndAtPlatforms() {
 		var data = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(node("outside", "station-a", null), node("platform", "station-a", "line-a")),
-			List.of(edge("entry-a", "outside", "platform", 100, 30, false), edge("entry-b", "outside", "platform", 120, 40, false)),
-			List.of(), List.of(evidence("e-a", "station-a", "line-a", "entry-a", "ENTRY"), evidence("e-b", "station-a", "line-a", "entry-b", "ENTRY")));
-		var accesses = normalize(data, MobilityProfile.STANDARD, ConstraintMode.NONE);
-		assertEquals(2, accesses.size());
-		assertTrue(accesses.stream().anyMatch(access -> access.id().contains("entry-a")));
-		assertTrue(accesses.stream().anyMatch(access -> access.id().contains("entry-b")));
+			List.of(edge("entry-a", "outside", "platform", 100, 30, false), edge("exit-a", "platform", "outside", 120, 40, false)),
+			List.of(), List.of(evidence("e-a", "station-a", "line-a", "entry-a", "ENTRY"), evidence("x-a", "station-a", "line-a", "exit-a", "EXIT")));
+		assertTrue(normalize(data, MobilityProfile.STANDARD, ConstraintMode.NONE).isEmpty());
 	}
 
 	@Test
@@ -53,19 +49,27 @@ class JourneyProfileOracleAccessInputsTest {
 	}
 
 	@Test
-	void usesAdoptedDurationArithmeticAndKeepsOffNetworkEndpointsNull() {
-		var data = new LoadRouteTimetablePort.RouteAccessData(
-			List.of(node("outside", "station-a", null), node("platform-a", "station-a", "line-a"), node("platform-b", "station-b", "line-b"), node("exit", "station-b", null)),
-			List.of(edge("entry", "outside", "platform-a", 100, 10, false), edge("exit", "platform-b", "exit", 100, 10, false)), List.of(),
-			List.of(evidence("entry-e", "station-a", "line-a", "entry", "ENTRY"), evidence("exit-e", "station-b", "line-b", "exit", "EXIT")));
-		var accesses = normalize(data, MobilityProfile.SLOW, ConstraintMode.NONE);
-		var entry = accesses.stream().filter(access -> access.kind() == JourneyProfileExactOracle.AccessKind.ENTRY).findFirst().orElseThrow();
-		var exit = accesses.stream().filter(access -> access.kind() == JourneyProfileExactOracle.AccessKind.EXIT).findFirst().orElseThrow();
-		assertEquals(135, entry.durationSeconds()); assertEquals(135, exit.durationSeconds());
-		assertNull(entry.fromLineId()); assertNull(exit.toLineId());
+	void usesAdoptedTransferDurationArithmetic() {
 		var transfer = normalize(transferData(), MobilityProfile.STEP_FREE, ConstraintMode.REQUIRE_STEP_FREE).stream()
 			.filter(access -> access.id().contains("strict")).findFirst().orElseThrow();
 		assertEquals(160, transfer.durationSeconds());
+	}
+
+	@Test
+	void appliesTheMeasuredTimeFloorToTimeOnlyTransfers() {
+		// #454·data#876: 거리 없이 실측 시간 300초. 3,600 m/h는 1.2 m/s보다 느려 300×4,320/3,600=360초.
+		var timeOnly = new LoadRouteTimetablePort.RouteAccessData(List.of(node("a", "station", "la"), node("b", "station", "lb")),
+			List.of(edge("measured", "a", "b", 300, 0, false)),
+			List.of(new LoadRouteTimetablePort.TransferRule("rule", "station", "la", "station", "lb", "IN_STATION", 300, "measured", null, "VERIFIED")),
+			List.of(evidence("measured-e", "station", "lb", "measured", "TRANSFER")));
+		assertEquals(360, normalize(timeOnly, MobilityProfile.STANDARD, ConstraintMode.NONE).getFirst().durationSeconds());
+		assertEquals(420, normalize(timeOnly, MobilityProfile.STEP_FREE, ConstraintMode.NONE).getFirst().durationSeconds());
+		assertEquals(300, JourneyProfileOracleAccessInputs.normalize(timeOnly, MobilityProfile.STANDARD, ConstraintMode.NONE, 4_500, 20)
+			.getFirst().durationSeconds());
+		var unmeasured = new LoadRouteTimetablePort.RouteAccessData(timeOnly.pathwayNodes(),
+			List.of(edge("measured", "a", "b", 0, 0, false)), timeOnly.transferRules(), timeOnly.routeEdgeEvidence());
+		assertThrows(JourneyProfileOracleAccessInputs.InputUnavailable.class,
+			() -> normalize(unmeasured, MobilityProfile.STANDARD, ConstraintMode.NONE));
 	}
 
 	private static List<JourneyProfileExactOracle.Access> normalize(LoadRouteTimetablePort.RouteAccessData data, MobilityProfile profile, ConstraintMode mode) {
@@ -79,12 +83,12 @@ class JourneyProfileOracleAccessInputsTest {
 	}
 
 	@Test
-	void keepsSameLineOuterEndpointsAndRejectsDuplicateEvidenceOrCapacity() {
+	void rejectsDuplicateEvidenceOrCapacity() {
 		var item = evidence("entry-e", "s", "l", "entry", "ENTRY");
 		var data = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(node("outside", "s", "l"), node("platform", "s", "l")),
 			List.of(edge("entry", "outside", "platform", 1, 1, false)), List.of(), List.of(item));
-		assertEquals("l", normalize(data, MobilityProfile.STANDARD, ConstraintMode.NONE).getFirst().fromLineId());
+		assertTrue(normalize(data, MobilityProfile.STANDARD, ConstraintMode.NONE).isEmpty());
 		var duplicate = new LoadRouteTimetablePort.RouteAccessData(data.pathwayNodes(), data.pathwayEdges(), List.of(),
 			List.of(item, evidence("another-id", "s", "l", "entry", "ENTRY")));
 		assertThrows(JourneyProfileOracleAccessInputs.InputUnavailable.class,

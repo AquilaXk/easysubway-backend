@@ -1,33 +1,23 @@
 POINT readyAt=10800
   ITINERARY
-    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=300 dist=50 stairs=false
     LEG RIDE trip=daily-trip line=line from=station-a to=station-b dep=2026-07-02T18:20:00Z arr=2026-07-02T18:25:00Z
-    LEG ACCESS kind=EXIT from=station-b to=station-b dur=120 dist=50 stairs=false
-    METRICS transfers=0 moveSec=420 dist=100 burden=0 slack=NoTransfer
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
 POINT readyAt=97199
   ITINERARY
-    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=300 dist=50 stairs=false
     LEG RIDE trip=daily-trip line=line from=station-a to=station-b dep=2026-07-02T18:20:00Z arr=2026-07-02T18:25:00Z
-    LEG ACCESS kind=EXIT from=station-b to=station-b dur=120 dist=50 stairs=false
-    METRICS transfers=0 moveSec=420 dist=100 burden=0 slack=NoTransfer
-POINT readyAt=11640
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+POINT readyAt=11940
   ITINERARY
-    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=300 dist=50 stairs=false
     LEG RIDE trip=daily-trip line=line from=station-a to=station-b dep=2026-07-01T18:20:00Z arr=2026-07-01T18:25:00Z
-    LEG ACCESS kind=EXIT from=station-b to=station-b dur=120 dist=50 stairs=false
-    METRICS transfers=0 moveSec=420 dist=100 burden=0 slack=NoTransfer
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
 POINT readyAt=97199
   ITINERARY
-    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=300 dist=50 stairs=false
     LEG RIDE trip=daily-trip line=line from=station-a to=station-b dep=2026-07-01T18:20:00Z arr=2026-07-01T18:25:00Z
-    LEG ACCESS kind=EXIT from=station-b to=station-b dur=120 dist=50 stairs=false
-    METRICS transfers=0 moveSec=420 dist=100 burden=0 slack=NoTransfer
-POINT readyAt=11640
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+POINT readyAt=11940
   ITINERARY
-    LEG ACCESS kind=ENTRY from=station-a to=station-a dur=300 dist=50 stairs=false
     LEG RIDE trip=daily-trip line=line from=station-a to=station-b dep=2026-06-30T18:20:00Z arr=2026-06-30T18:25:00Z
-    LEG ACCESS kind=EXIT from=station-b to=station-b dur=120 dist=50 stairs=false
-    METRICS transfers=0 moveSec=420 dist=100 burden=0 slack=NoTransfer
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
 OBSERVATIONS
   FAIL_CLOSED_FRONTIER_CAPACITY_V1=0
   FORWARD_DESTINATION_DOMINANCE_V1=2

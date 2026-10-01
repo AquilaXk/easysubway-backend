@@ -103,7 +103,7 @@ class JourneyProfileRaptorAdapterTest {
 				request.walkingPace().speedMetersPerHour(), 10));
 		assertThat(expected).hasSize(1);
 		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(30_000));
-		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_720));
+		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_600));
 		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected,
 			measurement.result().itineraries().stream().map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList())).isTrue();
 		assertThat(JourneyProfileOracleComparison.requiredObjectiveLoss(expected,
@@ -293,7 +293,7 @@ class JourneyProfileRaptorAdapterTest {
 				request.walkingPace().speedMetersPerHour(), 10));
 		assertThat(expected).hasSize(2);
 		assertThat(expected).extracting(JourneyProfileExactOracle.Candidate::arrivalAtDestination)
-			.containsExactlyInAnyOrder(instantAt(36_720), instantAt(37_020));
+			.containsExactlyInAnyOrder(instantAt(36_600), instantAt(36_900));
 		var result = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
 			request, snapshot(source), null, policy().profilePlanningLimits());
 		var plan = (JourneyProfileRaptorPort.ArriveByPlan) result.temporalPlan();
@@ -312,7 +312,7 @@ class JourneyProfileRaptorAdapterTest {
 				request.walkingPace().speedMetersPerHour(), 10));
 		assertThat(expected).hasSize(1);
 		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(31_000));
-		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_720));
+		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_600));
 		var result = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
 			request, snapshot(), null, policy().profilePlanningLimits());
 		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) result.temporalPlan();
@@ -345,17 +345,11 @@ class JourneyProfileRaptorAdapterTest {
 			assertThat(plan.points()).singleElement().satisfies(point -> {
 				assertThat(point.serviceDate()).isEqualTo(SERVICE_DATE);
 				assertThat(point.itineraries()).singleElement().satisfies(itinerary -> {
+					// #454: 번들의 ENTRY/EXIT 간선은 무시되고 승강장 기준 직행 승차만 남는다.
 					assertThat(itinerary.metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
-						0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
-					assertThat(itinerary.legs()).anySatisfy(leg -> assertThat(leg)
-						.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
-							ride -> assertThat(ride.tripId()).isEqualTo("direct")));
-					assertThat(itinerary.legs()).anySatisfy(leg -> assertThat(leg)
-						.isInstanceOfSatisfying(JourneyProfileRaptorPort.AccessLeg.class, access -> {
-							assertThat(access.verified()).isTrue();
-							assertThat(access.distanceMeters()).isEqualTo(50);
-							assertThat(access.verificationStatus()).isEqualTo("VERIFIED");
-						}));
+						0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()));
+					assertThat(itinerary.legs()).singleElement().isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
+						ride -> assertThat(ride.tripId()).isEqualTo("direct"));
 				});
 			});
 		});
@@ -377,7 +371,7 @@ class JourneyProfileRaptorAdapterTest {
 				found -> {
 					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
 						assertThat(itinerary.metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
-							0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+							0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()));
 						assertThat(itinerary.legs()).anySatisfy(leg -> assertThat(leg)
 							.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
 								ride -> assertThat(ride.tripId()).isEqualTo("direct")));
@@ -399,8 +393,9 @@ class JourneyProfileRaptorAdapterTest {
 			assertThat(planned.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
 				assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class, found ->
 					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
-						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:54:00Z"));
-						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:12:00Z"));
+						// 27:00 출발 - 승차 여유 60초, 27:10 승강장 도착(#454: 진입·하차 시간 없음).
+						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:59:00Z"));
+						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:10:00Z"));
 					}))));
 		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
 			request.originStationId(), request.destinationStationId(), instantAt(96_000), instantAt(98_043),
@@ -456,7 +451,7 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void preservesTheRealForwardCapacityObservationWithoutReturningAPartialSuccess() {
 		var result = adapter.plan(
-			profileQuery(new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001)), 3),
+			threePathQuery(new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001))),
 			snapshot(threePathTimetable()), null,
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32));
 
@@ -479,7 +474,7 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void preservesThreeIndependentDirectFactsAndEveryRequiredDepartureRepresentative() {
 		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001));
-		var result = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
+		var result = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
 		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
 			.temporalPlan();
@@ -489,7 +484,7 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(actualFacts).containsExactlyInAnyOrderElementsOf(threePathFacts());
 		assertReadinessAlignment(threePathFacts());
 
-		var projected = JourneyProfileCandidateProjectionV1.projectDepartureWindow(profileQuery(temporal, 3), plan, 3);
+		var projected = JourneyProfileCandidateProjectionV1.projectDepartureWindow(threePathQuery(temporal), plan, 3);
 		assertThat(projected).isInstanceOf(JourneyProfileCandidateProjectionV1.Projected.class);
 		var projection = ((JourneyProfileCandidateProjectionV1.Projected) projected).projection();
 		Map<String, String> candidateIdsByPath = candidateIdsByPath(projection.candidates());
@@ -515,7 +510,7 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(projection.summary().latestDepartureJourneyId())
 			.isEqualTo(candidateIdsByPath.get(oracle.representatives().get(ObjectiveTag.LATEST_DEPARTURE)));
 
-		var exceeded = JourneyProfileCandidateProjectionV1.projectDepartureWindow(profileQuery(temporal, 3), plan, 2);
+		var exceeded = JourneyProfileCandidateProjectionV1.projectDepartureWindow(threePathQuery(temporal), plan, 2);
 		assertThat(exceeded).isInstanceOf(JourneyProfileCandidateProjectionV1.CapacityExceeded.class);
 		assertThat(((JourneyProfileCandidateProjectionV1.CapacityExceeded) exceeded).observed()).isEqualTo(3);
 		assertThat(((JourneyProfileCandidateProjectionV1.CapacityExceeded) exceeded).max()).isEqualTo(2);
@@ -524,7 +519,7 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void preservesThreeIndependentReverseFactsAndFailsClosedAtTheDestinationCapacity() {
 		var temporal = new JourneyRaptorQuery.ArriveBy(instantAt(35_000), instantAt(36_300));
-		var result = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
+		var result = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
 		var plan = (JourneyProfileRaptorPort.ArriveByPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
 			.temporalPlan();
@@ -540,7 +535,7 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(actualOracle.representatives()).isEqualTo(oracle.representatives());
 		assertThat(actualOracle.representatives().keySet()).containsExactlyInAnyOrder(ObjectiveTag.values());
 
-		var exceeded = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
+		var exceeded = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 2, 32));
 		assertThat(exceeded).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.CapacityExceeded.class,
 			failure -> {
@@ -554,36 +549,33 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void derivesTransferSlackAndAccessBurdenFromThePlannerNativeLegs() {
 		Instant base = instantAt(0);
+		// #454: 이동 구간은 승차 사이 환승뿐이다(진입·하차 없음).
 		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
-			access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, 100, 20, false),
 			ride("first", base.plusSeconds(500), base.plusSeconds(1_000)),
 			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 180, 30, true),
-			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)),
-			access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, 50, 10, false));
+			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)));
 
 		assertThat(RouteTimetableRaptorPlanner.itineraryMetrics(legs, 60))
 			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
-				1, 330, 60, 1, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)));
+				1, 180, 30, 1, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)));
 	}
 
 	@Test
 	void preservesTheSmallestSlackAcrossSuccessiveTransfers() {
 		Instant base = instantAt(0);
 		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
-			access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, 100, 20, false),
 			ride("first", base.plusSeconds(500), base.plusSeconds(1_000)),
 			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 180, 30, false),
 			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)),
 			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 120, 20, false),
 			ride("third", base.plusSeconds(1_800), base.plusSeconds(2_000)),
 			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 120, 20, false),
-			ride("fourth", base.plusSeconds(2_300), base.plusSeconds(2_600)),
-			access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, 50, 10, false));
+			ride("fourth", base.plusSeconds(2_300), base.plusSeconds(2_600)));
 
 		// 환승 여유 60·20·120초 중 최솟값을 보존한다. 마지막 값으로 덮어쓰지 않는다.
 		assertThat(RouteTimetableRaptorPlanner.itineraryMetrics(legs, 60))
 			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
-				3, 570, 100, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(20)));
+				3, 420, 70, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(20)));
 	}
 
 	@Test
@@ -604,8 +596,8 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.Prepared.class,
 			prepared -> {
 				assertThat(prepared.terminal()).isInstanceOf(JourneyProfileRaptorPort.Terminal.Found.class);
-				// 27:10 운행과 검증된 2분 출구 접근: 03:00이나 자정으로 절단하지 않는다.
-				assertThat(prepared.terminalArrivalAtDestination()).isEqualTo(instantAt(97_920));
+				// 27:10 승강장 도착: 03:00이나 자정으로 절단하지 않는다(#454: 하차 시간 없음).
+				assertThat(prepared.terminalArrivalAtDestination()).isEqualTo(instantAt(97_800));
 			});
 	}
 
@@ -652,30 +644,32 @@ class JourneyProfileRaptorAdapterTest {
 			.hasMessageContaining("TIMETABLE_REQUIRED");
 	}
 
-	// 대체 진입 픽스처: 기본 선택은 최단 검증 거리 "entry"(300초·50m), 차단 시 "entry-alt"(600초·80m).
+	// 대체 환승 픽스처: 기본 선택은 최단 검증 거리 "transfer"(100m), 차단 시 "transfer-alt"(200m).
 	private static final Clock FACILITY_CLOCK = Clock.fixed(Instant.parse("2026-07-01T00:00:00Z"), ZoneOffset.UTC);
 
 	@Test
-	void profileQueriesAvoidAFreshlyBlockedEntryTransition() {
-		var captured = snapshot(alternateEntryTimetable());
+	void profileQueriesAvoidAFreshlyBlockedTransferTransition() {
+		var captured = snapshot(alternateTransferTimetable());
 		var blocked = facilityAdapter(FacilityAvailabilityView.blocked(
-			FACILITY_CLOCK.instant().minusSeconds(60), Set.of("entry")), false);
+			FACILITY_CLOCK.instant().minusSeconds(60), Set.of("transfer")), false);
 		var unblocked = facilityAdapter(FacilityAvailabilityView.empty(FACILITY_CLOCK.instant()), false);
-		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
-		var departBetween = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)));
+		var arriveBy = transferQuery(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var departBetween = transferQuery(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)));
 
-		// 진입 300초+출구 120초=420초·50m+50m=100m, 차단 시 진입 600초+120초=720초·80m+50m=130m.
+		// STANDARD 4,500 m/h: 100m=80초(여유 36,000-35,600-80-60=260), 차단 시 200m=160초(여유 180).
 		assertThat(singleArriveByMetrics(unblocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
-			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(1, 80, 100, 0,
+				new JourneyProfileRaptorPort.MinimumTransferSeconds(260)));
 		assertThat(singleArriveByMetrics(blocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
-			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 720, 130, 0, new JourneyProfileRaptorPort.NoTransfer()));
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(1, 160, 200, 0,
+				new JourneyProfileRaptorPort.MinimumTransferSeconds(180)));
 		var window = (JourneyProfileRaptorPort.DepartureWindowPlan)
 			((JourneyProfileRaptorPort.PlanningResult.Planned) blocked.plan(
 				departBetween, captured, null, policy().profilePlanningLimits())).temporalPlan();
 		assertThat(window.points()).isNotEmpty().allSatisfy(point -> assertThat(point.itineraries())
-			.isNotEmpty().allSatisfy(itinerary -> assertThat(itinerary.legs().getFirst()).isEqualTo(
-				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
-					"station-a", "station-a", 600, 80, false, true, "VERIFIED"))));
+			.isNotEmpty().allSatisfy(itinerary -> assertThat(itinerary.legs().get(1)).isEqualTo(
+				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER,
+					"station-x", "station-x", 160, 200, false, true, "VERIFIED"))));
 	}
 
 	@Test
@@ -685,14 +679,14 @@ class JourneyProfileRaptorAdapterTest {
 		var stepFree = stepFreeQuery(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
 		var lastConnection = stepFreeQuery(new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
 
-		assertThatThrownBy(() -> stale.plan(stepFree, snapshot(alternateEntryTimetable()), null,
+		assertThatThrownBy(() -> stale.plan(stepFree, snapshot(timetable()), null,
 			policy().profilePlanningLimits()))
 			.isInstanceOf(FacilityStatusUnavailableException.class)
 			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
-		assertThatThrownBy(() -> stale.plan(lastConnection, snapshot(alternateEntryTimetable()), null,
+		assertThatThrownBy(() -> stale.plan(lastConnection, snapshot(timetable()), null,
 			policy().profilePlanningLimits()))
 			.isInstanceOf(FacilityStatusUnavailableException.class);
-		assertThatThrownBy(() -> stale.prepareLastConnection(lastConnection, snapshot(alternateEntryTimetable()),
+		assertThatThrownBy(() -> stale.prepareLastConnection(lastConnection, snapshot(timetable()),
 			policy().profilePlanningLimits()))
 			.isInstanceOf(FacilityStatusUnavailableException.class);
 	}
@@ -703,9 +697,9 @@ class JourneyProfileRaptorAdapterTest {
 			FACILITY_CLOCK.instant().minus(Duration.ofMinutes(6)), Set.of("entry")), true);
 		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
 
-		assertThat(singleArriveByMetrics(stale.plan(arriveBy, snapshot(alternateEntryTimetable()), null,
+		assertThat(singleArriveByMetrics(stale.plan(arriveBy, snapshot(timetable()), null,
 			policy().profilePlanningLimits())))
-			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()));
 	}
 
 	private static JourneyProfileRaptorAdapter facilityAdapter(FacilityAvailabilityView view, boolean required) {
@@ -730,20 +724,53 @@ class JourneyProfileRaptorAdapterTest {
 			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 0, 1, () -> false);
 	}
 
-	private static RouteTimetable alternateEntryTimetable() {
-		var base = timetable();
-		return new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(),
-			base.transitTrips(), base.transitStopTimes(), base.transitFrequencies(), List.of(), null,
-			new LoadRouteTimetablePort.RouteAccessData(
-				accessData().pathwayNodes(),
-				List.of(edge("entry", "entry-from", "entry-to", 300),
-					edge("entry-alt", "entry-from", "entry-to", 600, 80, false),
-					edge("exit", "exit-from", "exit-to", 120)),
-				List.of(),
-				List.of(
-					evidence("entry-evidence", "station-a", "entry", "ENTRY"),
-					evidence("entry-alt-evidence", "station-a", "entry-alt", "ENTRY"),
-					evidence("exit-evidence", "station-b", "exit", "EXIT"))));
+	private static RouteTimetable alternateTransferTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var first = new LoadRouteTimetablePort.TransitRoute("route-1", "line-1", "1", "One", "Terminal", "Asia/Seoul");
+		var second = new LoadRouteTimetablePort.TransitRoute("route-2", "line-2", "2", "Two", "Terminal", "Asia/Seoul");
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(first, second), List.of(
+				new LoadRouteTimetablePort.TransitTrip("first", "route-1", "daily", "Terminal", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("second", "route-2", "daily", "Terminal", "0", "LOCAL", 0)),
+			List.of(stop("first", 1, "station-a", "line-1", 35_000), stop("first", 2, "station-x", "line-1", 35_600),
+				stop("second", 1, "station-x", "line-2", 36_000), stop("second", 2, "station-b", "line-2", 36_600)),
+			List.of(), List.of(), null, transferAccessData(List.of(
+				new TransferFixture("x", "line-1", "line-2", "transfer", 120, 100, false),
+				new TransferFixture("x", "line-1", "line-2", "transfer-alt", 240, 200, false))));
+	}
+
+	private static JourneyRaptorQuery transferQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
+	}
+
+	private record TransferFixture(
+		String station, String fromLine, String toLine, String edgeId, int seconds, int distance, boolean stairs
+	) {
+	}
+
+	/** 같은 역 승강장 사이의 검증 환승들(#454: 출발·도착은 승강장이라 진입·하차 간선이 없다). */
+	private static LoadRouteTimetablePort.RouteAccessData transferAccessData(List<TransferFixture> transfers) {
+		var nodes = new java.util.LinkedHashMap<String, LoadRouteTimetablePort.PathwayNode>();
+		var edges = new java.util.ArrayList<LoadRouteTimetablePort.PathwayEdge>();
+		var rules = new java.util.ArrayList<LoadRouteTimetablePort.TransferRule>();
+		var evidence = new java.util.ArrayList<LoadRouteTimetablePort.RouteEdgeEvidence>();
+		for (TransferFixture transfer : transfers) {
+			String stationId = "station-" + transfer.station();
+			String from = transfer.station() + "-" + transfer.fromLine();
+			String to = transfer.station() + "-" + transfer.toLine();
+			nodes.putIfAbsent(from, new LoadRouteTimetablePort.PathwayNode(from, stationId, transfer.fromLine(), "PLATFORM"));
+			nodes.putIfAbsent(to, new LoadRouteTimetablePort.PathwayNode(to, stationId, transfer.toLine(), "PLATFORM"));
+			edges.add(edge(transfer.edgeId(), from, to, transfer.seconds(), transfer.distance(), transfer.stairs()));
+			rules.add(new LoadRouteTimetablePort.TransferRule(transfer.edgeId() + "-rule", stationId, transfer.fromLine(),
+				stationId, transfer.toLine(), "IN_STATION", transfer.seconds(), transfer.edgeId(),
+				transfer.stairs() ? null : transfer.edgeId(), "VERIFIED"));
+			evidence.add(evidence(transfer.edgeId() + "-evidence", stationId, transfer.toLine(), transfer.edgeId(), "TRANSFER"));
+		}
+		return new LoadRouteTimetablePort.RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);
 	}
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporalQuery) {
@@ -812,43 +839,45 @@ class JourneyProfileRaptorAdapterTest {
 			List.of(), List.of(), null, accessData());
 	}
 
+	/**
+	 * #454: 세 경로는 같은 시각(35,060)에 출발역 승강장에서 타고 서로 다른 역에서 한 번 환승한다.
+	 * fast는 가장 일찍 도착하고, walk는 걷는 거리가 가장 짧고, accessible만 계단이 없다. 세 환승 여유는 모두 20초다.
+	 */
 	private static RouteTimetable threePathTimetable() {
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
-		var fastRoute = new LoadRouteTimetablePort.TransitRoute("route-fast", "line-fast", "F", "Fast", "Terminal", "Asia/Seoul");
-		var walkRoute = new LoadRouteTimetablePort.TransitRoute("route-walk", "line-walk", "W", "Walk", "Terminal", "Asia/Seoul");
-		var accessibleRoute = new LoadRouteTimetablePort.TransitRoute("route-accessible", "line-accessible", "A", "Accessible", "Terminal", "Asia/Seoul");
+		var routes = new java.util.ArrayList<LoadRouteTimetablePort.TransitRoute>();
+		var trips = new java.util.ArrayList<LoadRouteTimetablePort.TransitTrip>();
+		for (String path : List.of("fast", "walk", "accessible")) {
+			for (String leg : List.of("1", "2")) {
+				routes.add(new LoadRouteTimetablePort.TransitRoute(
+					"route-" + path + "-" + leg, "line-" + path + "-" + leg, path, path, "Terminal", "Asia/Seoul"));
+				trips.add(new LoadRouteTimetablePort.TransitTrip(
+					path + (leg.equals("1") ? "" : "-second"), "route-" + path + "-" + leg, "daily", "Terminal", "0", "LOCAL", 0));
+			}
+		}
 		return new RouteTimetable(
-			List.of(calendar), List.of(), List.of(fastRoute, walkRoute, accessibleRoute), List.of(
-				new LoadRouteTimetablePort.TransitTrip("fast", "route-fast", "daily", "Terminal", "0", "LOCAL", 0),
-				new LoadRouteTimetablePort.TransitTrip("walk", "route-walk", "daily", "Terminal", "0", "LOCAL", 0),
-				new LoadRouteTimetablePort.TransitTrip("accessible", "route-accessible", "daily", "Terminal", "0", "LOCAL", 0)),
+			List.of(calendar), List.of(), routes, trips,
 			List.of(
-				stop("fast", 1, "station-a", "line-fast", 35_360), stop("fast", 2, "station-b", "line-fast", 36_000),
-				stop("walk", 1, "station-a", "line-walk", 35_180), stop("walk", 2, "station-b", "line-walk", 36_100),
-				stop("accessible", 1, "station-a", "line-accessible", 35_260), stop("accessible", 2, "station-b", "line-accessible", 36_200)),
-			List.of(), List.of(), null, threePathAccessData());
+				stop("fast", 1, "station-a", "line-fast-1", 35_060), stop("fast", 2, "station-fx", "line-fast-1", 35_400),
+				stop("fast-second", 1, "station-fx", "line-fast-2", 35_600), stop("fast-second", 2, "station-b", "line-fast-2", 36_000),
+				stop("walk", 1, "station-a", "line-walk-1", 35_060), stop("walk", 2, "station-wx", "line-walk-1", 35_400),
+				stop("walk-second", 1, "station-wx", "line-walk-2", 35_520), stop("walk-second", 2, "station-b", "line-walk-2", 36_100),
+				stop("accessible", 1, "station-a", "line-accessible-1", 35_060),
+				stop("accessible", 2, "station-ax", "line-accessible-1", 35_400),
+				stop("accessible-second", 1, "station-ax", "line-accessible-2", 35_560),
+				stop("accessible-second", 2, "station-b", "line-accessible-2", 36_200)),
+			List.of(), List.of(), null, transferAccessData(List.of(
+				new TransferFixture("fx", "line-fast-1", "line-fast-2", "fast-transfer", 120, 150, true),
+				new TransferFixture("wx", "line-walk-1", "line-walk-2", "walk-transfer", 40, 50, true),
+				new TransferFixture("ax", "line-accessible-1", "line-accessible-2", "accessible-transfer", 80, 100, false))));
 	}
 
-	private static LoadRouteTimetablePort.RouteAccessData threePathAccessData() {
-		return new LoadRouteTimetablePort.RouteAccessData(
-			List.of(
-				new LoadRouteTimetablePort.PathwayNode("entry", "station-a", null, "ENTRANCE"),
-				new LoadRouteTimetablePort.PathwayNode("fast-platform-a", "station-a", "line-fast", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("walk-platform-a", "station-a", "line-walk", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("accessible-platform-a", "station-a", "line-accessible", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("fast-platform-b", "station-b", "line-fast", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("walk-platform-b", "station-b", "line-walk", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("accessible-platform-b", "station-b", "line-accessible", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("exit", "station-b", null, "EXIT")),
-			List.of(
-				edge("fast-entry", "entry", "fast-platform-a", 300, 100, true), edge("fast-exit", "fast-platform-b", "exit", 120, 50, true),
-				edge("walk-entry", "entry", "walk-platform-a", 120, 30, true), edge("walk-exit", "walk-platform-b", "exit", 80, 20, false),
-				edge("accessible-entry", "entry", "accessible-platform-a", 200, 80, false), edge("accessible-exit", "accessible-platform-b", "exit", 100, 20, false)),
-			List.of(), List.of(
-				evidence("fast-entry-evidence", "station-a", "line-fast", "fast-entry", "ENTRY"), evidence("fast-exit-evidence", "station-b", "line-fast", "fast-exit", "EXIT"),
-				evidence("walk-entry-evidence", "station-a", "line-walk", "walk-entry", "ENTRY"), evidence("walk-exit-evidence", "station-b", "line-walk", "walk-exit", "EXIT"),
-				evidence("accessible-entry-evidence", "station-a", "line-accessible", "accessible-entry", "ENTRY"), evidence("accessible-exit-evidence", "station-b", "line-accessible", "accessible-exit", "EXIT")));
+	private static JourneyRaptorQuery threePathQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
 	}
 
 	private static LoadRouteTimetablePort.TransitStopTime stop(String tripId, int sequence, String station, int seconds) {
@@ -862,20 +891,19 @@ class JourneyProfileRaptorAdapterTest {
 			tripId, sequence, station, lineId, seconds, seconds, 0, 0);
 	}
 
+	// STANDARD 4,500 m/h: 150m=120초, 50m=40초, 100m=80초. 승강장에서 시작·종료하므로 준비 = 첫 승차 - 승차 여유,
+	// 도착 = 마지막 승강장 도착이다(#454).
 	private static List<ExpectedFact> threePathFacts() {
 		return List.of(
-			new ExpectedFact("fast", 35_000, 300, 35_300, 35_360, 36_000, 120, 36_120, 0, 420, 150, 2, true),
-			new ExpectedFact("walk", 35_000, 120, 35_120, 35_180, 36_100, 80, 36_180, 0, 200, 50, 1, true),
-			new ExpectedFact("accessible", 35_000, 200, 35_200, 35_260, 36_200, 100, 36_300, 0, 300, 100, 0, true));
+			new ExpectedFact("fast", 35_000, 35_060, 36_000, 36_000, 1, 120, 150, 1, false),
+			new ExpectedFact("walk", 35_000, 35_060, 36_100, 36_100, 1, 40, 50, 1, false),
+			new ExpectedFact("accessible", 35_000, 35_060, 36_200, 36_200, 1, 80, 100, 0, false));
 	}
 
 	private static void assertReadinessAlignment(List<ExpectedFact> facts) {
 		assertThat(facts).allSatisfy(fact -> {
-			assertThat(fact.entryCompleteSeconds()).isEqualTo(fact.readySeconds() + fact.entrySeconds());
-			assertThat(fact.firstBoardingSeconds()).isEqualTo(
-				fact.entryCompleteSeconds() + STANDARD_BOARDING_SLACK_SECONDS);
-			assertThat(fact.destinationArrivalSeconds()).isEqualTo(
-				fact.finalPlatformArrivalSeconds() + fact.exitSeconds());
+			assertThat(fact.firstBoardingSeconds()).isEqualTo(fact.readySeconds() + STANDARD_BOARDING_SLACK_SECONDS);
+			assertThat(fact.destinationArrivalSeconds()).isEqualTo(fact.finalPlatformArrivalSeconds());
 		});
 	}
 
@@ -884,18 +912,10 @@ class JourneyProfileRaptorAdapterTest {
 			List<JourneyProfileRaptorPort.RideLeg> rides = itinerary.legs().stream()
 				.filter(JourneyProfileRaptorPort.RideLeg.class::isInstance).map(JourneyProfileRaptorPort.RideLeg.class::cast).toList();
 			String tripId = rides.getFirst().tripId();
-			int entrySeconds = itinerary.legs().stream().filter(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
-				.map(JourneyProfileRaptorPort.AccessLeg.class::cast)
-				.filter(access -> access.kind() == JourneyProfileRaptorPort.AccessKind.ENTRY)
-				.mapToInt(JourneyProfileRaptorPort.AccessLeg::durationSeconds).findFirst().orElseThrow();
-			int exitSeconds = itinerary.legs().stream().filter(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
-				.map(JourneyProfileRaptorPort.AccessLeg.class::cast)
-				.filter(access -> access.kind() == JourneyProfileRaptorPort.AccessKind.EXIT)
-				.mapToInt(JourneyProfileRaptorPort.AccessLeg::durationSeconds).findFirst().orElseThrow();
 			var metrics = itinerary.metrics();
 			int readySeconds = secondsAt(itinerary.plannedReadyAt());
-			return new ExpectedFact(tripId, readySeconds, entrySeconds, readySeconds + entrySeconds,
-				secondsAt(rides.getFirst().plannedDepartureTime()), secondsAt(rides.getLast().plannedArrivalTime()), exitSeconds,
+			return new ExpectedFact(tripId, readySeconds,
+				secondsAt(rides.getFirst().plannedDepartureTime()), secondsAt(rides.getLast().plannedArrivalTime()),
 				secondsAt(itinerary.plannedArrivalAtDestination()),
 				metrics.transfersUsed(), metrics.accessMovementSeconds(), metrics.accessDistanceMeters(), metrics.accessibilityBurden(),
 				metrics.connectionSlack() instanceof JourneyProfileRaptorPort.NoTransfer);
@@ -966,11 +986,8 @@ class JourneyProfileRaptorAdapterTest {
 	private record ExpectedFact(
 		String pathId,
 		int readySeconds,
-		int entrySeconds,
-		int entryCompleteSeconds,
 		int firstBoardingSeconds,
 		int finalPlatformArrivalSeconds,
-		int exitSeconds,
 		int destinationArrivalSeconds,
 		int transfers,
 		long accessSeconds,

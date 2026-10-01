@@ -48,38 +48,43 @@ class JourneyProfileCandidateIdentityTest {
 			.isNotEqualTo(originalId);
 	}
 
+	/** #454: 승강장 기준 여정 — 승차, 환승(시간·계단이 식별자에 묶이는지 확인), 승차. */
 	private static JourneyProfileRaptorPort.Itinerary itinerary(
 		Instant readyAt,
 		Instant realtimeReadyAt,
 		String tripId,
-		int entryDurationSeconds,
-		boolean entryIncludesStairs
+		int transferDurationSeconds,
+		boolean transferIncludesStairs
 	) {
-		Instant rideDeparture = Instant.parse("2026-09-02T00:10:00Z");
-		Instant rideArrival = Instant.parse("2026-09-02T00:20:00Z");
-		Instant realtimeArrival = realtimeReadyAt == null ? null : rideArrival.plusSeconds(30);
+		Instant firstDeparture = Instant.parse("2026-09-02T00:10:00Z");
+		Instant firstArrival = Instant.parse("2026-09-02T00:20:00Z");
+		Instant secondDeparture = Instant.parse("2026-09-02T00:30:00Z");
+		Instant secondArrival = Instant.parse("2026-09-02T00:40:00Z");
+		boolean realtime = realtimeReadyAt != null;
 		return new JourneyProfileRaptorPort.Itinerary(
 			LocalDate.of(2026, 9, 2),
 			readyAt,
-			rideArrival.plusSeconds(180),
+			secondArrival,
 			realtimeReadyAt,
-			realtimeArrival == null ? null : realtimeArrival.plusSeconds(180),
+			realtime ? secondArrival.plusSeconds(30) : null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(
-				0, entryDurationSeconds + 180L, 125, entryIncludesStairs ? 1 : 0,
-				new JourneyProfileRaptorPort.NoTransfer()),
+				1, transferDurationSeconds, 50, transferIncludesStairs ? 1 : 0,
+				new JourneyProfileRaptorPort.MinimumTransferSeconds(300)),
 			JourneyCandidate.Fare.unavailable(),
 			List.of(
-				new JourneyProfileRaptorPort.AccessLeg(
-					JourneyProfileRaptorPort.AccessKind.ENTRY,
-					"station-a", "station-a", entryDurationSeconds, 50,
-					entryIncludesStairs, true, "VERIFIED"),
 				TestRides.profileRide(
-					"line-1", tripId, "terminal", "station-a", "station-b",
-					rideDeparture, rideArrival,
-					realtimeReadyAt == null ? null : rideDeparture.plusSeconds(30),
-					realtimeArrival),
+					"line-1", tripId, "terminal", "station-a", "station-x",
+					firstDeparture, firstArrival,
+					realtime ? firstDeparture.plusSeconds(30) : null,
+					realtime ? firstArrival.plusSeconds(30) : null),
 				new JourneyProfileRaptorPort.AccessLeg(
-					JourneyProfileRaptorPort.AccessKind.EXIT,
-					"station-b", "station-b", 180, 75, false, true, "VERIFIED")));
+					JourneyProfileRaptorPort.AccessKind.TRANSFER,
+					"station-x", "station-x", transferDurationSeconds, 50,
+					transferIncludesStairs, true, "VERIFIED"),
+				TestRides.profileRide(
+					"line-2", "trip-second", "terminal", "station-x", "station-b",
+					secondDeparture, secondArrival,
+					realtime ? secondDeparture.plusSeconds(30) : null,
+					realtime ? secondArrival.plusSeconds(30) : null)));
 	}
 }

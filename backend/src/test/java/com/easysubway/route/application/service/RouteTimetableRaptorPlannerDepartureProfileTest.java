@@ -27,15 +27,13 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
 	private static final long GENERATION = 1L;
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 1);
-	private static final int ENTRY_SECONDS = 300;
-	private static final int SENIOR_ENTRY_SECONDS = 405;
 	private static final int SENIOR_SLACK_SECONDS = 90;
 	private static final int NEXT_CUTOFF_LAST_SECOND =
 		Math.toIntExact(Duration.ofDays(1).plusHours(3).toSeconds()) - 1;
 	private final RouteTimetableRaptorPlanner planner = new RouteTimetableRaptorPlanner();
 
 	@Test
-	@DisplayName("profiles scheduled, frequency, and 24-hour departures from ENTRY plus slack breakpoints")
+	@DisplayName("profiles scheduled, frequency, and 24-hour departures from platform-departure-minus-slack breakpoints")
 	void profilesCanonicalEventsLatestFirstAndMatchesIndependentPointOracle() {
 		var compiled = planner.compile(timetable());
 		var query = new JourneyRaptorQuery(
@@ -51,10 +49,11 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 
 		assertThat(profile)
 			.extracting(RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint::readyAtSeconds)
-			.containsExactly(87_000, 87_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
-				34_200 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
-				33_600 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
-				33_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS);
+			// #454: 출발역 승강장에서 바로 타므로 breakpoint = 출발 - 승차 여유(진입 시간 없음).
+			.containsExactly(87_000, 87_000 - SENIOR_SLACK_SECONDS,
+				34_200 - SENIOR_SLACK_SECONDS,
+				33_600 - SENIOR_SLACK_SECONDS,
+				33_000 - SENIOR_SLACK_SECONDS);
 		for (int index = 1; index < profile.size(); index += 1) {
 			assertThat(profile.get(index).scanMetrics().expandedRoutes())
 				.isGreaterThan(profile.get(index - 1).scanMetrics().expandedRoutes());
@@ -100,9 +99,9 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 		assertThat(profile)
 			.extracting(point -> point.serviceDate() + ":" + point.readyAtSeconds())
 			.containsExactly(
-				SERVICE_DATE.plusDays(1) + ":11640",
+				SERVICE_DATE.plusDays(1) + ":11940",
 				SERVICE_DATE + ":" + NEXT_CUTOFF_LAST_SECOND,
-				SERVICE_DATE + ":96240");
+				SERVICE_DATE + ":96540");
 		assertThat(onlyRide(profile.get(0)).tripId()).isEqualTo("after-cutoff");
 		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("after-cutoff");
 		assertThat(onlyRide(profile.get(1)).plannedDepartureTime())
@@ -133,9 +132,9 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			.containsExactly(
 				SERVICE_DATE.plusDays(2) + ":10800",
 				SERVICE_DATE.plusDays(1) + ":" + NEXT_CUTOFF_LAST_SECOND,
-				SERVICE_DATE.plusDays(1) + ":11640",
+				SERVICE_DATE.plusDays(1) + ":11940",
 				SERVICE_DATE + ":" + NEXT_CUTOFF_LAST_SECOND,
-				SERVICE_DATE + ":11640");
+				SERVICE_DATE + ":11940");
 		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("daily-trip");
 		assertThat(onlyRide(profile.get(1)).plannedDepartureTime())
 			.isEqualTo(instantAt(SERVICE_DATE.plusDays(2), 12_000));
@@ -176,7 +175,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			assertThat(onlyRide(point).plannedArrivalTime()).isEqualTo(instantAt(departureSeconds + 600));
 			// profile 날짜는 준비시각 좌표의 기준일이며 원본 열차의 운행일과 구분한다.
 			assertThat(point.serviceDate()).isEqualTo(SERVICE_DATE.plusDays(1));
-			int readySecondsFromNativeDate = departureSeconds - ENTRY_SECONDS
+			int readySecondsFromNativeDate = departureSeconds
 				- Math.toIntExact(Duration.ofMinutes(1).toSeconds());
 			assertThat(point.readyAtSeconds()).isEqualTo(
 				readySecondsFromNativeDate - Math.toIntExact(Duration.ofDays(1).toSeconds()));
@@ -202,7 +201,8 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			List.of(), List.of(), null, accessData());
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
-			new JourneyRaptorQuery.DepartBetween(instantAt(departure - 900), instantAt(departure)),
+			// #454: 허용 열차의 준비 시각(출발 - 여유 60초)이 창 안에 들도록 창 끝을 departure + 60으로 둔다.
+			new JourneyRaptorQuery.DepartBetween(instantAt(departure - 900), instantAt(departure + 60)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
 			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
@@ -216,7 +216,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			assertThat(onlyRide(point).plannedDepartureTime()).isEqualTo(instantAt(allowedDeparture));
 			assertThat(onlyRide(point).plannedArrivalTime()).isEqualTo(instantAt(allowedDeparture + 600));
 			assertThat(instantAt(point.serviceDate(), point.readyAtSeconds()))
-				.isEqualTo(instantAt(allowedDeparture - ENTRY_SECONDS
+				.isEqualTo(instantAt(allowedDeparture
 					- Math.toIntExact(Duration.ofMinutes(1).toSeconds())));
 		});
 	}
@@ -238,7 +238,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			List.of(), List.of(), null, samePatternSlackAccessData());
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "origin", "destination",
-			new JourneyRaptorQuery.DepartBetween(instantAt(96_500), instantAt(97_000)),
+			new JourneyRaptorQuery.DepartBetween(instantAt(96_500), instantAt(97_140)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
 			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
@@ -246,7 +246,8 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 		var profile = planner.departureProfile(query, planner.compile(source),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
 
-		assertThat(profile).filteredOn(point -> point.readyAtSeconds() == 96_900)
+		// 97,200 출발 - 승차 여유 60초 = 97,140(#454: 진입 시간 없음).
+		assertThat(profile).filteredOn(point -> point.readyAtSeconds() == 97_140)
 			.singleElement().satisfies(point -> {
 				var rides = point.itineraries().getFirst().legs().stream()
 					.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
@@ -322,7 +323,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	void retainsWalkingAndConnectionSlackRepresentativeBeforePublicAlternativeSelection() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "origin", "destination",
-			new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			new JourneyRaptorQuery.DepartBetween(instantAt(29_240), instantAt(29_241)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD,
@@ -334,7 +335,8 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			policy().profilePlanningLimits());
 
 		assertThat(profile).singleElement().satisfies(point -> {
-			assertThat(point.readyAtSeconds()).isEqualTo(29_000);
+			// 29,300 출발 - 승차 여유 60초(#454: 진입 시간 없음).
+			assertThat(point.readyAtSeconds()).isEqualTo(29_240);
 			assertThat(point.itineraries())
 				.extracting(itinerary -> itinerary.legs().stream()
 					.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
@@ -349,13 +351,13 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				.extracting(RouteTimetableRaptorPlanner.JourneyItinerary::metrics)
 				.containsExactly(
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 1_020, 1_010, 0,
+						1, 720, 900, 0,
 						new JourneyProfileRaptorPort.MinimumTransferSeconds(0)),
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 1_020, 1_010, 0,
+						1, 720, 900, 0,
 						new JourneyProfileRaptorPort.MinimumTransferSeconds(370)),
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 308, 120, 0,
+						1, 8, 10, 0,
 						new JourneyProfileRaptorPort.MinimumTransferSeconds(332)));
 		});
 	}
@@ -364,7 +366,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	void failsClosedWhenOneProfileStateNeedsMoreThanTheCallerSuppliedLabelBudget() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "origin", "destination",
-			new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			new JourneyRaptorQuery.DepartBetween(instantAt(29_240), instantAt(29_241)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD,
@@ -388,7 +390,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	@Test
 	void keepsTheRawProfileFrontierIndependentOfPublicAlternativeCount() {
 		var one = new JourneyRaptorQuery(
-			REQUEST_ID, "origin", "destination", new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			REQUEST_ID, "origin", "destination", new JourneyRaptorQuery.DepartBetween(instantAt(29_240), instantAt(29_241)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
 		var three = new JourneyRaptorQuery(
@@ -406,7 +408,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	@Test
 	void keepsEarlierArrivalAndLaterSamePatternConnectionSlackRepresentatives() {
 		var query = new JourneyRaptorQuery(
-			REQUEST_ID, "origin", "destination", new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			REQUEST_ID, "origin", "destination", new JourneyRaptorQuery.DepartBetween(instantAt(29_240), instantAt(29_241)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
 
@@ -422,9 +424,9 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			assertThat(point.itineraries()).extracting(RouteTimetableRaptorPlanner.JourneyItinerary::metrics)
 				.containsExactly(
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 308, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(632)),
+						1, 8, 10, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(632)),
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 308, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(1_032)));
+						1, 8, 10, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(1_032)));
 		});
 	}
 
@@ -692,7 +694,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				new LoadRouteTimetablePort.PathwayNode("exit-from", "station-b", "line", "PLATFORM"),
 				new LoadRouteTimetablePort.PathwayNode("exit-to", "station-b", null, "EXIT")),
 			List.of(
-				edge("entry", "entry-from", "entry-to", ENTRY_SECONDS),
+				edge("entry", "entry-from", "entry-to", 300),
 				edge("exit", "exit-from", "exit-to", 120)),
 			List.of(),
 			List.of(

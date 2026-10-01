@@ -127,7 +127,7 @@ class RouteTimetableCarDoorHintsTest {
 			query, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
 			new JourneyRequestMeasurement("req-3"), "req-3", "bundle-sha", 1L);
 
-		var firstRide = (RouteTimetableRaptorPlanner.JourneyRideProjection) result.itineraries().getFirst().legs().get(1);
+		var firstRide = (RouteTimetableRaptorPlanner.JourneyRideProjection) result.itineraries().getFirst().legs().get(0);
 		assertThat(firstRide.alightingCarDoors()).isNotEmpty();
 		assertThat(firstRide.alightingCarDoors()).extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::carNumber).contains(3, 5);
 		// hint 4 (station-b, line-1, DOWN, car 8, door 4) must be excluded because trip-1 has directionId "up"
@@ -194,7 +194,7 @@ class RouteTimetableCarDoorHintsTest {
 			query, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
 			new JourneyRequestMeasurement("req-6"), "req-6", "bundle-sha", 1L);
 
-		var firstRide = (RouteTimetableRaptorPlanner.JourneyRideProjection) result.itineraries().getFirst().legs().get(1);
+		var firstRide = (RouteTimetableRaptorPlanner.JourneyRideProjection) result.itineraries().getFirst().legs().get(0);
 		assertThat(firstRide.alightingCarDoors()).hasSize(2);
 		assertThat(firstRide.alightingCarDoors()).containsExactly(
 			new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 2, "TRANSFER"),

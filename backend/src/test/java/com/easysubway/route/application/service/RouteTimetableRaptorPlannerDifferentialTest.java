@@ -61,11 +61,12 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 		var planner = new RouteTimetableRaptorPlanner();
 		var compiled = planner.compile(timetable);
 		List<OdCase> odCases = List.of(
-			new OdCase("direct", "a", "c", 0, false),
-			new OdCase("one-transfer", "a", "e", 1, false),
-			new OdCase("two-transfer", "a", "f", 2, false),
-			new OdCase("disconnected", "x", "w", 2, false),
-			new OdCase("access-blocked", "blocked-a", "blocked-b", 0, true)
+			new OdCase("direct", "a", "c", 0),
+			new OdCase("one-transfer", "a", "e", 1),
+			new OdCase("two-transfer", "a", "f", 2),
+			new OdCase("disconnected", "x", "w", 2),
+			// #454: 출발역에 GENERATED 진입 간선만 있어도 승강장에서 바로 타므로 경로가 있다.
+			new OdCase("generated-entry-ignored", "blocked-a", "blocked-b", 0)
 		);
 		List<LocalDate> serviceDates = List.of(SERVICE_DATE, SERVICE_DATE.plusDays(5));
 		int[] departureBands = {19800, 30600, 82800, 90000};
@@ -82,10 +83,7 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 							var current = planner.journeyItineraries(query, compiled).itineraries();
 							String sample = "%s/%s/%s/%s/%s".formatted(
 								odCase.name(), mobilityType, constraintMode, serviceDate, departureSeconds);
-							if (odCase.accessBlocked()) {
-								assertThat(legacy).as("의도 차이[%s]: 고정 access 구 엔진은 통과", sample).isNotEmpty();
-								assertThat(current).as(sample).isEmpty();
-							} else if (legacy.isEmpty()) {
+							if (legacy.isEmpty()) {
 								assertThat(current).as(sample).isEmpty();
 							} else {
 								assertThat(signatures(current)).as(sample).isEqualTo(legacy);
@@ -142,7 +140,8 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 			originStationId, startSeconds, 0, List.of())));
 		int slackSeconds = BoardingSlackPolicy.secondsFor(mobilityType);
 		for (int round = 0; round <= maxTransfers; round += 1) {
-			int accessSeconds = walkSeconds(mobilityType, round == 0 ? 240 : 360);
+			// #454: 0회차는 출발역 승강장에서 바로 탄다(진입 이동 없음). 이후 회차는 환승 기본 360초.
+			int accessSeconds = round == 0 ? 0 : walkSeconds(mobilityType, 360);
 			for (ReferenceTrip trip : trips) {
 				ReferenceBoarding boarding = null;
 				for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
@@ -460,7 +459,7 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 	private record Signature(int arrivalSeconds, int boardings, List<String> tripIds) {
 	}
 
-	private record OdCase(String name, String origin, String destination, int maxTransfers, boolean accessBlocked) {
+	private record OdCase(String name, String origin, String destination, int maxTransfers) {
 	}
 	private record StopSpec(String stationId, String lineId, int seconds) {
 	}

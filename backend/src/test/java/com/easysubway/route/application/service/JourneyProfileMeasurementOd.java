@@ -12,26 +12,28 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** 측정용 compiled ride 하나만 고르며, 실제 접근 가능 경로 질의는 수행하지 않는다. */
+/**
+ * 측정용 compiled ride 하나만 고르며, 실제 접근 가능 경로 질의는 수행하지 않는다.
+ * #454: 여정은 승강장에서 시작·종료하므로 준비 시각은 출발 - 승차 여유, 도착은 승강장 도착이다.
+ */
 final class JourneyProfileMeasurementOd {
 	private JourneyProfileMeasurementOd() { }
 
 	static DirectOdCandidate selectDirectOd(
 		Scope scope, String regionId, List<JourneyProfileCandidateEvents.Event> events,
-		List<JourneyProfileExactOracle.Access> accesses, Instant activeFrom, Instant freshUntil, int boardingSlackSeconds
+		Instant activeFrom, Instant freshUntil, int boardingSlackSeconds
 	) {
-		return findDirectOd(scope, regionId, events, accesses, activeFrom, freshUntil, boardingSlackSeconds)
+		return findDirectOd(scope, regionId, events, activeFrom, freshUntil, boardingSlackSeconds)
 			.orElseThrow(() -> new IllegalArgumentException("no allowed direct OD candidate"));
 	}
 
 	static java.util.Optional<DirectOdCandidate> findDirectOd(
 		Scope scope, String regionId, List<JourneyProfileCandidateEvents.Event> events,
-		List<JourneyProfileExactOracle.Access> accesses, Instant activeFrom, Instant freshUntil, int boardingSlackSeconds
+		Instant activeFrom, Instant freshUntil, int boardingSlackSeconds
 	) {
 		Objects.requireNonNull(scope, "scope is required");
 		Objects.requireNonNull(regionId, "regionId is required");
 		Objects.requireNonNull(events, "events are required");
-		accesses = List.copyOf(Objects.requireNonNull(accesses, "accesses are required"));
 		if (activeFrom == null || freshUntil == null || !activeFrom.isBefore(freshUntil) || boardingSlackSeconds < 0) {
 			throw new IllegalArgumentException("candidate window and boarding slack are required");
 		}
@@ -58,33 +60,17 @@ final class JourneyProfileMeasurementOd {
 					Instant departureAt = midnight.plusSeconds(board.departureSeconds());
 					Instant arrivalAt = midnight.plusSeconds(alight.arrivalSeconds());
 					if (arrivalAt.isBefore(departureAt)) continue;
-					var entry = accesses.stream().filter(access -> entry(access, board)).min(ACCESS_ORDER).orElse(null);
-					var exit = accesses.stream().filter(access -> exit(access, alight)).min(ACCESS_ORDER).orElse(null);
-					if (entry == null || exit == null) continue;
-					Instant readyAt = departureAt.minusSeconds(entry.durationSeconds()).minusSeconds(boardingSlackSeconds);
-					Instant arrivalAtDestination = arrivalAt.plusSeconds(exit.durationSeconds());
-					if (readyAt.isBefore(activeFrom) || !arrivalAtDestination.isBefore(freshUntil)) continue;
+					Instant readyAt = departureAt.minusSeconds(boardingSlackSeconds);
+					if (readyAt.isBefore(activeFrom) || !arrivalAt.isBefore(freshUntil)) continue;
 					DirectOdCandidate candidate = new DirectOdCandidate(
 						regionId, event.routeLineId(), event.serviceDate(), event.tripId(), event.scheduledTripIndex(),
 						from, to, board.stationId(), board.lineId(), alight.stationId(), alight.lineId(), departureAt, arrivalAt,
-						readyAt, arrivalAtDestination, entry.id(), exit.id());
+						readyAt, arrivalAt);
 					if (selected == null || ORDER.compare(candidate, selected) < 0) selected = candidate;
 				}
 			}
 		}
 		return java.util.Optional.ofNullable(selected);
-	}
-
-	private static boolean entry(JourneyProfileExactOracle.Access access, JourneyProfileCandidateEvents.Stop board) {
-		return access.usable() && access.kind() == JourneyProfileExactOracle.AccessKind.ENTRY
-			&& board.stationId().equals(access.fromStationId()) && board.stationId().equals(access.toStationId())
-			&& board.lineId().equals(access.toLineId());
-	}
-
-	private static boolean exit(JourneyProfileExactOracle.Access access, JourneyProfileCandidateEvents.Stop alight) {
-		return access.usable() && access.kind() == JourneyProfileExactOracle.AccessKind.EXIT
-			&& alight.stationId().equals(access.fromStationId()) && alight.stationId().equals(access.toStationId())
-			&& alight.lineId().equals(access.fromLineId());
 	}
 
 	private static Map<String, Set<Attribution>> attributions(Scope scope) {
@@ -93,10 +79,6 @@ final class JourneyProfileMeasurementOd {
 			.add(new Attribution(line.regionId(), line.operatorId())));
 		return result;
 	}
-
-	private static final Comparator<JourneyProfileExactOracle.Access> ACCESS_ORDER = Comparator
-		.comparingInt(JourneyProfileExactOracle.Access::durationSeconds)
-		.thenComparing(JourneyProfileExactOracle.Access::id);
 
 	private static final Comparator<DirectOdCandidate> ORDER = Comparator
 		.comparing(DirectOdCandidate::routeLineId)
@@ -108,9 +90,7 @@ final class JourneyProfileMeasurementOd {
 		.thenComparing(DirectOdCandidate::departureAt)
 		.thenComparing(DirectOdCandidate::arrivalAt)
 		.thenComparing(DirectOdCandidate::originStationId)
-		.thenComparing(DirectOdCandidate::destinationStationId)
-		.thenComparing(DirectOdCandidate::entryAccessId)
-		.thenComparing(DirectOdCandidate::exitAccessId);
+		.thenComparing(DirectOdCandidate::destinationStationId);
 
 	private record Attribution(String regionId, String operatorId) { }
 
@@ -118,6 +98,6 @@ final class JourneyProfileMeasurementOd {
 		String regionId, String routeLineId, LocalDate serviceDate, String tripId, int scheduledTripIndex,
 		int boardStopIndex, int alightStopIndex, String originStationId, String originLineId,
 		String destinationStationId, String destinationLineId, Instant departureAt, Instant arrivalAt,
-		Instant readyAt, Instant arrivalAtDestination, String entryAccessId, String exitAccessId
+		Instant readyAt, Instant arrivalAtDestination
 	) { }
 }

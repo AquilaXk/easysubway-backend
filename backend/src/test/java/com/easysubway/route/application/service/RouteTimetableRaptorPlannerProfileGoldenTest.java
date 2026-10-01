@@ -125,13 +125,13 @@ class RouteTimetableRaptorPlannerProfileGoldenTest {
 					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 0, 1)),
 			new BoundaryFixture("boundary-frontier-collision", RouteTimetableRaptorPlannerDepartureProfileTest.frontierCollisionTimetable(),
 				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB4", "origin", "destination",
-					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_000),
-					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_001),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_240),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_241),
 					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 1, 3)),
 			new BoundaryFixture("boundary-same-pattern-slack", RouteTimetableRaptorPlannerDepartureProfileTest.samePatternSlackTimetable(),
 				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB5", "origin", "destination",
-					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_000),
-					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_001),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_240),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_241),
 					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 1, 3)));
 
 		for (BoundaryFixture fixture : fixtures) {

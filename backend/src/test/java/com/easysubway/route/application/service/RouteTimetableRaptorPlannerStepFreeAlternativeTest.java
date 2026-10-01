@@ -30,7 +30,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	private static final String DESTINATION = "destination";
 
 	@Test
-	@DisplayName("PREFER_STEP_FREE는 더 빠른 계단 경로(37분)와 무단차 대안(40분)을 함께 남긴다")
+	@DisplayName("PREFER_STEP_FREE는 더 빠른 계단 경로(33분)와 무단차 대안(36분)을 함께 남긴다")
 	void preservesStepFreeAlternativeWhenStairRouteIsFaster() {
 		var planner = new RouteTimetableRaptorPlanner();
 
@@ -42,8 +42,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
 				itinerary -> transferStep(itinerary).includesStairs())
 			.containsExactly(
-				tuple(37L, STAIR_HUB, true),
-				tuple(40L, STEP_FREE_HUB, false));
+				tuple(33L, STAIR_HUB, true),
+				tuple(36L, STEP_FREE_HUB, false));
 		assertThat(transferStep(results.getLast()).includesStairs()).isFalse();
 	}
 
@@ -58,7 +58,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 		assertThat(results)
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId)
-			.containsExactly(tuple(37L, STAIR_HUB), tuple(40L, STEP_FREE_HUB));
+			.containsExactly(tuple(33L, STAIR_HUB), tuple(36L, STEP_FREE_HUB));
 	}
 
 	@Test
@@ -72,7 +72,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 		assertThat(results)
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
-			.containsExactly(tuple(30L, true));
+			// #454: 승강장에서 바로 타므로 직행에는 진입 계단 경고가 없다. 최속 26분 직행을 그대로 둔다.
+			.containsExactly(tuple(26L, false));
 	}
 
 	@Test
@@ -86,7 +87,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 		assertThat(results)
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				itinerary -> itinerary.metrics().transfersUsed())
-			.containsExactly(tuple(30L, 1), tuple(35L, 0));
+			.containsExactly(tuple(26L, 1), tuple(31L, 0));
 	}
 
 	@Test
@@ -102,8 +103,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 				itinerary -> itinerary.metrics().transfersUsed(),
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
 			.containsExactly(
-				tuple(37L, 1, true),
-				tuple(50L, 2, false));
+				tuple(33L, 1, true),
+				tuple(46L, 2, false));
 	}
 
 	@Test
@@ -119,8 +120,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasUnverifiedAccess)
 			.containsExactly(
-				tuple(30L, true, false),
-				tuple(50L, false, false));
+				tuple(26L, true, false),
+				tuple(46L, false, false));
 	}
 
 	@Test
@@ -134,7 +135,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 		assertThat(results)
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId)
-			.containsExactly(tuple(37L, STAIR_HUB), tuple(40L, STEP_FREE_HUB));
+			.containsExactly(tuple(33L, STAIR_HUB), tuple(36L, STEP_FREE_HUB));
 	}
 
 	@Test
@@ -149,7 +150,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
-			.containsExactly(tuple(37L, STAIR_HUB, true));
+			.containsExactly(tuple(33L, STAIR_HUB, true));
 	}
 
 	@Test
@@ -164,7 +165,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
-			.containsExactly(tuple(40L, STEP_FREE_HUB, false));
+			.containsExactly(tuple(36L, STEP_FREE_HUB, false));
 	}
 
 	private static long durationMinutes(JourneyItinerary itinerary) {
@@ -223,9 +224,9 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	 * 08:00 출발 기준으로 환승 1회짜리 세 경로를 만든다.
 	 *
 	 * <ul>
-	 *   <li>{@code stair-hub} 환승: 계단 전이(120초) — 37분, STAIR_ONLY_ACCESS 경고</li>
-	 *   <li>{@code unverified-hub} 환승: 환승 규칙 없음(기본 360초) — 38분, LOW_DATA_CONFIDENCE 경고</li>
-	 *   <li>{@code step-free-hub} 환승: 검증된 무단차 전이(360초) — 40분, 경고 없음</li>
+	 *   <li>{@code stair-hub} 환승: 계단 전이(120초) — 33분, STAIR_ONLY_ACCESS 경고</li>
+	 *   <li>{@code unverified-hub} 환승: 환승 규칙 없음(기본 360초) — 34분, LOW_DATA_CONFIDENCE 경고</li>
+	 *   <li>{@code step-free-hub} 환승: 검증된 무단차 전이(360초) — 36분, 경고 없음</li>
 	 * </ul>
 	 */
 	private static RouteTimetable timetable(boolean includeUnverifiedHub) {
@@ -266,7 +267,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	}
 
 	/**
-	 * 직통 두 개만 있는 시각표 — 30분(계단 진입, `STAIR_ONLY_ACCESS`)과 35분(무단차, 경고 없음).
+	 * 직통 두 개만 있는 시각표 — 26분과 31분. #454 이후 진입 간선은 무시되어 두 직행 모두 경고가 없다.
 	 * `candidateLimit()`이 1이 되는 경계를 만들기 위해 환승 경로를 두지 않는다.
 	 */
 	private static RouteTimetable directRoutesTimetable() {
@@ -287,8 +288,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	}
 
 	/**
-	 * 환승 수가 서로 다른 세 경로 — 30분(환승 1회, 계단), 35분(직통, 계단 진입), 40분(환승 1회, 무단차).
-	 * 상한 교체가 유일한 최소 환승 후보(직통 35분)를 축출하는지 보기 위한 시각표다.
+	 * 환승 수가 서로 다른 세 경로 — 26분(환승 1회, 계단), 31분(직통), 36분(환승 1회, 무단차).
+	 * 상한 교체가 유일한 최소 환승 후보(직통 31분)를 축출하는지 보기 위한 시각표다.
 	 */
 	private static RouteTimetable mixedBoardingsTimetable() {
 		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
@@ -321,7 +322,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	}
 
 	/**
-	 * 무단차 대안이 환승을 한 번 더 하는 시각표 — 37분(환승 1회, 계단)과 50분(환승 2회, 무단차).
+	 * 무단차 대안이 환승을 한 번 더 하는 시각표 — 33분(환승 1회, 계단)과 46분(환승 2회, 무단차).
 	 * 경고 부분집합 관계가 성립하지 않아 환승 수·시간만으로는 무단차 쪽이 지배당한다.
 	 */
 	private static RouteTimetable deeperStepFreeTimetable() {
@@ -356,8 +357,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	}
 
 	/**
-	 * 경고 0개 후보가 없는 시각표 — 30분(계단+만료), 45분(계단), 50분(미검증 환승, 계단 없음).
-	 * 경고 개수만 보면 45분이 뽑히지만 무단차인 것은 50분뿐이다.
+	 * 경고 0개 후보가 없는 시각표 — 26분(계단+만료), 41분(계단), 46분(미검증 환승, 계단 없음).
+	 * 경고 개수만 보면 41분이 뽑히지만 무단차인 것은 46분뿐이다.
 	 */
 	private static RouteTimetable noWarningFreeTimetable() {
 		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();

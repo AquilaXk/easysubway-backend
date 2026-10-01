@@ -215,7 +215,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		return switch (result.outcome()) {
 			case FOUND -> new JourneyProfileRaptorPort.ReversePlan.Found(
 				result.itineraries().stream().map(itinerary -> itinerary(itinerary, fareQuotes)).toList());
-			case NO_ACTIVE_SERVICE, NO_VERIFIED_EXIT, DEADLINE_MISS, NO_OD_CONNECTION, CANCELLED ->
+			case NO_ACTIVE_SERVICE, DEADLINE_MISS, NO_OD_CONNECTION, CANCELLED ->
 				new JourneyProfileRaptorPort.ReversePlan.NotFound(
 					JourneyProfileRaptorPort.ReversePlan.Outcome.valueOf(result.outcome().name()));
 		};

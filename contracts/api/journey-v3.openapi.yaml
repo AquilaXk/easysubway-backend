@@ -243,8 +243,9 @@ paths:
       operationId: profileJourneys
       summary: Search identity-bound temporal Journey profiles
       description: >-
-        Returns only compressed profile breakpoints. A destination arrival is complete
-        only after the verified EXIT transition. LAST_CONNECTION is the latest feasible
+        Returns only compressed profile breakpoints. Journeys start at an origin-station
+        platform and end at a destination-station platform; a destination arrival is the
+        final ride arrival at the destination platform. LAST_CONNECTION is the latest feasible
         O/D departure under the request walking, accessibility, transfer, and active
         service-day constraints.
       security:
@@ -759,7 +760,7 @@ components:
       additionalProperties: false
       description: >-
         A bounded ordered ready-time and destination-arrival deadline interval. The
-        deadline applies after the verified destination EXIT transition completes.
+        deadline applies to the final ride arrival at the destination platform.
       required: [kind, earliestReadyAt, arrivalDeadline]
       properties:
         kind:
@@ -1250,9 +1251,10 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        readyAt is when the passenger is ready to begin the requested journey; journeyStartTime
-        is entry-transition start; firstBoardingTime is the first ride departure;
-        arrivalAtPlatform is the final ride arrival; arrivalAtDestination is verified EXIT completion.
+        readyAt is when the passenger is ready to board at the origin platform; journeyStartTime
+        equals readyAt; firstBoardingTime is the first ride departure; arrivalAtPlatform is the
+        final ride arrival; arrivalAtDestination equals arrivalAtPlatform because journeys end at
+        the destination platform.
       required:
         - journeyId
         - readyAt
@@ -1560,6 +1562,10 @@ components:
     JourneyEntryLeg:
       type: object
       additionalProperties: false
+      deprecated: true
+      description: >-
+        Not emitted. Journeys start at the origin platform, so responses contain no ENTRY leg.
+        The schema stays until clients stop decoding it.
       required: [type, fromStationId, durationSeconds]
       properties:
         type:
@@ -1743,6 +1749,10 @@ components:
     JourneyExitLeg:
       type: object
       additionalProperties: false
+      deprecated: true
+      description: >-
+        Not emitted. Journeys end at the destination platform, so responses contain no EXIT leg.
+        The schema stays until clients stop decoding it.
       required: [type, fromStationId, durationSeconds]
       properties:
         type:
