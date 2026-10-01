@@ -312,7 +312,6 @@ class JourneyOfficialOdFareTest {
 			new JourneyProfileRaptorPort.ItineraryMetrics(
 				3, 480, 400, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
 			List.of(
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null),
 				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
 					EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null),
 				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", false),
@@ -323,8 +322,7 @@ class JourneyOfficialOdFareTest {
 					EFFECTIVE.plusSeconds(720), EFFECTIVE.plusSeconds(900), null, null),
 				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true),
 				TestProjectionRides.projectionRide("line-4", "trip-4", "station-e", "station-d", "station-e",
-					EFFECTIVE.plusSeconds(1_000), EFFECTIVE.plusSeconds(1_140), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, "station-e", "station-e", null)));
+					EFFECTIVE.plusSeconds(1_000), EFFECTIVE.plusSeconds(1_140), null, null)));
 		var quoteAc = quote("station-a", "station-c", "snap-ac", 1700, 1800, 950, 1050, 650, 750);
 		var quoteCd = quote("station-c", "station-d", "snap-cd", 1400, 1500, 800, 900, 500, 600);
 		var quoteDe = quote("station-d", "station-e", "snap-cd", 1450, 1550, 820, 920, 0, 620);
@@ -379,7 +377,7 @@ class JourneyOfficialOdFareTest {
 		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
 			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(60), null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, 60, 100, 0, new JourneyProfileRaptorPort.NoTransfer()),
-			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null)));
+			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-a", "station-a", null)));
 
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> JourneyRaptorAdapter.calculateFare(itinerary,
 				Map.of(OfficialFareQuote.fareKey("station-a", "station-b"),

@@ -290,12 +290,8 @@ class JourneyProfileCandidateProjectionV1Test {
 				accessibilityBurden, new JourneyProfileRaptorPort.NoTransfer()),
 			JourneyCandidate.Fare.unavailable(),
 			List.of(
-				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
-					"origin", "origin", 30, 20, accessibilityBurden > 0, true, "VERIFIED"),
 				TestRides.profileRide("line-a", tripId, "terminal", "origin", "destination",
-					rideDeparture, rideArrival, null, null),
-				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
-					"destination", "destination", 30, 20, false, true, "VERIFIED")));
+					rideDeparture, rideArrival, null, null)));
 	}
 
 	private static JourneyProfileRaptorPort.Itinerary itinerary(
@@ -311,11 +307,7 @@ class JourneyProfileCandidateProjectionV1Test {
 				new JourneyProfileRaptorPort.NoTransfer()),
 			JourneyCandidate.Fare.unavailable(),
 			List.of(
-				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
-					"origin", "origin", 30, 20, false, true, "VERIFIED"),
 				TestRides.profileRide("line-a", tripId, "terminal", "origin", "destination",
-					rideDeparture, rideArrival, null, null),
-				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
-					"destination", "destination", 30, 20, false, true, "VERIFIED")));
+					rideDeparture, rideArrival, null, null)));
 	}
 }

@@ -248,7 +248,7 @@ class RouteTimetableRaptorPlannerCsrWorkspaceTest {
 		var result = planner.journeyItineraries(query, compiled);
 		assertThat(result.itineraries()).isNotEmpty();
 		var itinerary = result.itineraries().getFirst();
-		assertThat(itinerary.legs()).hasSize(5);
+		assertThat(itinerary.legs()).hasSize(3); // 승차·환승·승차(#454: 진입·하차 없음)
 		var rides = itinerary.legs().stream()
 			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
 			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)

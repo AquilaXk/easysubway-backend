@@ -87,7 +87,8 @@ class JourneyRealtimeAdapterTest {
 		).candidates().getFirst();
 		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
 		assertThat(candidate.realtimeDepartureTime()).isEqualTo(EFFECTIVE);
-		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:12:00Z"));
+		// #454: 실시간 도착은 지연된 승강장 도착 시각이다(하차 시간 없음).
+		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
 		assertThat(candidate.legs()).filteredOn(JourneyCandidate.Ride.class::isInstance)
 			.singleElement().isEqualTo(TestRides.candidateRide(
 				"line", "trip", "station-b", "station-a", "station-b",

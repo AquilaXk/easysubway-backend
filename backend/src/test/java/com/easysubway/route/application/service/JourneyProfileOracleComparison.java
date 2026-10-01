@@ -25,26 +25,27 @@ final class JourneyProfileOracleComparison {
 			|| expected.walkingDistanceMeters() != metrics.accessDistanceMeters()
 			|| expected.accessibilityBurden() != metrics.accessibilityBurden()
 			|| !sameSlack(expected.minimumConnectionSlack(), metrics.connectionSlack())
-			|| expected.accesses().size() != expected.rides().size() + 1
+			|| expected.accesses().size() != expected.rides().size() - 1
 			|| actual.legs().size() != expected.rides().size() + expected.accesses().size()) return false;
-		for (int index = 0; index < expected.accesses().size(); index++) {
-			var access = expected.accesses().get(index);
-			if (!(actual.legs().get(index * 2) instanceof JourneyProfileRaptorPort.AccessLeg observed)
-				|| !access.kind().name().equals(observed.kind().name())
-				|| !access.fromStationId().equals(observed.fromStationId())
-				|| !access.toStationId().equals(observed.toStationId())
-				|| access.durationSeconds() != observed.durationSeconds()
-				|| access.walkingDistanceMeters() != observed.distanceMeters()
-				|| !access.usable() || !observed.verified() || !"VERIFIED".equals(observed.verificationStatus())) return false;
-			if (index == expected.rides().size()) continue;
+		// #454: 승차 → [환승 → 승차]* 순서다. 진입·하차 구간은 없다.
+		for (int index = 0; index < expected.rides().size(); index++) {
 			var ride = expected.rides().get(index);
-			if (!(actual.legs().get(index * 2 + 1) instanceof JourneyProfileRaptorPort.RideLeg observedRide)
+			if (!(actual.legs().get(index * 2) instanceof JourneyProfileRaptorPort.RideLeg observedRide)
 				|| !ride.tripId().equals(observedRide.tripId())
 				|| !ride.fromStationId().equals(observedRide.fromStationId())
 				|| !ride.toStationId().equals(observedRide.toStationId())
 				|| !ride.departureAt().equals(observedRide.plannedDepartureTime())
 				|| !ride.arrivalAt().equals(observedRide.plannedArrivalTime())
 				|| observedRide.realtimeDepartureTime() != null || observedRide.realtimeArrivalTime() != null) return false;
+			if (index == expected.accesses().size()) continue;
+			var access = expected.accesses().get(index);
+			if (!(actual.legs().get(index * 2 + 1) instanceof JourneyProfileRaptorPort.AccessLeg observed)
+				|| !access.kind().name().equals(observed.kind().name())
+				|| !access.fromStationId().equals(observed.fromStationId())
+				|| !access.toStationId().equals(observed.toStationId())
+				|| access.durationSeconds() != observed.durationSeconds()
+				|| access.walkingDistanceMeters() != observed.distanceMeters()
+				|| !access.usable() || !observed.verified() || !"VERIFIED".equals(observed.verificationStatus())) return false;
 		}
 		return true;
 	}

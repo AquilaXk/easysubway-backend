@@ -26,10 +26,12 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 	private static final String DESTINATION = "destination";
 
 	@Test
-	@DisplayName("동일 패턴 내에서 계단 진입 최속 열차와 무단차 후행 열차가 모두 보존된다")
+	@DisplayName("동일 패턴 내에서 계단 환승 최속 열차와 무단차 후행 열차가 모두 보존된다")
 	void preservesBothStairAndStepFreeTripsOnSamePattern() {
 		var planner = new RouteTimetableRaptorPlanner();
-		var timetable = samePatternStepFreeTimetable();
+		// #454: 출발은 승강장이라 계단/무단차 선택은 환승에서 생긴다. 계단 환승 180m, 무단차 환승 400m.
+		var timetable = transferStepFreeTimetable(List.of(
+			new TransferEdge("x-stairs", 240, 180, true), new TransferEdge("x-stepfree", 600, 400, false)));
 
 		var query = new JourneyRaptorQuery(
 			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -40,7 +42,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			JourneyRequest.WalkingPace.SLOW,
 			JourneyRequest.MobilityProfile.STEP_FREE,
 			JourneyRequest.ConstraintMode.NONE,
-			0,
+			1,
 			2,
 			() -> false
 		);
@@ -51,11 +53,11 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			.hasSize(2)
 			.extracting(
 				RouteTimetableRaptorPlannerMcRaptorTest::durationMinutes,
-				itinerary -> entranceStep(itinerary).includesStairs()
+				itinerary -> transferStep(itinerary).includesStairs()
 			)
 			.containsExactly(
-				tuple(24L, true),
-				tuple(31L, false)
+				tuple(23L, true),
+				tuple(27L, false)
 			);
 	}
 
@@ -63,7 +65,9 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 	@DisplayName("동일 패턴 내에서 선행 무단차 열차가 후행 계단 열차를 지배하여 축출한다")
 	void supersetWarningTripDominatedAndPruned() {
 		var planner = new RouteTimetableRaptorPlanner();
-		var timetable = dominatedSupersetTimetable();
+		// 무단차 환승이 더 짧다(180m). 계단 환승(400m)으로 타는 후행 열차는 지배된다.
+		var timetable = transferStepFreeTimetable(List.of(
+			new TransferEdge("x-stepfree", 240, 180, false), new TransferEdge("x-stairs", 600, 400, true)));
 
 		var query = new JourneyRaptorQuery(
 			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -74,7 +78,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			JourneyRequest.WalkingPace.SLOW,
 			JourneyRequest.MobilityProfile.STEP_FREE,
 			JourneyRequest.ConstraintMode.NONE,
-			0,
+			1,
 			2,
 			() -> false
 		);
@@ -85,10 +89,10 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			.hasSize(1)
 			.extracting(
 				RouteTimetableRaptorPlannerMcRaptorTest::durationMinutes,
-				itinerary -> entranceStep(itinerary).includesStairs()
+				itinerary -> transferStep(itinerary).includesStairs()
 			)
 			.containsExactly(
-				tuple(24L, false)
+				tuple(23L, false)
 			);
 	}
 
@@ -224,8 +228,8 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 	}
 
 	@Test
-	@DisplayName("isTransitionEligible 및 exitTransitions 분기 검증")
-	void testIsTransitionEligibleAndExitTransitions() {
+	@DisplayName("isTransitionEligible 및 transferTransitions 분기 검증")
+	void testIsTransitionEligibleAndTransferTransitions() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var timetable = samePatternStepFreeTimetable();
 		var compiled = planner.compile(timetable);
@@ -239,8 +243,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		assertThat(compiled.isTransitionEligible(0, 0, false, true, true)).isFalse();
 		assertThat(compiled.isTransitionEligible(0, 0, false, true, false)).isFalse();
 
-		int[] exits = compiled.exitTransitions(0, 0);
-		assertThat(exits).isNotNull();
+		assertThat(compiled.transferTransitions(0, 0, 0)).isNotNull();
 	}
 
 	@Test
@@ -391,7 +394,10 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 	@DisplayName("collectReadyBoardings 다중 alternative 전이(시간 단축 및 연장) 평가 분기 검증")
 	void testCollectReadyBoardingsAlternativeTransitions() {
 		var planner = new RouteTimetableRaptorPlanner();
-		var timetable = multipleAlternativeTransitionsTimetable();
+		// 정규 무단차 환승(400m)과 계단 대체 환승 3개(200m·100m·250m). 대체는 가장 짧은 계단 환승 하나만 평가한다.
+		var timetable = transferStepFreeTimetable(List.of(
+			new TransferEdge("x-canonical", 600, 400, false), new TransferEdge("x-alt1", 300, 200, true),
+			new TransferEdge("x-alt2", 150, 100, true), new TransferEdge("x-alt3", 400, 250, true)));
 		var compiled = planner.compile(timetable);
 
 		var query = new JourneyRaptorQuery(
@@ -411,15 +417,19 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		var workspace = new RouteTimetableRaptorPlanner.ScanWorkspace();
 		workspace.prepare(compiled.stationCount(), compiled.lineCount(), 1);
 
-		int stationOrigin = compiled.stationIndex(ORIGIN);
+		int stationTransfer = compiled.stationIndex("x");
+		int line0 = compiled.lineIndex("l0");
 		int line1 = compiled.lineIndex("l1");
-		int slot = workspace.slot(0, stationOrigin, workspace.noIncomingLine(), 0);
+		int slot = workspace.slot(1, stationTransfer, line0, 0);
 		workspace.arrivalSeconds[slot] = 28800;
 
 		RouteTimetableRaptorPlanner.collectReadyBoardings(
-			compiled, workspace, stationOrigin, line1, 0, 90, 0, input, false, RouteTimetableRaptorPlanner.UNREACHED);
+			compiled, workspace, stationTransfer, line1, 1, 90, input.accessProfileBit(), input, false,
+			RouteTimetableRaptorPlanner.UNREACHED);
 
+		// 무단차 정규 환승(경고 없음)과 계단 대체 환승(계단 경고)이 서로 다른 경고 상태로 준비된다.
 		assertThat(workspace.readyActive[0]).isTrue();
+		assertThat(workspace.readyActive[2]).isTrue();
 	}
 
 	@Test
@@ -541,8 +551,8 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 	}
 
 	@Test
-	@DisplayName("journeyAccessSeconds 분기 검증")
-	void testJourneyAccessSecondsBranches() {
+	@DisplayName("journeyTransferSeconds 분기 검증")
+	void testJourneyTransferSecondsBranches() {
 		var query = new JourneyRaptorQuery(
 			"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION,
 			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-05T23:00:00Z")),
@@ -559,28 +569,23 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			inVerified.cancellationSignal()
 		);
 
-		// TRANSFER + requiresVerifiedJourneyDistance
-		int s1 = RouteTimetableRaptorPlanner.journeyAccessSeconds(
-			inVerified, RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 60, 100);
-		assertThat(s1).isGreaterThan(0);
+		// 검증 거리 환승: 100m × 3,600 / 3,500 m/h = 103초(올림) + 무단차 시설 대기 60초.
+		assertThat(RouteTimetableRaptorPlanner.journeyTransferSeconds(inVerified, 60, 100)).isEqualTo(163);
 
-		// ENTRY + requiresVerifiedJourneyDistance
-		int s2 = RouteTimetableRaptorPlanner.journeyAccessSeconds(
-			inVerified, RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, 60, 100);
-		assertThat(s2).isGreaterThan(0);
+		// 거리 없는 시간 전용 검증 환승(#454): 60초 × 4,320 / 3,500 = 75초(올림) + 시설 대기 60초.
+		assertThat(RouteTimetableRaptorPlanner.journeyTransferSeconds(inVerified, 60, 0)).isEqualTo(135);
 
-		// TRANSFER without verified distance
-		int s3 = RouteTimetableRaptorPlanner.journeyAccessSeconds(
-			inUnverified, RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 60, 100);
-		assertThat(s3).isGreaterThan(0);
+		// 검증 거리를 요구하지 않는 입력은 기준 시간 배율을 쓴다.
+		assertThat(RouteTimetableRaptorPlanner.journeyTransferSeconds(inUnverified, 60, 100)).isGreaterThan(0);
 	}
 
 	private static long durationMinutes(JourneyItinerary itinerary) {
 		return Math.round(Duration.between(itinerary.plannedDepartureTime(), itinerary.plannedArrivalTime()).toSeconds() / 60.0);
 	}
 
-	private static JourneyAccessProjection entranceStep(JourneyItinerary itinerary) {
-		return (JourneyAccessProjection) itinerary.legs().getFirst();
+	private static JourneyAccessProjection transferStep(JourneyItinerary itinerary) {
+		return itinerary.legs().stream().filter(JourneyAccessProjection.class::isInstance)
+			.map(JourneyAccessProjection.class::cast).findFirst().orElseThrow();
 	}
 
 	private static RouteTimetable samePatternStepFreeTimetable() {
@@ -588,9 +593,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
 		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
 
-		// Entrance nodes & edges for ORIGIN
-		// 1) Entrance with stairs: 240s
-		// 2) Entrance step-free: 600s
+		// #454 이후 ENTRY/EXIT evidence는 planner가 무시한다. 이 픽스처는 패턴·작업공간 단위 테스트(t1/t2 한 패턴)에만 쓴다.
 		String entStairs = "ent-stairs";
 		String entStepFree = "ent-stepfree";
 		String platOrigin = "plat-origin";
@@ -617,11 +620,6 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			new LoadRouteTimetablePort.TransitTrip("t1", "r1", "daily", "t1", "0", "LOCAL", 0),
 			new LoadRouteTimetablePort.TransitTrip("t2", "r1", "daily", "t2", "0", "LOCAL", 0)
 		);
-		// Query DepartAt: 2026-07-05T23:00:00Z -> 08:00 KST (28800).
-		// With stairs: ready at 28800 + 324s (240 * 1.35) + 90s slack = 29214. Can board t1 (departs 29400).
-		// t1 arrives at DESTINATION at 30000. Exit = 180 * 1.35 = 243s. Total arrival = 30243. Duration = 30243 - 28800 = 1443s (24m).
-		// Step-free: ready at 28800 + 810s (600 * 1.35) + 90s slack = 29700. Can board t2 (departs 29800).
-		// t2 arrives at DESTINATION at 30400. Exit = 243s. Total arrival = 30643. Duration = 30643 - 28800 = 1843s (31m).
 		var stops = List.of(
 			new LoadRouteTimetablePort.TransitStopTime("t1", 1, ORIGIN, "l1", 29400, 29400, 0, 0),
 			new LoadRouteTimetablePort.TransitStopTime("t1", 2, DESTINATION, "l1", 30000, 30000, 0, 0),
@@ -639,107 +637,50 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			new LoadRouteTimetablePort.RouteAccessData(nodes, edges, List.of(), evidence));
 	}
 
-	private static RouteTimetable dominatedSupersetTimetable() {
-		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
+	private record TransferEdge(String id, int seconds, int distanceMeters, boolean includesStairs) {
+	}
+
+	/**
+	 * 출발역 l0 승강장에서 바로 탄 뒤 환승역 x에서 l0→l1 검증 환승(여러 대안)을 하고, 같은 l1 패턴의
+	 * t1(29,600 출발)·t2(29,800 출발)로 도착역 승강장에 간다(#454: 진입·하차 간선 없음).
+	 */
+	private static RouteTimetable transferStepFreeTimetable(List<TransferEdge> transfers) {
+		List<LoadRouteTimetablePort.PathwayNode> nodes = List.of(
+			new LoadRouteTimetablePort.PathwayNode("x-l0", "x", "l0", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("x-l1", "x", "l1", "PLATFORM"));
 		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
+		List<LoadRouteTimetablePort.TransferRule> rules = new ArrayList<>();
 		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
-
-		String entStairs = "ent-stairs";
-		String entStepFree = "ent-stepfree";
-		String platOrigin = "plat-origin";
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(entStairs, ORIGIN, null, "ENTRANCE"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(entStepFree, ORIGIN, null, "ENTRANCE"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(platOrigin, ORIGIN, "l1", "PLATFORM"));
-
-		// Step-free is FASTER (240s), stairs is SLOWER (600s). Step-free dominates stairs!
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-stepfree", entStepFree, platOrigin, 240, 180, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-stairs", entStairs, platOrigin, 600, 400, false, true, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-stepfree", ORIGIN, "l1", "e-stepfree", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-stairs", ORIGIN, "l1", "e-stairs", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		String exitDest = "exit-dest";
-		String platDest = "plat-dest";
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(exitDest, DESTINATION, null, "EXIT"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(platDest, DESTINATION, "l1", "PLATFORM"));
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-exit", platDest, exitDest, 180, 120, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-exit", DESTINATION, "l1", "e-exit", "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		var routes = List.of(new LoadRouteTimetablePort.TransitRoute("r1", "l1", "r1", "l1", "Line 1", "Asia/Seoul"));
+		for (TransferEdge transfer : transfers) {
+			edges.add(new LoadRouteTimetablePort.PathwayEdge(transfer.id(), "x-l0", "x-l1", transfer.seconds(),
+				transfer.distanceMeters(), false, transfer.includesStairs(), 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+			rules.add(new LoadRouteTimetablePort.TransferRule(transfer.id() + "-rule", "x", "l0", "x", "l1", "IN_STATION",
+				transfer.seconds(), transfer.id(), transfer.includesStairs() ? null : transfer.id(), "VERIFIED"));
+			evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(transfer.id() + "-evidence", "x", "l1", transfer.id(),
+				"TRANSFER", "OFFICIAL_SOURCE", "VERIFIED", true, null));
+		}
+		var routes = List.of(
+			new LoadRouteTimetablePort.TransitRoute("r0", "l0", "r0", "l0", "Line 0", "Asia/Seoul"),
+			new LoadRouteTimetablePort.TransitRoute("r1", "l1", "r1", "l1", "Line 1", "Asia/Seoul"));
 		var trips = List.of(
+			new LoadRouteTimetablePort.TransitTrip("feeder", "r0", "daily", "feeder", "0", "LOCAL", 0),
 			new LoadRouteTimetablePort.TransitTrip("t1", "r1", "daily", "t1", "0", "LOCAL", 0),
-			new LoadRouteTimetablePort.TransitTrip("t2", "r1", "daily", "t2", "0", "LOCAL", 0)
-		);
+			new LoadRouteTimetablePort.TransitTrip("t2", "r1", "daily", "t2", "0", "LOCAL", 0));
+		// 출발 08:00(28,800) + 무단차 승차 여유 180초 = 28,980 → feeder(29,000) 탑승, x 도착 29,100.
+		// SLOW 3,500 m/h·무단차 대기 60초: 180m=186+60=246초, 400m=412+60=472초.
 		var stops = List.of(
-			new LoadRouteTimetablePort.TransitStopTime("t1", 1, ORIGIN, "l1", 29400, 29400, 0, 0),
-			new LoadRouteTimetablePort.TransitStopTime("t1", 2, DESTINATION, "l1", 30000, 30000, 0, 0),
-			new LoadRouteTimetablePort.TransitStopTime("t2", 1, ORIGIN, "l1", 29800, 29800, 0, 0),
-			new LoadRouteTimetablePort.TransitStopTime("t2", 2, DESTINATION, "l1", 30400, 30400, 0, 0)
-		);
-
+			new LoadRouteTimetablePort.TransitStopTime("feeder", 1, ORIGIN, "l0", 29000, 29000, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime("feeder", 2, "x", "l0", 29100, 29100, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime("t1", 1, "x", "l1", 29600, 29600, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime("t1", 2, DESTINATION, "l1", 30200, 30200, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime("t2", 1, "x", "l1", 29800, 29800, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime("t2", 2, DESTINATION, "l1", 30400, 30400, 0, 0));
 		var daily = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			SERVICE_DATE, SERVICE_DATE.plusDays(7), "Asia/Seoul");
-
 		return new RouteTimetable(
 			List.of(daily), List.of(), routes, trips, stops,
 			List.of(), List.of(), null,
-			new LoadRouteTimetablePort.RouteAccessData(nodes, edges, List.of(), evidence));
-	}
-
-	private static RouteTimetable multipleAlternativeTransitionsTimetable() {
-		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
-		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
-		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
-
-		String entCanonical = "ent-canonical";
-		String entAlt1 = "ent-alt1";
-		String entAlt2 = "ent-alt2";
-		String entAlt3 = "ent-alt3";
-		String platOrigin = "plat-origin";
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(entCanonical, ORIGIN, null, "ENTRANCE"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(entAlt1, ORIGIN, null, "ENTRANCE"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(entAlt2, ORIGIN, null, "ENTRANCE"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(entAlt3, ORIGIN, null, "ENTRANCE"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(platOrigin, ORIGIN, "l1", "PLATFORM"));
-
-		// Canonical: step-free (600s, no stairs)
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-can", entCanonical, platOrigin, 600, 400, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-can", ORIGIN, "l1", "e-can", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		// Alt1: stairs, 300s
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-alt1", entAlt1, platOrigin, 300, 200, false, true, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-alt1", ORIGIN, "l1", "e-alt1", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		// Alt2: stairs, 150s (shorter than alt1)
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-alt2", entAlt2, platOrigin, 150, 100, false, true, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-alt2", ORIGIN, "l1", "e-alt2", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		// Alt3: stairs, 400s (longer than alt2)
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-alt3", entAlt3, platOrigin, 400, 250, false, true, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-alt3", ORIGIN, "l1", "e-alt3", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		String exitDest = "exit-dest";
-		String platDest = "plat-dest";
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(exitDest, DESTINATION, null, "EXIT"));
-		nodes.add(new LoadRouteTimetablePort.PathwayNode(platDest, DESTINATION, "l1", "PLATFORM"));
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-exit", platDest, exitDest, 180, 120, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-exit", DESTINATION, "l1", "e-exit", "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
-
-		var routes = List.of(new LoadRouteTimetablePort.TransitRoute("r1", "l1", "r1", "l1", "Line 1", "Asia/Seoul"));
-		var trips = List.of(
-			new LoadRouteTimetablePort.TransitTrip("t1", "r1", "daily", "t1", "0", "LOCAL", 0)
-		);
-		var stops = List.of(
-			new LoadRouteTimetablePort.TransitStopTime("t1", 1, ORIGIN, "l1", 30000, 30000, 0, 0),
-			new LoadRouteTimetablePort.TransitStopTime("t1", 2, DESTINATION, "l1", 31000, 31000, 0, 0)
-		);
-		var daily = new LoadRouteTimetablePort.ServiceCalendar(
-			"daily", true, true, true, true, true, true, true,
-			SERVICE_DATE, SERVICE_DATE.plusDays(7), "Asia/Seoul");
-
-		return new RouteTimetable(
-			List.of(daily), List.of(), routes, trips, stops,
-			List.of(), List.of(), null,
-			new LoadRouteTimetablePort.RouteAccessData(nodes, edges, List.of(), evidence));
+			new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence));
 	}
 }

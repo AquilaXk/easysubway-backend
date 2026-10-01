@@ -112,13 +112,13 @@ public final class JourneyProfileFullCorpusRunner {
 		var applicableRides = rawRides(compiled, applicableServiceDates(activeFrom, freshUntil), requiredLimits);
 		for (String regionId : regionIds) {
 			JourneyProfileMeasurementOd.DirectOdCandidate direct = JourneyProfileMeasurementOd.selectDirectOd(
-				scope, regionId, events, accesses, activeFrom, freshUntil, expectedBoardingSlackSeconds);
+				scope, regionId, events, activeFrom, freshUntil, expectedBoardingSlackSeconds);
 			List<JourneyProfileExactOracle.Ride> directRides = applicableRides;
 			Instant departureLatestReadyAt = profileWindow(direct.readyAt(), freshUntil,
 				requiredPolicy.maxTemporalWindow()).latestReadyAt();
-			Instant pointTerminal = terminalDeadline(direct.destinationStationId(), directRides, accesses);
+			Instant pointTerminal = terminalDeadline(direct.destinationStationId(), directRides);
 			Instant lastConnectionTerminal = terminalDeadline(direct.destinationStationId(),
-				rawRides(compiled, List.of(direct.serviceDate()), requiredLimits), accesses);
+				rawRides(compiled, List.of(direct.serviceDate()), requiredLimits));
 			Instant typedFailureDeadline = typedFailureDeadline(direct, directRides, accesses, requiredLimits,
 				expectedBoardingSlackSeconds);
 			rows.add(pointRow(regionId, compiled, direct, directRides, accesses, requiredLimits,
@@ -130,7 +130,7 @@ public final class JourneyProfileFullCorpusRunner {
 			rows.add(lastConnectionRow(regionId, compiled, direct, accesses, requiredPolicy, requiredLimits,
 				expectedBoardingSlackSeconds, lastConnectionTerminal));
 			JourneyProfileMeasurementOd.DirectOdCandidate cutoff = crossCutoffCandidate(
-				scope, regionId, events, accesses, activeFrom, freshUntil, expectedBoardingSlackSeconds);
+				scope, regionId, events, activeFrom, freshUntil, expectedBoardingSlackSeconds);
 			List<JourneyProfileExactOracle.Ride> cutoffRides = applicableRides;
 			rows.add(cutoffRow(regionId, compiled, cutoff, cutoffRides, accesses, requiredPolicy, requiredLimits,
 				expectedBoardingSlackSeconds));
@@ -154,7 +154,7 @@ public final class JourneyProfileFullCorpusRunner {
 	) {
 		JourneyRaptorQuery query = query(candidate, new JourneyRaptorQuery.DepartAt(candidate.readyAt()));
 		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solvePoint(
-			oracleQuery(candidate, candidate.readyAt(), terminalDeadline(candidate.destinationStationId(), rides, accesses),
+			oracleQuery(candidate, candidate.readyAt(), terminalDeadline(candidate.destinationStationId(), rides),
 				limits, boardingSlackSeconds), rides, accesses);
 		return JourneyProfileMeasuredExecution.pointRow(regionId,
 			JourneyProfileMeasuredExecution.measurePoint(query, compiled.runtime()), expected);
@@ -296,14 +296,13 @@ public final class JourneyProfileFullCorpusRunner {
 		Scope scope,
 		String regionId,
 		List<JourneyProfileCandidateEvents.Event> events,
-		List<JourneyProfileExactOracle.Access> accesses,
 		Instant activeFrom,
 		Instant freshUntil,
 		int boardingSlackSeconds
 	) {
 		for (JourneyProfileCandidateEvents.Event event : events) {
 			var selected = JourneyProfileMeasurementOd.findDirectOd(
-				scope, regionId, List.of(event), accesses, activeFrom, freshUntil, boardingSlackSeconds);
+				scope, regionId, List.of(event), activeFrom, freshUntil, boardingSlackSeconds);
 			if (selected.isEmpty()) continue;
 			var candidate = selected.orElseThrow();
 			if (!cutoffBoundary(candidate.readyAt()).minusSeconds(1).isBefore(activeFrom)) return candidate;
@@ -395,19 +394,14 @@ public final class JourneyProfileFullCorpusRunner {
 	) {
 		var breakpoints = new java.util.TreeSet<Instant>();
 		breakpoints.add(latestReadyAt);
+		// #454: 출발역 승강장에서 바로 타므로 breakpoint는 출발 - 승차 여유다.
 		for (var ride : rides) {
 			if (!ride.pickupAllowed() || !candidate.originStationId().equals(ride.fromStationId())) continue;
-			for (var access : accesses) {
-				if (!access.usable() || access.kind() != JourneyProfileExactOracle.AccessKind.ENTRY
-					|| !ride.fromStationId().equals(access.fromStationId())
-					|| !ride.fromStationId().equals(access.toStationId())
-					|| !ride.fromLineId().equals(access.toLineId())) continue;
-				Instant readyAt = ride.departureAt().minusSeconds(access.durationSeconds()).minusSeconds(boardingSlackSeconds);
-				if (!readyAt.isBefore(candidate.readyAt()) && !readyAt.isAfter(latestReadyAt)) breakpoints.add(readyAt);
-			}
+			Instant readyAt = ride.departureAt().minusSeconds(boardingSlackSeconds);
+			if (!readyAt.isBefore(candidate.readyAt()) && !readyAt.isAfter(latestReadyAt)) breakpoints.add(readyAt);
 		}
 		var ordered = new LinkedHashMap<Instant, List<JourneyProfileExactOracle.Candidate>>();
-		Instant deadline = terminalDeadline(candidate.destinationStationId(), rides, accesses);
+		Instant deadline = terminalDeadline(candidate.destinationStationId(), rides);
 		var oracle = new JourneyProfileExactOracle();
 		for (Instant readyAt : breakpoints) {
 			if (!deadline.isAfter(readyAt)) continue;
@@ -420,29 +414,22 @@ public final class JourneyProfileFullCorpusRunner {
 		return Collections.unmodifiableMap(ordered);
 	}
 
+	/** #454: 도착역 승강장에 내리는 가장 늦은 시각(하차 이동 없음). */
 	private static Instant terminalDeadline(
 		String destinationStationId,
-		List<JourneyProfileExactOracle.Ride> rides,
-		List<JourneyProfileExactOracle.Access> accesses
+		List<JourneyProfileExactOracle.Ride> rides
 	) {
 		Instant latest = null;
 		for (JourneyProfileExactOracle.Ride ride : rides) {
 			if (!ride.dropOffAllowed() || !destinationStationId.equals(ride.toStationId())) {
 				continue;
 			}
-			for (JourneyProfileExactOracle.Access exit : accesses) {
-				if (exit.kind() == JourneyProfileExactOracle.AccessKind.EXIT && exit.usable()
-					&& destinationStationId.equals(exit.fromStationId()) && destinationStationId.equals(exit.toStationId())
-					&& ride.toLineId().equals(exit.fromLineId())) {
-					Instant arrivalAtDestination = ride.arrivalAt().plusSeconds(exit.durationSeconds());
-					if (latest == null || arrivalAtDestination.isAfter(latest)) {
-						latest = arrivalAtDestination;
-					}
-				}
+			if (latest == null || ride.arrivalAt().isAfter(latest)) {
+				latest = ride.arrivalAt();
 			}
 		}
 		if (latest == null) {
-			throw unavailable("actual service-day events have no verified exit terminal");
+			throw unavailable("actual service-day events have no destination arrival");
 		}
 		return latest;
 	}
@@ -518,8 +505,6 @@ public final class JourneyProfileFullCorpusRunner {
 		value.put("destinationStationId", candidate.destinationStationId());
 		value.put("readyAt", candidate.readyAt().toString());
 		value.put("arrivalAtDestination", candidate.arrivalAtDestination().toString());
-		value.put("entryAccessId", candidate.entryAccessId());
-		value.put("exitAccessId", candidate.exitAccessId());
 		return Collections.unmodifiableMap(value);
 	}
 

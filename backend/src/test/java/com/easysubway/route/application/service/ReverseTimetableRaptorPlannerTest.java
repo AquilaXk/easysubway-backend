@@ -14,9 +14,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
-import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
-import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -49,16 +47,16 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
-	@DisplayName("uses verified ENTRY and EXIT durations at an equal 24-hour deadline")
+	@DisplayName("#454: 24시간 경계 마감과 같은 도착역 승강장 도착을 진입·하차 시간 없이 찾는다")
 	void returnsLatestReadyAtForDirectOvernightConnection() {
 		var compiled = forward.compile(directTimetable(87_000, 87_600, true, true, 300, 180));
 
-		var result = arriveBy(compiled, "station-a", "station-b", 87_843,
+		var result = arriveBy(compiled, "station-a", "station-b", 87_600,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.latestReadyAtSeconds()).isEqualTo(87_000 - 405 - SLACK_SECONDS);
-		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(87_843);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(87_000 - SLACK_SECONDS);
+		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(87_600);
 		assertThat(result.itineraries()).singleElement().satisfies(itinerary ->
 			assertThat(itinerary.legs().stream()
 				.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
@@ -68,11 +66,11 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
-	@DisplayName("preserves non-dominated reverse candidates across ready time and verified access cost")
+	@DisplayName("preserves non-dominated reverse candidates across ready time and arrival time")
 	void preservesReverseProfileFrontierCandidates() {
 		var compiled = forward.compile(reverseFrontierTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(33_500, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 33_500,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -82,10 +80,9 @@ class ReverseTimetableRaptorPlannerTest {
 			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
 			.findFirst().orElseThrow().tripId())
 			.containsExactlyInAnyOrder("later-ready", "lower-walk");
+		// #454: 직행은 이동 구간이 없어 접근 이동 시간이 0이다(진입·하차 시간 없음).
 		assertThat(result.itineraries()).extracting(itinerary -> itinerary.metrics().accessMovementSeconds())
-			.containsExactlyInAnyOrder(
-				(long) accessMovementAt(300, 180),
-				(long) accessMovementAt(30, 180));
+			.containsExactly(0L, 0L);
 	}
 
 	@Test
@@ -96,7 +93,7 @@ class ReverseTimetableRaptorPlannerTest {
 			ORACLE_REQUEST_ID, JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR);
 
 		assertThatThrownBy(() -> planner.arriveBy(
-			query("station-a", "station-b", deadlineAt(33_500, 180)), compiled,
+			query("station-a", "station-b", 33_500), compiled,
 			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32), observations))
 			.isInstanceOfSatisfying(ReverseTimetableRaptorPlanner.ReversePlanningLimitException.class, exceeded -> {
@@ -113,7 +110,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void doesNotMixReverseCandidatesAcrossDownstreamSuffixes() {
 		var compiled = forward.compile(sharedUpstreamSuffixTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 34_800,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -133,24 +130,19 @@ class ReverseTimetableRaptorPlannerTest {
 			new TimetableRealtimeUpdate("direct", 60, 60, false, "snapshot-delay",
 				Instant.parse("2026-07-01T00:00:00Z"))));
 
-		var result = arriveBy(compiled, "station-a", "station-b", 87_903, overlay);
+		var result = arriveBy(compiled, "station-a", "station-b", 87_660, overlay);
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.latestReadyAtSeconds()).isEqualTo(87_060 - 405 - SLACK_SECONDS);
-		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(87_903);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(87_060 - SLACK_SECONDS);
+		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(87_660);
 		assertThat(result.itinerary().serviceDate()).isEqualTo(SERVICE_DATE);
-		assertThat(result.itinerary().plannedDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:01:45Z"));
-		assertThat(result.itinerary().realtimeDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:02:45Z"));
-		assertThat(result.itinerary().plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:24:03Z"));
-		assertThat(result.itinerary().realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:25:03Z"));
-		assertThat(result.itinerary().legs()).hasSize(3);
+		// #454: 준비 시각 = 출발 - 승차 여유(90초), 도착 = 승강장 도착(하차 시간 없음).
+		assertThat(result.itinerary().plannedDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:08:30Z"));
+		assertThat(result.itinerary().realtimeDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:09:30Z"));
+		assertThat(result.itinerary().plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:20:00Z"));
+		assertThat(result.itinerary().realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:21:00Z"));
+		assertThat(result.itinerary().legs()).hasSize(1);
 		assertThat(result.itinerary().legs().get(0))
-			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, entry -> {
-				assertThat(entry.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY);
-				assertThat(entry.durationSeconds()).isEqualTo(405);
-				assertThat(entry.verified()).isTrue();
-			});
-		assertThat(result.itinerary().legs().get(1))
 			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyRideProjection.class, ride -> {
 				assertThat(ride.tripId()).isEqualTo("direct");
 				assertThat(ride.plannedDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:10:00Z"));
@@ -163,26 +155,20 @@ class ReverseTimetableRaptorPlannerTest {
 					new RouteTimetableRaptorPlanner.JourneyStopProjection("station-b",
 						Instant.parse("2026-07-01T15:20:00Z"), null, Instant.parse("2026-07-01T15:21:00Z"), null));
 			});
-		assertThat(result.itinerary().legs().get(2))
-			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, exit -> {
-				assertThat(exit.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT);
-				assertThat(exit.durationSeconds()).isEqualTo(243);
-				assertThat(exit.verified()).isTrue();
-			});
 	}
 
 	@Test
-	@DisplayName("rejects one-way or unverified access instead of inverting it")
-	void rejectsUnverifiedOrWrongDirectionalAccess() {
+	@DisplayName("#454: 검증되지 않았거나 방향이 반대인 ENTRY/EXIT 간선은 무시하고 승강장 기준으로 찾는다")
+	void ignoresUnverifiedOrWrongDirectionalEntryAndExitEdges() {
 		var unverified = forward.compile(directTimetable(32_400, 33_000, true, false, 300, 180));
 		var wrongDirection = forward.compile(directTimetable(32_400, 33_000, false, true, 300, 180));
 
-		assertThat(arriveBy(unverified, "station-a", "station-b", deadlineAt(33_000, 180),
+		assertThat(arriveBy(unverified, "station-a", "station-b", 33_000,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
-			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_VERIFIED_EXIT);
-		assertThat(arriveBy(wrongDirection, "station-a", "station-b", deadlineAt(33_000, 180),
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(arriveBy(wrongDirection, "station-a", "station-b", 33_000,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
-			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
 	}
 
 	@Test
@@ -190,18 +176,16 @@ class ReverseTimetableRaptorPlannerTest {
 	void followsVerifiedDirectionalTransfer() {
 		var compiled = forward.compile(transferTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 34_800,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.latestReadyAtSeconds()).isEqualTo(32_400 - 405 - SLACK_SECONDS);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(32_400 - SLACK_SECONDS);
 		assertThat(result.transfersUsed()).isEqualTo(1);
 		assertThat(result.itinerary().legs()).extracting(Object::getClass).containsExactly(
-			RouteTimetableRaptorPlanner.JourneyAccessProjection.class,
 			RouteTimetableRaptorPlanner.JourneyRideProjection.class,
 			RouteTimetableRaptorPlanner.JourneyAccessProjection.class,
-			RouteTimetableRaptorPlanner.JourneyRideProjection.class,
-			RouteTimetableRaptorPlanner.JourneyAccessProjection.class);
+			RouteTimetableRaptorPlanner.JourneyRideProjection.class);
 	}
 
 	@Test
@@ -209,7 +193,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void followsOnlyFeasibleTransferFromPredecessorServiceDayIntoNextDay() {
 		var compiled = forward.compile(crossCutoffTransferTimetable(false));
 
-		var result = planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+		var result = planner.arriveBy(crossDateQuery(96_000, 99_600), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -275,19 +259,19 @@ class ReverseTimetableRaptorPlannerTest {
 	@DisplayName("fails closed when a dated range exceeds work limits or the predecessor calendar is removed")
 	void failsClosedForDatedRangeLimitCancellationAndCalendarRemoval() {
 		var compiled = forward.compile(crossCutoffTransferTimetable(false));
-		assertThatThrownBy(() -> planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+		assertThatThrownBy(() -> planner.arriveBy(crossDateQuery(96_000, 99_600), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32)))
 			.isInstanceOfSatisfying(ReverseTimetableRaptorPlanner.ReversePlanningLimitException.class,
 				exceeded -> assertThat(exceeded.limit())
 					.isEqualTo(ReverseTimetableRaptorPlanner.PlanningLimit.MAX_ESTIMATED_WORK));
 		assertThat(planner.arriveBy(new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 96_000, deadlineAt(99_600, 180), 1, PROFILE_BIT,
+			"station-a", "station-b", SERVICE_DATE, 96_000, 99_600, 1, PROFILE_BIT,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> true), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.CANCELLED);
 		var removed = forward.compile(crossCutoffTransferTimetable(true));
-		assertThat(planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), removed,
+		assertThat(planner.arriveBy(crossDateQuery(96_000, 99_600), removed,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 	}
@@ -298,7 +282,7 @@ class ReverseTimetableRaptorPlannerTest {
 		var compiled = forward.compile(crossCutoffTransferTimetable(false));
 		var checks = new java.util.concurrent.atomic.AtomicInteger();
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 96_000, deadlineAt(99_600, 180), 1, PROFILE_BIT,
+			"station-a", "station-b", SERVICE_DATE, 96_000, 99_600, 1, PROFILE_BIT,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> checks.incrementAndGet() >= 3);
 		assertThat(planner.arriveBy(query, compiled, SERVICE_DATE, SERVICE_DATE,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
@@ -310,7 +294,7 @@ class ReverseTimetableRaptorPlannerTest {
 	@DisplayName("matches the raw scheduled exact oracle for shared upstream arrive-by suffixes")
 	void arriveByMatchesRawScheduledExactOracleForSharedUpstreamSuffixes() {
 		var source = sharedUpstreamSuffixTimetable();
-		int deadline = deadlineAt(34_800, 180);
+		int deadline = 34_800;
 		var expected = scheduledOracle(source, serviceInstant(0), serviceInstant(deadline));
 		var compiled = forward.compile(source);
 		var actual = planner.arriveBy(new ReverseTimetableRaptorPlanner.Query(
@@ -329,7 +313,7 @@ class ReverseTimetableRaptorPlannerTest {
 	@DisplayName("distinguishes calendar exclusion, realtime cancellation, and delayed deadline misses")
 	void classifiesInactiveAndPinnedRealtimeChanges() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
-		var noService = planner.arriveBy(query("station-a", "station-b", deadlineAt(33_000, 180)), compiled,
+		var noService = planner.arriveBy(query("station-a", "station-b", 33_000), compiled,
 			compiled.activeServiceDay(SERVICE_DATE.plusDays(1)), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
 		var cancelled = forward.compileRealtimeOverlay(compiled, updates(
 			new TimetableRealtimeUpdate("direct", 0, 0, true, "snapshot-cancel", Instant.parse("2026-07-01T00:00:00Z"))));
@@ -338,9 +322,9 @@ class ReverseTimetableRaptorPlannerTest {
 
 		assertThat(noService.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_ACTIVE_SERVICE);
 		assertThat(noService.itinerary()).isNull();
-		assertThat(arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180), cancelled).outcome())
+		assertThat(arriveBy(compiled, "station-a", "station-b", 33_000, cancelled).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
-		assertThat(arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180), delayed).outcome())
+		assertThat(arriveBy(compiled, "station-a", "station-b", 33_000, delayed).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.DEADLINE_MISS);
 	}
 
@@ -356,7 +340,7 @@ class ReverseTimetableRaptorPlannerTest {
 				stop("via-pass", 4, "station-b", "line-a", 33_000, 0, 0)),
 			access(true, true, 300, 180, false)));
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 33_000,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -369,15 +353,32 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("rejects an unordered dated range and stops a cancelled last-connection preparation")
+	void rejectsUnorderedDatedRangeAndCancelledLastConnectionPreparation() {
+		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
+
+		assertThatThrownBy(() -> planner.arriveBy(query("station-a", "station-b", 33_000), compiled,
+			SERVICE_DATE.plusDays(1), SERVICE_DATE, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits(), null))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("ordered service-date range");
+		var cancelled = new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false,
+			() -> true);
+		assertThat(planner.prepareLastConnection(cancelled, compiled, compiled.activeServiceDay(SERVICE_DATE),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits(), null).outcome())
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.CANCELLED);
+	}
+
+	@Test
 	@DisplayName("requires upstream pickup and downstream drop-off permissions")
 	void requiresPickupAndDropOffRestrictions() {
 		var noPickup = forward.compile(directTimetableWithRestrictions(1, 0));
 		var noDropOff = forward.compile(directTimetableWithRestrictions(0, 1));
 
-		assertThat(arriveBy(noPickup, "station-a", "station-b", deadlineAt(33_000, 180),
+		assertThat(arriveBy(noPickup, "station-a", "station-b", 33_000,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
-		assertThat(arriveBy(noDropOff, "station-a", "station-b", deadlineAt(33_000, 180),
+		assertThat(arriveBy(noDropOff, "station-a", "station-b", 33_000,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 		assertThat(lastConnection(noDropOff, MobilityPreset.SLOW,
@@ -396,20 +397,20 @@ class ReverseTimetableRaptorPlannerTest {
 		var result = resultWithHorizon.result();
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.latestReadyAtSeconds()).isEqualTo(36_000 - 405 - SLACK_SECONDS);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(36_000 - SLACK_SECONDS);
 		assertThat(result.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
 			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
 			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId)
 			.containsExactly("feasible-first", "feasible-second");
 		assertThat(resultWithHorizon.terminalArrivalAtDestinationSeconds())
-			.isEqualTo(deadlineAt(39_300, 180));
+			.isEqualTo(39_300);
 	}
 
 	@Test
 	@DisplayName("matches the raw scheduled exact oracle for the last feasible transfer")
 	void lastConnectionMatchesRawScheduledExactOracleForLastFeasibleTransfer() {
 		var source = lastConnectionTransferTimetable();
-		var allExpected = scheduledOracle(source, serviceInstant(0), serviceInstant(deadlineAt(39_300, 180)));
+		var allExpected = scheduledOracle(source, serviceInstant(0), serviceInstant(39_300));
 		var latestReadyAt = allExpected.stream().map(JourneyProfileExactOracle.Candidate::readyAt)
 			.max(Instant::compareTo).orElseThrow();
 		var expected = allExpected.stream()
@@ -440,21 +441,31 @@ class ReverseTimetableRaptorPlannerTest {
 		var result = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.latestReadyAtSeconds()).isEqualTo(93_000 - 405 - SLACK_SECONDS);
-		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(deadlineAt(93_600, 180));
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(93_000 - SLACK_SECONDS);
+		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(93_600);
 	}
 
 	@Test
-	@DisplayName("applies mobility access cost when deriving the last feasible ready time")
+	@DisplayName("applies mobility transfer cost when deriving the last feasible ready time")
 	void lastConnectionAppliesMobilityAccessCost() {
-		var compiled = forward.compile(directTimetable(40_000, 40_600, true, true, 300, 180));
+		// #454: 이동 비용은 환승에만 있다. 300초 환승은 보통 300초, 느린 걸음 405초라 느린 쪽만 늦은 첫 열차를 놓친다.
+		var compiled = forward.compile(timetable(
+			List.of(trip("early-first", "route-a"), trip("late-first", "route-a"), trip("second", "route-b")),
+			List.of(stop("early-first", 1, "station-a", "line-a", 36_000, 0, 0),
+				stop("early-first", 2, "station-transfer", "line-a", 36_600, 0, 0),
+				stop("late-first", 1, "station-a", "line-a", 36_200, 0, 0),
+				stop("late-first", 2, "station-transfer", "line-a", 36_800, 0, 0),
+				stop("second", 1, "station-transfer", "line-b", 37_200, 0, 0),
+				stop("second", 2, "station-b", "line-b", 37_800, 0, 0)),
+			access(true, true, 300, 180, true)));
 
 		var normal = lastConnection(compiled, MobilityPreset.STANDARD, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 		var slow = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(normal.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
 		assertThat(slow.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(slow.latestReadyAtSeconds()).isLessThan(normal.latestReadyAtSeconds());
+		assertThat(normal.latestReadyAtSeconds()).isEqualTo(36_200 - SLACK_SECONDS);
+		assertThat(slow.latestReadyAtSeconds()).isEqualTo(36_000 - SLACK_SECONDS);
 	}
 
 	@Test
@@ -470,9 +481,9 @@ class ReverseTimetableRaptorPlannerTest {
 		var delayed = lastConnection(compiled, MobilityPreset.SLOW, delayedLatest);
 
 		assertThat(cancelled.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(cancelled.latestReadyAtSeconds()).isEqualTo(40_000 - 405 - SLACK_SECONDS);
+		assertThat(cancelled.latestReadyAtSeconds()).isEqualTo(40_000 - SLACK_SECONDS);
 		assertThat(delayed.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(delayed.latestReadyAtSeconds()).isEqualTo(42_000 + 300 - 405 - SLACK_SECONDS);
+		assertThat(delayed.latestReadyAtSeconds()).isEqualTo(42_000 + 300 - SLACK_SECONDS);
 	}
 
 	@Test
@@ -480,12 +491,12 @@ class ReverseTimetableRaptorPlannerTest {
 	void findsReverseArriveByThroughOutOfStationTransfer() {
 		var compiled = forward.compile(outOfStationTransferTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 34_800,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
 		assertThat(result.itineraries()).singleElement().satisfies(itinerary -> {
-			assertThat(itinerary.legs()).hasSize(5);
+			assertThat(itinerary.legs()).hasSize(3);
 			var transfer = itinerary.legs().stream()
 				.filter(leg -> leg instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection acc
 					&& acc.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER)
@@ -523,7 +534,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void outOfStationTransferTimeoutAppliesFarePenalty() {
 		var compiled = forward.compile(outOfStationTimeoutTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(54_000, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 54_000,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -547,7 +558,7 @@ class ReverseTimetableRaptorPlannerTest {
 			ORACLE_REQUEST_ID, JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR);
 
 		var result = planner.arriveBy(
-			query("station-a", "station-b", deadlineAt(34_800, 180)), compiled,
+			query("station-a", "station-b", 34_800), compiled,
 			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
 			limits(), observations);
 
@@ -561,7 +572,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void findsReverseArriveByThroughSameStationOutOfStationTransfer() {
 		var compiled = forward.compile(sameStationOutOfStationTransferTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 34_800,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -582,7 +593,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void findsReverseArriveByWhenFirstFootpathCandidateIsUnverified() {
 		var compiled = forward.compile(multiCandidateOutOfStationTimetable(true));
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 34_800,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -607,7 +618,7 @@ class ReverseTimetableRaptorPlannerTest {
 		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
 			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, stepFreeProfileBit,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 
 		var result = planner.arriveBy(query, compiled,
@@ -630,7 +641,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void findsReverseArriveByThroughMultiTransferWithOutOfStation() {
 		var compiled = forward.compile(multiTransferTimetable());
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(33_900, 180), 2, PROFILE_BIT,
+			"station-a", "station-b", SERVICE_DATE, 0, 33_900, 2, PROFILE_BIT,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 
 		var result = planner.arriveBy(query, compiled,
@@ -737,7 +748,7 @@ class ReverseTimetableRaptorPlannerTest {
 		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
 			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, stepFreeProfileBit,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 
 		var result = planner.arriveBy(query, compiled,
@@ -765,7 +776,7 @@ class ReverseTimetableRaptorPlannerTest {
 		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
 			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, stepFreeProfileBit,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 
 		var result = planner.arriveBy(query, compiled,
@@ -791,7 +802,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void prefersInStationTransferWhenStepFreeIsNotRequested() {
 		var compiled = forward.compile(sameStationStepFreePreferenceTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+		var result = arriveBy(compiled, "station-a", "station-b", 34_800,
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -815,7 +826,7 @@ class ReverseTimetableRaptorPlannerTest {
 		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
 			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, stepFreeProfileBit,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 
 		var result = planner.arriveBy(query, compiled,
@@ -843,7 +854,7 @@ class ReverseTimetableRaptorPlannerTest {
 		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
 			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, stepFreeProfileBit,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 
 		var result = planner.arriveBy(query, compiled,
@@ -876,7 +887,7 @@ class ReverseTimetableRaptorPlannerTest {
 		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
 			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
 		var queryStepFree = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, stepFreeProfileBit,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 		var queryStandard = query("station-a", "station-b", 40_000);
 
@@ -924,15 +935,21 @@ class ReverseTimetableRaptorPlannerTest {
 	void footpathTransferAlignsWithQueryRequiresVerifiedJourneyDistance() {
 		var compiled = forward.compile(unverifiedDistanceOutOfStationTransferTimetable());
 
+		// #454·data#876: 거리 없이 실측 600초만 있는 검증 환승은 쓴다. 3,600 m/h는 1.2 m/s보다 느려 600×4,320/3,600=720초.
 		var queryVerified = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, PROFILE_BIT,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, PROFILE_BIT,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, true, () -> false);
 		var resultVerified = planner.arriveBy(queryVerified, compiled,
 			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
-		assertThat(resultVerified.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
+		assertThat(resultVerified.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(resultVerified.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
+			.singleElement().isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, transfer -> {
+				assertThat(transfer.durationSeconds()).isEqualTo(720);
+				assertThat(transfer.distanceMeters()).isZero();
+			});
 
 		var queryUnverified = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, PROFILE_BIT,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, PROFILE_BIT,
 			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
 		var resultUnverified = planner.arriveBy(queryUnverified, compiled,
 			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
@@ -1011,22 +1028,23 @@ class ReverseTimetableRaptorPlannerTest {
 			|| expected.accessibilityBurden() != actual.metrics().accessibilityBurden()
 			|| !sameSlack(expected.minimumConnectionSlack(), actual.metrics().connectionSlack())
 			|| actual.legs().size() != expected.accesses().size() + expected.rides().size()) return false;
-		for (int index = 0; index < expected.accesses().size(); index += 1) {
-			var access = expected.accesses().get(index);
-			if (!(actual.legs().get(index * 2) instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection observed)
-				|| !access.kind().name().equals(observed.kind().name())
-				|| !access.fromStationId().equals(observed.fromStationId()) || !access.toStationId().equals(observed.toStationId())
-				|| access.durationSeconds() != observed.durationSeconds() || access.walkingDistanceMeters() != observed.distanceMeters()
-				|| (access.accessibilityBurden() != 0) != observed.includesStairs()
-				|| !access.usable() || !observed.verified() || !"VERIFIED".equals(observed.verificationStatus())) return false;
-			if (index == expected.rides().size()) continue;
+		// #454: 승차 → [환승 → 승차]* 순서다(진입·하차 구간 없음).
+		for (int index = 0; index < expected.rides().size(); index += 1) {
 			var ride = expected.rides().get(index);
-			if (!(actual.legs().get(index * 2 + 1) instanceof RouteTimetableRaptorPlanner.JourneyRideProjection observedRide)
+			if (!(actual.legs().get(index * 2) instanceof RouteTimetableRaptorPlanner.JourneyRideProjection observedRide)
 				|| !ride.tripId().equals(observedRide.tripId()) || !ride.fromStationId().equals(observedRide.fromStationId())
 				|| !ride.toStationId().equals(observedRide.toStationId()) || !ride.departureAt().equals(observedRide.plannedDepartureTime())
 				|| !ride.arrivalAt().equals(observedRide.plannedArrivalTime()) || observedRide.realtimeDepartureTime() != null
 				|| observedRide.realtimeArrivalTime() != null || !rawLineId(source, ride.tripId()).equals(observedRide.lineId())
 				|| !rawDirectionStationId(source, ride.tripId()).equals(observedRide.directionStationId())) return false;
+			if (index == expected.accesses().size()) continue;
+			var access = expected.accesses().get(index);
+			if (!(actual.legs().get(index * 2 + 1) instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection observed)
+				|| !access.kind().name().equals(observed.kind().name())
+				|| !access.fromStationId().equals(observed.fromStationId()) || !access.toStationId().equals(observed.toStationId())
+				|| access.durationSeconds() != observed.durationSeconds() || access.walkingDistanceMeters() != observed.distanceMeters()
+				|| (access.accessibilityBurden() != 0) != observed.includesStairs()
+				|| !access.usable() || !observed.verified() || !"VERIFIED".equals(observed.verificationStatus())) return false;
 		}
 		return true;
 	}
@@ -1069,18 +1087,6 @@ class ReverseTimetableRaptorPlannerTest {
 		return new ReverseTimetableRaptorPlanner.Query(
 			"station-a", "station-b", SERVICE_DATE, earliest, deadline, 1, PROFILE_BIT, SLACK_SECONDS,
 			MobilityPreset.SLOW, 3_600, false, () -> false);
-	}
-
-	private static int deadlineAt(int trainArrivalSeconds, int baselineExitSeconds) {
-		return trainArrivalSeconds + ProfileWalkTimeCalculator.estimateSeconds(
-			baselineExitSeconds, MobilityPreset.SLOW, WalkTimeSource.MEASURED_PATHWAY, false).seconds();
-	}
-
-	private static int accessMovementAt(int baselineEntrySeconds, int baselineExitSeconds) {
-		return ProfileWalkTimeCalculator.estimateSeconds(
-			baselineEntrySeconds, MobilityPreset.SLOW, WalkTimeSource.OFFICIAL_BASELINE, false).seconds()
-			+ ProfileWalkTimeCalculator.estimateSeconds(
-				baselineExitSeconds, MobilityPreset.SLOW, WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
 	}
 
 	private static RouteTimetable directTimetable(
@@ -1713,71 +1719,19 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
-	@DisplayName("도착역 승강기 고장 시 대체 경로가 없으면 fail-closed(NO_VERIFIED_EXIT)로 거절한다")
-	void wheelchairArriveBy_whenDestinationExitElevatorBlockedAndNoAlternative_failsClosedWithNoVerifiedExit() {
+	@DisplayName("#454: 도착역 출구·출발역 입구 승강기 고장은 승강장 기준 경로를 막지 않는다(경로 계산에 쓰지 않음)")
+	void wheelchairArriveBy_whenStationEntranceOrExitElevatorBlocked_stillFindsPlatformJourney() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
-		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
 
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(33_000, 180));
-		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
+		for (String blockedEdge : List.of("exit", "entry")) {
+			var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of(blockedEdge)));
+			var result = planner.arriveBy(wheelchairQuery("station-a", "station-b", 33_000), compiled,
+				compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 
-		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_VERIFIED_EXIT);
-		assertThat(result.itineraries()).isEmpty();
-	}
-
-	@Test
-	@DisplayName("도착역 주 승강기 고장 시 대체 무계단 출구가 존재하면 대체 출구로 정상 우회한다")
-	void wheelchairArriveBy_whenDestinationExitElevatorBlockedAndAlternativeAvailable_detoursToAlternativeExit() {
-		var compiled = forward.compile(directTimetableWithAlternativeExit());
-		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit-primary")));
-
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(33_000, 300));
-		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
-
-		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.itineraries()).singleElement().satisfies(itinerary -> {
-			var exitLeg = itinerary.legs().stream()
-				.filter(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
-				.map(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::cast)
-				.filter(leg -> leg.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT)
-				.findFirst().orElseThrow();
-			// baseline 180s (243s with SLOW preset) was blocked; detours to alternative 300s (405s with SLOW preset)
-			assertThat(exitLeg.durationSeconds()).isEqualTo(405);
-		});
-	}
-
-	@Test
-	@DisplayName("출발역 승강기 고장 시 대체 경로가 없으면 fail-closed(NO_OD_CONNECTION)로 거절한다")
-	void wheelchairArriveBy_whenOriginEntryElevatorBlockedAndNoAlternative_failsClosedWithNoOdConnection() {
-		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
-		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
-
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(33_000, 180));
-		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
-
-		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
-		assertThat(result.itineraries()).isEmpty();
-	}
-
-	@Test
-	@DisplayName("출발역 주 승강기 고장 시 대체 무계단 입구가 존재하면 대체 입구로 정상 우회한다")
-	void wheelchairArriveBy_whenOriginEntryElevatorBlockedAndAlternativeAvailable_detoursToAlternativeEntry() {
-		var compiled = forward.compile(directTimetableWithAlternativeEntry());
-		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry-primary")));
-
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(33_000, 180));
-		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
-
-		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.itineraries()).singleElement().satisfies(itinerary -> {
-			var entryLeg = itinerary.legs().stream()
-				.filter(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
-				.map(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::cast)
-				.filter(leg -> leg.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY)
-				.findFirst().orElseThrow();
-			// baseline 100s (135s with SLOW preset) was blocked; detours to alternative 250s (338s with SLOW preset)
-			assertThat(entryLeg.durationSeconds()).isEqualTo(338);
-		});
+			assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+			assertThat(result.itinerary().legs()).singleElement()
+				.isInstanceOf(RouteTimetableRaptorPlanner.JourneyRideProjection.class);
+		}
 	}
 
 	@Test
@@ -1786,7 +1740,7 @@ class ReverseTimetableRaptorPlannerTest {
 		var compiled = forward.compile(transferTimetableWithAlternativeTransfer());
 		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("transfer-primary")));
 
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(34_800, 180));
+		var query = wheelchairQuery("station-a", "station-b", 34_800);
 		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -1806,7 +1760,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void stepFreeArriveByProjectsCarDoors() {
 		var compiled = forward.compile(transferTimetableWithAlternativeTransfer());
 		var query = new ReverseTimetableRaptorPlanner.Query(
-			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, WHEELCHAIR_PROFILE_BIT,
+			"station-a", "station-b", SERVICE_DATE, 0, 34_800, 1, WHEELCHAIR_PROFILE_BIT,
 			WHEELCHAIR_SLACK_SECONDS, MobilityPreset.STEP_FREE, 3_600, false, () -> false);
 		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
 
@@ -1828,7 +1782,7 @@ class ReverseTimetableRaptorPlannerTest {
 		var compiled = forward.compile(transferTimetable());
 		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("transfer")));
 
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(34_800, 180));
+		var query = wheelchairQuery("station-a", "station-b", 34_800);
 		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
@@ -1841,7 +1795,7 @@ class ReverseTimetableRaptorPlannerTest {
 		var compiled = forward.compile(outOfStationTransferTimetable());
 		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("transfer-edge")));
 
-		var query = wheelchairQuery("station-a", "station-b", deadlineAt(34_800, 180));
+		var query = wheelchairQuery("station-a", "station-b", 34_800);
 		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
@@ -1849,8 +1803,8 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
-	@DisplayName("막차(lastConnection) 조회 시 도착역 승강기 고장을 감지하여 fail-closed로 거절한다")
-	void wheelchairLastConnection_whenDestinationExitElevatorBlocked_failsClosedWithNoVerifiedExit() {
+	@DisplayName("#454: 막차(lastConnection)는 도착역 출구 승강기 고장과 무관하게 승강장 도착으로 정한다")
+	void wheelchairLastConnection_whenDestinationExitElevatorBlocked_stillUsesPlatformArrival() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
 		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
 
@@ -1859,8 +1813,8 @@ class ReverseTimetableRaptorPlannerTest {
 			MobilityPreset.SLOW, 3_600, false, () -> false);
 		var result = planner.lastConnection(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 
-		assertThat(result.result().outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_VERIFIED_EXIT);
-		assertThat(result.terminalArrivalAtDestinationSeconds()).isNull();
+		assertThat(result.result().outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.terminalArrivalAtDestinationSeconds()).isEqualTo(33_000);
 	}
 
 	@Test
@@ -1871,19 +1825,19 @@ class ReverseTimetableRaptorPlannerTest {
 		var cleanOverlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
 
 		// 이전일에만 환승 승강기 차단
-		var resultBlockedPredecessor = planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+		var resultBlockedPredecessor = planner.arriveBy(crossDateQuery(96_000, 99_600), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1),
 			date -> date.equals(SERVICE_DATE) ? blockedOverlay : cleanOverlay, limits(), null);
 		assertThat(resultBlockedPredecessor.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 
 		// 익일에만 환승 승강기 차단
-		var resultBlockedNextDay = planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+		var resultBlockedNextDay = planner.arriveBy(crossDateQuery(96_000, 99_600), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1),
 			date -> date.equals(SERVICE_DATE.plusDays(1)) ? blockedOverlay : cleanOverlay, limits(), null);
 		assertThat(resultBlockedNextDay.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 
 		// 양일 모두 정상
-		var resultClean = planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+		var resultClean = planner.arriveBy(crossDateQuery(96_000, 99_600), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1),
 			date -> cleanOverlay, limits(), null);
 		assertThat(resultClean.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -1892,85 +1846,48 @@ class ReverseTimetableRaptorPlannerTest {
 	@Test
 	@DisplayName("RealtimeOverlay.combine 계약(null, empty, self, 병합 무결성)을 철저히 검증한다")
 	void realtimeOverlayCombineContracts() {
-		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
+		var compiled = forward.compile(transferTimetableWithAlternativeTransfer());
 		var empty = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
 		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(null, null)).isSameAs(empty);
 		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(empty, null)).isSameAs(empty);
 		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(null, empty)).isSameAs(empty);
 
-		var overlayEntry = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
-		var overlayExit = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
+		var overlayPrimary = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("transfer-primary")));
+		var overlayAlt = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("transfer-alt")));
 
-		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayEntry, null)).isSameAs(overlayEntry);
-		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(null, overlayEntry)).isSameAs(overlayEntry);
-		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayEntry, empty)).isSameAs(overlayEntry);
-		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(empty, overlayEntry)).isSameAs(overlayEntry);
-		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayEntry, overlayEntry)).isSameAs(overlayEntry);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayPrimary, null)).isSameAs(overlayPrimary);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(null, overlayPrimary)).isSameAs(overlayPrimary);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayPrimary, empty)).isSameAs(overlayPrimary);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(empty, overlayPrimary)).isSameAs(overlayPrimary);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayPrimary, overlayPrimary)).isSameAs(overlayPrimary);
 
-		var combined = RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayEntry, overlayExit);
-		int[] entryTrans = compiled.transitionIdsForEdge("entry");
-		int[] exitTrans = compiled.transitionIdsForEdge("exit");
-		for (int t : entryTrans) {
+		var combined = RouteTimetableRaptorPlanner.RealtimeOverlay.combine(overlayPrimary, overlayAlt);
+		int[] primaryTrans = compiled.transitionIdsForEdge("transfer-primary");
+		int[] altTrans = compiled.transitionIdsForEdge("transfer-alt");
+		assertThat(primaryTrans).isNotEmpty();
+		assertThat(altTrans).isNotEmpty();
+		for (int t : primaryTrans) {
 			assertThat(combined.isTransitionBlocked(t)).isTrue();
 		}
-		for (int t : exitTrans) {
+		for (int t : altTrans) {
 			assertThat(combined.isTransitionBlocked(t)).isTrue();
 		}
 	}
 
 	@Test
-	@DisplayName("승강기 고장이라도 계단 통로가 이용 가능한 일반 승객은 정상 탐색된다(과도한 차단 방지)")
+	@DisplayName("환승 승강기 고장이라도 계단 환승을 쓸 수 있는 일반 승객은 정상 탐색된다(과도한 차단 방지)")
 	void standardUserArriveBy_whenElevatorBlocked_stillAllowedViaStairs() {
-		var compiled = forward.compile(timetableWithStairsAndElevator());
-		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry-elevator", "exit-elevator")));
+		var compiled = forward.compile(transferTimetableWithStairsAndElevator());
+		var overlay = forward.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("transfer-elevator")));
 
 		// 계단 허용 일반 프로필 (PROFILE_BIT)
-		var query = query("station-a", "station-b", deadlineAt(33_000, 180));
+		var query = query("station-a", "station-b", 34_800);
 		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-	}
-
-	private static RouteTimetable directTimetableWithAlternativeExit() {
-		var nodes = List.of(
-			new LoadRouteTimetablePort.PathwayNode("entry-outside", "station-a", null, "ENTRANCE"),
-			new LoadRouteTimetablePort.PathwayNode("entry-platform", "station-a", "line-a", "PLATFORM"),
-			new LoadRouteTimetablePort.PathwayNode("exit-platform", "station-b", "line-a", "PLATFORM"),
-			new LoadRouteTimetablePort.PathwayNode("exit-outside-primary", "station-b", null, "EXIT"),
-			new LoadRouteTimetablePort.PathwayNode("exit-outside-alt", "station-b", null, "EXIT"));
-		var entry = edge("entry", "entry-outside", "entry-platform", 300, "VERIFIED");
-		var exitPrimary = edge("exit-primary", "exit-platform", "exit-outside-primary", 180, "VERIFIED");
-		var exitAlt = edge("exit-alt", "exit-platform", "exit-outside-alt", 300, "VERIFIED");
-		var evidence = List.of(
-			evidence("entry-e", "station-a", "line-a", "entry", "ENTRY"),
-			evidence("exit-p-e", "station-b", "line-a", "exit-primary", "EXIT"),
-			evidence("exit-a-e", "station-b", "line-a", "exit-alt", "EXIT"));
-		return timetable(
-			List.of(trip("direct", "route-direct")),
-			List.of(stop("direct", 1, "station-a", "line-a", 32_400, 0, 0),
-				stop("direct", 2, "station-b", "line-a", 33_000, 0, 0)),
-			new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entry, exitPrimary, exitAlt), List.of(), evidence));
-	}
-
-	private static RouteTimetable directTimetableWithAlternativeEntry() {
-		var nodes = List.of(
-			new LoadRouteTimetablePort.PathwayNode("entry-outside-primary", "station-a", null, "ENTRANCE"),
-			new LoadRouteTimetablePort.PathwayNode("entry-outside-alt", "station-a", null, "ENTRANCE"),
-			new LoadRouteTimetablePort.PathwayNode("entry-platform", "station-a", "line-a", "PLATFORM"),
-			new LoadRouteTimetablePort.PathwayNode("exit-platform", "station-b", "line-a", "PLATFORM"),
-			new LoadRouteTimetablePort.PathwayNode("exit-outside", "station-b", null, "EXIT"));
-		var entryPrimary = edge("entry-primary", "entry-outside-primary", "entry-platform", 100, "VERIFIED");
-		var entryAlt = edge("entry-alt", "entry-outside-alt", "entry-platform", 250, "VERIFIED");
-		var exit = edge("exit", "exit-platform", "exit-outside", 180, "VERIFIED");
-		var evidence = List.of(
-			evidence("entry-p-e", "station-a", "line-a", "entry-primary", "ENTRY"),
-			evidence("entry-a-e", "station-a", "line-a", "entry-alt", "ENTRY"),
-			evidence("exit-e", "station-b", "line-a", "exit", "EXIT"));
-		return timetable(
-			List.of(trip("direct", "route-direct")),
-			List.of(stop("direct", 1, "station-a", "line-a", 32_400, 0, 0),
-				stop("direct", 2, "station-b", "line-a", 33_000, 0, 0)),
-			new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entryPrimary, entryAlt, exit), List.of(), evidence));
+		assertThat(result.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
+			.singleElement().isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class,
+				transfer -> assertThat(transfer.includesStairs()).isTrue());
 	}
 
 	private static RouteTimetable transferTimetableWithAlternativeTransfer() {
@@ -2006,25 +1923,28 @@ class ReverseTimetableRaptorPlannerTest {
 			new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entry, exit, transferPrimary, transferAlt), rules, evidence));
 	}
 
-	private static RouteTimetable timetableWithStairsAndElevator() {
+	private static RouteTimetable transferTimetableWithStairsAndElevator() {
 		var nodes = List.of(
-			new LoadRouteTimetablePort.PathwayNode("entry-outside", "station-a", null, "ENTRANCE"),
-			new LoadRouteTimetablePort.PathwayNode("entry-platform", "station-a", "line-a", "PLATFORM"),
-			new LoadRouteTimetablePort.PathwayNode("exit-platform", "station-b", "line-a", "PLATFORM"),
-			new LoadRouteTimetablePort.PathwayNode("exit-outside", "station-b", null, "EXIT"));
-		var entryStairs = edge("entry-stairs", "entry-outside", "entry-platform", 300, true, "VERIFIED");
-		var entryElevator = edge("entry-elevator", "entry-outside", "entry-platform", 150, false, "VERIFIED");
-		var exitStairs = edge("exit-stairs", "exit-platform", "exit-outside", 180, true, "VERIFIED");
-		var exitElevator = edge("exit-elevator", "exit-platform", "exit-outside", 120, false, "VERIFIED");
+			new LoadRouteTimetablePort.PathwayNode("transfer-1", "station-transfer", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-2", "station-transfer", "line-b", "PLATFORM"));
+		var transferStairs = edge("transfer-stairs", "transfer-1", "transfer-2", 300, true, "VERIFIED");
+		var transferElevator = edge("transfer-elevator", "transfer-1", "transfer-2", 150, false, "VERIFIED");
 		var evidence = List.of(
-			evidence("entry-s-e", "station-a", "line-a", "entry-stairs", "ENTRY"),
-			evidence("entry-e-e", "station-a", "line-a", "entry-elevator", "ENTRY"),
-			evidence("exit-s-e", "station-b", "line-a", "exit-stairs", "EXIT"),
-			evidence("exit-e-e", "station-b", "line-a", "exit-elevator", "EXIT"));
+			evidence("transfer-s-e", "station-transfer", "line-b", "transfer-stairs", "TRANSFER"),
+			evidence("transfer-e-e", "station-transfer", "line-b", "transfer-elevator", "TRANSFER"));
+		var rules = List.of(
+			new LoadRouteTimetablePort.TransferRule(
+				"transfer-stairs-rule", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION", 300,
+				"transfer-stairs", null, "VERIFIED"),
+			new LoadRouteTimetablePort.TransferRule(
+				"transfer-elevator-rule", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION", 150,
+				"transfer-elevator", "transfer-elevator", "VERIFIED"));
 		return timetable(
-			List.of(trip("direct", "route-direct")),
-			List.of(stop("direct", 1, "station-a", "line-a", 32_400, 0, 0),
-				stop("direct", 2, "station-b", "line-a", 33_000, 0, 0)),
-			new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entryStairs, entryElevator, exitStairs, exitElevator), List.of(), evidence));
+			List.of(trip("first", "route-a"), trip("second", "route-b")),
+			List.of(stop("first", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("first", 2, "station-transfer", "line-a", 33_000, 0, 0),
+				stop("second", 1, "station-transfer", "line-b", 34_200, 0, 0),
+				stop("second", 2, "station-b", "line-b", 34_800, 0, 0)),
+			new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(transferStairs, transferElevator), rules, evidence));
 	}
 }

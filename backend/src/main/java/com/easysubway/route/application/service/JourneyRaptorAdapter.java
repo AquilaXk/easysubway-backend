@@ -346,8 +346,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			);
 
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();
+		// #454: 각 구간 여정은 승차로 시작해 승차로 끝난다. 앞 구간의 마지막 승차는 환승 안내를 붙여 다시 만든다.
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
-		for (int i = 0; i < legs1.size() - 2; i++) {
+		for (int i = 0; i < legs1.size() - 1; i++) {
 			combinedLegs.add(legs1.get(i));
 		}
 		boolean stepFree = (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
@@ -375,10 +376,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			lastRide1.alightingPlatformGaps()
 		));
 		combinedLegs.add(junctionTransfer);
-		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs2 = leg2.legs();
-		for (int i = 1; i < legs2.size(); i++) {
-			combinedLegs.add(legs2.get(i));
-		}
+		combinedLegs.addAll(leg2.legs());
 
 		JourneyProfileRaptorPort.ItineraryMetrics metrics =
 			RouteTimetableRaptorPlanner.itineraryMetrics(combinedLegs, 0);
@@ -548,23 +546,16 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				}
 				stairFree &= !access.includesStairs();
 				walkingDistanceMeters = Math.addExact(walkingDistanceMeters, access.distanceMeters());
-				switch (access.kind()) {
-					case ENTRY -> legs.add(new JourneyCandidate.Entry(
-						access.fromStationId(), access.durationSeconds()));
-					case TRANSFER -> {
-						transferCount = Math.addExact(transferCount, 1);
-						legs.add(new JourneyCandidate.Transfer(
-							access.fromStationId(),
-							access.toStationId(),
-							access.durationSeconds(),
-							access.transferType(),
-							access.farePenaltyApplies(),
-							access.transferLimitMinutes()
-						));
-					}
-					case EXIT -> legs.add(new JourneyCandidate.Exit(
-						access.fromStationId(), access.durationSeconds()));
-				}
+				// #454: 이동 구간은 승차 사이 환승뿐이다. 진입·하차(Entry/Exit) 구간은 만들지 않는다.
+				transferCount = Math.addExact(transferCount, 1);
+				legs.add(new JourneyCandidate.Transfer(
+					access.fromStationId(),
+					access.toStationId(),
+					access.durationSeconds(),
+					access.transferType(),
+					access.farePenaltyApplies(),
+					access.transferLimitMinutes()
+				));
 				continue;
 			}
 			RouteTimetableRaptorPlanner.JourneyRideProjection ride =
@@ -684,22 +675,13 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	}
 
 	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		// #454: 승차(출발역 승강장) → [환승 → 승차]* (도착역 승강장). 진입·하차 구간은 없다.
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> projections = itinerary.legs();
-		if (projections.size() < 3
-			|| !(projections.getFirst() instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection entry)
-			|| entry.kind() != RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY
-			|| !(projections.getLast() instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection exit)
-			|| exit.kind() != RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT) {
-			throw new IllegalArgumentException("Journey RAPTOR leg order is invalid");
-		}
 		boolean expectRide = true;
-		for (int index = 1; index < projections.size() - 1; index += 1) {
-			var projection = projections.get(index);
+		for (var projection : projections) {
 			if (expectRide && projection instanceof RouteTimetableRaptorPlanner.JourneyRideProjection) {
 				expectRide = false;
-			} else if (!expectRide
-				&& projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection transfer
-				&& transfer.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER) {
+			} else if (!expectRide && projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection) {
 				expectRide = true;
 			} else {
 				throw new IllegalArgumentException("Journey RAPTOR leg order is invalid");

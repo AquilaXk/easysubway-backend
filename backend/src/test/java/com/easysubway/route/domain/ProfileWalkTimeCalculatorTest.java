@@ -67,4 +67,27 @@ class ProfileWalkTimeCalculatorTest {
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("baselineSeconds must not be negative");
 	}
+
+	@Test
+	@DisplayName("#454: 시간 전용 실측 환승은 1.2 m/s 이상이면 실측 시간을, 느리면 1.2 m/s ÷ 속도 배율을 쓴다")
+	void scalesMeasuredTransferSecondsOnlyForSlowerPaces() {
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(
+			300, ProfileWalkTimeCalculator.OFFICIAL_ANCHOR_SPEED_METERS_PER_HOUR, MobilityPreset.STANDARD, false))
+			.isEqualTo(300);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 6_000, MobilityPreset.STANDARD, false)).isEqualTo(300);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 3_500, MobilityPreset.SLOW, false)).isEqualTo(371);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 4_500, MobilityPreset.STEP_FREE, false)).isEqualTo(360);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 4_500, MobilityPreset.STEP_FREE, true)).isEqualTo(300);
+	}
+
+	@Test
+	@DisplayName("#454: 실측 시간·속도·프리셋이 없으면 시간 전용 환승 시간을 만들지 않는다")
+	void rejectsMeasuredTransferWithoutMeasurementSpeedOrPreset() {
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.measuredJourneySeconds(0, 4_500, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class).hasMessage("measuredSeconds must be positive");
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.measuredJourneySeconds(300, 0, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class).hasMessage("speedMetersPerHour must be positive");
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.measuredJourneySeconds(300, 4_500, null, false))
+			.isInstanceOf(NullPointerException.class);
+	}
 }

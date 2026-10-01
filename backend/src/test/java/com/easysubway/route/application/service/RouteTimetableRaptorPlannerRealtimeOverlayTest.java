@@ -128,23 +128,24 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 	@Test
 	@DisplayName("승강기 장애 edge가 주입되면 overlay가 transition을 차단 상태로 표시한다")
 	void overlayMarksBlockedTransitionsForPathwayEdge() {
-		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
-		int[] entryTransitions = compiled.transitionIdsForEdge("entry");
+		var altCompiled = planner.compile(transferTimetableWithAlternatives());
+		var overlay = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
+		int[] transferTransitions = altCompiled.transitionIdsForEdge("transfer-primary");
 
-		assertThat(entryTransitions).isNotEmpty();
-		for (int transition : entryTransitions) {
+		assertThat(transferTransitions).isNotEmpty();
+		for (int transition : transferTransitions) {
 			assertThat(overlay.isTransitionBlocked(transition)).isTrue();
 		}
 	}
 
 	@Test
-	@DisplayName("출발역 승강기 고장 시 대체 경로가 없으면 fail-closed로 빈 결과를 반환한다")
-	void elevatorOutageExcludesEntryPathwayAndFailsClosedWhenNoAlternative() {
+	@DisplayName("#454: 출발역 입구 승강기 고장은 승강장 기준 경로를 막지 않는다(경로 계산에 쓰지 않음)")
+	void entranceElevatorOutageDoesNotBlockPlatformJourney() {
 		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
 
 		var results = planner.journeyItineraries(wheelchairQuery(), compiled, overlay).itineraries();
 
-		assertThat(results).isEmpty();
+		assertThat(results).isNotEmpty();
 	}
 
 	@Test
@@ -172,13 +173,13 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 	}
 
 	@Test
-	@DisplayName("도착역 승강기 고장 시 대체 경로가 없으면 fail-closed로 빈 결과를 반환한다")
-	void elevatorOutageExcludesExitPathwayAndFailsClosedWhenNoAlternative() {
+	@DisplayName("#454: 도착역 출구 승강기 고장은 승강장 기준 경로를 막지 않는다(경로 계산에 쓰지 않음)")
+	void exitElevatorOutageDoesNotBlockPlatformJourney() {
 		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
 
 		var results = planner.journeyItineraries(wheelchairQuery(), compiled, overlay).itineraries();
 
-		assertThat(results).isEmpty();
+		assertThat(results).isNotEmpty();
 	}
 
 	@Test
@@ -193,7 +194,8 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		assertThat(emptyOverlay.isTransitionBlocked(0)).isFalse();
 		assertThat(emptyOverlay.isTransitionBlocked(-1)).isFalse();
 
-		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+		var altCompiled = planner.compile(transferTimetableWithAlternatives());
+		var overlay = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
 		assertThat(overlay.isEmpty()).isFalse();
 		assertThat(overlay.isTransitionBlocked(-1)).isFalse();
 	}
@@ -255,16 +257,8 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 	@Test
 	@DisplayName("CompiledTimetable 전이 조회 편의 오버로드들을 모두 검증한다")
 	void compiledTimetableOverloads() {
-		int originStation = compiled.stationIndex("station-a");
 		int line0 = 0;
 		int profileBit = 1;
-
-		assertThat(compiled.entryTransition(originStation, line0, profileBit, false, false)).isGreaterThanOrEqualTo(0);
-		assertThat(compiled.entryTransition(originStation, line0, profileBit, false)).isGreaterThanOrEqualTo(0);
-
-		int destStation = compiled.stationIndex("station-b");
-		assertThat(compiled.exitTransition(destStation, line0, profileBit, false, false)).isGreaterThanOrEqualTo(0);
-		assertThat(compiled.exitTransition(destStation, line0, profileBit, false)).isGreaterThanOrEqualTo(0);
 
 		var altCompiled = planner.compile(transferTimetableWithAlternatives());
 		int transferStation = altCompiled.stationIndex("station-transfer");
@@ -272,14 +266,8 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		assertThat(altCompiled.transferTransition(transferStation, line0, line1, profileBit, false, false)).isGreaterThanOrEqualTo(0);
 		assertThat(altCompiled.transferTransition(transferStation, line0, line1, profileBit, false)).isGreaterThanOrEqualTo(0);
 
-		var entryOutage = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
-		assertThat(compiled.entryTransition(originStation, line0, profileBit, false, false, entryOutage)).isEqualTo(-1);
-
 		var altOverlay = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
 		assertThat(altCompiled.transferTransition(transferStation, line0, line1, profileBit, false, false, altOverlay)).isGreaterThanOrEqualTo(0);
-
-		var exitOutage = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
-		assertThat(compiled.exitTransition(destStation, line0, profileBit, false, false, exitOutage)).isEqualTo(-1);
 	}
 
 	@Test
@@ -290,19 +278,20 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		assertThat(emptyOverlay.isTransitionBlocked(-1)).isFalse();
 		assertThat(emptyOverlay.isTransitionBlocked(0)).isFalse();
 
-		var outageOnly = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+		var altCompiled = planner.compile(transferTimetableWithAlternatives());
+		var outageOnly = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
 		assertThat(outageOnly.isEmpty()).isFalse();
-		int entryTrans = compiled.transitionIdsForEdge("entry")[0];
-		assertThat(outageOnly.isTransitionBlocked(entryTrans)).isTrue();
+		int transferTrans = altCompiled.transitionIdsForEdge("transfer-primary")[0];
+		assertThat(outageOnly.isTransitionBlocked(transferTrans)).isTrue();
 		assertThat(outageOnly.isTransitionBlocked(999999)).isFalse();
 
-		var tripOnly = planner.compileRealtimeOverlay(compiled, updates(new TimetableRealtimeUpdate("trip-local", 10, 10, false, "snapshot-1", OBSERVED_AT)));
+		var tripOnly = planner.compileRealtimeOverlay(altCompiled, updates(new TimetableRealtimeUpdate("trip-first", 10, 10, false, "snapshot-1", OBSERVED_AT)));
 		assertThat(tripOnly.isEmpty()).isFalse();
-		assertThat(tripOnly.isTransitionBlocked(entryTrans)).isFalse();
+		assertThat(tripOnly.isTransitionBlocked(transferTrans)).isFalse();
 
-		var both = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry"), new TimetableRealtimeUpdate("trip-local", 10, 10, false, "snapshot-1", OBSERVED_AT)));
+		var both = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary"), new TimetableRealtimeUpdate("trip-first", 10, 10, false, "snapshot-1", OBSERVED_AT)));
 		assertThat(both.isEmpty()).isFalse();
-		assertThat(both.isTransitionBlocked(entryTrans)).isTrue();
+		assertThat(both.isTransitionBlocked(transferTrans)).isTrue();
 	}
 
 	@Test
@@ -312,7 +301,9 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		assertThat(compiled.transitionIdsForEdge("")).isEmpty();
 		assertThat(compiled.transitionIdsForEdge("   ")).isEmpty();
 		assertThat(compiled.transitionIdsForEdge("unknown-edge")).isEmpty();
-		assertThat(compiled.transitionIdsForEdge("entry")).isNotEmpty();
+		// #454: ENTRY 간선은 번들에 있어도 전환으로 만들지 않는다.
+		assertThat(compiled.transitionIdsForEdge("entry")).isEmpty();
+		assertThat(planner.compile(transferTimetableWithAlternatives()).transitionIdsForEdge("transfer-primary")).isNotEmpty();
 	}
 
 	private static TimetableRealtimeUpdates updates(TimetableRealtimeUpdate... updates) {

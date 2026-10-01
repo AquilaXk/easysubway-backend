@@ -104,32 +104,14 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 	}
 
 	@Test
-	@DisplayName("entry, exit, transfer transition에 유효하지 않은 경계 인덱스 전달 시 예외 없이 안전하게 -1을 반환한다")
-	void accessTransitionsEntryAndExitBoundsSafe() {
+	@DisplayName("transfer transition에 유효하지 않은 경계 인덱스 전달 시 예외 없이 안전하게 -1을 반환한다")
+	void accessTransitionsTransferBoundsSafe() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var timetable = circularTimetable();
 		var compiled = planner.compile(timetable);
 
 		int stationCount = compiled.stationCount();
 		int lineCount = compiled.lineCount();
-
-		// entryTransition boundary checks
-		assertThatNoException().isThrownBy(() -> {
-			assertThat(compiled.entryTransition(-1, 0, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.entryTransition(stationCount, 0, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.entryTransition(0, -1, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.entryTransition(0, lineCount, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.entryTransition(0, 0, 1, false, false)).isGreaterThanOrEqualTo(0);
-		});
-
-		// exitTransition boundary checks
-		assertThatNoException().isThrownBy(() -> {
-			assertThat(compiled.exitTransition(-1, 0, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.exitTransition(stationCount, 0, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.exitTransition(0, -1, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.exitTransition(0, lineCount, 1, false, false)).isEqualTo(-1);
-			assertThat(compiled.exitTransition(0, 0, 1, false, false)).isGreaterThanOrEqualTo(0);
-		});
 
 		// transferTransition boundary checks
 		assertThatNoException().isThrownBy(() -> {
@@ -297,23 +279,16 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 		var plan = planner.journeyItineraries(query, explicitCompiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 		assertThat(plan.itineraries()).hasSize(1);
 		var itinerary = plan.itineraries().getFirst();
-		assertThat(itinerary.legs()).hasSize(3);
+		// #454: 승강장에서 시작해 승강장에서 끝나므로 구간은 승차 하나이고 도착은 승강장 도착 시각이다.
+		assertThat(itinerary.legs()).hasSize(1);
 		assertThat(itinerary.plannedDepartureTime()).isEqualTo(java.time.Instant.parse("2026-07-05T22:55:00Z"));
-		assertThat(itinerary.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:07:40Z"));
+		assertThat(itinerary.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:06:40Z"));
 
-		var entryLeg = (RouteTimetableRaptorPlanner.JourneyAccessProjection) itinerary.legs().get(0);
-		assertThat(entryLeg.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY);
-		assertThat(entryLeg.fromStationId()).isEqualTo("sta-1");
-
-		var rideLeg = (RouteTimetableRaptorPlanner.JourneyRideProjection) itinerary.legs().get(1);
+		var rideLeg = (RouteTimetableRaptorPlanner.JourneyRideProjection) itinerary.legs().get(0);
 		assertThat(rideLeg.tripId()).isEqualTo("trip-c1");
 		assertThat(rideLeg.fromStationId()).isEqualTo("sta-1");
 		assertThat(rideLeg.toStationId()).isEqualTo("sta-3");
 		assertThat(rideLeg.plannedDepartureTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:01:00Z"));
 		assertThat(rideLeg.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:06:40Z"));
-
-		var exitLeg = (RouteTimetableRaptorPlanner.JourneyAccessProjection) itinerary.legs().get(2);
-		assertThat(exitLeg.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT);
-		assertThat(exitLeg.toStationId()).isEqualTo("sta-3");
 	}
 }

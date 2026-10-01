@@ -705,8 +705,8 @@ class JourneyProfileApplicationServiceTest {
 			null, null, new JourneyProfileRaptorPort.ItineraryMetrics(
 				0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()),
 			JourneyCandidate.Fare.unavailable(),
-			List.of(new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
-				"station-a", "station-a", 0, 0, false, true, "VERIFIED")));
+			List.of(TestRides.profileRide("line-a", "trip", "terminal", "station-a", "station-b",
+				NOW, arrivalAtDestination, null, null)));
 	}
 
 	private static JourneyProfileRaptorPort.DeparturePoint emptyDeparturePoint() {

@@ -87,7 +87,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 		assertThat(planned.queryId()).isEqualTo(request.requestId());
 		assertThat(planned.candidates()).singleElement().satisfies(candidate -> {
-			assertThat(candidate.legs()).hasSize(3);
+			// #454: 번들의 ENTRY/EXIT 간선은 경로에 쓰지 않아 직행 승차 하나만 남는다.
+			assertThat(candidate.legs()).singleElement().isInstanceOf(com.easysubway.journey.application.JourneyCandidate.Ride.class);
 			assertThat(candidate.transferCount()).isZero();
 			assertThat(candidate.accessibility().stairFree()).isTrue();
 			assertThat(candidate.fare().status()).isEqualTo(com.easysubway.journey.application.JourneyCandidate.FareStatus.AVAILABLE);

@@ -215,7 +215,6 @@ public interface JourneyProfileRaptorPort {
 	sealed interface ReversePlan permits ReversePlan.Found, ReversePlan.NotFound {
 		enum Outcome {
 			NO_ACTIVE_SERVICE,
-			NO_VERIFIED_EXIT,
 			DEADLINE_MISS,
 			NO_OD_CONNECTION,
 			CANCELLED
@@ -312,10 +311,9 @@ public interface JourneyProfileRaptorPort {
 	sealed interface Leg permits AccessLeg, RideLeg {
 	}
 
+	/** #454: 승강장 기준 여정의 이동 구간은 승차 사이의 환승뿐이다. 진입·하차 구간은 없다. */
 	enum AccessKind {
-		ENTRY,
-		TRANSFER,
-		EXIT
+		TRANSFER
 	}
 
 	record AccessLeg(
