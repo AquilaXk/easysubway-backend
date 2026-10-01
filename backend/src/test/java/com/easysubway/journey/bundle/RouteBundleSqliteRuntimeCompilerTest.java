@@ -575,6 +575,13 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
+	void doesNotUseUnknownBundleExitInPointProfileOrArriveBySearches() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(transferPayloads(Set.of("exit-c"), true)));
+
+		assertNoJourney(runtime);
+	}
+
+	@Test
 	void doesNotFallBackToDefaultTransferTimeWhenTheBundleHasNoTransferEdge() throws Exception {
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(transferPayloads(Set.of(), false)));
 
