@@ -4951,8 +4951,8 @@ public final class RouteTimetableRaptorPlanner {
 				for (int pattern : timetable.patternsByStop(footpath.toStation())) {
 					limits.consumeWork();
 					expandedRoutes += 1;
+					// patternsByStop은 stopsByPattern의 역색인이라 도착역은 항상 패턴 안에 있다.
 					int position = indexOf(timetable.stopsByPattern(pattern), footpath.toStation());
-					if (position < 0) continue;
 					List<ProfileDatedTrip> patternTrips = trips.tripsByPattern(pattern);
 					if (patternTrips.isEmpty()
 						|| timetable.lineIndex(patternTrips.getFirst().scheduledTrip().lineId(position))
