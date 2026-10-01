@@ -4,12 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPort;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
+import com.easysubway.route.application.service.JourneyProfileRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +34,8 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +46,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	private static final String STATION_SET_SHA = "b".repeat(64);
 	private static final String BUNDLE_ID = "capital-20260812";
 	private static final Instant DEPARTURE = Instant.parse("2026-08-12T00:50:00Z");
+	private static final String REQUEST_ID = "01HZY3Q4J5K6M7N8P9Q0R1S2T3";
 
 	@TempDir
 	Path temp;
@@ -489,7 +497,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
-	void projectsUnknownTopologyAttributesIntoEvaluatedStates() throws Exception {
+	void keepsUnknownTopologyProvenanceAndVerificationWhileProjectingEvaluatedAccessibility() throws Exception {
 		var transferEdges = List.of(
 			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
 			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
@@ -500,49 +508,175 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 		var states = Map.of("transfer-blocked", "BLOCKED");
 		var payloads = payloads(transferEdges, value -> value, "UNKNOWN", "UNKNOWN", "UNKNOWN");
-		var accessibility = sqlite("accessibility-unknown", connection -> {
-			common(connection, identitySql());
-			facilities(connection);
-			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
-			var evaluation = evaluation(transferEdges, states);
-			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
-				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
-		});
-		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, accessibility(transferEdges, states));
 
 		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
 		var edges = timetable.routeAccessData().pathwayEdges();
 
+		// 접근성 평가(PASS/BLOCKED)는 번들의 평가 근거라 그대로 투영한다.
 		var entryA = edges.stream().filter(e -> "entry-a".equals(e.id())).findFirst().orElseThrow();
 		assertThat(entryA.accessibilityStatus()).isEqualTo("AVAILABLE");
-		assertThat(entryA.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
-		assertThat(entryA.verificationStatus()).isEqualTo("VERIFIED");
-
 		var transferBlocked = edges.stream().filter(e -> "transfer-blocked".equals(e.id())).findFirst().orElseThrow();
 		assertThat(transferBlocked.accessibilityStatus()).isEqualTo("UNAVAILABLE");
-		assertThat(transferBlocked.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
-		assertThat(transferBlocked.verificationStatus()).isEqualTo("VERIFIED");
+
+		// 출처·검증 상태는 번들 값 그대로다. UNKNOWN을 공식 출처·검증됨으로 바꾸지 않는다.
+		assertThat(edges).isNotEmpty().allSatisfy(edge -> {
+			assertThat(edge.provenanceKind()).isEqualTo("UNKNOWN");
+			assertThat(edge.verificationStatus()).isEqualTo("UNKNOWN");
+		});
 
 		var rules = timetable.routeAccessData().transferRules();
-		var passRule = rules.stream().filter(r -> "transfer-pass".equals(r.id())).findFirst().orElseThrow();
-		assertThat(passRule.verificationStatus()).isEqualTo("VERIFIED");
-
+		assertThat(rules).extracting(rule -> rule.id())
+			.containsExactlyInAnyOrder("transfer-pass", "transfer-out", "transfer-blocked");
+		assertThat(rules).allSatisfy(rule -> assertThat(rule.verificationStatus()).isEqualTo("UNKNOWN"));
 		var outRule = rules.stream().filter(r -> "transfer-out".equals(r.id())).findFirst().orElseThrow();
 		assertThat(outRule.transferType()).isEqualTo("OUT_OF_STATION");
 
 		var evidenceList = timetable.routeAccessData().routeEdgeEvidence();
+		assertThat(evidenceList).isNotEmpty().allSatisfy(evidence -> {
+			assertThat(evidence.provenanceKind()).isEqualTo("UNKNOWN");
+			assertThat(evidence.verificationStatus()).isEqualTo("UNKNOWN");
+		});
 		var exitEvidence = evidenceList.stream().filter(e -> "exit-b".equals(e.edgeId())).findFirst().orElseThrow();
-		assertThat(exitEvidence.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
-		assertThat(exitEvidence.verificationStatus()).isEqualTo("VERIFIED");
 		assertThat(exitEvidence.strictRouteEligible()).isTrue();
-
 		var blockedEvidence = evidenceList.stream().filter(e -> "transfer-blocked".equals(e.edgeId())).findFirst().orElseThrow();
-		assertThat(blockedEvidence.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
-		assertThat(blockedEvidence.verificationStatus()).isEqualTo("VERIFIED");
 		assertThat(blockedEvidence.strictRouteEligible()).isFalse();
 
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
 		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void usesVerifiedBundleTransferInPointProfileAndArriveBySearches() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(transferPayloads(Set.of(), true)));
+
+		var point = pointSearch(runtime);
+		assertThat(point.candidates()).singleElement()
+			.satisfies(candidate -> assertThat(candidate.transferCount()).isEqualTo(1));
+		assertThat(profileItineraries(runtime)).isNotEmpty()
+			.allSatisfy(itinerary -> assertThat(itinerary.metrics().transfersUsed()).isEqualTo(1));
+		assertThat(arriveBy(runtime)).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
+			found -> assertThat(found.itineraries()).isNotEmpty()
+				.allSatisfy(itinerary -> assertThat(itinerary.metrics().transfersUsed()).isEqualTo(1)));
+	}
+
+	@Test
+	void doesNotUseUnknownBundleTransferInPointProfileOrArriveBySearches() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(transferPayloads(Set.of("transfer-b"), true)));
+
+		assertNoJourney(runtime);
+	}
+
+	@Test
+	void doesNotUseUnknownBundleEntryInPointProfileOrArriveBySearches() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(transferPayloads(Set.of("entry-a"), true)));
+
+		assertNoJourney(runtime);
+	}
+
+	@Test
+	void doesNotFallBackToDefaultTransferTimeWhenTheBundleHasNoTransferEdge() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(transferPayloads(Set.of(), false)));
+
+		assertNoJourney(runtime);
+	}
+
+	private static void assertNoJourney(com.easysubway.route.application.service.RaptorRouteBundleRuntimeView runtime) {
+		SoftAssertions.assertSoftly(softly -> {
+			softly.assertThat(pointSearch(runtime).candidates()).as("point").isEmpty();
+			softly.assertThat(profileItineraries(runtime)).as("departure-window profile").isEmpty();
+			softly.assertThat(arriveBy(runtime)).as("arrive-by")
+				.isInstanceOf(JourneyProfileRaptorPort.ReversePlan.NotFound.class);
+		});
+	}
+
+	private static JourneyRaptorPort.PlanResult pointSearch(
+		com.easysubway.route.application.service.RaptorRouteBundleRuntimeView runtime) {
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-c", new JourneyRequest.Departure.Scheduled(DEPARTURE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+		return new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), DEPARTURE, null, new JourneyRequestMeasurement(request.requestId()));
+	}
+
+	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(
+		com.easysubway.route.application.service.RaptorRouteBundleRuntimeView runtime) {
+		var planned = profilePlan(runtime, new JourneyRaptorQuery.DepartBetween(DEPARTURE, DEPARTURE.plusSeconds(1_800)));
+		var window = (JourneyProfileRaptorPort.DepartureWindowPlan) planned.temporalPlan();
+		return window.points().stream().flatMap(point -> point.itineraries().stream()).toList();
+	}
+
+	private static JourneyProfileRaptorPort.ReversePlan arriveBy(
+		com.easysubway.route.application.service.RaptorRouteBundleRuntimeView runtime) {
+		var planned = profilePlan(runtime, new JourneyRaptorQuery.ArriveBy(DEPARTURE, DEPARTURE.plusSeconds(3_600)));
+		return ((JourneyProfileRaptorPort.ArriveByPlan) planned.temporalPlan()).result();
+	}
+
+	private static JourneyProfileRaptorPort.PlanningResult.Planned profilePlan(
+		com.easysubway.route.application.service.RaptorRouteBundleRuntimeView runtime,
+		JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-c", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+		return (JourneyProfileRaptorPort.PlanningResult.Planned) new JourneyProfileRaptorAdapter().plan(
+			query, snapshot(runtime), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32));
+	}
+
+	private static ActiveJourneySnapshot snapshot(
+		com.easysubway.route.application.service.RaptorRouteBundleRuntimeView runtime) {
+		return new ActiveJourneySnapshot(
+			"active:7", BUNDLE_ID, SHA, "timetable", "accessibility", 7, runtime,
+			DEPARTURE.plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+	}
+
+	/**
+	 * station-a(1호선) → station-b 환승(1→2호선) → station-c(2호선) 번들. unknownEdgeIds의 간선만 출처·검증 상태가
+	 * UNKNOWN이고 나머지는 OFFICIAL_SOURCE·VERIFIED다. withTransferEdge=false면 station-b의 환승 간선이 아예 없다.
+	 */
+	private Map<String, byte[]> transferPayloads(Set<String> unknownEdgeIds, boolean withTransferEdge) throws Exception {
+		var edges = new ArrayList<>(List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY"),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY"),
+			new Edge("ride-b-c", "station-b:line-2:platform-b", "station-c:line-2:platform-c", 600, 1000, "RIDE", "LOCAL", "SUBWAY"),
+			new Edge("exit-c", "station-c:line-2:platform-c", "station-c", 60, 40, "EXIT", "", "SUBWAY")));
+		if (withTransferEdge) {
+			edges.add(new Edge("transfer-b", "station-b:line-1:platform-b", "station-b:line-2:platform-b",
+				90, 50, "IN_STATION_TRANSFER", "", "SUBWAY"));
+		}
+		var payloads = payloads(edges, value -> value, "AVAILABLE",
+			edge -> unknownEdgeIds.contains(edge.id()) ? "UNKNOWN" : "OFFICIAL_SOURCE",
+			edge -> unknownEdgeIds.contains(edge.id()) ? "UNKNOWN" : "VERIFIED",
+			connection -> {
+				insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
+					"route-2", "line-2", "2", "Line 2", "station-c", "Asia/Seoul");
+				insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
+					"trip-2", "route-2", "weekday", "station-c", "0", "LOCAL", "SUBWAY", 0);
+				insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+					"trip-2", 1, "station-b", "line-2", 37200, 37200, 0, 0);
+				insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+					"trip-2", 2, "station-c", "line-2", 37800, 37800, 0, 0);
+			},
+			connection -> insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-c", "official", "snapshot", "f".repeat(64), 1500, 1600, 900, 1000, 600, 700));
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, accessibility(edges, Map.of()));
+		return payloads;
+	}
+
+	private byte[] accessibility(List<Edge> edges, Map<String, String> states) throws Exception {
+		var accessibility = sqlite("accessibility-edges", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(edges, states);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		return Zstd.compress(accessibility, 10);
 	}
 
 	@Test
@@ -738,6 +872,19 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		String provenanceKind,
 		String verificationStatus
 	) throws Exception {
+		return payloads(edges, identityTransform, accessibilityStatus, edge -> provenanceKind,
+			edge -> verificationStatus, connection -> { }, connection -> { });
+	}
+
+	private Map<String, byte[]> payloads(
+		List<Edge> edges,
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus,
+		java.util.function.Function<Edge, String> provenanceKind,
+		java.util.function.Function<Edge, String> verificationStatus,
+		SqliteWriter extraTimetableRows,
+		SqliteWriter extraFareRows
+	) throws Exception {
 		var topology = sqlite("topology", connection -> {
 			common(connection, identityTransform.apply(identitySql()));
 			execute(connection, """
@@ -756,7 +903,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
 					edge.serviceClass(), edge.includesStairs(), "VERIFIED_PRESENT", accessibilityStatus, 100, "official", "snapshot",
-					"d".repeat(64), provenanceKind, verificationStatus, null, 1_786_485_600_000L,
+					"d".repeat(64), provenanceKind.apply(edge), verificationStatus.apply(edge), null, 1_786_485_600_000L,
 					"e".repeat(64));
 			}
 		});
@@ -795,6 +942,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				"trip-1", 1, "station-a", "line-1", 36000, 36000, 0, 0);
 			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
 				"trip-1", 2, "station-b", "line-1", 36600, 36600, 0, 0);
+			extraTimetableRows.write(connection);
 			insert(connection, "INSERT INTO transit_feed_info VALUES(?,?)", 1, "20261231");
 		});
 		var accessibility = sqlite("accessibility", connection -> {
@@ -817,6 +965,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				""");
 			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
 				"station-a", "station-b", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+			extraFareRows.write(connection);
 		});
 		var result = new LinkedHashMap<String, byte[]>();
 		result.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, Zstd.compress(topology, 10));
@@ -857,11 +1006,13 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			""");
 		insert(connection, "INSERT INTO stations VALUES(?)", "station-a");
 		insert(connection, "INSERT INTO stations VALUES(?)", "station-b");
+		insert(connection, "INSERT INTO stations VALUES(?)", "station-c");
 		insert(connection, "INSERT INTO lines VALUES(?)", "line-1");
 		insert(connection, "INSERT INTO lines VALUES(?)", "line-2");
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-a", "line-1", 1);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-1", 2);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-2", 3);
+		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-c", "line-2", 4);
 	}
 
 	// data 번들 accessibility 구성요소의 facilities 표(catalog-schema)에서 컴파일러가 읽는 열만 둔다.
