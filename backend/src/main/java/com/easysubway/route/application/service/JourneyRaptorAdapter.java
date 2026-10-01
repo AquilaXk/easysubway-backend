@@ -22,11 +22,13 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
@@ -287,7 +289,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		String status = "VERIFIED";
 		String transferType = null;
 		Boolean farePenaltyApplies = null;
-		Integer additionalFareWon = null;
 		Integer transferLimitMinutes = null;
 
 		int fromLine = timetable.lineIndex(lastRide1.lineId());
@@ -321,7 +322,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
 				boolean timeout = elapsed > limit;
 				farePenaltyApplies = timeout;
-				additionalFareWon = timeout ? 1400 : 0;
 				transferLimitMinutes = limit / 60;
 			}
 		}
@@ -342,7 +342,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				status,
 				transferType,
 				farePenaltyApplies,
-				additionalFareWon,
 				transferLimitMinutes
 			);
 
@@ -560,7 +559,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 							access.durationSeconds(),
 							access.transferType(),
 							access.farePenaltyApplies(),
-							access.additionalFareWon(),
 							access.transferLimitMinutes()
 						));
 					}
@@ -629,8 +627,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	}
 
 	/**
-	 * 첫 승차역 -> 최종 하차역 공식 O-D 운임 한 건만 조회한다. 환승 구간을 나눠 합산하지 않으며,
-	 * 재승차 기본요금은 환승 구간의 additionalFareWon에만 남는다. 표에 없으면 UNAVAILABLE이다.
+	 * 재승차가 없으면 첫 승차역 -> 최종 하차역 공식 O-D 운임 한 건만 조회한다(#430).
+	 * 역 밖 환승 제한 시간을 넘긴 환승(farePenaltyApplies == true)이 있으면 그 지점에서 여정을 승차 구간으로 나누고,
+	 * 구간마다 공식 O-D 운임을 조회해 합한다(#444). 어느 구간이라도 표에 없으면 여정 전체가 UNAVAILABLE이다.
 	 * point 검색과 profile 계획이 같은 planner 투영으로 이 함수를 함께 쓴다.
 	 */
 	static JourneyCandidate.Fare calculateFare(
@@ -638,31 +637,50 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		Objects.requireNonNull(fareQuotes, "fareQuotes");
-		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide = null;
-		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide = null;
+		List<String> sectionKeys = new ArrayList<>();
+		RouteTimetableRaptorPlanner.JourneyRideProjection sectionFirstRide = null;
+		RouteTimetableRaptorPlanner.JourneyRideProjection sectionLastRide = null;
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
 			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
-				if (firstRide == null) firstRide = ride;
-				lastRide = ride;
+				if (sectionFirstRide == null) sectionFirstRide = ride;
+				sectionLastRide = ride;
+			} else if (Boolean.TRUE.equals(
+				((RouteTimetableRaptorPlanner.JourneyAccessProjection) leg).farePenaltyApplies())) {
+				// planner는 탑승 사이 TRANSFER 구간에만 재승차 여부를 싣는다.
+				if (sectionFirstRide == null) {
+					throw new IllegalArgumentException("Journey re-boarding transfer must follow a ride");
+				}
+				sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+				sectionFirstRide = null;
 			}
 		}
-		if (firstRide == null) {
+		if (sectionFirstRide == null) {
 			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
 		}
-		OfficialFareQuote quote = fareQuotes.get(
-			OfficialFareQuote.fareKey(firstRide.fromStationId(), lastRide.toStationId()));
-		if (quote == null) {
-			return JourneyCandidate.Fare.unavailable();
+		sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+
+		int adultCard = 0;
+		int adultCash = 0;
+		int youthCard = 0;
+		int youthCash = 0;
+		int childCard = 0;
+		int childCash = 0;
+		Set<String> snapshotIds = new LinkedHashSet<>();
+		for (String key : sectionKeys) {
+			OfficialFareQuote quote = fareQuotes.get(key);
+			if (quote == null) {
+				return JourneyCandidate.Fare.unavailable();
+			}
+			adultCard = Math.addExact(adultCard, quote.gnrlCardFare());
+			adultCash = Math.addExact(adultCash, quote.gnrlCashFare());
+			youthCard = Math.addExact(youthCard, quote.yungCardFare());
+			youthCash = Math.addExact(youthCash, quote.yungCashFare());
+			childCard = Math.addExact(childCard, quote.childCardFare());
+			childCash = Math.addExact(childCash, quote.childCashFare());
+			snapshotIds.add(quote.snapshotId());
 		}
 		return JourneyCandidate.Fare.available(
-			quote.gnrlCardFare(),
-			quote.gnrlCashFare(),
-			quote.yungCardFare(),
-			quote.yungCashFare(),
-			quote.childCardFare(),
-			quote.childCashFare(),
-			List.of(quote.snapshotId())
-		);
+			adultCard, adultCash, youthCard, youthCash, childCard, childCash, List.copyOf(snapshotIds));
 	}
 
 	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {

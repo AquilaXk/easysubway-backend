@@ -349,7 +349,7 @@ class JourneyV3ContractTest {
 			Set.of("type", "fromStationId", "toStationId", "durationSeconds"),
 			Set.of(
 				"type", "fromStationId", "toStationId", "durationSeconds",
-				"transferType", "farePenaltyApplies", "additionalFareWon", "transferLimitMinutes"
+				"transferType", "farePenaltyApplies", "transferLimitMinutes"
 			)
 		);
 		assertEnum(property(document, "JourneyTransferLeg", "type"), "TRANSFER");

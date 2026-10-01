@@ -38,6 +38,14 @@ class JourneyOfficialOdFareTest {
 	private static final long GENERATION = 7;
 	private static final Instant EFFECTIVE = Instant.parse("2026-06-30T23:50:00Z");
 	private static final Instant VALID_UNTIL = Instant.parse("2026-07-01T02:00:00Z");
+	private static final OfficialFareQuote QUOTE_FULL = quote("station-a", "station-b", "snap-full",
+		1400, 1500, 800, 900, 500, 600);
+	private static final OfficialFareQuote QUOTE_SECTION_1 = quote("station-a", "station-transfer", "snap-sec1",
+		1250, 1350, 720, 820, 450, 550);
+	private static final OfficialFareQuote QUOTE_SECTION_2 = quote("station-transfer", "station-b", "snap-sec2",
+		1350, 1450, 780, 880, 480, 580);
+	private static final JourneyCandidate.Fare SECTION_SUM_FARE = JourneyCandidate.Fare.available(
+		1250 + 1350, 1350 + 1450, 720 + 780, 820 + 880, 450 + 480, 550 + 580, List.of("snap-sec1", "snap-sec2"));
 
 	@Test
 	@DisplayName("(1) Official fare quote in table returns exact six amounts and source snapshot ID")
@@ -88,63 +96,103 @@ class JourneyOfficialOdFareTest {
 	}
 
 	@Test
-	@DisplayName("(3) Normal and out-of-station penalty transfers both use one first-boarding to final-alighting O-D quote")
-	void usesOneFirstBoardingToFinalAlightingQuoteForNormalAndPenaltyTransfers() {
-		// Part A: 제한 시간 안의 역 밖 환승(farePenaltyApplies == false)은 station-a -> station-b 한 번만 조회한다.
-		var quoteFull = quote("station-a", "station-b", "snap-full",
-			1400, 1500, 800, 900, 500, 600);
+	@DisplayName("(3) Out-of-station transfer within the limit keeps one first-boarding to final-alighting O-D quote")
+	void outOfStationTransferWithinLimitKeepsOneFirstBoardingToFinalAlightingQuote() {
+		// 제한 시간 안의 역 밖 환승(farePenaltyApplies == false)은 구간 표가 함께 있어도 station-a -> station-b 한 번만 조회한다.
 		var runtimeNormal = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
 			waypointTimetable("OUT_OF_STATION", 120, 34_200, true), // 1,200s elapsed < 1,800s limit
-			Map.of(OfficialFareQuote.fareKey("station-a", "station-b"), quoteFull)
+			Map.of(
+				OfficialFareQuote.fareKey("station-a", "station-b"), QUOTE_FULL,
+				OfficialFareQuote.fareKey("station-a", "station-transfer"), QUOTE_SECTION_1,
+				OfficialFareQuote.fareKey("station-transfer", "station-b"), QUOTE_SECTION_2
+			)
 		);
-		var waypointReq = waypointRequest("station-a", "station-b", "station-transfer");
 		var candidateNormal = new JourneyRaptorAdapter().plan(
-			waypointReq, snapshot(runtimeNormal, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
+			waypointRequest("station-a", "station-b", "station-transfer"),
+			snapshot(runtimeNormal, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
 		).candidates().getFirst();
 
-		assertExactFare(candidateNormal.fare(), quoteFull);
+		assertThat(transfer(candidateNormal).farePenaltyApplies()).isFalse();
+		assertExactFare(candidateNormal.fare(), QUOTE_FULL);
+	}
 
-		// Part B: 제한 시간을 넘긴 역 밖 환승(farePenaltyApplies == true)도 구간을 나눠 합산하지 않는다.
-		// 구간 표가 함께 있어도 첫 승차역 -> 최종 하차역 한 건만 쓰며, 재승차 기본요금은 환승 구간의 additionalFareWon에만 남는다.
-		var quoteSec1 = quote("station-a", "station-transfer", "snap-sec1",
-			1250, 1350, 720, 820, 450, 550);
-		var quoteSec2 = quote("station-transfer", "station-b", "snap-sec2",
-			1350, 1450, 780, 880, 480, 580);
+	@Test
+	@DisplayName("(3a) Re-boarding after the out-of-station limit sums the official quote of each boarding section")
+	void reboardingAfterOutOfStationLimitSumsEachBoardingSectionQuote() {
+		// 제한 시간을 넘긴 역 밖 환승(farePenaltyApplies == true)은 두 번 승차한 것이다.
+		// station-a -> station-transfer, station-transfer -> station-b 공식 운임을 더하며 전 구간 표(station-a -> station-b)는 쓰지 않는다.
 		var runtimePenalty = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
 			waypointTimetable("OUT_OF_STATION", 120, 35_400, true), // 2,400s elapsed > 1,800s limit
 			Map.of(
-				OfficialFareQuote.fareKey("station-a", "station-b"), quoteFull,
-				OfficialFareQuote.fareKey("station-a", "station-transfer"), quoteSec1,
-				OfficialFareQuote.fareKey("station-transfer", "station-b"), quoteSec2
+				OfficialFareQuote.fareKey("station-a", "station-b"), QUOTE_FULL,
+				OfficialFareQuote.fareKey("station-a", "station-transfer"), QUOTE_SECTION_1,
+				OfficialFareQuote.fareKey("station-transfer", "station-b"), QUOTE_SECTION_2
 			)
 		);
 		var candidatePenalty = new JourneyRaptorAdapter().plan(
-			waypointReq, snapshot(runtimePenalty, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
+			waypointRequest("station-a", "station-b", "station-transfer"),
+			snapshot(runtimePenalty, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
 		).candidates().getFirst();
 
-		var penaltyTransfer = candidatePenalty.legs().stream()
-			.filter(JourneyCandidate.Transfer.class::isInstance).map(JourneyCandidate.Transfer.class::cast)
-			.findFirst().orElseThrow();
-		assertThat(penaltyTransfer.farePenaltyApplies()).isTrue();
-		assertThat(penaltyTransfer.additionalFareWon()).isEqualTo(1400);
-		assertExactFare(candidatePenalty.fare(), quoteFull);
+		assertThat(transfer(candidatePenalty).farePenaltyApplies()).isTrue();
+		assertThat(transfer(candidatePenalty).transferLimitMinutes()).isEqualTo(30);
+		assertThat(candidatePenalty.fare()).isEqualTo(SECTION_SUM_FARE);
+	}
 
-		// Part C: 구간 표만 있고 첫 승차역 -> 최종 하차역 표가 없으면 합산 없이 UNAVAILABLE이다.
-		var runtimePenaltySectionsOnly = RaptorRouteBundleRuntimeView.compile(
+	@Test
+	@DisplayName("(3b) Re-boarding journey is UNAVAILABLE when any boarding section is missing from the official table")
+	void reboardingJourneyIsUnavailableWhenAnySectionIsMissing() {
+		// 전 구간 표(station-a -> station-b)가 있어도 재승차 구간 하나가 표에 없으면 추정 없이 UNAVAILABLE이다.
+		for (var present : List.of(QUOTE_SECTION_1, QUOTE_SECTION_2)) {
+			var runtime = RaptorRouteBundleRuntimeView.compile(
+				ROUTE_BUNDLE_SHA, GENERATION,
+				waypointTimetable("OUT_OF_STATION", 120, 35_400, true),
+				Map.of(
+					OfficialFareQuote.fareKey("station-a", "station-b"), QUOTE_FULL,
+					OfficialFareQuote.fareKey(present.originStationId(), present.destinationStationId()), present
+				)
+			);
+			var candidate = new JourneyRaptorAdapter().plan(
+				waypointRequest("station-a", "station-b", "station-transfer"),
+				snapshot(runtime, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
+			).candidates().getFirst();
+
+			assertThat(transfer(candidate).farePenaltyApplies()).isTrue();
+			assertUnavailable(candidate.fare());
+		}
+	}
+
+	@Test
+	@DisplayName("(3c) Point search and arrive-by profile quote the same re-boarding section sum")
+	void pointAndProfilePathsQuoteTheSameReboardingSectionSum() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION,
 			waypointTimetable("OUT_OF_STATION", 120, 35_400, true),
 			Map.of(
-				OfficialFareQuote.fareKey("station-a", "station-transfer"), quoteSec1,
-				OfficialFareQuote.fareKey("station-transfer", "station-b"), quoteSec2
+				OfficialFareQuote.fareKey("station-a", "station-b"), QUOTE_FULL,
+				OfficialFareQuote.fareKey("station-a", "station-transfer"), QUOTE_SECTION_1,
+				OfficialFareQuote.fareKey("station-transfer", "station-b"), QUOTE_SECTION_2
 			)
 		);
-		var candidateSectionsOnly = new JourneyRaptorAdapter().plan(
-			waypointReq, snapshot(runtimePenaltySectionsOnly, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
+		var pointRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			1, 1, () -> false);
+		var point = new JourneyRaptorAdapter().plan(
+			pointRequest, snapshot(runtime, GENERATION, ROUTE_BUNDLE_SHA), EFFECTIVE, null, measurement()
 		).candidates().getFirst();
 
-		assertUnavailable(candidateSectionsOnly.fare());
+		assertThat(transfer(point).farePenaltyApplies()).isTrue();
+		assertThat(point.fare()).isEqualTo(SECTION_SUM_FARE);
+
+		// 출발 시간대(profile DEPART_BETWEEN) 투영도 같은 calculateFare를 쓰며 승차 구간 분할은 (7)에서 고정한다.
+		var arriveBy = arriveByItineraries(runtime, EFFECTIVE.plusSeconds(7_200));
+		assertThat(arriveBy).isNotEmpty().allSatisfy(itinerary ->
+			assertThat(itinerary.fare()).isEqualTo(SECTION_SUM_FARE));
 	}
 
 	@Test
@@ -240,36 +288,49 @@ class JourneyOfficialOdFareTest {
 	}
 
 	@Test
-	@DisplayName("(7) Multi-leg itinerary with normal and repeated penalty transfers is quoted once from first boarding to final alighting")
-	void multiLegItineraryWithRepeatedPenaltyTransfersIsQuotedOnce() {
+	@DisplayName("(7) Multi-leg itinerary is split only at re-boarding transfers and each boarding section is quoted once")
+	void multiLegItineraryIsSplitOnlyAtReboardingTransfers() {
+		// a -(일반 환승 b)- c 는 한 번의 승차이고, c와 d에서 재승차하므로 승차 구간은 a->c, c->d, d->e 세 개다.
 		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
 			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(1_200), null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(
 				3, 480, 400, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
 			List.of(
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null),
 				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
 					EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", false, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", false),
 				TestProjectionRides.projectionRide("line-2", "trip-2", "station-c", "station-b", "station-c",
 					EFFECTIVE.plusSeconds(360), EFFECTIVE.plusSeconds(600), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-c", "station-c", true, 1400),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-c", "station-c", true),
 				TestProjectionRides.projectionRide("line-3", "trip-3", "station-d", "station-c", "station-d",
 					EFFECTIVE.plusSeconds(720), EFFECTIVE.plusSeconds(900), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true, 1400),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true),
 				TestProjectionRides.projectionRide("line-4", "trip-4", "station-e", "station-d", "station-e",
 					EFFECTIVE.plusSeconds(1_000), EFFECTIVE.plusSeconds(1_140), null, null),
-				access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, "station-e", "station-e", null, null)));
-		var quoteAe = quote("station-a", "station-e", "snap-ae", 2050, 2150, 1300, 1400, 800, 900);
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, "station-e", "station-e", null)));
+		var quoteAc = quote("station-a", "station-c", "snap-ac", 1700, 1800, 950, 1050, 650, 750);
+		var quoteCd = quote("station-c", "station-d", "snap-cd", 1400, 1500, 800, 900, 500, 600);
+		var quoteDe = quote("station-d", "station-e", "snap-cd", 1450, 1550, 820, 920, 0, 620);
 		var sectionQuotes = Map.of(
-			OfficialFareQuote.fareKey("station-a", "station-c"), quote("station-a", "station-c", "snap-ac", 1700, 1800, 950, 1050, 650, 750),
-			OfficialFareQuote.fareKey("station-c", "station-d"), quote("station-c", "station-d", "snap-cd", 1400, 1500, 800, 900, 500, 600),
-			OfficialFareQuote.fareKey("station-d", "station-e"), quote("station-d", "station-e", "snap-de", 1400, 1500, 800, 900, 500, 600));
+			OfficialFareQuote.fareKey("station-a", "station-c"), quoteAc,
+			OfficialFareQuote.fareKey("station-c", "station-d"), quoteCd,
+			OfficialFareQuote.fareKey("station-d", "station-e"), quoteDe);
 		var withWholeJourneyQuote = new java.util.HashMap<>(sectionQuotes);
-		withWholeJourneyQuote.put(OfficialFareQuote.fareKey("station-a", "station-e"), quoteAe);
+		withWholeJourneyQuote.put(OfficialFareQuote.fareKey("station-a", "station-e"),
+			quote("station-a", "station-e", "snap-ae", 2050, 2150, 1300, 1400, 800, 900));
+		// 같은 스냅샷 ID는 한 번만 남기고 승차 순서대로 둔다.
+		var expected = JourneyCandidate.Fare.available(
+			1700 + 1400 + 1450, 1800 + 1500 + 1550, 950 + 800 + 820, 1050 + 900 + 920, 650 + 500, 750 + 600 + 620,
+			List.of("snap-ac", "snap-cd"));
 
-		assertExactFare(JourneyRaptorAdapter.calculateFare(itinerary, withWholeJourneyQuote), quoteAe);
-		assertUnavailable(JourneyRaptorAdapter.calculateFare(itinerary, sectionQuotes));
+		assertThat(JourneyRaptorAdapter.calculateFare(itinerary, sectionQuotes)).isEqualTo(expected);
+		assertThat(JourneyRaptorAdapter.calculateFare(itinerary, withWholeJourneyQuote)).isEqualTo(expected);
+		for (var missing : sectionQuotes.keySet()) {
+			var incomplete = new java.util.HashMap<>(withWholeJourneyQuote);
+			incomplete.remove(missing);
+			assertUnavailable(JourneyRaptorAdapter.calculateFare(itinerary, incomplete));
+		}
 		assertUnavailable(JourneyRaptorAdapter.calculateFare(itinerary, Map.of()));
 	}
 
@@ -302,13 +363,30 @@ class JourneyOfficialOdFareTest {
 		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
 			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(60), null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, 60, 100, 0, new JourneyProfileRaptorPort.NoTransfer()),
-			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null, null)));
+			List.of(access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, "station-a", "station-a", null)));
 
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> JourneyRaptorAdapter.calculateFare(itinerary,
 				Map.of(OfficialFareQuote.fareKey("station-a", "station-b"),
 					quote("station-a", "station-b", "snap", 1400, 1500, 800, 900, 500, 600))))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("Journey itinerary must contain a ride to quote a fare");
+	}
+
+	@Test
+	@DisplayName("(10) Re-boarding transfer before any ride is rejected instead of being quoted")
+	void reboardingTransferBeforeAnyRideIsRejected() {
+		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
+			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(600), null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(1, 600, 200, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
+			List.of(
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-a", "station-a", true),
+				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
+					EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null)));
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> JourneyRaptorAdapter.calculateFare(itinerary,
+				Map.of(OfficialFareQuote.fareKey("station-a", "station-b"), QUOTE_FULL)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("Journey re-boarding transfer must follow a ride");
 	}
 
 	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(RaptorRouteBundleRuntimeView runtime) {
@@ -325,14 +403,37 @@ class JourneyOfficialOdFareTest {
 		return plan.points().stream().flatMap(point -> point.itineraries().stream()).toList();
 	}
 
+	private static List<JourneyProfileRaptorPort.Itinerary> arriveByItineraries(
+		RaptorRouteBundleRuntimeView runtime, Instant deadline
+	) {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.ArriveBy(EFFECTIVE, deadline),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+		var result = new JourneyProfileRaptorAdapter().planRuntime(
+			query, runtime, null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32));
+		assertThat(result).isInstanceOf(JourneyProfileRaptorPort.PlanningResult.Planned.class);
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan)
+			((JourneyProfileRaptorPort.PlanningResult.Planned) result).temporalPlan();
+		assertThat(plan.result()).isInstanceOf(JourneyProfileRaptorPort.ReversePlan.Found.class);
+		return ((JourneyProfileRaptorPort.ReversePlan.Found) plan.result()).itineraries();
+	}
+
+	private static JourneyCandidate.Transfer transfer(JourneyCandidate candidate) {
+		return candidate.legs().stream()
+			.filter(JourneyCandidate.Transfer.class::isInstance).map(JourneyCandidate.Transfer.class::cast)
+			.findFirst().orElseThrow();
+	}
+
 	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(
 		RouteTimetableRaptorPlanner.JourneyAccessKind kind, String from, String to,
-		Boolean farePenaltyApplies, Integer additionalFareWon
+		Boolean farePenaltyApplies
 	) {
 		return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
 			kind, from, to, 60, 100, false, true, "VERIFIED",
 			kind == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER ? "OUT_OF_STATION" : null,
-			farePenaltyApplies, additionalFareWon,
+			farePenaltyApplies,
 			kind == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER ? 30 : null);
 	}
 

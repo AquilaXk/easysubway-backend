@@ -838,7 +838,6 @@ final class ReverseTimetableRaptorPlanner {
 			if (leg instanceof TraceAccess access) {
 				String transferType = null;
 				Boolean farePenaltyApplies = null;
-				Integer additionalFareWon = null;
 				Integer transferLimitMinutes = null;
 				if (access.access() == Access.TRANSFER && timetable.isOutOfStationTransition(access.transition())) {
 					transferType = "OUT_OF_STATION";
@@ -850,7 +849,6 @@ final class ReverseTimetableRaptorPlanner {
 					int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
 					boolean timeout = elapsed > limit;
 					farePenaltyApplies = timeout;
-					additionalFareWon = timeout ? 1400 : 0;
 					transferLimitMinutes = limit / 60;
 				}
 				projected.add(new RouteTimetableRaptorPlanner.JourneyAccessProjection(
@@ -867,7 +865,6 @@ final class ReverseTimetableRaptorPlanner {
 					timetable.transitionVerificationStatus(access.transition()),
 					transferType,
 					farePenaltyApplies,
-					additionalFareWon,
 					transferLimitMinutes
 				));
 			} else {
