@@ -8,7 +8,7 @@ const workflow = readFileSync(
 );
 
 const scannerAction =
-  'SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f';
+  'SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4';
 
 test('binds one exact-head SonarQube Cloud scan to current Backend evidence', () => {
   const backendJob = /^  backend:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]+:|$(?![\s\S]))/m
