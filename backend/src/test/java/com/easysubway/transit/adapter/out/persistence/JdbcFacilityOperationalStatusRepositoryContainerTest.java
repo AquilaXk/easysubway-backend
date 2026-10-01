@@ -17,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -135,29 +136,48 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 	}
 
 	@Test
-	@DisplayName("PostgreSQL에서도 동시 INSERT 경합 시 ON CONFLICT DO NOTHING으로 recorded=false를 돌려주고 예외가 발생하지 않는다")
-	void concurrentInsertConflictOnPostgresql() throws Exception {
+	@DisplayName("행이 없는 시설의 첫 기록이 바깥 트랜잭션 안에서 겹치면 늦은 쪽은 앞선 커밋을 기다린 뒤 recorded=false를 받고, 같은 트랜잭션을 계속 쓸 수 있으며 앞선 상태만 남는다")
+	void concurrentFirstRecordsKeepTheWinnerAndLeaveTheLoserTransactionUsable() throws Exception {
 		try (var dataSource = dataSource()) {
-			var repository = new JdbcFacilityOperationalStatusRepository(dataSource);
-			var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+			var transactionManager = new DataSourceTransactionManager(dataSource);
+			var repository = new JdbcFacilityOperationalStatusRepository(dataSource, transactionManager);
+			var outerTransaction = new TransactionTemplate(transactionManager);
+			var jdbcTemplate = new JdbcTemplate(dataSource);
+			var winnerInserted = new CountDownLatch(1);
+			var releaseWinner = new CountDownLatch(1);
+			ExecutorService executor = Executors.newFixedThreadPool(2);
 			try {
-				var latch = new java.util.concurrent.CountDownLatch(1);
-				var task1 = executor.submit(() -> {
-					latch.await();
-					return repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OPERATING, ADMIN_AT);
-				});
-				var task2 = executor.submit(() -> {
-					latch.await();
-					return repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT);
-				});
-				latch.countDown();
-				var result1 = task1.get(10, java.util.concurrent.TimeUnit.SECONDS);
-				var result2 = task2.get(10, java.util.concurrent.TimeUnit.SECONDS);
-				assertThat(result1.recorded() || result2.recorded()).isTrue();
-				assertThat(repository.loadStatuses()).hasSize(1);
+				Future<AdminVerifiedResult> winner = executor.submit(() -> outerTransaction.execute(status -> {
+					AdminVerifiedResult result = repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OPERATING, ADMIN_AT);
+					winnerInserted.countDown();
+					await(releaseWinner);
+					return result;
+				}));
+				assertThat(winnerInserted.await(WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+
+				Future<LoserOutcome> loser = executor.submit(() -> outerTransaction.execute(status -> new LoserOutcome(
+					repository.recordAdminVerified(EXIT_1, FacilityOperationalState.OUT_OF_SERVICE, ADMIN_AT),
+					jdbcTemplate.queryForObject(
+						"SELECT status FROM facility_operational_status WHERE facility_id = ?", String.class, EXIT_1
+					)
+				)));
+				awaitLockWaiter(jdbcTemplate);
+				assertThat(loser.isDone()).as("늦은 쪽은 앞선 트랜잭션의 같은 시설 INSERT를 기다린다").isFalse();
+				releaseWinner.countDown();
+
+				assertThat(winner.get(WAIT.toSeconds(), TimeUnit.SECONDS))
+					.isEqualTo(new AdminVerifiedResult(true, Optional.empty(), Optional.empty()));
+				LoserOutcome loserOutcome = loser.get(WAIT.toSeconds(), TimeUnit.SECONDS);
+				assertThat(loserOutcome.result()).isEqualTo(new AdminVerifiedResult(false, Optional.empty(), Optional.empty()));
+				assertThat(loserOutcome.statusReadInSameTransaction()).isEqualTo(FacilityOperationalState.OPERATING.name());
 			} finally {
+				releaseWinner.countDown();
 				executor.shutdownNow();
 			}
+
+			assertThat(repository.loadStatuses()).containsExactly(new FacilityOperationalStatus(
+				EXIT_1, FacilityOperationalState.OPERATING, FacilityStatusSource.ADMIN_VERIFIED, null, ADMIN_AT, ADMIN_AT
+			));
 		}
 	}
 
@@ -220,6 +240,20 @@ class JdbcFacilityOperationalStatusRepositoryContainerTest {
 			Thread.sleep(20);
 		}
 		throw new AssertionError("행 잠금을 기다리는 세션이 " + WAIT + " 안에 생기지 않았다");
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(WAIT.toSeconds(), TimeUnit.SECONDS)) {
+				throw new AssertionError("latch was not released");
+			}
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(exception);
+		}
+	}
+
+	private record LoserOutcome(AdminVerifiedResult result, String statusReadInSameTransaction) {
 	}
 
 	private static HikariDataSource dataSource() {
