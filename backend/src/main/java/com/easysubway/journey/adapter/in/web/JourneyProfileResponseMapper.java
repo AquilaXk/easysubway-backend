@@ -206,7 +206,8 @@ final class JourneyProfileResponseMapper {
 							throw invalid();
 						}
 						legs.add(new JourneyCandidate.Transfer(
-								access.fromStationId(), access.toStationId(), access.durationSeconds()));
+								access.fromStationId(), access.toStationId(), access.durationSeconds(),
+								access.transferType(), access.farePenaltyApplies(), access.transferLimitMinutes()));
 						transfers++;
 						stage = 1;
 						last = access.toStationId();

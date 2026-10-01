@@ -235,7 +235,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 				legs.add(new JourneyProfileRaptorPort.AccessLeg(
 					JourneyProfileRaptorPort.AccessKind.valueOf(access.kind().name()),
 					access.fromStationId(), access.toStationId(), access.durationSeconds(), access.distanceMeters(),
-					access.includesStairs(), access.verified(), access.verificationStatus()));
+					access.includesStairs(), access.verified(), access.verificationStatus(),
+					access.transferType(), access.farePenaltyApplies(), access.transferLimitMinutes()));
 			} else {
 				RouteTimetableRaptorPlanner.JourneyRideProjection ride =
 					(RouteTimetableRaptorPlanner.JourneyRideProjection) projection;
