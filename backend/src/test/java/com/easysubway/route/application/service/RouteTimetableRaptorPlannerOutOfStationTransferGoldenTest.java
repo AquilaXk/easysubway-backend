@@ -6,6 +6,7 @@ import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
@@ -310,6 +311,72 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 				.singleElement()
 				.satisfies(leg -> assertThat(((JourneyAccessProjection) leg).distanceMeters()).isEqualTo(400));
 		});
+	}
+
+	@Test
+	@DisplayName("무단차 요구 profile은 계단이 있는 역 밖 통로로 환승하지 않고 point 탐색과 같게 0건이며, 단차 없는 통로면 1건 이상이다")
+	void departureProfileRejectsStairsOutOfStationFootpathForStepFreeLikePointSearch() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var stairsCompiled = planner.compile(timetableWithTransferEdge(true));
+		var stepFreeCompiled = planner.compile(timetableWithTransferEdge(false));
+		var departBetween = stepFreeQuery(new JourneyRaptorQuery.DepartBetween(
+			Instant.parse("2026-07-06T04:00:00Z"), Instant.parse("2026-07-06T04:40:00Z")));
+		var departAt = stepFreeQuery(new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T04:30:00Z")));
+		var empty = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+
+		assertThat(planner.journeyItineraries(departAt, stepFreeCompiled).itineraries()).isNotEmpty();
+		assertThat(planner.departureProfile(departBetween, stepFreeCompiled, empty, PROFILE_LIMITS)
+			.stream().flatMap(entry -> entry.itineraries().stream())).isNotEmpty();
+
+		assertThat(planner.journeyItineraries(departAt, stairsCompiled).itineraries()).isEmpty();
+		assertThat(planner.departureProfile(departBetween, stairsCompiled, empty, PROFILE_LIMITS)
+			.stream().flatMap(entry -> entry.itineraries().stream())).isEmpty();
+	}
+
+	@Test
+	@DisplayName("실시간으로 차단된 역 밖 통로는 무단차 요구 profile이 point 탐색처럼 환승에 쓰지 않고, 차단이 없으면 환승한다")
+	void departureProfileRejectsRealtimeBlockedOutOfStationFootpathLikePointSearch() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(timetableWithTransferEdge(false));
+		var departBetween = stepFreeQuery(new JourneyRaptorQuery.DepartBetween(
+			Instant.parse("2026-07-06T04:00:00Z"), Instant.parse("2026-07-06T04:40:00Z")));
+		var departAt = stepFreeQuery(new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T04:30:00Z")));
+		var blocked = planner.compileRealtimeOverlay(compiled, new TimetableRealtimeUpdates(
+			"overlay-v1", true, List.of(), List.of("b-c-out-transfer-edge"), null));
+
+		assertThat(blocked.isEmpty()).isFalse();
+		assertThat(planner.departureProfile(departBetween, compiled,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), PROFILE_LIMITS)
+			.stream().flatMap(entry -> entry.itineraries().stream())).isNotEmpty();
+		assertThat(planner.journeyItineraries(departAt, compiled, blocked).itineraries()).isEmpty();
+		assertThat(planner.departureProfile(departBetween, compiled, blocked, PROFILE_LIMITS)
+			.stream().flatMap(entry -> entry.itineraries().stream())).isEmpty();
+	}
+
+	private static JourneyRaptorQuery stepFreeQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION, temporalQuery,
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.NO_STAIRS,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			1, 2, () -> false);
+	}
+
+	private static RouteTimetable timetableWithTransferEdge(boolean includesStairs) {
+		var base = timetable();
+		var access = base.routeAccessData();
+		List<PathwayEdge> edges = access.pathwayEdges().stream()
+			.map(edge -> edge.id().equals("b-c-out-transfer-edge")
+				? new PathwayEdge(edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(),
+					edge.distanceMeters(), edge.bidirectional(), includesStairs, edge.reliabilityScore(),
+					edge.accessibilityStatus(), edge.provenanceKind(), edge.verificationStatus())
+				: edge)
+			.toList();
+		return new RouteTimetable(
+			base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(), base.transitTrips(),
+			base.transitStopTimes(), base.transitFrequencies(), base.officialFares(), base.feedEndDate(),
+			new RouteAccessData(access.pathwayNodes(), edges, access.transferRules(), access.routeEdgeEvidence()));
 	}
 
 	private static final JourneyProfileResourcePolicy.ProfilePlanningLimits PROFILE_LIMITS =
