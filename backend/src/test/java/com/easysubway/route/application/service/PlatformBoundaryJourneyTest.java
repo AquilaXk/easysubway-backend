@@ -183,19 +183,44 @@ class PlatformBoundaryJourneyTest {
 	@Test
 	@DisplayName("시간 전용 검증 환승은 arrive-by·출발 시간대 profile에서도 같은 시간으로 쓴다")
 	void timeOnlyVerifiedTransferIsUsedByProfileAndArriveBy() {
+		assertProfileAndArriveByTransferSeconds(
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.WalkingPace.STANDARD, 300);
+	}
+
+	@Test
+	@DisplayName("시간 전용 검증 환승: arrive-by·출발 시간대 profile도 느린 걸음은 371초로 늘린다")
+	void timeOnlyVerifiedTransferScalesUpForSlowerPacesInProfileAndArriveBy() {
+		// SLOW = 3,500 m/h. 300 × 4,320 / 3,500 = 370.29 → 371초(올림). point와 같은 값이어야 한다.
+		assertProfileAndArriveByTransferSeconds(
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.WalkingPace.SLOW, 371);
+	}
+
+	@Test
+	@DisplayName("시간 전용 검증 환승: arrive-by·출발 시간대 profile도 무단차 프로필은 시설 대기 60초를 더한다")
+	void timeOnlyVerifiedTransferAddsTheStepFreeFacilityWaitInProfileAndArriveBy() {
+		assertProfileAndArriveByTransferSeconds(
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.WalkingPace.STANDARD, 360);
+	}
+
+	private static void assertProfileAndArriveByTransferSeconds(
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.WalkingPace walkingPace,
+		int expectedSeconds
+	) {
 		var timetable = platformOnlyTimetable(verifiedTransfer(300, 0));
-		var arriveBy = profile(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(SECOND_ARRIVAL)), timetable);
+		var arriveBy = profile(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(SECOND_ARRIVAL)), timetable,
+			mobilityProfile, walkingPace);
 		assertThat(arriveBy.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class,
 			value -> assertThat(value.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
 				found -> assertThat(found.itineraries()).singleElement()
-					.satisfies(itinerary -> assertThat(profileTransferSeconds(itinerary)).isEqualTo(300))));
+					.satisfies(itinerary -> assertThat(profileTransferSeconds(itinerary)).isEqualTo(expectedSeconds))));
 		var departure = profile(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(FIRST_DEPARTURE)),
-			timetable);
+			timetable, mobilityProfile, walkingPace);
 		assertThat(departure.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.DepartureWindowPlan.class,
 			window -> {
 				var itineraries = window.points().stream().flatMap(point -> point.itineraries().stream()).toList();
 				assertThat(itineraries).isNotEmpty()
-					.allSatisfy(itinerary -> assertThat(profileTransferSeconds(itinerary)).isEqualTo(300));
+					.allSatisfy(itinerary -> assertThat(profileTransferSeconds(itinerary)).isEqualTo(expectedSeconds));
 			});
 	}
 
@@ -248,9 +273,19 @@ class PlatformBoundaryJourneyTest {
 		JourneyRaptorQuery.TemporalQuery temporalQuery,
 		RouteTimetable timetable
 	) {
+		return profile(temporalQuery, timetable,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.WalkingPace.STANDARD);
+	}
+
+	private static JourneyProfileRaptorPort.PlanningResult.Planned profile(
+		JourneyRaptorQuery.TemporalQuery temporalQuery,
+		RouteTimetable timetable,
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.WalkingPace walkingPace
+	) {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			walkingPace, mobilityProfile,
 			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
 		return (JourneyProfileRaptorPort.PlanningResult.Planned) new JourneyProfileRaptorAdapter().plan(
 			query, snapshot(timetable), null, policy().profilePlanningLimits());
