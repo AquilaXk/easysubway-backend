@@ -48,11 +48,11 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactions;
-	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcFacilityOperationalStatusRepository(DataSource dataSource, PlatformTransactionManager transactionManager) {
-		this(new JdbcTemplate(dataSource), new TransactionTemplate(transactionManager));
+		this.jdbcTemplate = new JdbcTemplate(dataSource);
+		this.transactions = new TransactionTemplate(transactionManager);
 	}
 
 	JdbcFacilityOperationalStatusRepository(DataSource dataSource) {
@@ -62,7 +62,6 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 	JdbcFacilityOperationalStatusRepository(JdbcTemplate jdbcTemplate, TransactionTemplate transactions) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.transactions = transactions;
-		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
@@ -200,7 +199,7 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 	 * PostgreSQL은 문장이 실패하면 바깥 트랜잭션 전체를 중단(25P02)시켜, 뒤이은 감사 기록까지 실패한다(#442).
 	 */
 	private int insertAdminVerifiedIfAbsent(String facilityId, FacilityOperationalState state, OffsetDateTime at) {
-		if (databaseDialect == DatabaseDialect.H2) {
+		if (detectDatabaseDialect(jdbcTemplate) == DatabaseDialect.H2) {
 			return jdbcTemplate.update(
 				"""
 					INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
