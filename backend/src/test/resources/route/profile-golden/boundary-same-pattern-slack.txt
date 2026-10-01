@@ -1,4 +1,4 @@
-POINT readyAt=29001
+POINT readyAt=29240
   ITINERARY
     LEG RIDE trip=origin-to-hub line=origin-line from=origin to=hub dep=2026-06-30T23:08:20Z arr=2026-06-30T23:08:20Z
     LEG ACCESS kind=TRANSFER from=hub to=hub dur=8 dist=10 stairs=false
