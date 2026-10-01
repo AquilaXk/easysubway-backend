@@ -326,7 +326,10 @@ public interface JourneyProfileRaptorPort {
 		int distanceMeters,
 		boolean includesStairs,
 		boolean verified,
-		String verificationStatus
+		String verificationStatus,
+		String transferType,
+		Boolean farePenaltyApplies,
+		Integer transferLimitMinutes
 	) implements Leg {
 		public AccessLeg {
 			kind = Objects.requireNonNull(kind, "kind");
@@ -336,6 +339,20 @@ public interface JourneyProfileRaptorPort {
 				throw new IllegalArgumentException("access duration and distance must not be negative");
 			}
 			verificationStatus = requireText(verificationStatus, "verificationStatus");
+		}
+
+		public AccessLeg(
+			AccessKind kind,
+			String fromStationId,
+			String toStationId,
+			int durationSeconds,
+			int distanceMeters,
+			boolean includesStairs,
+			boolean verified,
+			String verificationStatus
+		) {
+			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified,
+				verificationStatus, null, null, null);
 		}
 	}
 
