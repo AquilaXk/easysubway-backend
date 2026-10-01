@@ -157,6 +157,11 @@ class ReverseTimetableRaptorPlannerTest {
 				assertThat(ride.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:20:00Z"));
 				assertThat(ride.realtimeDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:11:00Z"));
 				assertThat(ride.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:21:00Z"));
+				assertThat(ride.stops()).containsExactly(
+					new RouteTimetableRaptorPlanner.JourneyStopProjection("station-a", null,
+						Instant.parse("2026-07-01T15:10:00Z"), null, Instant.parse("2026-07-01T15:11:00Z")),
+					new RouteTimetableRaptorPlanner.JourneyStopProjection("station-b",
+						Instant.parse("2026-07-01T15:20:00Z"), null, Instant.parse("2026-07-01T15:21:00Z"), null));
 			});
 		assertThat(result.itinerary().legs().get(2))
 			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, exit -> {
@@ -340,6 +345,30 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("keeps boarding stops and omits pass-through stations in reverse ride stops")
+	void omitsPassThroughStationsFromRideStops() {
+		var compiled = forward.compile(timetable(
+			List.of(trip("via-pass", "line-a")),
+			List.of(
+				stop("via-pass", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("via-pass", 2, "station-mid", "line-a", 32_550, 0, 0),
+				stop("via-pass", 3, "station-pass", "line-a", 32_700, 1, 1),
+				stop("via-pass", 4, "station-b", "line-a", 33_000, 0, 0)),
+			access(true, true, 300, 180, false)));
+
+		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.singleElement().isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyRideProjection.class, ride -> {
+				assertThat(ride.servicePattern()).isEqualTo("LOCAL");
+				assertThat(ride.stops()).extracting(RouteTimetableRaptorPlanner.JourneyStopProjection::stationId)
+					.containsExactly("station-a", "station-mid", "station-b");
+			});
+	}
+
+	@Test
 	@DisplayName("requires upstream pickup and downstream drop-off permissions")
 	void requiresPickupAndDropOffRestrictions() {
 		var noPickup = forward.compile(directTimetableWithRestrictions(1, 0));
@@ -466,7 +495,6 @@ class ReverseTimetableRaptorPlannerTest {
 			assertThat(transfer.toStationId()).isEqualTo("station-transfer-2");
 			assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
 			assertThat(transfer.farePenaltyApplies()).isFalse();
-			assertThat(transfer.additionalFareWon()).isEqualTo(0);
 		});
 	}
 
@@ -507,7 +535,6 @@ class ReverseTimetableRaptorPlannerTest {
 				.findFirst().orElseThrow();
 			assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
 			assertThat(transfer.farePenaltyApplies()).isTrue();
-			assertThat(transfer.additionalFareWon()).isEqualTo(1400);
 			assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
 		});
 	}
@@ -1772,6 +1799,27 @@ class ReverseTimetableRaptorPlannerTest {
 			// baseline 240s (324s with SLOW preset) was blocked; detours to alternative 400s (540s with SLOW preset)
 			assertThat(transferLeg.durationSeconds()).isEqualTo(540);
 		});
+	}
+
+	@Test
+	@DisplayName("arriveBy에서 MobilityPreset.STEP_FREE 요청 시 역방향 여정의 하차 칸-문이 정상 투영된다")
+	void stepFreeArriveByProjectsCarDoors() {
+		var compiled = forward.compile(transferTimetableWithAlternativeTransfer());
+		var query = new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, WHEELCHAIR_PROFILE_BIT,
+			WHEELCHAIR_SLACK_SECONDS, MobilityPreset.STEP_FREE, 3_600, false, () -> false);
+		var result = planner.arriveBy(query, compiled, compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).isNotEmpty();
+		var itinerary = result.itineraries().getFirst();
+		var rides = itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.toList();
+		assertThat(rides).hasSize(2);
+		assertThat(rides.getFirst().alightingCarDoors()).isNotNull();
+		assertThat(rides.getLast().alightingCarDoors()).isNotNull();
 	}
 
 	@Test

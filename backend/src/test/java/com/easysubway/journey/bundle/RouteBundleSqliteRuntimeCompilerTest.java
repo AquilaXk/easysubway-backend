@@ -6,6 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -86,7 +90,226 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			assertThat(candidate.legs()).hasSize(3);
 			assertThat(candidate.transferCount()).isZero();
 			assertThat(candidate.accessibility().stairFree()).isTrue();
+			assertThat(candidate.fare().status()).isEqualTo(com.easysubway.journey.application.JourneyCandidate.FareStatus.AVAILABLE);
+			assertThat(candidate.fare().adultCardWon()).isEqualTo(1400);
 		});
+	}
+
+	@Test
+	void readsStationCarDoorHintsFromAccessibilityBundleWhenPresent() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-with-hints", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+			execute(connection, """
+				CREATE TABLE station_car_door_hints (
+					id TEXT NOT NULL PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					line_id TEXT NOT NULL,
+					direction TEXT NOT NULL,
+					target_facility_type TEXT NOT NULL,
+					car_number INTEGER NOT NULL,
+					door_number INTEGER NOT NULL,
+					source_id TEXT NOT NULL DEFAULT '',
+					source_snapshot_id TEXT NOT NULL DEFAULT '',
+					provider_record_hash TEXT NOT NULL DEFAULT '',
+					provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+					verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+					last_verified_at INTEGER NOT NULL DEFAULT 0,
+					evidence_hash TEXT NOT NULL DEFAULT ''
+				)
+				""");
+			insert(connection, "INSERT INTO station_car_door_hints (id, station_id, line_id, direction, target_facility_type, car_number, door_number) VALUES ('h1','station-b','line-1','UP','TRANSFER',3,2)");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		assertThat(timetable.routeAccessData().carDoorHints()).hasSize(1);
+		var hint = timetable.routeAccessData().carDoorHints().getFirst();
+		assertThat(hint.stationId()).isEqualTo("station-b");
+		assertThat(hint.lineId()).isEqualTo("line-1");
+		assertThat(hint.direction()).isEqualTo("UP");
+		assertThat(hint.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(hint.carNumber()).isEqualTo(3);
+		assertThat(hint.doorNumber()).isEqualTo(2);
+	}
+
+	@Test
+	void exposesOnlySmrtElevatorFacilitiesFromTheAccessibilityComponentAsAReadOnlyCatalog() throws Exception {
+		RouteBundleRuntimeView runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime).isInstanceOf(RouteBundleFacilityCatalog.class);
+		assertThat(((RouteBundleFacilityCatalog) runtime).smrtElevatorFacilities()).containsExactly(
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0150:1:나역 방면1-1", "가역 엘리베이터 나역 방면1-1"),
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0201:2:9번 출입구", "나역 엘리베이터 9번 출입구"));
+		assertThatThrownBy(() -> ((RouteBundleFacilityCatalog) runtime).smrtElevatorFacilities().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void rejectsAccessibilityComponentWithoutFacilitiesOrWithBlankFacilityName() throws Exception {
+		var missing = payloads();
+		missing.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-no-facilities", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(missing)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("runtime compilation failed")
+			.cause().hasMessageContaining("facilities");
+
+		var blankName = payloads();
+		blankName.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-blank-name", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL)");
+			insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)", "smrt-elev:0201:2:9번 출입구", "station-b", "ELEVATOR", " ");
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(blankName)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("bundle facility name");
+	}
+
+	@Test
+	void rejectsDuplicateOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-duplicate", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official-2", "snapshot-2", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("duplicate official_od_fare_quotes key");
+	}
+
+	@Test
+	void loadsTheSixRealOfficialOdFareRowsFromTheFareComponent() throws Exception {
+		JsonNode realRows;
+		try (var input = RouteBundleSqliteRuntimeCompilerTest.class.getResourceAsStream(
+			"/route/fare/official-od-fare-quotes.json")) {
+			realRows = JSON.readTree(java.util.Objects.requireNonNull(input, "real fare quotes")).path("quotes");
+		}
+		var fare = sqlite("fare-real-rows", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL, PRIMARY KEY(origin_station_id,destination_station_id))
+				""");
+			for (JsonNode row : realRows) {
+				insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+					row.path("originStationId").textValue(), row.path("destinationStationId").textValue(),
+					row.path("sourceId").textValue(), row.path("snapshotId").textValue(),
+					row.path("mappingLedgerHash").textValue(), row.path("gnrlCardFare").intValue(),
+					row.path("gnrlCashFare").intValue(), row.path("yungCardFare").intValue(),
+					row.path("yungCashFare").intValue(), row.path("childCardFare").intValue(),
+					row.path("childCashFare").intValue());
+			}
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, Zstd.compress(fare, 10));
+
+		var quotes = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)).officialFareQuotes();
+
+		assertThat(realRows).hasSize(6);
+		assertThat(quotes).hasSize(6);
+		for (JsonNode row : realRows) {
+			var quote = quotes.get(com.easysubway.route.application.service.OfficialFareQuote.fareKey(
+				row.path("originStationId").textValue(), row.path("destinationStationId").textValue()));
+			assertThat(quote).isNotNull();
+			assertThat(List.of(quote.sourceId(), quote.snapshotId(), quote.mappingLedgerHash()))
+				.containsExactly(row.path("sourceId").textValue(), row.path("snapshotId").textValue(),
+					row.path("mappingLedgerHash").textValue());
+			assertThat(List.of(quote.gnrlCardFare(), quote.gnrlCashFare(), quote.yungCardFare(),
+				quote.yungCashFare(), quote.childCardFare(), quote.childCashFare()))
+				.containsExactly(row.path("gnrlCardFare").intValue(), row.path("gnrlCashFare").intValue(),
+					row.path("yungCardFare").intValue(), row.path("yungCashFare").intValue(),
+					row.path("childCardFare").intValue(), row.path("childCashFare").intValue());
+		}
+		var sangnoksuToSadang = quotes.get(
+			com.easysubway.route.application.service.OfficialFareQuote.fareKey("station-sangnoksu", "station-sadang"));
+		assertThat(List.of(sangnoksuToSadang.gnrlCardFare(), sangnoksuToSadang.gnrlCashFare(),
+			sangnoksuToSadang.yungCardFare(), sangnoksuToSadang.yungCashFare(),
+			sangnoksuToSadang.childCardFare(), sangnoksuToSadang.childCashFare()))
+			.containsExactly(1950, 2050, 1220, 2050, 750, 750);
+		assertThat(sangnoksuToSadang.snapshotId()).isEqualTo("seoul-metro-official-od-fares-20260712");
+	}
+
+	@Test
+	void rejectsNullFareValuesInOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-null", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER,
+				 gnrl_cash_fare INTEGER, yung_card_fare INTEGER,
+				 yung_cash_fare INTEGER, child_card_fare INTEGER,
+				 child_cash_fare INTEGER)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), null, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare value is invalid");
+	}
+
+	@Test
+	void rejectsSameOriginAndDestinationInFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-same-od", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-a", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare origin and destination must differ");
 	}
 
 	@Test
@@ -138,6 +361,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-drift", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var edges = topologyEdges();
 			edges.remove(edges.size() - 1);
@@ -157,6 +381,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-blocked", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of("entry-a", "BLOCKED"));
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -201,6 +426,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads(transferEdges, value -> value, "AVAILABLE");
 		var accessibility = sqlite("accessibility-transfers", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(transferEdges, states);
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -232,6 +458,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-distinct-candidate", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of(), "nationwide-candidate-20260909");
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -248,6 +475,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-blank-candidate", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges(), Map.of(), "   ");
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -274,6 +502,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var payloads = payloads(transferEdges, value -> value, "UNKNOWN", "UNKNOWN", "UNKNOWN");
 		var accessibility = sqlite("accessibility-unknown", connection -> {
 			common(connection, identitySql());
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(transferEdges, states);
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -314,6 +543,157 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
 		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void compilesOfficialPlatformGapGradesInDeclaredOrder() throws Exception {
+		var payloads = payloadsWithGaps(true,
+			gap("g1", "station-a", "line-1", "UP", "본선 2-1", 2, 1, "NARROW", "LOW", 0),
+			gap("g2", "station-a", "line-1", "UP", "본선 1-2", 1, 2, "NORMAL", "HIGH", 0),
+			gap("g3", "station-a", "line-1", "UP", "본선 1-1", 1, 1, "WIDE", "LOW", 1),
+			gap("g4", "station-a", "line-1", "UP", "본선 3-1", 3, 1, "NORMAL", "NORMAL", 0),
+			gap("g5", "station-a", "line-1", "UP", "본선 1-3", 1, 3, "NORMAL", "HIGH", 0),
+			gap("g6", "station-a", "line-1", "DOWN", "하선 오이도 방면", null, null, "WIDE", "HIGH", 1));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+
+		var up = timetable.routeAccessData().platformGaps().get(new PlatformGapKey("station-a", "line-1", "UP"));
+		// WIDE -> NORMAL -> NARROW, 같은 간격이면 HIGH -> NORMAL -> LOW, 그다음 platformPosition 오름차순
+		assertThat(up).containsExactly(
+			new PlatformGap("본선 1-1", 1, 1, GapGrade.WIDE, HeightDiffGrade.LOW, true),
+			new PlatformGap("본선 1-2", 1, 2, GapGrade.NORMAL, HeightDiffGrade.HIGH, false),
+			new PlatformGap("본선 1-3", 1, 3, GapGrade.NORMAL, HeightDiffGrade.HIGH, false),
+			new PlatformGap("본선 3-1", 3, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false),
+			new PlatformGap("본선 2-1", 2, 1, GapGrade.NARROW, HeightDiffGrade.LOW, false));
+		var down = timetable.routeAccessData().platformGaps()
+			.get(new PlatformGapKey("station-a", "line-1", "DOWN"));
+		assertThat(down).containsExactly(
+			new PlatformGap("하선 오이도 방면", null, null, GapGrade.WIDE, HeightDiffGrade.HIGH, true));
+	}
+
+	@Test
+	void treatsMissingPlatformGapTableAsNoGaps() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads()));
+
+		assertThat(timetable.routeAccessData().platformGaps()).isEmpty();
+	}
+
+	@Test
+	void treatsEmptyPlatformGapTableAsNoGaps() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloadsWithGaps(true)));
+
+		assertThat(timetable.routeAccessData().platformGaps()).isEmpty();
+	}
+
+	@Test
+	void rejectsUnknownGapGrade() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "좁음", "LOW", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap gap_grade: 좁음");
+	}
+
+	@Test
+	void rejectsUnknownHeightDiffGrade() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "WIDE", "HUGE", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap height_diff_grade: HUGE");
+	}
+
+	@Test
+	void rejectsInvalidCurvedFlag() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "WIDE", "LOW", 2));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap curved: 2");
+	}
+
+	@Test
+	void rejectsPlatformGapDirectionOutsideUpDown() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "EAST", "1-1", 1, 1, "WIDE", "LOW", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap direction: EAST");
+	}
+
+	@Test
+	void rejectsPlatformGapTableWithNumericMillimetreColumns() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-mm-gaps", connection -> {
+			commonAccessibility(connection);
+			execute(connection, """
+				CREATE TABLE station_platform_gaps (
+					id TEXT PRIMARY KEY, station_id TEXT NOT NULL, line_id TEXT NOT NULL, direction TEXT,
+					platform_position TEXT NOT NULL, car_number INTEGER, door_number INTEGER,
+					gap_mm INTEGER NOT NULL, height_diff_mm INTEGER NOT NULL, source_snapshot_id TEXT NOT NULL)
+				""");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("SQLite table schema mismatch: station_platform_gaps");
+	}
+
+	private record GapRow(String id, String stationId, String lineId, String direction, String position,
+		Integer car, Integer door, String gapGrade, String heightDiffGrade, int curved) {
+	}
+
+	private static GapRow gap(String id, String stationId, String lineId, String direction, String position,
+		Integer car, Integer door, String gapGrade, String heightDiffGrade, int curved) {
+		return new GapRow(id, stationId, lineId, direction, position, car, door, gapGrade, heightDiffGrade, curved);
+	}
+
+	private void commonAccessibility(Connection connection) throws Exception {
+		common(connection, identitySql());
+		facilities(connection);
+		execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+		var evaluation = evaluation(topologyEdges());
+		insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+			evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+	}
+
+	/** checked=true는 data 계약의 CHECK 제약을 그대로 두고, false는 계약 위반 값을 넣기 위해 제약을 뺀다. */
+	private Map<String, byte[]> payloadsWithGaps(boolean checked, GapRow... rows) throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-gaps", connection -> {
+			commonAccessibility(connection);
+			execute(connection, """
+				CREATE TABLE station_platform_gaps (
+					id TEXT PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					line_id TEXT NOT NULL,
+					direction TEXT %s,
+					platform_position TEXT NOT NULL,
+					car_number INTEGER,
+					door_number INTEGER,
+					gap_grade TEXT NOT NULL %s,
+					height_diff_grade TEXT NOT NULL %s,
+					curved INTEGER NOT NULL %s,
+					source_snapshot_id TEXT NOT NULL
+				)
+				""".formatted(
+				checked ? "CHECK (direction IN ('UP','DOWN'))" : "",
+				checked ? "CHECK (gap_grade IN ('NARROW','NORMAL','WIDE'))" : "",
+				checked ? "CHECK (height_diff_grade IN ('LOW','NORMAL','HIGH'))" : "",
+				checked ? "CHECK (curved IN (0,1))" : ""));
+			for (var row : rows) {
+				insert(connection, "INSERT INTO station_platform_gaps VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+					row.id(), row.stationId(), row.lineId(), row.direction(), row.position(), row.car(),
+					row.door(), row.gapGrade(), row.heightDiffGrade(), row.curved(), "snap-1");
+			}
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+		return payloads;
 	}
 
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
@@ -419,6 +799,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		});
 		var accessibility = sqlite("accessibility", connection -> {
 			common(connection, identityTransform.apply(identitySql()));
+			facilities(connection);
 			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
 			var evaluation = evaluation(topologyEdges());
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
@@ -481,6 +862,17 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-a", "line-1", 1);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-1", 2);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-2", 3);
+	}
+
+	// data 번들 accessibility 구성요소의 facilities 표(catalog-schema)에서 컴파일러가 읽는 열만 둔다.
+	private static void facilities(Connection connection) throws Exception {
+		execute(connection, "CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL)");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"smrt-elev:0201:2:9번 출입구", "station-b", "ELEVATOR", "나역 엘리베이터 9번 출입구");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"smrt-elev:0150:1:나역 방면1-1", "station-a", "ELEVATOR", "가역 엘리베이터 나역 방면1-1");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"facility-a-escalator", "station-a", "ESCALATOR", "가역 에스컬레이터");
 	}
 
 	private static String identitySql() {

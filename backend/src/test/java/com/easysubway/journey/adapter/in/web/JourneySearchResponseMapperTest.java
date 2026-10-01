@@ -1,10 +1,15 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
@@ -24,7 +29,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsOrderedTimetableSuccessAndAllFourLegsToExactWireShape() throws Exception {
-		var first = new JourneyCandidate(
+		var first = TestJourneyCandidates.unavailableFare(
 			"journey-first",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -37,7 +42,7 @@ class JourneySearchResponseMapperTest {
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
 			List.of(
 				new JourneyCandidate.Entry("station-origin", 30),
-				new JourneyCandidate.Ride(
+				TestRides.candidateRide(
 					"line-1",
 					"trip-1",
 					"station-direction",
@@ -52,7 +57,7 @@ class JourneySearchResponseMapperTest {
 				new JourneyCandidate.Exit("station-destination", 20)
 			)
 		);
-		var second = new JourneyCandidate(
+		var second = TestJourneyCandidates.unavailableFare(
 			"journey-second",
 			PLANNED_DEPARTURE.plusSeconds(60),
 			PLANNED_ARRIVAL.plusSeconds(60),
@@ -63,7 +68,7 @@ class JourneySearchResponseMapperTest {
 			20,
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(false, List.of("STAIRS_PRESENT")),
-			List.of(new JourneyCandidate.Ride(
+			List.of(TestRides.candidateRide(
 				"line-2",
 				"trip-2",
 				"station-direction-2",
@@ -122,6 +127,7 @@ class JourneySearchResponseMapperTest {
 			      "walkingDistanceMeters":75,
 			      "timeSource":"TIMETABLE",
 			      "accessibility":{"result":"VERIFIED","stairFree":true,"reasonCodes":["STEP_FREE_PATH"]},
+			      "fare":{"status":"UNAVAILABLE","sourceSnapshotIds":[]},
 			      "legs":[
 			        {"type":"ENTRY","fromStationId":"station-origin","durationSeconds":30},
 			        {
@@ -131,10 +137,18 @@ class JourneySearchResponseMapperTest {
 			          "directionStationId":"station-direction",
 			          "fromStationId":"station-origin",
 			          "toStationId":"station-transfer-a",
+			          "servicePattern":"LOCAL",
 			          "plannedDepartureTime":"2026-08-12T00:01:00Z",
 			          "plannedArrivalTime":"2026-08-12T00:04:30Z",
 			          "realtimeDepartureTime":null,
-			          "realtimeArrivalTime":null
+			          "realtimeArrivalTime":null,
+			          "stops":[
+			            {"stationId":"station-origin","plannedArrivalTime":null,"plannedDepartureTime":"2026-08-12T00:01:00Z","realtimeArrivalTime":null,"realtimeDepartureTime":null},
+			            {"stationId":"station-transfer-a","plannedArrivalTime":"2026-08-12T00:04:30Z","plannedDepartureTime":null,"realtimeArrivalTime":null,"realtimeDepartureTime":null}
+			          ],
+			          "alightingCarDoors":[],
+			          "boardingPlatformGaps":[],
+			          "alightingPlatformGaps":[]
 			        },
 			        {"type":"TRANSFER","fromStationId":"station-transfer-a","toStationId":"station-transfer-b","durationSeconds":45},
 			        {"type":"EXIT","fromStationId":"station-destination","durationSeconds":20}
@@ -153,6 +167,7 @@ class JourneySearchResponseMapperTest {
 			      "walkingDistanceMeters":20,
 			      "timeSource":"TIMETABLE",
 			      "accessibility":{"result":"VERIFIED","stairFree":false,"reasonCodes":["STAIRS_PRESENT"]},
+			      "fare":{"status":"UNAVAILABLE","sourceSnapshotIds":[]},
 			      "legs":[{
 			        "type":"RIDE",
 			        "lineId":"line-2",
@@ -160,10 +175,18 @@ class JourneySearchResponseMapperTest {
 			        "directionStationId":"station-direction-2",
 			        "fromStationId":"station-origin",
 			        "toStationId":"station-destination",
+			        "servicePattern":"LOCAL",
 			        "plannedDepartureTime":"2026-08-12T00:02:00Z",
 			        "plannedArrivalTime":"2026-08-12T00:07:00Z",
 			        "realtimeDepartureTime":null,
-			        "realtimeArrivalTime":null
+			        "realtimeArrivalTime":null,
+			        "stops":[
+			        {"stationId":"station-origin","plannedArrivalTime":null,"plannedDepartureTime":"2026-08-12T00:02:00Z","realtimeArrivalTime":null,"realtimeDepartureTime":null},
+			        {"stationId":"station-destination","plannedArrivalTime":"2026-08-12T00:07:00Z","plannedDepartureTime":null,"realtimeArrivalTime":null,"realtimeDepartureTime":null}
+			        ],
+			        "alightingCarDoors":[],
+			        "boardingPlatformGaps":[],
+			        "alightingPlatformGaps":[]
 			      }]
 			    }
 			  ]
@@ -179,7 +202,7 @@ class JourneySearchResponseMapperTest {
 	void mapsRealtimeIdentityAndTimesWithoutTimetableSubstitution() throws Exception {
 		Instant realtimeDeparture = PLANNED_DEPARTURE.plusSeconds(20);
 		Instant realtimeArrival = PLANNED_ARRIVAL.plusSeconds(40);
-		var journey = new JourneyCandidate(
+		var journey = TestJourneyCandidates.unavailableFare(
 			"journey-realtime",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -190,7 +213,7 @@ class JourneySearchResponseMapperTest {
 			10,
 			JourneyCandidate.TimeSource.REALTIME,
 			new JourneyCandidate.Accessibility(true, List.of()),
-			List.of(new JourneyCandidate.Ride(
+			List.of(TestRides.candidateRide(
 				"line-1",
 				"trip-1",
 				"station-direction",
@@ -221,7 +244,7 @@ class JourneySearchResponseMapperTest {
 
 	@Test
 	void mapsSlowAndFastWalkingPacesToTheirWireValues() {
-		var journeys = List.of(new JourneyCandidate(
+		var journeys = List.of(TestJourneyCandidates.unavailableFare(
 			"journey-pace",
 			PLANNED_DEPARTURE,
 			PLANNED_ARRIVAL,
@@ -246,6 +269,142 @@ class JourneySearchResponseMapperTest {
 			null,
 			journeys
 		))).path("requestPolicy").path("walkingPace").asText()).isEqualTo("FAST");
+	}
+
+	@Test
+	void mapsAlightingCarDoorsToExactWireShape() {
+		var journey = TestJourneyCandidates.unavailableFare(
+			"journey-doors",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			0,
+			10,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of()),
+			List.of(new JourneyCandidate.Ride(
+				"line-1",
+				"trip-1",
+				"station-direction",
+				"station-origin",
+				"station-destination",
+				"LOCAL",
+				PLANNED_DEPARTURE,
+				PLANNED_ARRIVAL,
+				null,
+				null,
+				List.of(
+					new JourneyCandidate.Stop("station-origin", null, PLANNED_DEPARTURE, null, null),
+					new JourneyCandidate.Stop("station-destination", PLANNED_ARRIVAL, null, null, null)
+				),
+				List.of(new JourneyCandidate.AlightingCarDoor(3, 2, "TRANSFER")),
+				List.of(),
+				List.of()
+			))
+		);
+		JsonNode actual = JSON.valueToTree(JourneySearchResponseMapper.map(success(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			null,
+			List.of(journey)
+		)));
+		JsonNode doors = actual.path("journeys").path(0).path("legs").path(0).path("alightingCarDoors");
+		assertThat(doors.isArray()).isTrue();
+		assertThat(doors.size()).isEqualTo(1);
+		assertThat(doors.get(0).path("carNumber").asInt()).isEqualTo(3);
+		assertThat(doors.get(0).path("doorNumber").asInt()).isEqualTo(2);
+		assertThat(doors.get(0).path("targetFacilityType").asText()).isEqualTo("TRANSFER");
+
+		var resDoor = new JourneySearchResponseMapper.AlightingCarDoorResponse(3, 2, "TRANSFER");
+		assertThat(resDoor.carNumber()).isEqualTo(3);
+		assertThat(resDoor.doorNumber()).isEqualTo(2);
+		assertThat(resDoor.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(resDoor).isEqualTo(new JourneySearchResponseMapper.AlightingCarDoorResponse(3, 2, "TRANSFER"));
+		assertThat(resDoor.hashCode()).isNotZero();
+		assertThat(resDoor.toString()).contains("carNumber=3");
+	}
+
+	@Test
+	void mapsPlatformGapsToOfficialGradeWireShape() throws Exception {
+		var boarding = List.of(
+			new PlatformGap("본선 오이도 방면 1-3", 1, 3, GapGrade.WIDE, HeightDiffGrade.HIGH, true),
+			new PlatformGap("본선 대야미 방면", null, null, GapGrade.NARROW, HeightDiffGrade.LOW, false));
+		var alighting = List.of(
+			new PlatformGap("2-1", 2, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false));
+		var journey = TestJourneyCandidates.unavailableFare(
+			"journey-gap",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			1,
+			75,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
+			List.of(
+				new JourneyCandidate.Entry("station-origin", 30),
+				new JourneyCandidate.Ride(
+					"line-1", "trip-1", "station-direction", "station-origin", "station-destination", "LOCAL",
+					PLANNED_DEPARTURE, PLANNED_ARRIVAL, null, null,
+					List.of(
+						new JourneyCandidate.Stop("station-origin", null, PLANNED_DEPARTURE, null, null),
+						new JourneyCandidate.Stop("station-destination", PLANNED_ARRIVAL, null, null, null)),
+					List.of(), boarding, alighting),
+				new JourneyCandidate.Exit("station-destination", 20)
+			)
+		);
+
+		JsonNode root = JSON.readTree(JSON.writeValueAsString(JourneySearchResponseMapper.map(
+			success(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, null, List.of(journey))
+		)));
+
+		JsonNode rideLeg = root.path("journeys").get(0).path("legs").get(1);
+		assertThat(rideLeg.path("boardingPlatformGaps")).isEqualTo(JSON.readTree("""
+			[
+			  {"platformPosition":"본선 오이도 방면 1-3","carNumber":1,"doorNumber":3,
+			   "gapGrade":"WIDE","heightDiffGrade":"HIGH","curved":true},
+			  {"platformPosition":"본선 대야미 방면","gapGrade":"NARROW","heightDiffGrade":"LOW","curved":false}
+			]
+			"""));
+		assertThat(rideLeg.path("alightingPlatformGaps")).isEqualTo(JSON.readTree("""
+			[{"platformPosition":"2-1","carNumber":2,"doorNumber":1,
+			  "gapGrade":"NORMAL","heightDiffGrade":"NORMAL","curved":false}]
+			"""));
+	}
+
+	@Test
+	void mapsAvailableFareWithAllSixAmountsAndSnapshotIds() {
+		var journey = new JourneyCandidate(
+			"journey-fare",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			0,
+			10,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of()),
+			JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("snap-1", "snap-2")),
+			List.of(new JourneyCandidate.Entry("station-origin", 30))
+		);
+		JsonNode actual = JSON.valueToTree(JourneySearchResponseMapper.map(success(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			null,
+			List.of(journey)
+		))).path("journeys").path(0).path("fare");
+
+		assertThat(actual.path("status").asText()).isEqualTo("AVAILABLE");
+		assertThat(actual.path("adultCardWon").asInt()).isEqualTo(1400);
+		assertThat(actual.path("adultCashWon").asInt()).isEqualTo(1500);
+		assertThat(actual.path("youthCardWon").asInt()).isEqualTo(800);
+		assertThat(actual.path("youthCashWon").asInt()).isEqualTo(900);
+		assertThat(actual.path("childCardWon").asInt()).isEqualTo(500);
+		assertThat(actual.path("childCashWon").asInt()).isEqualTo(600);
+		assertThat(actual.path("sourceSnapshotIds")).extracting(JsonNode::asText)
+			.containsExactly("snap-1", "snap-2");
 	}
 
 	private static JourneyExecutionResult.Success success(

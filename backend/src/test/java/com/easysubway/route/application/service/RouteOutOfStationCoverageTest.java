@@ -100,16 +100,14 @@ class RouteOutOfStationCoverageTest {
 		);
 		assertThat(defaultAccess.transferType()).isNull();
 		assertThat(defaultAccess.farePenaltyApplies()).isNull();
-		assertThat(defaultAccess.additionalFareWon()).isNull();
 		assertThat(defaultAccess.transferLimitMinutes()).isNull();
 
 		var explicitAccess = new JourneyAccessProjection(
 			JourneyAccessKind.TRANSFER, "st-a", "st-b", 120, 100, false, true, "VERIFIED",
-			"OUT_OF_STATION", true, 1400, 30
+			"OUT_OF_STATION", true, 30
 		);
 		assertThat(explicitAccess.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(explicitAccess.farePenaltyApplies()).isTrue();
-		assertThat(explicitAccess.additionalFareWon()).isEqualTo(1400);
 		assertThat(explicitAccess.transferLimitMinutes()).isEqualTo(30);
 	}
 

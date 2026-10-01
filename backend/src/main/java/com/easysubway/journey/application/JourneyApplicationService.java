@@ -70,6 +70,9 @@ public final class JourneyApplicationService {
 		JourneyRaptorPort.PlanResult plan;
 		try {
 			plan = raptorPort.plan(request, snapshot, effectiveInstant, realtime, measurement);
+		} catch (FacilityStatusUnavailableException exception) {
+			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
+			return failure(JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE);
 		} catch (RuntimeException exception) {
 			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);

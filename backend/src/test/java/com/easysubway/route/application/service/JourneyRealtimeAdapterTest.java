@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -88,7 +89,7 @@ class JourneyRealtimeAdapterTest {
 		assertThat(candidate.realtimeDepartureTime()).isEqualTo(EFFECTIVE);
 		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:12:00Z"));
 		assertThat(candidate.legs()).filteredOn(JourneyCandidate.Ride.class::isInstance)
-			.singleElement().isEqualTo(new JourneyCandidate.Ride(
+			.singleElement().isEqualTo(TestRides.candidateRide(
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"),
 				Instant.parse("2026-07-01T00:01:00Z"), Instant.parse("2026-07-01T00:11:00Z")));

@@ -1,7 +1,12 @@
 package com.easysubway.journey.bundle;
 
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
@@ -12,6 +17,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.route.application.service.OfficialFareQuote;
 import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,9 +52,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Compiles already-admitted Data component bytes into one Journey RAPTOR runtime. */
 public final class RouteBundleSqliteRuntimeCompiler {
+
+	private static final Logger log = LoggerFactory.getLogger(RouteBundleSqliteRuntimeCompiler.class);
 
 	static final String TOPOLOGY_PATH = "payload/topology.sqlite.zst";
 	static final String TIMETABLE_PATH = "payload/timetable.sqlite.zst";
@@ -76,12 +86,18 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	public RaptorRouteBundleRuntimeView compile(Input input) {
-		RouteTimetable timetable = readTimetable(input);
-		return RaptorRouteBundleRuntimeView.compile(input.routeBundleSha256(), input.generation(), timetable);
+		CompiledPayloads compiled = read(input);
+		return RaptorRouteBundleRuntimeView.compile(
+			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities(),
+			compiled.fareQuotes());
+	}
+
+	RouteTimetable readTimetable(Input input) {
+		return read(input).timetable();
 	}
 
 	// 검증·해제 수명은 여기서 끝내고 탐색용 인덱스 생성과 분리한다.
-	RouteTimetable readTimetable(Input input) {
+	private CompiledPayloads read(Input input) {
 		Objects.requireNonNull(input, "input");
 		Map<String, byte[]> payloads = input.compressedPayloads();
 		if (!payloads.keySet().equals(PAYLOAD_PATHS)) {
@@ -111,11 +127,15 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			components.forEach(component -> byPath.put(component.payloadPath(), component));
 			requireEqualReferences(components);
 			var topology = loadTopology(byPath.get(TOPOLOGY_PATH).connection());
-			var evaluations = validateAccessibility(
-				byPath.get(ACCESSIBILITY_PATH).connection(), topology);
-			validateFare(byPath.get(FARE_PATH).connection());
-			return loadTimetable(
-				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations);
+			var accessibilityConn = byPath.get(ACCESSIBILITY_PATH).connection();
+			var evaluations = validateAccessibility(accessibilityConn, topology);
+			var carDoorHints = loadCarDoorHints(accessibilityConn);
+			var platformGaps = loadPlatformGaps(accessibilityConn);
+			Map<String, OfficialFareQuote> fareQuotes = loadFare(byPath.get(FARE_PATH).connection());
+			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
+			return new CompiledPayloads(loadTimetable(
+				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
+				smrtElevatorFacilities, fareQuotes);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -303,31 +323,159 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 	}
 
-	private static void validateFare(Connection connection) throws SQLException {
+	// #419: 관리자 확인 기록이 고를 서울교통공사 엘리베이터 시설 목록. accessibility 구성요소가 소유한 facilities 표(data 계약)에서
+	// smrt-elev: 행만 읽는다. 표가 없거나 이름이 비면 번들 계약 위반이라 컴파일을 실패시킨다.
+	private static List<RouteBundleFacilityCatalog.Facility> loadSmrtElevatorFacilities(Connection connection)
+		throws SQLException {
+		var facilities = new ArrayList<RouteBundleFacilityCatalog.Facility>();
+		try (var statement = connection.prepareStatement(
+			"SELECT id, name FROM facilities WHERE substr(id, 1, ?) = ? ORDER BY id COLLATE BINARY")) {
+			statement.setInt(1, RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX.length());
+			statement.setString(2, RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX);
+			try (var rows = statement.executeQuery()) {
+				while (rows.next()) {
+					facilities.add(new RouteBundleFacilityCatalog.Facility(
+						requireText(rows.getString(1), "bundle facility id"),
+						requireText(rows.getString(2), "bundle facility name")));
+				}
+			}
+		}
+		return List.copyOf(facilities);
+	}
+
+	private static Map<String, OfficialFareQuote> loadFare(Connection connection) throws SQLException {
 		requireColumns(connection, "official_od_fare_quotes", List.of(
 			"origin_station_id", "destination_station_id", "source_id", "snapshot_id", "mapping_ledger_hash",
 			"gnrl_card_fare", "gnrl_cash_fare", "yung_card_fare", "yung_cash_fare",
 			"child_card_fare", "child_cash_fare"));
+		var fareQuotes = new HashMap<String, OfficialFareQuote>();
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
 			SELECT origin_station_id, destination_station_id, source_id, snapshot_id, mapping_ledger_hash,
 			 gnrl_card_fare, gnrl_cash_fare, yung_card_fare, yung_cash_fare, child_card_fare, child_cash_fare
 			FROM official_od_fare_quotes
 			""")) {
 			while (rows.next()) {
-				requireText(rows.getString(1), "fare origin station");
-				requireText(rows.getString(2), "fare destination station");
-				requireText(rows.getString(3), "fare source");
-				requireText(rows.getString(4), "fare snapshot");
-				requireSha256(rows.getString(5), "fare mapping ledger");
+				String origin = requireText(rows.getString(1), "fare origin station");
+				String destination = requireText(rows.getString(2), "fare destination station");
+				if (origin.equals(destination)) {
+					throw new IllegalArgumentException("fare origin and destination must differ");
+				}
+				String sourceId = requireText(rows.getString(3), "fare source");
+				String snapshotId = requireText(rows.getString(4), "fare snapshot");
+				String mappingLedgerHash = requireSha256(rows.getString(5), "fare mapping ledger");
 				for (int column = 6; column <= 11; column++) {
-					if (rows.getInt(column) < 0) throw new IllegalArgumentException("fare value is invalid");
+					int fareValue = rows.getInt(column);
+					if (rows.wasNull() || fareValue < 0) {
+						throw new IllegalArgumentException("fare value is invalid");
+					}
+				}
+				int gnrlCardFare = rows.getInt(6);
+				int gnrlCashFare = rows.getInt(7);
+				int yungCardFare = rows.getInt(8);
+				int yungCashFare = rows.getInt(9);
+				int childCardFare = rows.getInt(10);
+				int childCashFare = rows.getInt(11);
+
+				String key = OfficialFareQuote.fareKey(origin, destination);
+				var quote = new OfficialFareQuote(
+					origin, destination, sourceId, snapshotId, mappingLedgerHash,
+					gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare);
+				if (fareQuotes.put(key, quote) != null) {
+					throw new IllegalArgumentException("duplicate official_od_fare_quotes key: " + key);
 				}
 			}
 		}
+		return Map.copyOf(fareQuotes);
+	}
+
+	private static List<CarDoorHint> loadCarDoorHints(Connection connection) throws SQLException {
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_car_door_hints'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_car_door_hints does not exist; loaded 0 hints");
+			return List.of();
+		}
+		requireColumns(connection, "station_car_door_hints", List.of(
+			"id", "station_id", "line_id", "direction", "target_facility_type", "car_number", "door_number",
+			"source_id", "source_snapshot_id", "provider_record_hash", "provenance_kind", "verification_status",
+			"last_verified_at", "evidence_hash"));
+		var hints = new ArrayList<CarDoorHint>();
+		try (var statement = connection.createStatement();
+			 var rows = statement.executeQuery("""
+				SELECT station_id, line_id, direction, target_facility_type, car_number, door_number
+				FROM station_car_door_hints
+				ORDER BY station_id, line_id, direction, target_facility_type, car_number, door_number
+				""")) {
+			while (rows.next()) {
+				hints.add(new CarDoorHint(
+					requireText(rows.getString(1), "station_car_door_hints station_id"),
+					requireText(rows.getString(2), "station_car_door_hints line_id"),
+					requireText(rows.getString(3), "station_car_door_hints direction"),
+					requireText(rows.getString(4), "station_car_door_hints target_facility_type"),
+					rows.getInt(5),
+					rows.getInt(6)
+				));
+			}
+		}
+		log.info("Loaded {} car door hints from accessibility bundle", hints.size());
+		return List.copyOf(hints);
+	}
+
+	private static Map<PlatformGapKey, List<PlatformGap>> loadPlatformGaps(Connection connection)
+		throws SQLException {
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_platform_gaps'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_platform_gaps does not exist; loaded 0 platform gaps");
+			return Map.of();
+		}
+		requireColumns(connection, "station_platform_gaps", List.of(
+			"id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number",
+			"gap_grade", "height_diff_grade", "curved", "source_snapshot_id"));
+		var grouped = new LinkedHashMap<PlatformGapKey, List<PlatformGap>>();
+		int count = 0;
+		try (var statement = connection.createStatement();
+			 var rows = statement.executeQuery("""
+				SELECT station_id, line_id, direction, platform_position, car_number, door_number,
+				       gap_grade, height_diff_grade, curved
+				FROM station_platform_gaps
+				""")) {
+			while (rows.next()) {
+				String direction = requireText(rows.getString(3), "station_platform_gaps direction");
+				if (!"UP".equals(direction) && !"DOWN".equals(direction)) {
+					throw new IllegalArgumentException("invalid platform gap direction: " + direction);
+				}
+				int curved = rows.getInt(9);
+				if (curved != 0 && curved != 1) {
+					throw new IllegalArgumentException("invalid platform gap curved: " + curved);
+				}
+				var key = new PlatformGapKey(
+					requireText(rows.getString(1), "station_platform_gaps station_id"),
+					requireText(rows.getString(2), "station_platform_gaps line_id"),
+					direction);
+				grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new PlatformGap(
+					requireText(rows.getString(4), "station_platform_gaps platform_position"),
+					rows.getObject(5) == null ? null : rows.getInt(5),
+					rows.getObject(6) == null ? null : rows.getInt(6),
+					GapGrade.fromCode(requireText(rows.getString(7), "station_platform_gaps gap_grade")),
+					HeightDiffGrade.fromCode(requireText(rows.getString(8), "station_platform_gaps height_diff_grade")),
+					curved == 1));
+				count++;
+			}
+		}
+		// 노출 순서: 간격 WIDE→NORMAL→NARROW, 같으면 높이차 HIGH→NORMAL→LOW, 그다음 위치 오름차순
+		var order = Comparator.comparing(PlatformGap::gapGrade)
+			.thenComparing(PlatformGap::heightDiffGrade)
+			.thenComparing(PlatformGap::platformPosition);
+		var sorted = new LinkedHashMap<PlatformGapKey, List<PlatformGap>>();
+		grouped.forEach((key, gaps) -> sorted.put(key, gaps.stream().sorted(order).toList()));
+		log.info("Loaded {} platform gaps from accessibility bundle", count);
+		return sorted;
 	}
 
 	private static RouteTimetable loadTimetable(
-		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations)
+		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
+		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps)
 		throws SQLException {
 		requireTimetableColumns(connection);
 		var calendars = new ArrayList<ServiceCalendar>();
@@ -389,11 +537,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 		return new RouteTimetable(
 			calendars, calendarDates, routes, trips, stopTimes, frequencies, List.of(), feedEndDate,
-			projectAccess(topology, evaluations));
+			projectAccess(topology, evaluations, carDoorHints, platformGaps));
 	}
 
 	private static RouteAccessData projectAccess(
-		Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations) {
+		Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
+		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps) {
 		var nodes = new LinkedHashMap<String, PathwayNode>();
 		var edges = new ArrayList<PathwayEdge>();
 		var rules = new ArrayList<TransferRule>();
@@ -441,7 +590,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				edge.id(), stationId, lineId, edge.id(), evidenceType, provenanceKind, verificationStatus, pass,
 				pass ? null : evaluation.reason()));
 		}
-		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);
+		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence, carDoorHints, platformGaps);
 	}
 
 	private static void requireEndpointShape(String type, Endpoint from, Endpoint to) {
@@ -704,5 +853,11 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				throw new IllegalStateException("network edge canonicalization failed", exception);
 			}
 		}
+	}
+
+	private record CompiledPayloads(
+		RouteTimetable timetable,
+		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities,
+		Map<String, OfficialFareQuote> fareQuotes) {
 	}
 }

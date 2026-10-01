@@ -366,6 +366,16 @@ class JourneyApplicationServiceTest {
 		assertFailure(exception.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
+		Fakes facilityUnavailable = new Fakes();
+		facilityUnavailable.raptorFailure = new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE");
+		assertFailure(facilityUnavailable.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
+			JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE);
+		Fakes cancelledFacility = new Fakes();
+		cancelledFacility.cancelAfterRaptor = true;
+		cancelledFacility.raptorFailure = new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE");
+		assertFailure(cancelledFacility.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, cancelledFacility.cancelled)),
+			JourneyExecutionFailure.Reason.CANCELLED);
+
 		Fakes nullOutput = new Fakes();
 		nullOutput.planResult = null;
 		nullOutput.returnNullPlan = true;
@@ -696,7 +706,7 @@ class JourneyApplicationServiceTest {
 			? plannedDeparture.plusSeconds(30) : null;
 		Instant realtimeArrival = timeSource == JourneyCandidate.TimeSource.REALTIME
 			? plannedArrival.plusSeconds(30) : null;
-		return new JourneyCandidate(
+		return TestJourneyCandidates.unavailableFare(
 			journeyId,
 			plannedDeparture,
 			plannedArrival,
@@ -709,7 +719,7 @@ class JourneyApplicationServiceTest {
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
 			List.of(
 				new JourneyCandidate.Entry("station-origin", 30),
-				new JourneyCandidate.Ride(
+				TestRides.candidateRide(
 					"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 					plannedDeparture, plannedArrival, realtimeDeparture, realtimeArrival
 				),
