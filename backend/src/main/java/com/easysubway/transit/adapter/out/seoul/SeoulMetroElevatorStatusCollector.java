@@ -27,7 +27,9 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
@@ -71,6 +73,7 @@ public class SeoulMetroElevatorStatusCollector {
 	private final Clock clock;
 	private final int pageSize;
 	private final int maxResponseBytes;
+	private final Function<List<JsonNode>, Classification> classifier;
 	private final Map<String, AtomicInteger> facilitiesByCode = new ConcurrentHashMap<>();
 	private final Map<UnidentifiableReason, AtomicInteger> unidentifiable = new EnumMap<>(UnidentifiableReason.class);
 	private final AtomicInteger adminVerifiedKept = new AtomicInteger();
@@ -109,6 +112,32 @@ public class SeoulMetroElevatorStatusCollector {
 		int pageSize,
 		int maxResponseBytes
 	) {
+		this(
+			serviceKey,
+			endpoint,
+			store,
+			objectMapper,
+			meterRegistry,
+			httpClient,
+			clock,
+			pageSize,
+			maxResponseBytes,
+			SeoulMetroElevatorFeed::classify
+		);
+	}
+
+	SeoulMetroElevatorStatusCollector(
+		String serviceKey,
+		URI endpoint,
+		FacilityOperationalStatusStore store,
+		ObjectMapper objectMapper,
+		MeterRegistry meterRegistry,
+		HttpClient httpClient,
+		Clock clock,
+		int pageSize,
+		int maxResponseBytes,
+		Function<List<JsonNode>, Classification> classifier
+	) {
 		this.serviceKey = decodedServiceKey(serviceKey);
 		this.endpoint = endpoint;
 		this.store = store;
@@ -118,6 +147,7 @@ public class SeoulMetroElevatorStatusCollector {
 		this.clock = clock;
 		this.pageSize = pageSize;
 		this.maxResponseBytes = maxResponseBytes;
+		this.classifier = Objects.requireNonNull(classifier, "classifier");
 		for (String code : SeoulMetroElevatorFeed.REPORTED_CODES) {
 			AtomicInteger count = new AtomicInteger();
 			facilitiesByCode.put(code, count);
@@ -165,13 +195,15 @@ public class SeoulMetroElevatorStatusCollector {
 		}
 		Instant observedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
 		try {
-			Classification classification = SeoulMetroElevatorFeed.classify(fetchAllRows());
+			Classification classification = classifier.apply(fetchAllRows());
 			FeedApplyResult result = apply(classification, observedAt);
 			recordSuccess(classification, result, observedAt);
 		} catch (CollectionFailure failure) {
 			fail(failure.reason, failure.getCause());
 		} catch (SeoulMetroElevatorFeedException exception) {
 			fail("MALFORMED_RESPONSE", exception);
+		} catch (RuntimeException exception) {
+			fail("UNEXPECTED", exception);
 		}
 	}
 

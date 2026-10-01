@@ -17,10 +17,12 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
@@ -55,6 +57,11 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	JdbcFacilityOperationalStatusRepository(DataSource dataSource) {
 		this(dataSource, new DataSourceTransactionManager(dataSource));
+	}
+
+	JdbcFacilityOperationalStatusRepository(JdbcTemplate jdbcTemplate, TransactionTemplate transactions) {
+		this.jdbcTemplate = jdbcTemplate;
+		this.transactions = transactions;
 	}
 
 	@Override
@@ -155,38 +162,64 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 	}
 
 	@Override
-	public boolean recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
-		Boolean recorded = transactions.execute(status -> {
+	public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+		return transactions.execute(status -> {
 			OffsetDateTime at = timestamp(verifiedAt);
-			int updated = jdbcTemplate.update(
-				"""
-					UPDATE facility_operational_status
-					SET status = ?, source = ?, observed_at = ?, updated_at = ?
-					WHERE facility_id = ? AND observed_at <= ?
-					""",
-				state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at, facilityId, at
-			);
-			if (updated == 1) {
-				return true;
-			}
-			boolean exists = !jdbcTemplate.queryForList(
-				"SELECT facility_id FROM facility_operational_status WHERE facility_id = ?",
-				String.class,
+			List<PreviousStatus> previousRows = jdbcTemplate.query(
+				"SELECT status, source FROM facility_operational_status WHERE facility_id = ? FOR UPDATE",
+				(rs, rowNum) -> new PreviousStatus(
+					FacilityOperationalState.valueOf(rs.getString("status")),
+					FacilityStatusSource.valueOf(rs.getString("source"))
+				),
 				facilityId
-			).isEmpty();
-			if (exists) {
-				return false;
+			);
+			if (!previousRows.isEmpty()) {
+				PreviousStatus previous = previousRows.get(0);
+				int updated = jdbcTemplate.update(
+					"""
+						UPDATE facility_operational_status
+						SET status = ?, source = ?, observed_at = ?, updated_at = ?
+						WHERE facility_id = ? AND observed_at <= ?
+						""",
+					state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at, facilityId, at
+				);
+				return new AdminVerifiedResult(
+					updated == 1,
+					Optional.of(previous.state()),
+					Optional.of(previous.source())
+				);
 			}
-			jdbcTemplate.update(
+			int inserted = insertAdminVerifiedIfAbsent(facilityId, state, at);
+			return new AdminVerifiedResult(inserted == 1, Optional.empty(), Optional.empty());
+		});
+	}
+
+	/**
+	 * 행이 없을 때만 넣고 넣은 행 수를 돌려준다. 다른 트랜잭션이 같은 시설을 먼저 넣었으면 0이다. 중복 키 예외를 잡지 않는다:
+	 * PostgreSQL은 문장이 실패하면 바깥 트랜잭션 전체를 중단(25P02)시켜, 뒤이은 감사 기록까지 실패한다(#442).
+	 */
+	private int insertAdminVerifiedIfAbsent(String facilityId, FacilityOperationalState state, OffsetDateTime at) {
+		if (detectDatabaseDialect(jdbcTemplate) == DatabaseDialect.H2) {
+			return jdbcTemplate.update(
 				"""
 					INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
-					VALUES (?, ?, ?, NULL, ?, ?)
+					SELECT ?, ?, ?, NULL, ?, ?
+					WHERE NOT EXISTS (SELECT 1 FROM facility_operational_status WHERE facility_id = ?)
 					""",
-				facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
+				facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at, facilityId
 			);
-			return true;
-		});
-		return Boolean.TRUE.equals(recorded);
+		}
+		return jdbcTemplate.update(
+			"""
+				INSERT INTO facility_operational_status (facility_id, status, source, source_code, observed_at, updated_at)
+				VALUES (?, ?, ?, NULL, ?, ?)
+				ON CONFLICT (facility_id) DO NOTHING
+				""",
+			facilityId, state.name(), FacilityStatusSource.ADMIN_VERIFIED.name(), at, at
+		);
+	}
+
+	private record PreviousStatus(FacilityOperationalState state, FacilityStatusSource source) {
 	}
 
 	private void advanceHeartbeat(String feed, OffsetDateTime at) {
@@ -223,5 +256,17 @@ public class JdbcFacilityOperationalStatusRepository implements FacilityOperatio
 
 	private static OffsetDateTime timestamp(Instant instant) {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+	}
+
+	private static DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		return Objects.requireNonNull(jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		}), "databaseDialect");
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

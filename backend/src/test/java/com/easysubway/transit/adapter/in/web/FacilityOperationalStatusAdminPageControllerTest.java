@@ -1,6 +1,10 @@
 package com.easysubway.transit.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -11,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.authorization.AdminPermission;
@@ -41,6 +46,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -74,6 +80,9 @@ class FacilityOperationalStatusAdminPageControllerTest {
 
 	@MockitoBean
 	private LoadBundleElevatorFacilitiesPort bundleFacilities;
+
+	@MockitoSpyBean
+	private AdminAuditWriter auditWriter;
 
 	@BeforeEach
 	void setUp() {
@@ -118,8 +127,63 @@ class FacilityOperationalStatusAdminPageControllerTest {
 				assertThat(event.targetId()).isEqualTo(EXIT_1);
 				assertThat(event.action()).isEqualTo("RECORD_ADMIN_VERIFIED");
 				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.SUCCESS);
-				assertThat(event.reason()).isEqualTo("OUT_OF_SERVICE");
+				assertThat(event.reason()).isEqualTo("from=NONE to=OUT_OF_SERVICE");
 			});
+	}
+
+	@Test
+	@DisplayName("이전 행이 존재하는 경우 이전 상태와 출처를 포함한 감사 이력을 남긴다")
+	void authorizedAdminRecordsVerifiedStateWithPreviousStateInAudit() throws Exception {
+		store.applyFeedCollection(
+			FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED,
+			List.of(new FeedObservation(EXIT_1, FacilityOperationalState.OPERATING, "M")),
+			Instant.now().minusSeconds(60).truncatedTo(ChronoUnit.MICROS)
+		);
+
+		mockMvc.perform(verify(EXIT_1, "OUT_OF_SERVICE").with(httpBasic("admin-test", "admin-test-password")).with(commandToken()))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", PAGE));
+
+		assertThat(store.loadStatuses()).singleElement().satisfies(row -> {
+			assertThat(row.status()).isEqualTo(FacilityOperationalState.OUT_OF_SERVICE);
+			assertThat(row.source()).isEqualTo(FacilityStatusSource.ADMIN_VERIFIED);
+		});
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 5))
+			.anySatisfy(event -> {
+				assertThat(event.targetType()).isEqualTo("FACILITY_OPERATIONAL_STATUS");
+				assertThat(event.targetId()).isEqualTo(EXIT_1);
+				assertThat(event.action()).isEqualTo("RECORD_ADMIN_VERIFIED");
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.SUCCESS);
+				assertThat(event.reason()).isEqualTo("from=OPERATING/SEOUL_METRO_FEED to=OUT_OF_SERVICE");
+			});
+	}
+
+	@Test
+	@DisplayName("감사 기록 중 예외가 발생하면 트랜잭션이 롤백되어 상태 행이 바뀌지 않는다")
+	void auditWriterExceptionRollsBackStateChange() throws Exception {
+		doThrow(new RuntimeException("simulated audit failure"))
+			.when(auditWriter)
+			.adminAction(any(), any(), any(), any(), any(), eq(AdminAuditOutcome.SUCCESS), any());
+
+		mockMvc.perform(verify(EXIT_1, "OUT_OF_SERVICE")
+				.with(httpBasic("admin-test", "admin-test-password")).with(commandToken()))
+			.andExpect(status().isInternalServerError());
+
+		assertThat(store.loadStatuses()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("CSRF는 있고 command token은 없는 POST는 409이고 상태 행 변화 없음")
+	void missingCommandTokenWithValidCsrfIsRejectedWithConflict() throws Exception {
+		mockMvc.perform(post(VERIFY)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("facilityId", EXIT_1)
+				.param("state", "OUT_OF_SERVICE"))
+			.andExpect(status().isConflict());
+
+		assertThat(store.loadStatuses()).isEmpty();
 	}
 
 	@Test

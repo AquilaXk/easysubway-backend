@@ -36,9 +36,10 @@ class FacilityOperationalStatusAdminServiceTest {
 	@Test
 	@DisplayName("정규 smrt-elev 시설 id의 관리자 확인을 현재 시각(마이크로초)으로 기록한다")
 	void recordsAdminVerifiedStatusAtCurrentInstant() {
-		store.result = true;
+		store.result = new FacilityOperationalStatusStore.AdminVerifiedResult(true, Optional.empty(), Optional.empty());
 
-		assertThat(service.recordAdminVerified("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OUT_OF_SERVICE)).isTrue();
+		assertThat(service.recordAdminVerified("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OUT_OF_SERVICE))
+			.isEqualTo(new FacilityOperationalStatusStore.AdminVerifiedResult(true, Optional.empty(), Optional.empty()));
 
 		assertThat(store.records).containsExactly(new AdminRecord(
 			"smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OUT_OF_SERVICE, NOW.truncatedTo(ChronoUnit.MICROS)
@@ -48,9 +49,10 @@ class FacilityOperationalStatusAdminServiceTest {
 	@Test
 	@DisplayName("더 새 관측이 이미 있으면 기록되지 않았음을 돌려준다")
 	void reportsWhenNewerObservationAlreadyExists() {
-		store.result = false;
+		store.result = new FacilityOperationalStatusStore.AdminVerifiedResult(false, Optional.empty(), Optional.empty());
 
-		assertThat(service.recordAdminVerified("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OPERATING)).isFalse();
+		assertThat(service.recordAdminVerified("smrt-elev:0201:2:1번 출입구", FacilityOperationalState.OPERATING))
+			.isEqualTo(new FacilityOperationalStatusStore.AdminVerifiedResult(false, Optional.empty(), Optional.empty()));
 	}
 
 	@Test
@@ -99,7 +101,7 @@ class FacilityOperationalStatusAdminServiceTest {
 	private static final class RecordingStore implements FacilityOperationalStatusStore {
 
 		private final List<AdminRecord> records = new ArrayList<>();
-		private boolean result;
+		private AdminVerifiedResult result = new AdminVerifiedResult(true, Optional.empty(), Optional.empty());
 
 		@Override
 		public List<FacilityOperationalStatus> loadStatuses() {
@@ -117,7 +119,7 @@ class FacilityOperationalStatusAdminServiceTest {
 		}
 
 		@Override
-		public boolean recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+		public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
 			records.add(new AdminRecord(facilityId, state, verifiedAt));
 			return result;
 		}
