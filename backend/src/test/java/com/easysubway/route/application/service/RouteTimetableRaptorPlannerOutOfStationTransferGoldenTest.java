@@ -230,6 +230,110 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 	}
 
 	@Test
+	@DisplayName("통로 근거 없는 역 밖 환승만 있으면 출발 시간대 profile도 point 탐색처럼 여정을 만들지 않는다")
+	void departureProfileRejectsOutOfStationTransferWithoutPathwayEvidenceLikePointSearch() {
+		var base = timetable();
+		var access = base.routeAccessData();
+		var withoutPathway = new RouteTimetable(
+			base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(), base.transitTrips(),
+			base.transitStopTimes(), base.transitFrequencies(), base.officialFares(), base.feedEndDate(),
+			new RouteAccessData(
+				access.pathwayNodes(),
+				access.pathwayEdges().stream().filter(edge -> !edge.id().equals("b-c-out-transfer-edge")).toList(),
+				List.of(new TransferRule(
+					"b-c-no-pathway-rule", MID_OUT, "l1", MID_IN, "l2", "OUT_OF_STATION",
+					600, null, null, "VERIFIED")),
+				access.routeEdgeEvidence().stream()
+					.filter(evidence -> !evidence.id().equals("b-c-transfer-evidence")).toList()));
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(withoutPathway);
+
+		var point = planner.journeyItineraries(departAt(Instant.parse("2026-07-06T04:30:00Z")), compiled);
+		var profile = planner.departureProfile(
+			departBetween(Instant.parse("2026-07-06T04:00:00Z"), Instant.parse("2026-07-06T04:40:00Z")),
+			compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), PROFILE_LIMITS);
+
+		assertThat(point.itineraries()).isEmpty();
+		assertThat(profile.stream().flatMap(entry -> entry.itineraries().stream())).isEmpty();
+	}
+
+	@Test
+	@DisplayName("출발 시간대 profile은 도착 노선이 다른 역 밖 통로와 그날 운행하지 않는 패턴으로 환승하지 않는다")
+	void departureProfileSkipsFootpathsFromOtherArrivalLinesAndIdlePatterns() {
+		var base = timetable();
+		var access = base.routeAccessData();
+		var idle = new ServiceCalendar(
+			"idle", true, true, true, true, true, true, true,
+			SERVICE_DATE.plusYears(1), SERVICE_DATE.plusYears(1).plusDays(7), "Asia/Seoul");
+		var otherLineEdge = new PathwayEdge(
+			"b3-c-out-transfer-edge", MID_OUT + ":l3", MID_IN + ":l2", 60, 40, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+		List<TransferRule> rules = new ArrayList<>(access.transferRules());
+		rules.add(new TransferRule(
+			"b3-c-transfer-rule", MID_OUT, "l3", MID_IN, "l2", "OUT_OF_STATION",
+			60, otherLineEdge.id(), otherLineEdge.id(), "VERIFIED"));
+		List<PathwayNode> nodes = new ArrayList<>(access.pathwayNodes());
+		nodes.add(new PathwayNode(MID_OUT + ":l3", MID_OUT, "l3", "PLATFORM"));
+		List<PathwayEdge> edges = new ArrayList<>(access.pathwayEdges());
+		edges.add(otherLineEdge);
+		List<RouteEdgeEvidence> evidence = new ArrayList<>(access.routeEdgeEvidence());
+		evidence.add(new RouteEdgeEvidence(
+			"b3-c-transfer-evidence", MID_IN, "l2", otherLineEdge.id(), "TRANSFER",
+			"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		List<TransitStopTime> stopTimes = new ArrayList<>(base.transitStopTimes());
+		// 그날 운행하지 않는 3호선 패턴: 운행했다면 2호선보다 먼저 도착하는 시각이다.
+		stopTimes.add(new TransitStopTime("t3_idle", 1, MID_IN, "l3", 51000, 51000, 0, 0));
+		stopTimes.add(new TransitStopTime("t3_idle", 2, DESTINATION, "l3", 51600, 51600, 0, 0));
+		List<TransitRoute> routes = new ArrayList<>(base.transitRoutes());
+		routes.add(new TransitRoute("r3", "l3", "3호선", "3호선", "0", "Asia/Seoul"));
+		List<TransitTrip> trips = new ArrayList<>(base.transitTrips());
+		trips.add(new TransitTrip("t3_idle", "r3", "idle", "d행", "0", "LOCAL", 0));
+		var extended = new RouteTimetable(
+			List.of(base.serviceCalendars().getFirst(), idle), base.serviceCalendarDates(), routes, trips,
+			stopTimes, base.transitFrequencies(), base.officialFares(), base.feedEndDate(),
+			new RouteAccessData(nodes, edges, rules, evidence));
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(extended);
+
+		assertProfileMatchesPointAndCarriesTransfer(planner, compiled,
+			Instant.parse("2026-07-06T04:00:00Z"), Instant.parse("2026-07-06T04:40:00Z"), "t1_day", true, 30);
+		var itineraries = planner.departureProfile(
+			departBetween(Instant.parse("2026-07-06T04:00:00Z"), Instant.parse("2026-07-06T04:40:00Z")),
+			compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), PROFILE_LIMITS)
+			.stream().flatMap(entry -> entry.itineraries().stream()).toList();
+		assertThat(itineraries).isNotEmpty().allSatisfy(itinerary -> {
+			assertThat(itinerary.legs()).noneMatch(leg ->
+				leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride && "t3_idle".equals(ride.tripId()));
+			// 1호선으로 도착한 승객은 3호선 승강장에서 나가는 통로(40m)가 아니라 1호선 통로(400m)를 쓴다.
+			assertThat(itinerary.legs()).filteredOn(leg ->
+					leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
+				.singleElement()
+				.satisfies(leg -> assertThat(((JourneyAccessProjection) leg).distanceMeters()).isEqualTo(400));
+		});
+	}
+
+	private static final JourneyProfileResourcePolicy.ProfilePlanningLimits PROFILE_LIMITS =
+		new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32);
+
+	private static JourneyRaptorQuery departAt(Instant departAt) {
+		return journeyQuery(new JourneyRaptorQuery.DepartAt(departAt));
+	}
+
+	private static JourneyRaptorQuery departBetween(Instant earliestReadyAt, Instant latestReadyAt) {
+		return journeyQuery(new JourneyRaptorQuery.DepartBetween(earliestReadyAt, latestReadyAt));
+	}
+
+	private static JourneyRaptorQuery journeyQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION, temporalQuery,
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false);
+	}
+
+	@Test
 	@DisplayName("relaxFootpaths 도달 상태 및 미도달 상태 분기 검증")
 	void relaxFootpathsReachedAndUnreachedBranches() {
 		var planner = new RouteTimetableRaptorPlanner();
