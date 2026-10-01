@@ -1,6 +1,5 @@
 package com.easysubway.route.domain;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.easysubway.profile.domain.MobilityType;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -68,7 +67,6 @@ public record RouteSearchResult(
 		}
 	}
 
-	@JsonProperty("recommendationReasons")
 	public List<String> recommendationReasons() {
 		if (status != RouteSearchStatus.FOUND) {
 			return List.of();
@@ -85,19 +83,16 @@ public record RouteSearchResult(
 		return List.copyOf(reasons.stream().distinct().limit(3).toList());
 	}
 
-	@JsonProperty("burdenCost")
 	public int burdenCost() {
 		return score;
 	}
 
-	@JsonProperty("estimatedDurationSeconds")
 	public int estimatedDurationSeconds() {
 		return steps.stream()
 			.mapToInt(step -> Math.max(0, step.estimatedMinutes()) * 60)
 			.sum();
 	}
 
-	@JsonProperty("etaSource")
 	public EtaSource etaSource() {
 		if (steps.isEmpty()) {
 			return EtaSource.PLANNED;
@@ -122,7 +117,6 @@ public record RouteSearchResult(
 		return "FALLBACK".equals(timeSource) || EtaSource.PLANNED_WITHOUT_REALTIME.name().equals(timeSource);
 	}
 
-	@JsonProperty("walkingDistanceMeters")
 	public int walkingDistanceMeters() {
 		return steps.stream()
 			.filter(this::isWalkingStep)
@@ -130,7 +124,6 @@ public record RouteSearchResult(
 			.sum();
 	}
 
-	@JsonProperty("transferCount")
 	public int transferCount() {
 		long typedTransfers = steps.stream()
 			.filter(step -> "transfer".equals(step.stepType()))
@@ -153,7 +146,6 @@ public record RouteSearchResult(
 		return changes;
 	}
 
-	@JsonProperty("evidenceSummary")
 	public List<String> evidenceSummary() {
 		if (steps.isEmpty()) {
 			return List.of();

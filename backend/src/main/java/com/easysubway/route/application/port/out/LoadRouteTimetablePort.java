@@ -4,6 +4,8 @@ import com.easysubway.route.application.model.PlannerIdentity;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 public interface LoadRouteTimetablePort {
@@ -135,16 +137,108 @@ public interface LoadRouteTimetablePort {
 		List<PathwayNode> pathwayNodes,
 		List<PathwayEdge> pathwayEdges,
 		List<TransferRule> transferRules,
-		List<RouteEdgeEvidence> routeEdgeEvidence
+		List<RouteEdgeEvidence> routeEdgeEvidence,
+		List<CarDoorHint> carDoorHints,
+		// 공식 연단 간격 등급. 값은 이미 노출 순서(간격 WIDE→NORMAL→NARROW, 높이차 HIGH→NORMAL→LOW, 위치 오름차순)로 정렬돼 있다.
+		Map<PlatformGapKey, List<PlatformGap>> platformGaps
 	) {
+		public RouteAccessData(
+			List<PathwayNode> pathwayNodes,
+			List<PathwayEdge> pathwayEdges,
+			List<TransferRule> transferRules,
+			List<RouteEdgeEvidence> routeEdgeEvidence
+		) {
+			this(pathwayNodes, pathwayEdges, transferRules, routeEdgeEvidence, List.of(), Map.of());
+		}
+
+		public RouteAccessData(
+			List<PathwayNode> pathwayNodes,
+			List<PathwayEdge> pathwayEdges,
+			List<TransferRule> transferRules,
+			List<RouteEdgeEvidence> routeEdgeEvidence,
+			List<CarDoorHint> carDoorHints
+		) {
+			this(pathwayNodes, pathwayEdges, transferRules, routeEdgeEvidence, carDoorHints, Map.of());
+		}
+
 		public RouteAccessData {
 			pathwayNodes = List.copyOf(pathwayNodes);
 			pathwayEdges = List.copyOf(pathwayEdges);
 			transferRules = List.copyOf(transferRules);
 			routeEdgeEvidence = List.copyOf(routeEdgeEvidence);
+			carDoorHints = carDoorHints == null ? List.of() : List.copyOf(carDoorHints);
+			platformGaps = platformGaps == null ? Map.of() : Map.copyOf(platformGaps);
 		}
 		public static RouteAccessData empty() {
-			return new RouteAccessData(List.of(), List.of(), List.of(), List.of());
+			return new RouteAccessData(List.of(), List.of(), List.of(), List.of(), List.of(), Map.of());
+		}
+	}
+	record PlatformGapKey(String stationId, String lineId, String direction) {
+		public PlatformGapKey {
+			Objects.requireNonNull(stationId, "stationId");
+			Objects.requireNonNull(lineId, "lineId");
+			Objects.requireNonNull(direction, "direction");
+		}
+	}
+	/** 공식 연단 간격 등급. 선언 순서가 노출 순서(넓을수록 앞)다. */
+	enum GapGrade {
+		WIDE, NORMAL, NARROW;
+
+		public static GapGrade fromCode(String code) {
+			return switch (code) {
+				case "WIDE" -> WIDE;
+				case "NORMAL" -> NORMAL;
+				case "NARROW" -> NARROW;
+				default -> throw new IllegalArgumentException("invalid platform gap gap_grade: " + code);
+			};
+		}
+	}
+	/** 공식 높이차 등급. 선언 순서가 노출 순서(높을수록 앞)다. */
+	enum HeightDiffGrade {
+		HIGH, NORMAL, LOW;
+
+		public static HeightDiffGrade fromCode(String code) {
+			return switch (code) {
+				case "HIGH" -> HIGH;
+				case "NORMAL" -> NORMAL;
+				case "LOW" -> LOW;
+				default -> throw new IllegalArgumentException("invalid platform gap height_diff_grade: " + code);
+			};
+		}
+	}
+	record PlatformGap(
+		String platformPosition,
+		Integer carNumber,
+		Integer doorNumber,
+		GapGrade gapGrade,
+		HeightDiffGrade heightDiffGrade,
+		boolean curved
+	) {
+		public PlatformGap {
+			Objects.requireNonNull(platformPosition, "platformPosition");
+			Objects.requireNonNull(gapGrade, "gapGrade");
+			Objects.requireNonNull(heightDiffGrade, "heightDiffGrade");
+		}
+	}
+	record CarDoorHint(
+		String stationId,
+		String lineId,
+		String direction,
+		String targetFacilityType,
+		int carNumber,
+		int doorNumber
+	) {
+		public CarDoorHint {
+			Objects.requireNonNull(stationId, "stationId");
+			Objects.requireNonNull(lineId, "lineId");
+			Objects.requireNonNull(direction, "direction");
+			Objects.requireNonNull(targetFacilityType, "targetFacilityType");
+			if (carNumber < 1 || carNumber > 10) {
+				throw new IllegalArgumentException("carNumber must be between 1 and 10");
+			}
+			if (doorNumber < 1 || doorNumber > 4) {
+				throw new IllegalArgumentException("doorNumber must be between 1 and 4");
+			}
 		}
 	}
 	record PathwayNode(String id, String stationId, String lineId, String nodeType) {

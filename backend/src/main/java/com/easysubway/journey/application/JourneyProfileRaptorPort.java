@@ -244,6 +244,7 @@ public interface JourneyProfileRaptorPort {
 		Instant realtimeReadyAt,
 		Instant realtimeArrivalAtDestination,
 		ItineraryMetrics metrics,
+		JourneyCandidate.Fare fare,
 		List<Leg> legs
 	) {
 		public Itinerary {
@@ -261,6 +262,7 @@ public interface JourneyProfileRaptorPort {
 				throw new IllegalArgumentException("realtime itinerary times must be ordered");
 			}
 			metrics = Objects.requireNonNull(metrics, "metrics");
+			fare = Objects.requireNonNull(fare, "fare");
 			legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 			if (legs.isEmpty()) throw new IllegalArgumentException("itinerary legs must not be empty");
 		}
@@ -324,7 +326,10 @@ public interface JourneyProfileRaptorPort {
 		int distanceMeters,
 		boolean includesStairs,
 		boolean verified,
-		String verificationStatus
+		String verificationStatus,
+		String transferType,
+		Boolean farePenaltyApplies,
+		Integer transferLimitMinutes
 	) implements Leg {
 		public AccessLeg {
 			kind = Objects.requireNonNull(kind, "kind");
@@ -335,6 +340,20 @@ public interface JourneyProfileRaptorPort {
 			}
 			verificationStatus = requireText(verificationStatus, "verificationStatus");
 		}
+
+		public AccessLeg(
+			AccessKind kind,
+			String fromStationId,
+			String toStationId,
+			int durationSeconds,
+			int distanceMeters,
+			boolean includesStairs,
+			boolean verified,
+			String verificationStatus
+		) {
+			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified,
+				verificationStatus, null, null, null);
+		}
 	}
 
 	record RideLeg(
@@ -343,10 +362,12 @@ public interface JourneyProfileRaptorPort {
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		Instant plannedDepartureTime,
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
-		Instant realtimeArrivalTime
+		Instant realtimeArrivalTime,
+		List<JourneyCandidate.Stop> stops
 	) implements Leg {
 		public RideLeg {
 			lineId = requireText(lineId, "lineId");
@@ -354,6 +375,8 @@ public interface JourneyProfileRaptorPort {
 			directionStationId = requireText(directionStationId, "directionStationId");
 			fromStationId = requireText(fromStationId, "fromStationId");
 			toStationId = requireText(toStationId, "toStationId");
+			servicePattern = requireText(servicePattern, "servicePattern");
+			stops = List.copyOf(Objects.requireNonNull(stops, "stops"));
 			plannedDepartureTime = Objects.requireNonNull(plannedDepartureTime, "plannedDepartureTime");
 			plannedArrivalTime = Objects.requireNonNull(plannedArrivalTime, "plannedArrivalTime");
 			if (plannedArrivalTime.isBefore(plannedDepartureTime)) {

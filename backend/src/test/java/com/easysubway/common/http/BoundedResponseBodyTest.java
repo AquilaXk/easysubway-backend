@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -80,6 +81,125 @@ class BoundedResponseBodyTest {
 
 		assertThatThrownBy(() -> BoundedResponseBody.read(body, 1_024, GENEROUS, Oversized::new))
 			.isSameAs(reset);
+	}
+
+	@Test
+	@DisplayName("(1) 200회 연속 읽기를 수행한 뒤 bounded-response-body-timeout 데몬 스레드는 1개 이하로 유지된다")
+	void maintainsSingleTimeoutThreadUnderConsecutiveReads() throws IOException {
+		byte[] payload = "test-payload".getBytes(StandardCharsets.UTF_8);
+		for (int i = 0; i < 200; i++) {
+			byte[] read = BoundedResponseBody.read(new ByteArrayInputStream(payload), 1024, GENEROUS, Oversized::new);
+			assertThat(read).isEqualTo(payload);
+		}
+
+		long aliveTimeoutThreads = Thread.getAllStackTraces().keySet().stream()
+			.filter(t -> "bounded-response-body-timeout".equals(t.getName()) && t.isAlive())
+			.count();
+		assertThat(aliveTimeoutThreads).isLessThanOrEqualTo(1L);
+	}
+
+	@Test
+	@DisplayName("(2) 호출이 끝난 뒤 공유 스케줄러 큐에 남은 작업은 0개이다")
+	void leavesZeroPendingTasksInSharedSchedulerQueueAfterRead() throws IOException {
+		byte[] payload = "queue-test".getBytes(StandardCharsets.UTF_8);
+		for (int i = 0; i < 10; i++) {
+			BoundedResponseBody.read(new ByteArrayInputStream(payload), 1024, GENEROUS, Oversized::new);
+		}
+
+		assertThat(scheduledQueueSize()).isZero();
+	}
+
+	@Test
+	@DisplayName("(3) 여러 스레드가 동시에 읽을 때 한 호출의 시간 초과가 다른 호출의 스트림을 닫지 않는다")
+	void timeoutInOneThreadDoesNotAffectConcurrentReads() throws Exception {
+		CountDownLatch timedOutLatch = new CountDownLatch(1);
+		AtomicBoolean threadBSuccess = new AtomicBoolean(false);
+		AtomicReference<Throwable> threadAError = new AtomicReference<>();
+		AtomicReference<Throwable> threadBError = new AtomicReference<>();
+
+		StalledStream stalledA = new StalledStream(Duration.ofSeconds(5));
+
+		byte[] payloadB = "concurrent-read-payload".getBytes(StandardCharsets.UTF_8);
+		InputStream delayedStreamB = new InputStream() {
+			private final ByteArrayInputStream delegate = new ByteArrayInputStream(payloadB);
+
+			@Override
+			public int read() throws IOException {
+				try {
+					timedOutLatch.await(3, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedIOException("interrupted");
+				}
+				return delegate.read();
+			}
+
+			@Override
+			public int read(byte[] b, int off, int len) throws IOException {
+				try {
+					timedOutLatch.await(3, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedIOException("interrupted");
+				}
+				return delegate.read(b, off, len);
+			}
+		};
+
+		Thread threadA = new Thread(() -> {
+			try {
+				BoundedResponseBody.read(stalledA, 1024, Duration.ofMillis(50), Oversized::new);
+			} catch (HttpTimeoutException expected) {
+				timedOutLatch.countDown();
+			} catch (IOException unexpected) {
+				threadAError.set(unexpected);
+			}
+		});
+
+		Thread threadB = new Thread(() -> {
+			try {
+				byte[] read = BoundedResponseBody.read(delayedStreamB, 1024, Duration.ofSeconds(3), Oversized::new);
+				if (java.util.Arrays.equals(read, payloadB)) {
+					threadBSuccess.set(true);
+				}
+			} catch (Throwable t) {
+				threadBError.set(t);
+			}
+		});
+
+		threadA.start();
+		threadB.start();
+
+		threadA.join(5000);
+		threadB.join(5000);
+
+		assertThat(stalledA.closed()).isTrue();
+		assertThat(threadAError.get()).isNull();
+		assertThat(threadBError.get()).isNull();
+		assertThat(threadBSuccess.get()).isTrue();
+	}
+
+	@Test
+	@DisplayName("(4) 막힌 스트림은 지정된 시간 제한 안에 HttpTimeoutException으로 끊어진다")
+	void blockedStreamThrowsHttpTimeoutExceptionWithinBudget() {
+		StalledStream body = new StalledStream(Duration.ofSeconds(10));
+		long startedAt = System.nanoTime();
+
+		assertThatThrownBy(() -> BoundedResponseBody.read(body, 1_024, Duration.ofMillis(80), Oversized::new))
+			.isInstanceOf(HttpTimeoutException.class);
+		assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(2));
+		assertThat(body.closed()).isTrue();
+	}
+
+	private static int scheduledQueueSize() {
+		try {
+			var field = BoundedResponseBody.class.getDeclaredField("TIMER");
+			field.setAccessible(true);
+			var executor = (java.util.concurrent.ScheduledThreadPoolExecutor) field.get(null);
+			return executor.getQueue().size();
+		} catch (ReflectiveOperationException exception) {
+			throw new AssertionError("Shared scheduler TIMER not found on BoundedResponseBody", exception);
+		}
 	}
 
 	private static final class Oversized extends RuntimeException {

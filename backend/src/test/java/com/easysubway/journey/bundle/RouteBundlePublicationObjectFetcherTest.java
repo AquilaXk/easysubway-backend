@@ -52,8 +52,35 @@ class RouteBundlePublicationObjectFetcherTest {
 
 	@Test
 	void constructsVerifiedAndRawDescriptorProductionBoundaries() {
-		assertNotNull(new RouteBundlePublicationObjectFetcher());
-		assertNotNull(new RouteBundlePublicationObjectFetcher(BASE_URL));
+		var defaultFetcher = new RouteBundlePublicationObjectFetcher();
+		var defaultException = assertThrows(
+			RouteBundlePublicationObjectFetcher.AcquisitionException.class,
+			() -> defaultFetcher.fetch((RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature) null));
+		assertEquals(
+			RouteBundlePublicationObjectFetcher.Reason.VERIFIED_DESCRIPTOR_INVALID,
+			defaultException.reason());
+
+		var insecureException = assertThrows(
+			RouteBundlePublicationObjectFetcher.AcquisitionException.class,
+			() -> new RouteBundlePublicationObjectFetcher("http://insecure.example.com"));
+		assertEquals(
+			RouteBundlePublicationObjectFetcher.Reason.VERIFIED_DESCRIPTOR_INVALID,
+			insecureException.reason());
+
+		var trailingSlashException = assertThrows(
+			RouteBundlePublicationObjectFetcher.AcquisitionException.class,
+			() -> new RouteBundlePublicationObjectFetcher(BASE_URL + "/"));
+		assertEquals(
+			RouteBundlePublicationObjectFetcher.Reason.VERIFIED_DESCRIPTOR_INVALID,
+			trailingSlashException.reason());
+
+		var trustedFetcher = new RouteBundlePublicationObjectFetcher(BASE_URL);
+		var nullVerifiedException = assertThrows(
+			RouteBundlePublicationObjectFetcher.AcquisitionException.class,
+			() -> trustedFetcher.fetch((RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature) null));
+		assertEquals(
+			RouteBundlePublicationObjectFetcher.Reason.VERIFIED_DESCRIPTOR_INVALID,
+			nullVerifiedException.reason());
 	}
 
 	@Test

@@ -21,6 +21,8 @@ class JourneyExecutionDispositionTest {
 			JourneyExecutionDisposition.MachineCode.REALTIME_REQUIRED_UNAVAILABLE);
 		assertPublicFailure(JourneyExecutionFailure.Reason.REALTIME_IDENTITY_MISMATCH, 503,
 			JourneyExecutionDisposition.MachineCode.ROUTING_IDENTITY_MISMATCH);
+		assertPublicFailure(JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE, 503,
+			JourneyExecutionDisposition.MachineCode.FACILITY_STATUS_UNAVAILABLE);
 		assertPublicFailure(JourneyExecutionFailure.Reason.RAPTOR_FAILED, 503,
 			JourneyExecutionDisposition.MachineCode.ROUTE_SERVICE_UNAVAILABLE);
 		assertPublicFailure(JourneyExecutionFailure.Reason.NO_ROUTE, 422,

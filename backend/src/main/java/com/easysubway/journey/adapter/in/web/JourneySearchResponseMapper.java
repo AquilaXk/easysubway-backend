@@ -3,6 +3,7 @@ package com.easysubway.journey.adapter.in.web;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -69,7 +70,21 @@ final class JourneySearchResponseMapper {
 				journey.accessibility().stairFree(),
 				List.copyOf(journey.accessibility().reasonCodes())
 			),
+			mapFare(journey.fare()),
 			journey.legs().stream().map(JourneySearchResponseMapper::mapLeg).toList()
+		);
+	}
+
+	private static FareResponse mapFare(JourneyCandidate.Fare fare) {
+		return new FareResponse(
+			fare.status().name(),
+			fare.adultCardWon(),
+			fare.adultCashWon(),
+			fare.youthCardWon(),
+			fare.youthCashWon(),
+			fare.childCardWon(),
+			fare.childCashWon(),
+			List.copyOf(fare.sourceSnapshotIds())
 		);
 	}
 
@@ -87,10 +102,23 @@ final class JourneySearchResponseMapper {
 				ride.directionStationId(),
 				ride.fromStationId(),
 				ride.toStationId(),
+				ride.servicePattern(),
 				ride.plannedDepartureTime().toString(),
 				ride.plannedArrivalTime().toString(),
 				wire(ride.realtimeDepartureTime()),
-				wire(ride.realtimeArrivalTime())
+				wire(ride.realtimeArrivalTime()),
+				ride.stops().stream().map(stop -> new RideStopResponse(
+					stop.stationId(),
+					wire(stop.plannedArrivalTime()),
+					wire(stop.plannedDepartureTime()),
+					wire(stop.realtimeArrivalTime()),
+					wire(stop.realtimeDepartureTime())
+				)).toList(),
+				ride.alightingCarDoors().stream()
+					.map(d -> new AlightingCarDoorResponse(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
+					.toList(),
+				platformGaps(ride.boardingPlatformGaps()),
+				platformGaps(ride.alightingPlatformGaps())
 			);
 			case JourneyCandidate.Transfer transfer -> new TransferLegResponse(
 				"TRANSFER",
@@ -99,7 +127,6 @@ final class JourneySearchResponseMapper {
 				transfer.durationSeconds(),
 				transfer.transferType(),
 				transfer.farePenaltyApplies(),
-				transfer.additionalFareWon(),
 				transfer.transferLimitMinutes()
 			);
 			case JourneyCandidate.Exit exit -> new ExitLegResponse(
@@ -218,7 +245,26 @@ final class JourneySearchResponseMapper {
 		long walkingDistanceMeters,
 		String timeSource,
 		AccessibilityResponse accessibility,
+		FareResponse fare,
 		List<LegResponse> legs
+	) {
+	}
+
+	record FareResponse(
+		String status,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer adultCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer adultCashWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer youthCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer youthCashWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer childCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer childCashWon,
+		List<String> sourceSnapshotIds
 	) {
 	}
 
@@ -238,11 +284,53 @@ final class JourneySearchResponseMapper {
 		String directionStationId,
 		String fromStationId,
 		String toStationId,
+		String servicePattern,
 		String plannedDepartureTime,
 		String plannedArrivalTime,
 		String realtimeDepartureTime,
-		String realtimeArrivalTime
+		String realtimeArrivalTime,
+		List<RideStopResponse> stops,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		List<AlightingCarDoorResponse> alightingCarDoors,
+		List<PlatformGapResponse> boardingPlatformGaps,
+		List<PlatformGapResponse> alightingPlatformGaps
 	) implements LegResponse {
+	}
+
+	private static List<PlatformGapResponse> platformGaps(List<PlatformGap> gaps) {
+		return gaps.stream()
+			.map(gap -> new PlatformGapResponse(
+				gap.platformPosition(), gap.carNumber(), gap.doorNumber(),
+				gap.gapGrade().name(), gap.heightDiffGrade().name(), gap.curved()))
+			.toList();
+	}
+
+	record PlatformGapResponse(
+		String platformPosition,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer carNumber,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer doorNumber,
+		String gapGrade,
+		String heightDiffGrade,
+		boolean curved
+	) {
+	}
+
+	record RideStopResponse(
+		String stationId,
+		String plannedArrivalTime,
+		String plannedDepartureTime,
+		String realtimeArrivalTime,
+		String realtimeDepartureTime
+	) {
+	}
+
+	record AlightingCarDoorResponse(
+		int carNumber,
+		int doorNumber,
+		String targetFacilityType
+	) {
 	}
 
 	record TransferLegResponse(
@@ -254,8 +342,6 @@ final class JourneySearchResponseMapper {
 		String transferType,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 		Boolean farePenaltyApplies,
-		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-		Integer additionalFareWon,
 		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 		Integer transferLimitMinutes
 	) implements LegResponse {

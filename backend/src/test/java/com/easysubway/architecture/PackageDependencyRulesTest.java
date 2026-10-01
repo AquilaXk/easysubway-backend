@@ -60,13 +60,10 @@ class PackageDependencyRulesTest {
 		);
 
 	@ArchTest
-	static final ArchRule route_domain의_jackson은_두_기존_class만_허용한다 = noClasses()
+	static final ArchRule route_domain은_jackson을_모른다 = noClasses()
 		.that().resideInAPackage("com.easysubway.route.domain..")
-		.and().areNotAssignableTo(com.easysubway.route.domain.RouteSearchResult.class)
-		.and().areNotAssignableTo(com.easysubway.route.domain.RouteWarning.class)
 		.should().dependOnClassesThat().resideInAnyPackage("com.fasterxml.jackson..")
-		.because("owner=AquilaXk/easysubway-backend#56; legacy-json-annotation-baseline=RouteSearchResult·RouteWarning Jackson; "
-			+ "removal-condition=Journey V3 adapter-owned mapping replaces these legacy domain annotations; review-expiry=2026-10-31.");
+		.because("route 도메인은 직렬화 라이브러리에 의존하지 않는다");
 
 	@ArchTest
 	static final ArchRule 웹_진입점은_레거시_경로검색을_모른다 = noClasses()
@@ -76,12 +73,6 @@ class PackageDependencyRulesTest {
 		.orShould().dependOnClassesThat()
 		.haveFullyQualifiedName("com.easysubway.route.application.port.in.RouteSearchUseCase")
 		.because("공개 경로 탐색은 Journey V3 서버 공인 라우팅만 쓴다");
-
-	@Test
-	void route_domain_jackson_기존_baseline은_만료일_이후_실패한다() {
-		assertTrue(LocalDate.now(ZoneOffset.UTC).isBefore(LocalDate.of(2026, 11, 1)),
-			"AquilaXk/easysubway-backend#56: Journey V3 adapter-owned mapping replaces these legacy domain annotations.");
-	}
 
 	@Test
 	void application_to_adapter_위반을_포착한다() {
@@ -102,7 +93,7 @@ class PackageDependencyRulesTest {
 		assertThrows(AssertionError.class, () -> route_domain은_framework을_모른다.check(
 			new ClassFileImporter().importPackages("com.easysubway.route.domain.fixture")
 		));
-		assertThrows(AssertionError.class, () -> route_domain의_jackson은_두_기존_class만_허용한다.check(
+		assertThrows(AssertionError.class, () -> route_domain은_jackson을_모른다.check(
 			new ClassFileImporter().importPackages("com.easysubway.route.domain.fixture")
 		));
 		assertThrows(AssertionError.class, () -> route_domain은_framework을_모른다.check(
