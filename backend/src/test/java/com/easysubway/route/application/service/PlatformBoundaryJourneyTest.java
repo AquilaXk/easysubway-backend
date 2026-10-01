@@ -1,14 +1,18 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.FacilityAvailabilityView;
+import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
@@ -19,12 +23,14 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.Transfer
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -115,6 +121,30 @@ class PlatformBoundaryJourneyTest {
 		assertThat(arriveBy.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class,
 			value -> assertThat(value.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
 				found -> assertThat(found.itineraries()).allSatisfy(itinerary -> assertPlatformBoundaryLegs(itinerary.legs()))));
+	}
+
+	@Test
+	@DisplayName("남은 ENTRY/EXIT 간선 id를 차단하는 시설 뷰는 번들 밖 id로 보아 뷰 전체를 쓰지 않는다(현재 동작 고정)")
+	void facilityViewBlockingLegacyEntryOrExitIdsIsTreatedAsOutsideTheBundle() {
+		// #454 이후 ENTRY/EXIT 간선은 전환으로 컴파일되지 않아 시설 오버레이가 해석할 전환 id가 없다.
+		// 운영 기본값 FacilityAvailabilityPort.unavailable()에서는 영향이 없고, #431을 환승 간선 기준으로
+		// 재범위화할 때 이 동작을 바꾼다. 그 전까지 현재 동작을 고정한다.
+		var timetable = withLegacyEntryAndExit(platformOnlyTimetable(verifiedTransfer(120, 100)));
+		var clock = Clock.fixed(instantAt(30_000), ServiceDayResolver.ZONE);
+		var view = FacilityAvailabilityView.blocked(instantAt(30_000), Set.of("entry", "exit"));
+
+		// 무단차 필수 + required=true: 뷰를 쓸 수 없어 명시적 오류가 된다.
+		assertThatThrownBy(() -> point(new JourneyRaptorAdapter(() -> view, true, clock), timetable,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("blocked pathway edge is not in the captured route bundle");
+		// 그 밖의 요청: 차단 0건으로 경로를 그대로 낸다(ENTRY/EXIT 차단이 경로에 반영되지 않는다).
+		assertThat(point(new JourneyRaptorAdapter(() -> view, false, clock), timetable,
+			JourneyRequest.ConstraintMode.NONE)).singleElement()
+			.satisfies(candidate -> assertThat(candidate.plannedArrivalTime()).isEqualTo(instantAt(SECOND_ARRIVAL)));
+		// 기본 어댑터(FacilityAvailabilityPort.unavailable())는 차단 없이 같은 경로를 낸다.
+		assertThat(point(new JourneyRaptorAdapter(), timetable, JourneyRequest.ConstraintMode.NONE)).singleElement()
+			.satisfies(candidate -> assertThat(candidate.plannedArrivalTime()).isEqualTo(instantAt(SECOND_ARRIVAL)));
 	}
 
 	@Test
@@ -261,11 +291,31 @@ class PlatformBoundaryJourneyTest {
 		JourneyRequest.MobilityProfile mobilityProfile,
 		JourneyRequest.WalkingPace walkingPace
 	) {
+		return point(new JourneyRaptorAdapter(), timetable, mobilityProfile, walkingPace,
+			JourneyRequest.ConstraintMode.NONE);
+	}
+
+	private static List<JourneyCandidate> point(
+		JourneyRaptorAdapter adapter,
+		RouteTimetable timetable,
+		JourneyRequest.ConstraintMode constraintMode
+	) {
+		return point(adapter, timetable, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.WalkingPace.STANDARD,
+			constraintMode);
+	}
+
+	private static List<JourneyCandidate> point(
+		JourneyRaptorAdapter adapter,
+		RouteTimetable timetable,
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.WalkingPace walkingPace,
+		JourneyRequest.ConstraintMode constraintMode
+	) {
 		var request = new JourneyRequest(
 			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(instantAt(30_000)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, walkingPace, mobilityProfile,
-			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
-		return new JourneyRaptorAdapter().plan(request, snapshot(timetable), instantAt(30_000), null,
+			constraintMode, 1, 1, () -> false);
+		return adapter.plan(request, snapshot(timetable), instantAt(30_000), null,
 			new JourneyRequestMeasurement(REQUEST_ID)).candidates();
 	}
 
