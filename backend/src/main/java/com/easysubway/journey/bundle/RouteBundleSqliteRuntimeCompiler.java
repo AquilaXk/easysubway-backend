@@ -557,10 +557,10 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			nodes.putIfAbsent(edge.fromNodeId(), new PathwayNode(edge.fromNodeId(), from.stationId(), from.lineId(), "ROUTE_ENDPOINT"));
 			nodes.putIfAbsent(edge.toNodeId(), new PathwayNode(edge.toNodeId(), to.stationId(), to.lineId(), "ROUTE_ENDPOINT"));
 			String accessibilityStatus = pass ? "AVAILABLE" : "UNAVAILABLE";
-			String provenanceKind = "UNKNOWN".equals(edge.provenanceKind())
-				? "OFFICIAL_SOURCE" : edge.provenanceKind();
-			String verificationStatus = "UNKNOWN".equals(edge.verificationStatus())
-				? "VERIFIED" : edge.verificationStatus();
+			// 출처·검증 상태는 번들 값 그대로 쓴다. UNKNOWN을 공식 출처·검증됨으로 올리면 근거 없는 거리·시간이
+			// 검증 요구 탐색에 들어간다(#451).
+			String provenanceKind = edge.provenanceKind();
+			String verificationStatus = edge.verificationStatus();
 			edges.add(new PathwayEdge(
 				edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(), edge.distanceMeters(), false,
 				edge.includesStairs(), edge.reliabilityScore(), accessibilityStatus, provenanceKind,
