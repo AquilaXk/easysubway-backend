@@ -372,6 +372,23 @@ class JourneyOfficialOdFareTest {
 			.hasMessage("Journey itinerary must contain a ride to quote a fare");
 	}
 
+	@Test
+	@DisplayName("(10) Re-boarding transfer before any ride is rejected instead of being quoted")
+	void reboardingTransferBeforeAnyRideIsRejected() {
+		var itinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
+			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(600), null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(1, 600, 200, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
+			List.of(
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-a", "station-a", true),
+				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
+					EFFECTIVE, EFFECTIVE.plusSeconds(300), null, null)));
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> JourneyRaptorAdapter.calculateFare(itinerary,
+				Map.of(OfficialFareQuote.fareKey("station-a", "station-b"), QUOTE_FULL)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("Journey re-boarding transfer must follow a ride");
+	}
+
 	private static List<JourneyProfileRaptorPort.Itinerary> profileItineraries(RaptorRouteBundleRuntimeView runtime) {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",

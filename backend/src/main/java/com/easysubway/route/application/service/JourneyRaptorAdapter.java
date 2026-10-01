@@ -644,10 +644,12 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
 				if (sectionFirstRide == null) sectionFirstRide = ride;
 				sectionLastRide = ride;
-			} else if (leg instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access
-				&& access.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER
-				&& Boolean.TRUE.equals(access.farePenaltyApplies())
-				&& sectionFirstRide != null) {
+			} else if (Boolean.TRUE.equals(
+				((RouteTimetableRaptorPlanner.JourneyAccessProjection) leg).farePenaltyApplies())) {
+				// planner는 탑승 사이 TRANSFER 구간에만 재승차 여부를 싣는다.
+				if (sectionFirstRide == null) {
+					throw new IllegalArgumentException("Journey re-boarding transfer must follow a ride");
+				}
 				sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
 				sectionFirstRide = null;
 			}
