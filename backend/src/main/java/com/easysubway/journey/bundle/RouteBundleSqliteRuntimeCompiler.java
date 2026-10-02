@@ -67,7 +67,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	private static final Set<String> PAYLOAD_PATHS = Set.of(
 		TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH);
 	private static final String OUT_OF_STATION_TRANSFER = "OUT_OF_STATION_TRANSFER";
-	private static final long MAX_TOTAL_DECOMPRESSED_BYTES = 56L * 1024L * 1024L;
+	// #458: 전국 공식 시간표 번들(실측 81.6MiB, #903 반영 예상 약 105MiB)에 여유를 둔 값.
+	// data server-route-bundle-build-contract.json maxTotalDecompressedBytes와 함께 바꾼다.
+	static final long MAX_TOTAL_DECOMPRESSED_BYTES = 192L * 1024L * 1024L;
 	private static final int SQLITE_USER_VERSION = 19;
 	private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 	private static final ObjectMapper JSON = new ObjectMapper();
