@@ -393,6 +393,54 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
+	void acceptsComponentsWhoseDecompressedTotalEqualsTheLimitAndRejectsOneByteMore() throws Exception {
+		var payloads = payloads();
+		long total = 0;
+		for (byte[] compressed : payloads.values()) {
+			try (var source = new com.github.luben.zstd.ZstdInputStream(new java.io.ByteArrayInputStream(compressed))) {
+				total += source.readAllBytes().length;
+			}
+		}
+		long exactLimit = total;
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler(exactLimit).compile(input(payloads));
+
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(exactLimit - 1).compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle total decompression limit exceeded");
+	}
+
+	@Test
+	void separatesTemporaryStorageFailuresFromInvalidZstdPayloads() throws Exception {
+		byte[] valid = Zstd.compress(new byte[4096], 3);
+		var full = new java.io.OutputStream() {
+			@Override
+			public void write(int value) throws java.io.IOException {
+				throw new java.io.IOException("No space left on device");
+			}
+
+			@Override
+			public void write(byte[] bytes, int offset, int length) throws java.io.IOException {
+				throw new java.io.IOException("No space left on device");
+			}
+		};
+
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.copyBounded(valid, full, 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle temporary storage write failed")
+			.hasRootCauseMessage("No space left on device");
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.decompress(
+			valid, temp.resolve("missing-directory").resolve("topology.sqlite"), 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle temporary storage write failed");
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.copyBounded(
+			new byte[] {1, 2, 3}, java.io.OutputStream.nullOutputStream(), 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle zstd payload is invalid");
+	}
+
+	@Test
 	void rejectsTopologyAccessibilityMutationOutsideTheAdmittedPayloadDigests() throws Exception {
 		var admitted = payloads();
 		var mutated = payloads(value -> value, "UNAVAILABLE");
