@@ -347,6 +347,100 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
+	void pinsTheDefaultTotalDecompressionLimitMirroredByTheDataBuildContract() {
+		// data contracts/datapack/server-route-bundle-build-contract.json maxTotalDecompressedBytes와 같은 값이다.
+		assertThat(RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES).isEqualTo(201_326_592L);
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(
+			RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES + 1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("total decompression limit");
+	}
+
+	@Test
+	void compilesAValidBundleLargerThanThePreviousFiftySixMebibyteLimit() throws Exception {
+		var payloads = payloads();
+		var padded = sqlite("accessibility-padded", connection -> {
+			commonAccessibility(connection);
+			execute(connection, "CREATE TABLE bundle_padding (id INTEGER PRIMARY KEY, bytes BLOB NOT NULL)");
+			insert(connection, "INSERT INTO bundle_padding VALUES(1, zeroblob(57 * 1024 * 1024))");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(padded, 3));
+		assertThat(padded.length).isGreaterThan(56 * 1024 * 1024);
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void rejectsAPayloadThatDecompressesPastTheDefaultLimit() throws Exception {
+		var payloads = payloads();
+		var bomb = new java.io.ByteArrayOutputStream();
+		try (var zstd = new com.github.luben.zstd.ZstdOutputStream(bomb, 3)) {
+			byte[] chunk = new byte[1024 * 1024];
+			long remaining = RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES + 1;
+			while (remaining > 0) {
+				int length = (int) Math.min(chunk.length, remaining);
+				zstd.write(chunk, 0, length);
+				remaining -= length;
+			}
+		}
+		payloads.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, bomb.toByteArray());
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("total decompression limit exceeded");
+	}
+
+	@Test
+	void acceptsComponentsWhoseDecompressedTotalEqualsTheLimitAndRejectsOneByteMore() throws Exception {
+		var payloads = payloads();
+		long total = 0;
+		for (byte[] compressed : payloads.values()) {
+			try (var source = new com.github.luben.zstd.ZstdInputStream(new java.io.ByteArrayInputStream(compressed))) {
+				total += source.readAllBytes().length;
+			}
+		}
+		long exactLimit = total;
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler(exactLimit).compile(input(payloads));
+
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(exactLimit - 1).compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle total decompression limit exceeded");
+	}
+
+	@Test
+	void separatesTemporaryStorageFailuresFromInvalidZstdPayloads() throws Exception {
+		byte[] valid = Zstd.compress(new byte[4096], 3);
+		var full = new java.io.OutputStream() {
+			@Override
+			public void write(int value) throws java.io.IOException {
+				throw new java.io.IOException("No space left on device");
+			}
+
+			@Override
+			public void write(byte[] bytes, int offset, int length) throws java.io.IOException {
+				throw new java.io.IOException("No space left on device");
+			}
+		};
+
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.copyBounded(valid, full, 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle temporary storage write failed")
+			.hasRootCauseMessage("No space left on device");
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.decompress(
+			valid, temp.resolve("missing-directory").resolve("topology.sqlite"), 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle temporary storage write failed");
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.copyBounded(
+			new byte[] {1, 2, 3}, java.io.OutputStream.nullOutputStream(), 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle zstd payload is invalid");
+	}
+
+	@Test
 	void rejectsTopologyAccessibilityMutationOutsideTheAdmittedPayloadDigests() throws Exception {
 		var admitted = payloads();
 		var mutated = payloads(value -> value, "UNAVAILABLE");

@@ -67,7 +67,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	private static final Set<String> PAYLOAD_PATHS = Set.of(
 		TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH);
 	private static final String OUT_OF_STATION_TRANSFER = "OUT_OF_STATION_TRANSFER";
-	private static final long MAX_TOTAL_DECOMPRESSED_BYTES = 56L * 1024L * 1024L;
+	// #458: 전국 공식 시간표 번들(실측 81.6MiB, #903 반영 예상 약 105MiB)에 여유를 둔 값.
+	// data server-route-bundle-build-contract.json maxTotalDecompressedBytes와 함께 바꾼다.
+	static final long MAX_TOTAL_DECOMPRESSED_BYTES = 192L * 1024L * 1024L;
 	private static final int SQLITE_USER_VERSION = 19;
 	private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 	private static final ObjectMapper JSON = new ObjectMapper();
@@ -681,15 +683,23 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 	}
 
-	private static long decompress(byte[] compressed, Path output, long remainingBytes) throws IOException {
+	static long decompress(byte[] compressed, Path output, long remainingBytes) {
+		try (OutputStream target = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+			return copyBounded(compressed, target, remainingBytes);
+		} catch (IOException exception) {
+			throw temporaryStorageFailure(exception);
+		}
+	}
+
+	// #458: 임시 저장소(/tmp) 쓰기 실패(ENOSPC 등)와 zstd 디코드 오류를 다른 메시지로 드러낸다. 둘 다 컴파일 실패다.
+	static long copyBounded(byte[] compressed, OutputStream target, long remainingBytes) {
 		if (compressed == null || compressed.length == 0) {
 			throw new IllegalArgumentException("route-bundle zstd payload is empty");
 		}
 		if (remainingBytes < 1) {
 			throw new IllegalArgumentException("route-bundle total decompression limit exceeded");
 		}
-		try (var source = new ZstdInputStream(new ByteArrayInputStream(compressed));
-			OutputStream target = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+		try (var source = new ZstdInputStream(new ByteArrayInputStream(compressed))) {
 			byte[] buffer = new byte[64 * 1024];
 			long written = 0;
 			for (int read; (read = source.read(buffer)) >= 0;) {
@@ -698,15 +708,21 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				if (written > remainingBytes) {
 					throw new IllegalArgumentException("route-bundle total decompression limit exceeded");
 				}
-				target.write(buffer, 0, read);
+				try {
+					target.write(buffer, 0, read);
+				} catch (IOException exception) {
+					throw temporaryStorageFailure(exception);
+				}
 			}
 			if (written == 0) throw new IllegalArgumentException("route-bundle zstd payload is empty");
 			return written;
-		} catch (IllegalArgumentException exception) {
-			throw exception;
 		} catch (IOException exception) {
 			throw new IllegalArgumentException("route-bundle zstd payload is invalid", exception);
 		}
+	}
+
+	private static IllegalArgumentException temporaryStorageFailure(IOException exception) {
+		return new IllegalArgumentException("route-bundle temporary storage write failed", exception);
 	}
 
 	private static String canonical(JsonNode node) throws IOException {
