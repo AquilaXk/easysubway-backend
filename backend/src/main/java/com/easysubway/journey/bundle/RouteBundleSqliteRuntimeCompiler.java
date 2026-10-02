@@ -684,13 +684,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	static long decompress(byte[] compressed, Path output, long remainingBytes) {
-		OutputStream target;
-		try {
-			target = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-		} catch (IOException exception) {
-			throw temporaryStorageFailure(exception);
-		}
-		try (target) {
+		try (OutputStream target = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
 			return copyBounded(compressed, target, remainingBytes);
 		} catch (IOException exception) {
 			throw temporaryStorageFailure(exception);
