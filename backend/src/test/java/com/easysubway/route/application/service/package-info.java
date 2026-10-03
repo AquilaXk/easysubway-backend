@@ -170,6 +170,23 @@
  * 1.8배(district 99~177 µs) 흔들려 7절의 허용폭을 2.0배로 올렸다. #462에서도 같은 코드의 CI 측정 묶음 사이 편차가
  * 컸다(metro DepartAt p50: 직전 커밋 첫 실행 177 µs, 기준선 3회 249~345 µs).</p>
  * <table>
+ *   <caption>#462 기준선 3회 측정(run 37117989628 시도 1·2·3, 보정 시간 98.09·97.76·98.16 ms)과 최대/최소 비</caption>
+ *   <tr><th>번들</th><th>모드</th><th>p50(µs)</th><th>p50 비</th><th>p99(µs)</th><th>p99 비</th></tr>
+ *   <tr><td>metro</td><td>DepartAt</td><td>249 · 313 · 346</td><td>1.39</td><td>787 · 796 · 1,098</td><td>1.40</td></tr>
+ *   <tr><td>district</td><td>DepartAt</td><td>127 · 97 · 121</td><td>1.31</td><td>242 · 331 · 235</td><td>1.41</td></tr>
+ *   <tr><td>district</td><td>ArriveBy</td><td>810 · 988 · 839</td><td>1.22</td><td>3,114 · 3,261 · 2,947</td><td>1.11</td></tr>
+ *   <tr><td>district</td><td>DepartBetween</td><td>1,097 · 1,034 · 1,082</td><td>1.06</td><td>3,365 · 3,215 · 3,417</td><td>1.06</td></tr>
+ *   <tr><td>district</td><td>LastConnection</td><td>623 · 588 · 615</td><td>1.06</td><td>876 · 931 · 928</td><td>1.06</td></tr>
+ *   <tr><td>line4</td><td>DepartAt</td><td>58 · 66 · 56</td><td>1.17</td><td>143 · 146 · 112</td><td>1.31</td></tr>
+ *   <tr><td>line4</td><td>ArriveBy</td><td>191 · 227 · 190</td><td>1.19</td><td>286 · 358 · 288</td><td>1.25</td></tr>
+ *   <tr><td>line4</td><td>DepartBetween</td><td>326 · 328 · 333</td><td>1.02</td><td>557 · 574 · 634</td><td>1.14</td></tr>
+ *   <tr><td>line4</td><td>LastConnection</td><td>204 · 244 · 186</td><td>1.31</td><td>329 · 363 · 284</td><td>1.28</td></tr>
+ * </table>
+ * <p>세 측정 안의 최대/최소 비는 1.02~1.41배였다. 다른 시점의 같은 엔진 실행(직전 커밋 d2b7dc8a)은 대부분 이보다 빨라
+ * (line4 DepartAt p50 27 µs, metro 177 µs) 기준선이 느린 쪽 묶음에서 정해졌다. 출발 시각 고정 p50 허용폭 2.0배와
+ * 비교하면 line4 DepartAt 기준선 57.6 µs의 한도는 정규화 전 약 115 µs다. 기준선을 바꾼 뒤 게이트가 실패하면 이 표의
+ * 편차와 먼저 비교한다.</p>
+ * <table>
  *   <caption>번들과 컴파일</caption>
  *   <tr><th>번들</th><th>역</th><th>운행</th><th>정차</th><th>컴파일</th><th>컴파일 할당</th><th>보유 힙</th></tr>
  *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>151 ms</td><td>27.4 MB</td><td>3.25 MB</td></tr>
