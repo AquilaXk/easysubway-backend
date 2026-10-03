@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
- * dev seed 이중 스위치 회귀 검증(#2327 PR⑤). TimetableSeedLoaderConditionTest와 동일한 형태:
+ * dev seed 이중 스위치 회귀 검증(#2327 PR⑤):
  * (1) {@code @ConditionalOnProperty}: {@code easysubway.dev-seed.enabled} 미설정/false면 빈이 아예
  * 없어야 하고 true일 때만 등록된다. (2) {@code @Profile}: 매칭 프로파일(dev)에서만 활성이고, prod
  * 계열 프로파일에서는 flag=true여도 등록되지 않는다.

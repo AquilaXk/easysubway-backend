@@ -44,8 +44,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>이중 가드: {@link Profile}로 prod 계열 프로파일에서는 빈 자체가 등록되지 않고,
  * {@link ConditionalOnProperty}로 {@code easysubway.dev-seed.enabled}(env {@code EASYSUBWAY_DEV_SEED})가
- * {@code true}일 때만 등록된다(패턴은 {@link com.easysubway.route.adapter.out.persistence.TimetableSeedLoader}와
- * 동일). CI는 이 플래그를 켜지 않으므로 기존 seed 전제·QA 하네스 계약에 영향이 없다.
+ * {@code true}일 때만 등록된다. CI는 이 플래그를 켜지 않으므로 기존 seed 전제·QA 하네스 계약에 영향이 없다.
  *
  * <p>seed 범위: (1) 관리자 대시보드가 소비하는 6개 지표 키에 최근 30일 합성 추이, (2) 상태가 다양한
  * 시설 신고(사진 포함 2건), (3) InMemory 저장소가 쓰기를 지원하는 접근성 시설 소량. 역·출구는 이

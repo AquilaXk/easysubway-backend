@@ -45,7 +45,6 @@ import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -809,11 +808,6 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
 			return mock(JourneyTimetableRealtimeResolver.class);
-		}
-
-		@Bean
-		LoadRouteTimetablePort loadRouteTimetablePort() {
-			return mock(LoadRouteTimetablePort.class);
 		}
 	}
 

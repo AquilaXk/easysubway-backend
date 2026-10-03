@@ -26,12 +26,10 @@ import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionService.AuthorizedSession;
 import com.easysubway.journey.application.StationTimetableSearchService;
-import com.easysubway.route.application.model.PlannerIdentity;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationTimetableSnapshot;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetableSnapshot;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
@@ -387,13 +385,10 @@ class StationTimetableSearchControllerTest {
 			List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			List.of(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
 			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0)), List.of(), List.of(), null,
-			new RouteAccessData(List.of(new PathwayNode("platform", "station", "line", "PLATFORM")), List.of(), List.of(), List.of()));
-		var snapshot = new RouteTimetableSnapshot("cache", "artifact", new PlannerIdentity("a".repeat(64), "b".repeat(64), "c".repeat(64),
-			"sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64), "f".repeat(64)), NOW.plusSeconds(60), timetable);
-		LoadRouteTimetablePort port = new LoadRouteTimetablePort() {
-			@Override public RouteTimetable loadRouteTimetable() { return timetable; }
-			@Override public RouteTimetableSnapshot loadStationTimetableSnapshot() { return snapshot; }
-		};
-		return new StationTimetableSearchService(port, Clock.fixed(NOW, ZoneOffset.UTC));
+			RouteAccessData.empty());
+		var snapshot = new StationTimetableSnapshot(new StationTimetableSearchService.SourceIdentity("artifact", "a".repeat(64),
+			"sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64), "f".repeat(64), NOW.plusSeconds(60)), timetable,
+			Set.of(new StationLine("station", "line")));
+		return new StationTimetableSearchService(() -> snapshot, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 }

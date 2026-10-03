@@ -1,6 +1,5 @@
 package com.easysubway.journey.application;
 
-import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
@@ -24,42 +23,47 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Reads only one active timetable snapshot and never synthesizes timetable success. */
+/** Reads only the active server route bundle timetable and never synthesizes timetable success. */
 public final class StationTimetableSearchService {
 
 	public static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 	private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
-	private final LoadRouteTimetablePort timetablePort;
+	private final StationTimetableSnapshotPort snapshotPort;
 	private final Clock clock;
 
-	public StationTimetableSearchService(LoadRouteTimetablePort timetablePort, Clock clock) {
-		this.timetablePort = Objects.requireNonNull(timetablePort, "timetablePort");
+	public StationTimetableSearchService(StationTimetableSnapshotPort snapshotPort, Clock clock) {
+		this.snapshotPort = Objects.requireNonNull(snapshotPort, "snapshotPort");
 		this.clock = Objects.requireNonNull(clock, "clock");
 	}
 
 	public SearchResult search(SearchRequest request) {
 		Objects.requireNonNull(request, "request");
-		LoadRouteTimetablePort.RouteTimetableSnapshot snapshot;
+		StationTimetableSnapshotPort.StationTimetableSnapshot snapshot;
 		try {
-			snapshot = timetablePort.loadStationTimetableSnapshot();
+			snapshot = snapshotPort.loadStationTimetableSnapshot();
+		} catch (FailureException exception) {
+			// 활성 번들 없음·만료는 어댑터가 판정한 그대로 드러낸다. 그 밖의 실패는 사용할 수 없음이다.
+			if (exception.failure() == Failure.TIMETABLE_STALE) throw failure(Failure.TIMETABLE_STALE);
+			throw failure(Failure.TIMETABLE_UNAVAILABLE);
 		} catch (RuntimeException exception) {
 			throw failure(Failure.TIMETABLE_UNAVAILABLE);
 		}
 		if (snapshot == null || snapshot.timetable() == null) {
 			throw failure(Failure.TIMETABLE_UNAVAILABLE);
 		}
-		if (snapshot.timetableArtifactId() == null && snapshot.plannerIdentity() == null && snapshot.freshUntil() == null) {
-			throw failure(Failure.TIMETABLE_UNAVAILABLE);
-		}
-		if (snapshot.freshUntil() == null) {
+		if (snapshot.sourceIdentity() == null || snapshot.sourceIdentity().freshUntil() == null) {
 			throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 		}
-		if (!snapshot.freshUntil().isAfter(clock.instant())) {
+		if (!snapshot.sourceIdentity().freshUntil().isAfter(clock.instant())) {
 			throw failure(Failure.TIMETABLE_STALE);
 		}
-		SourceIdentity source = sourceIdentity(snapshot);
+		SourceIdentity source = sourceIdentity(snapshot.sourceIdentity());
 		RouteTimetable timetable = snapshot.timetable();
-		if (!hasCanonicalStationLine(timetable, request.stationId(), request.lineId())) {
+		if (snapshot.canonicalStationLines() == null) {
+			throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
+		}
+		if (!snapshot.canonicalStationLines().contains(
+			new StationTimetableSnapshotPort.StationLine(request.stationId(), request.lineId()))) {
 			throw failure(Failure.STATION_LINE_NOT_FOUND);
 		}
 
@@ -70,7 +74,9 @@ public final class StationTimetableSearchService {
 		}
 		List<DepartureCandidate> candidates = departures(timetable, trips, routes, request.stationId(), request.lineId());
 
-		DayType resolvedDayType = resolveDayType(timetable, request.selector());
+		Set<String> servingServiceIds = new HashSet<>();
+		for (DepartureCandidate candidate : candidates) servingServiceIds.add(candidate.trip().serviceId());
+		DayType resolvedDayType = resolveDayType(timetable, request.selector(), servingServiceIds);
 		if (request.selector() instanceof Selector.DayTypeSelector dayType
 			&& dayType.dayType() != resolvedDayType) {
 			throw failure(Failure.INVALID_JOURNEY_REQUEST);
@@ -80,11 +86,6 @@ public final class StationTimetableSearchService {
 			request.stationId(), request.lineId(), request.selector(), resolvedDayType,
 			group(selected), source
 		);
-	}
-
-	private static boolean hasCanonicalStationLine(RouteTimetable timetable, String stationId, String lineId) {
-		return timetable.routeAccessData().pathwayNodes().stream()
-			.anyMatch(stop -> stationId.equals(stop.stationId()) && lineId.equals(stop.lineId()));
 	}
 
 	private static boolean hasTimetableCoverage(RouteTimetable timetable, String stationId, String lineId) {
@@ -254,7 +255,8 @@ public final class StationTimetableSearchService {
 		return active;
 	}
 
-	private static DayType resolveDayType(RouteTimetable timetable, Selector selector) {
+	// 전국 번들에는 여러 기관의 달력이 함께 있으므로, 요청 역·노선을 지나는 열차의 달력과 그 예외만으로 요일을 판정한다.
+	private static DayType resolveDayType(RouteTimetable timetable, Selector selector, Set<String> servingServiceIds) {
 		LocalDate serviceDate = switch (selector) {
 			case Selector.ServiceDateSelector value -> value.serviceDate();
 			case Selector.DayTypeSelector value -> value.referenceDate();
@@ -265,6 +267,7 @@ public final class StationTimetableSearchService {
 		Map<String, List<ServiceCalendar>> calendars = new HashMap<>();
 		for (ServiceCalendar calendar : timetable.serviceCalendars()) {
 			if (!SERVICE_ZONE.getId().equals(calendar.timezone())) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
+			if (!servingServiceIds.contains(calendar.serviceId())) continue;
 			calendars.computeIfAbsent(calendar.serviceId(), ignored -> new ArrayList<>()).add(calendar);
 		}
 		boolean civilClassRemoved = false;
@@ -280,6 +283,7 @@ public final class StationTimetableSearchService {
 		Set<DayType> overrides = new HashSet<>();
 		for (ServiceCalendarDate exception : timetable.serviceCalendarDates()) {
 			if (!serviceDate.equals(exception.date()) || exception.exceptionType() != 1) continue;
+			if (!servingServiceIds.contains(exception.serviceId())) continue;
 			List<ServiceCalendar> matches = calendars.get(exception.serviceId());
 			if (matches == null || matches.size() != 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			DayType signature = calendarSignature(matches.getFirst());
@@ -295,8 +299,9 @@ public final class StationTimetableSearchService {
 			&& !calendar.saturday() && !calendar.sunday()) return DayType.WEEKDAY;
 		if (!calendar.monday() && !calendar.tuesday() && !calendar.wednesday() && !calendar.thursday() && !calendar.friday()
 			&& calendar.saturday() && !calendar.sunday()) return DayType.SATURDAY;
+		// 토요일 시간표가 없는 기관은 휴일 시간표를 토·일에 함께 쓴다(시간표 요일 정책). 그 달력도 휴일 서명이다.
 		if (!calendar.monday() && !calendar.tuesday() && !calendar.wednesday() && !calendar.thursday() && !calendar.friday()
-			&& !calendar.saturday() && calendar.sunday()) return DayType.SUNDAY_HOLIDAY;
+			&& calendar.sunday()) return DayType.SUNDAY_HOLIDAY;
 		return null;
 	}
 
@@ -328,16 +333,13 @@ public final class StationTimetableSearchService {
 		}
 	}
 
-	private static SourceIdentity sourceIdentity(LoadRouteTimetablePort.RouteTimetableSnapshot snapshot) {
-		PlannerIdentity identity = snapshot.plannerIdentity();
-		if (identity == null || !text(snapshot.timetableArtifactId()) || !sha(identity.timetableSnapshotSha256())
+	private static SourceIdentity sourceIdentity(SourceIdentity identity) {
+		if (!text(identity.timetableArtifactId()) || !sha(identity.timetableSnapshotSha256())
 			|| !text(identity.canonicalStationVersion()) || !sha(identity.canonicalStationSetSha256())
 			|| !sha(identity.sourceLineageSha256()) || !sha(identity.evidenceHash())) {
 			throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 		}
-		return new SourceIdentity(snapshot.timetableArtifactId(), identity.timetableSnapshotSha256(),
-			identity.canonicalStationVersion(), identity.canonicalStationSetSha256(), identity.sourceLineageSha256(),
-			identity.evidenceHash(), snapshot.freshUntil());
+		return identity;
 	}
 
 	private static boolean text(String value) { return value != null && !value.isBlank(); }

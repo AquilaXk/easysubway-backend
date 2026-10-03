@@ -1,179 +1,29 @@
 package com.easysubway.route.adapter.out.persistence;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.application.model.PlannerIdentity;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import java.time.Clock;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Transactional;
 
-@Repository
-@Profile("prod | staging | release | prod-like")
-@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+/**
+ * Test fixture reader: maps the canonical schedule tables of an H2 fixture database into a {@link RouteTimetable}.
+ *
+ * <p>#476 이후 운영 시간표는 활성 서버 경로 번들에서만 읽는다. 이 클래스는 line4 코리도 슬라이스 seed를 H2에 적재해 플래너
+ * golden 테스트에 넘기는 테스트 전용 도구로만 남는다.</p>
+ */
 public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private static final Logger log = LoggerFactory.getLogger(JdbcRouteTimetableRepository.class);
 
 	private final JdbcTemplate jdbcTemplate;
-	private final Clock clock;
-	final Object stationTimetableLock = new Object();
-	final AtomicReference<StationTimetableCache> stationTimetableCache = new AtomicReference<>();
-	@Autowired
+
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
-		this(new JdbcTemplate(dataSource), Clock.systemUTC());
-	}
-
-	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate) {
-		this(jdbcTemplate, Clock.systemUTC());
-	}
-
-	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate, Clock clock) {
-		this.jdbcTemplate = jdbcTemplate;
-		this.clock = clock;
-	}
-
-	@Override
-	public boolean hasRouteTimetable() {
-		return activeItxArtifact().isPresent() && hasReadableTransitTrips();
-	}
-
-	@Override
-	public boolean hasActivatableRouteTimetable() {
-		return activeItxArtifact().isPresent() && hasReadableTransitTrips();
-	}
-
-	private boolean hasReadableTransitTrips() {
-		return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-			"""
-				SELECT CASE
-					WHEN EXISTS (
-						SELECT 1 FROM transit_trips t
-						WHERE EXISTS (SELECT 1 FROM transit_stop_times s WHERE s.trip_id = t.id)
-					)
-					THEN TRUE ELSE FALSE
-				END
-				""",
-			Boolean.class
-		));
-	}
-
-	@Override
-	public String timetableCacheKey() {
-		return activeItxArtifact()
-			.map(JdbcRouteTimetableRepository::cacheKey)
-			.orElse("UNAVAILABLE");
-	}
-
-	@Override
-	public Optional<String> activeItxTimetableArtifactId() {
-		return activeItxArtifact().map(ItxArtifact::snapshotId);
-	}
-
-	@Override
-	public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
-		return activeItxArtifact()
-			.map(artifact -> new RouteTimetableSnapshot(
-				cacheKey(artifact),
-				artifact.snapshotId(),
-				artifact.plannerIdentity(),
-				loadRouteTimetable()
-			))
-			.orElseGet(() -> new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty()));
-	}
-
-	@Override
-	public RouteTimetableSnapshot loadStationTimetableSnapshot() {
-		Optional<ItxArtifact> artifact = admissibleItxArtifact();
-		if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
-		String cacheKey = cacheKey(artifact.get());
-		StationTimetableCache cached = stationTimetableCache.get();
-		if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
-		synchronized (stationTimetableLock) {
-			cached = stationTimetableCache.get();
-			if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
-			RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
-				cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
-				parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
-			stationTimetableCache.set(new StationTimetableCache(cacheKey, snapshot));
-			return snapshot;
-		}
-	}
-
-	private static RouteTimetableSnapshot unavailableStationTimetableSnapshot() {
-		return new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty());
-	}
-
-	private static java.time.Instant parseFreshUntil(String value) {
-		if (value.isBlank()) return null;
-		try {
-			return OffsetDateTime.parse(value).toInstant();
-		} catch (DateTimeParseException exception) {
-			return null;
-		}
-	}
-
-	private Optional<ItxArtifact> activeItxArtifact() {
-		return admissibleItxArtifact().filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent());
-	}
-
-	// freshness 판정 전 lineage·schema 적격성만 조회하고, serving/activation은 activeItxArtifact()의 freshness를 요구한다.
-	private Optional<ItxArtifact> admissibleItxArtifact() {
-		return jdbcTemplate.query(
-			"""
-				SELECT h.snapshot_sha256, h.snapshot_id, h.fresh_until,
-					h.canonical_pack_sha256, h.canonical_pack_sqlite_sha256,
-					h.canonical_station_version, h.canonical_station_set_sha256,
-					h.source_lineage_sha256, h.evidence_hash
-				FROM timetable_snapshot_active a
-				JOIN timetable_snapshot_history h ON h.snapshot_sha256 = a.snapshot_sha256
-				JOIN route_service_artifact_evidence e
-					ON e.service_class = 'ITX_CHEONGCHUN'
-					AND e.timetable_artifact_id = h.source_artifact_id
-					AND e.timetable_artifact_sha256 = h.source_artifact_sha256
-					AND e.canonical_pack_id = 'capital'
-					AND e.canonical_pack_sha256 = h.canonical_pack_sha256
-					AND e.canonical_pack_sqlite_sha256 = h.canonical_pack_sqlite_sha256
-					AND e.fresh_until = h.fresh_until
-					AND e.admission_status = 'ADMITTED'
-					AND e.admission_eligible = TRUE
-					AND e.source_issue = 2135
-				WHERE a.singleton_id = 1
-					AND h.schema_identity = 'backend-timetable-snapshot-v1'
-					AND EXISTS (
-						SELECT 1 FROM transit_trips t
-						WHERE t.service_class = 'ITX_CHEONGCHUN'
-							AND EXISTS (SELECT 1 FROM transit_stop_times s WHERE s.trip_id = t.id)
-					)
-				""",
-			(resultSet, rowNumber) -> new ItxArtifact(
-				resultSet.getString("snapshot_sha256"),
-				resultSet.getString("snapshot_id"),
-				resultSet.getString("fresh_until"),
-				new PlannerIdentity(
-					resultSet.getString("snapshot_sha256"),
-					resultSet.getString("canonical_pack_sha256"),
-					resultSet.getString("canonical_pack_sqlite_sha256"),
-					resultSet.getString("canonical_station_version"),
-					resultSet.getString("canonical_station_set_sha256"),
-					resultSet.getString("source_lineage_sha256"),
-					resultSet.getString("evidence_hash")
-				)
-			)
-		).stream().findFirst();
+		this.jdbcTemplate = new JdbcTemplate(dataSource);
 	}
 
 	@Override
@@ -380,34 +230,6 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 		);
 	}
 
-	private Optional<OffsetDateTime> freshOffsetDateTime(String value) {
-		if (value == null || value.isBlank()) {
-			return Optional.empty();
-		}
-		try {
-			OffsetDateTime parsed = OffsetDateTime.parse(value);
-			return parsed.toInstant().isAfter(clock.instant()) ? Optional.of(parsed) : Optional.empty();
-		} catch (DateTimeParseException exception) {
-			return Optional.empty();
-		}
-	}
-
-	private record ItxArtifact(
-		String snapshotSha256,
-		String snapshotId,
-		String freshUntil,
-		PlannerIdentity plannerIdentity
-	) {
-	}
-
-	record StationTimetableCache(String cacheKey, RouteTimetableSnapshot snapshot) {
-	}
-
-	private static String cacheKey(ItxArtifact artifact) {
-		return artifact.snapshotSha256()
-			+ artifact.plannerIdentity().canonicalPackSha256()
-			+ artifact.freshUntil();
-	}
 	private LocalDate loadFeedEndDate() {
 		List<LocalDate> rows = jdbcTemplate.query(
 			"SELECT feed_end_date FROM transit_feed_info LIMIT 1",

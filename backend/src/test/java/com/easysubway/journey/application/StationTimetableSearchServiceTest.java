@@ -10,12 +10,11 @@ import com.easysubway.journey.application.StationTimetableSearchService.Failure;
 import com.easysubway.journey.application.StationTimetableSearchService.FailureException;
 import com.easysubway.journey.application.StationTimetableSearchService.SearchRequest;
 import com.easysubway.journey.application.StationTimetableSearchService.Selector;
-import com.easysubway.route.application.model.PlannerIdentity;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.journey.application.StationTimetableSearchService.SourceIdentity;
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationTimetableSnapshot;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetableSnapshot;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendarDate;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency;
@@ -29,6 +28,7 @@ import java.time.ZoneOffset;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class StationTimetableSearchServiceTest {
@@ -58,10 +58,93 @@ class StationTimetableSearchServiceTest {
 			new ServiceCalendar("added", false, false, false, false, false, false, true,
 				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
 			List.of(new ServiceCalendarDate("weekday", LocalDate.parse("2026-08-25"), 2),
-				new ServiceCalendarDate("added", LocalDate.parse("2026-08-25"), 1)), List.of(), List.of());
+				new ServiceCalendarDate("added", LocalDate.parse("2026-08-25"), 1)), List.of(),
+			List.of(new TransitTrip("holiday-trip", "route", "added", "headsign", "0", "SUBWAY", "LOCAL", null, 0)));
 		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
 			LocalDate.parse("2026-08-25"))));
 		assertThat(result.resolvedDayType()).isEqualTo(DayType.SUNDAY_HOLIDAY);
+	}
+
+	@Test
+	void weekdayHolidayServedByAWeekendHolidayCalendarResolvesSundayHolidayAndItsTrips() {
+		// #476: 서버 경로 번들은 토요일 시간표가 없는 기관의 휴일 시간표를 토·일 운행 달력으로 싣고, 평일 공휴일에는
+		// 평일 달력을 빼고(2) 그 달력을 더한다(1). 2026-10-09(금, 한글날)가 실제 seq126 번들의 이 형태다.
+		RouteTimetable timetable = timetable(List.of(
+			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("weekend-holiday", false, false, false, false, false, true, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(new ServiceCalendarDate("weekday", LocalDate.parse("2026-10-09"), 2),
+				new ServiceCalendarDate("weekend-holiday", LocalDate.parse("2026-10-09"), 1)), List.of(),
+			List.of(new TransitTrip("holiday-trip", "route", "weekend-holiday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0)));
+
+		var result = service(snapshot(timetable, Instant.parse("2026-10-10T00:00:00Z"))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-10-09"))));
+
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.SUNDAY_HOLIDAY);
+		assertThat(result.directionGroups()).singleElement().satisfies(group -> assertThat(group.departures())
+			.extracting(StationTimetableSearchService.Departure::servicePattern).containsExactly("EXPRESS"));
+	}
+
+	@Test
+	void saturdayHolidayResolvesSundayHolidayFromTheBundleExceptions() {
+		// 2026-10-03(토, 개천절): 토요일 달력을 빼고 일요일·공휴일 달력을 더한다(명절·공휴일 우선).
+		RouteTimetable timetable = timetable(List.of(
+			new ServiceCalendar("saturday", false, false, false, false, false, true, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("sunday-holiday", false, false, false, false, false, false, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(new ServiceCalendarDate("saturday", LocalDate.parse("2026-10-03"), 2),
+				new ServiceCalendarDate("sunday-holiday", LocalDate.parse("2026-10-03"), 1)), List.of(),
+			List.of(new TransitTrip("holiday-trip", "route", "sunday-holiday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0),
+				new TransitTrip("saturday-trip", "route", "saturday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0)));
+
+		var result = service(snapshot(timetable, Instant.parse("2026-10-10T00:00:00Z"))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-10-03"))));
+
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.SUNDAY_HOLIDAY);
+		assertThat(result.directionGroups()).singleElement().satisfies(group -> assertThat(group.departures())
+			.extracting(StationTimetableSearchService.Departure::servicePattern).containsExactly("EXPRESS"));
+	}
+
+	@Test
+	void saturdayOnAnAgencyWithoutSaturdayTimetableServesItsWeekendHolidayCalendar() {
+		RouteTimetable timetable = timetable(List.of(
+			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("weekend-holiday", false, false, false, false, false, true, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(), List.of(),
+			List.of(new TransitTrip("holiday-trip", "route", "weekend-holiday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0)));
+
+		var result = service(snapshot(timetable, Instant.parse("2026-10-10T00:00:00Z"))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-10-10"))));
+
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.SATURDAY);
+		assertThat(result.directionGroups()).singleElement().satisfies(group -> assertThat(group.departures())
+			.extracting(StationTimetableSearchService.Departure::servicePattern).containsExactly("EXPRESS"));
+	}
+
+	@Test
+	void dayTypeIgnoresCalendarExceptionsOfServicesThatDoNotServeTheStationLine() {
+		// 전국 번들에는 여러 기관의 달력이 함께 있다. 요청 역·노선을 지나는 열차의 달력만 요일 판정에 쓴다.
+		RouteTimetable timetable = timetable(List.of(
+			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-saturday", false, false, false, false, false, true, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-holiday", false, false, false, false, false, true, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(new ServiceCalendarDate("other-weekday", LocalDate.parse("2026-08-25"), 2),
+				new ServiceCalendarDate("other-saturday", LocalDate.parse("2026-08-25"), 1),
+				new ServiceCalendarDate("other-holiday", LocalDate.parse("2026-08-25"), 1)), List.of(), List.of());
+
+		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-25"))));
+
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.WEEKDAY);
 	}
 
 	@Test
@@ -117,7 +200,7 @@ class StationTimetableSearchServiceTest {
 		RouteTimetable timetable = new RouteTimetable(List.of(calendar()), List.of(),
 			List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			List.of(), List.of(), List.of(), List.of(), null,
-			new RouteAccessData(List.of(new PathwayNode("platform", "station", "line", "PLATFORM")), List.of(), List.of(), List.of()));
+			RouteAccessData.empty());
 		assertThatThrownBy(() -> service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
 			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24")))))
 			.isInstanceOf(FailureException.class)
@@ -214,31 +297,30 @@ class StationTimetableSearchServiceTest {
 
 	@Test
 	void failsClosedForLoaderNullSnapshotIdentityAndFreshnessStates() {
-		LoadRouteTimetablePort throwing = new LoadRouteTimetablePort() {
-			@Override public RouteTimetable loadRouteTimetable() { return timetable(); }
-			@Override public RouteTimetableSnapshot loadStationTimetableSnapshot() { throw new IllegalStateException("unavailable"); }
-		};
-		LoadRouteTimetablePort nullSnapshot = new LoadRouteTimetablePort() {
-			@Override public RouteTimetable loadRouteTimetable() { return timetable(); }
-			@Override public RouteTimetableSnapshot loadStationTimetableSnapshot() { return null; }
-		};
-		assertFailure(service(throwing), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_UNAVAILABLE);
-		assertFailure(service(nullSnapshot), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_UNAVAILABLE);
-		assertFailure(service(new RouteTimetableSnapshot("cache", null, null, null, timetable())), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_UNAVAILABLE);
-		assertFailure(service(new RouteTimetableSnapshot("cache", "artifact", null, null, timetable())), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
-		assertFailure(service(new RouteTimetableSnapshot("cache", null, snapshot(timetable(), NOW.plusSeconds(60)).plannerIdentity(), null, timetable())), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
-		assertFailure(service(new RouteTimetableSnapshot("cache", null, null, NOW.plusSeconds(60), timetable())), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
-		assertFailure(service(new RouteTimetableSnapshot("cache", "artifact", null, NOW.plusSeconds(60), timetable())), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
-		assertFailure(service(snapshot(timetable(), NOW)), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_STALE);
+		SearchRequest request = request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24")));
+		assertFailure(service(() -> { throw new IllegalStateException("unavailable"); }), request, Failure.TIMETABLE_UNAVAILABLE);
+		assertFailure(service(() -> null), request, Failure.TIMETABLE_UNAVAILABLE);
+		// #476: 활성 번들이 없거나 만료되면 어댑터가 낸 명시적 실패를 그대로 드러낸다.
+		for (Failure failure : List.of(Failure.TIMETABLE_UNAVAILABLE, Failure.TIMETABLE_STALE)) {
+			assertFailure(service(() -> { throw new FailureException(failure); }), request, failure);
+		}
+		assertFailure(service(() -> { throw new FailureException(Failure.STATION_LINE_NOT_FOUND); }), request,
+			Failure.TIMETABLE_UNAVAILABLE);
+		assertFailure(service(new StationTimetableSnapshot(identity(NOW.plusSeconds(60)), null, canonical())), request,
+			Failure.TIMETABLE_UNAVAILABLE);
+		assertFailure(service(new StationTimetableSnapshot(null, timetable(), canonical())), request,
+			Failure.TIMETABLE_IDENTITY_MISMATCH);
+		assertFailure(service(snapshot(timetable(), null)), request, Failure.TIMETABLE_IDENTITY_MISMATCH);
+		assertFailure(service(new StationTimetableSnapshot(identity(NOW.plusSeconds(60)), timetable(), null)), request,
+			Failure.TIMETABLE_IDENTITY_MISMATCH);
+		assertFailure(service(snapshot(timetable(), NOW)), request, Failure.TIMETABLE_STALE);
 	}
 
 	@Test
 	void rejectsMissingStationDuplicateIdsAndInvalidRouteReferences() {
 		RouteTimetable base = timetable();
-		RouteTimetable missingStation = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(),
-			base.transitTrips(), base.transitStopTimes(), base.transitFrequencies(), base.officialFares(), base.feedEndDate(),
-			new RouteAccessData(List.of(new PathwayNode("other", "other", "line", "PLATFORM")), List.of(), List.of(), List.of()));
-		assertFailure(service(snapshot(missingStation, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.STATION_LINE_NOT_FOUND);
+		assertFailure(service(snapshot(base, NOW.plusSeconds(60), Set.of(new StationLine("other", "line")))),
+			request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.STATION_LINE_NOT_FOUND);
 		RouteTimetable duplicateTrip = timetable(List.of(calendar()), List.of(), List.of(), List.of(
 			new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)));
 		assertFailure(service(snapshot(duplicateTrip, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
@@ -295,10 +377,11 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
-	void invalidPlannerIdentityRequestAndNextBoundsAreRejected() {
+	void invalidSourceIdentityRequestAndNextBoundsAreRejected() {
 		RouteTimetable base = timetable();
-		PlannerIdentity invalid = new PlannerIdentity("bad", "b".repeat(64), "c".repeat(64), "version", "d".repeat(64), "e".repeat(64), "f".repeat(64));
-		assertFailure(service(new RouteTimetableSnapshot("cache", "artifact", invalid, NOW.plusSeconds(60), base)),
+		SourceIdentity invalid = new SourceIdentity("artifact", "bad", "version", "d".repeat(64), "e".repeat(64), "f".repeat(64),
+			NOW.plusSeconds(60));
+		assertFailure(service(new StationTimetableSnapshot(invalid, base, canonical())),
 			request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
 		for (String[] ids : List.of(new String[]{" ", "line"}, new String[]{"station", " "})) {
 			assertThatThrownBy(() -> new SearchRequest(ids[0], ids[1], new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))))
@@ -314,21 +397,18 @@ class StationTimetableSearchServiceTest {
 	@Test
 	void coversSnapshotAndSourceIdentityComponentBranches() {
 		RouteTimetable base = timetable();
-		assertFailure(service(new RouteTimetableSnapshot("cache", "artifact", snapshot(base, NOW.plusSeconds(60)).plannerIdentity(), NOW.plusSeconds(60), null)),
-			request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_UNAVAILABLE);
-		PlannerIdentity valid = snapshot(base, NOW.plusSeconds(60)).plannerIdentity();
-		for (PlannerIdentity identity : List.of(
-			new PlannerIdentity(null, valid.canonicalPackSha256(), valid.canonicalPackSqliteSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash()),
-			new PlannerIdentity("A".repeat(64), valid.canonicalPackSha256(), valid.canonicalPackSqliteSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash()),
-			new PlannerIdentity(valid.timetableSnapshotSha256(), valid.canonicalPackSha256(), valid.canonicalPackSqliteSha256(), " ", valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash()),
-			new PlannerIdentity(valid.timetableSnapshotSha256(), valid.canonicalPackSha256(), valid.canonicalPackSqliteSha256(), valid.canonicalStationVersion(), "bad", valid.sourceLineageSha256(), valid.evidenceHash()),
-			new PlannerIdentity(valid.timetableSnapshotSha256(), valid.canonicalPackSha256(), valid.canonicalPackSqliteSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), "bad", valid.evidenceHash()),
-			new PlannerIdentity(valid.timetableSnapshotSha256(), valid.canonicalPackSha256(), valid.canonicalPackSqliteSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), "bad"))) {
-			assertFailure(service(new RouteTimetableSnapshot("cache", "artifact", identity, NOW.plusSeconds(60), base)),
+		SourceIdentity valid = identity(NOW.plusSeconds(60));
+		for (SourceIdentity identity : List.of(
+			new SourceIdentity(valid.timetableArtifactId(), null, valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash(), valid.freshUntil()),
+			new SourceIdentity(valid.timetableArtifactId(), "A".repeat(64), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash(), valid.freshUntil()),
+			new SourceIdentity(valid.timetableArtifactId(), valid.timetableSnapshotSha256(), " ", valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash(), valid.freshUntil()),
+			new SourceIdentity(valid.timetableArtifactId(), valid.timetableSnapshotSha256(), valid.canonicalStationVersion(), "bad", valid.sourceLineageSha256(), valid.evidenceHash(), valid.freshUntil()),
+			new SourceIdentity(valid.timetableArtifactId(), valid.timetableSnapshotSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), "bad", valid.evidenceHash(), valid.freshUntil()),
+			new SourceIdentity(valid.timetableArtifactId(), valid.timetableSnapshotSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), "bad", valid.freshUntil()),
+			new SourceIdentity(" ", valid.timetableSnapshotSha256(), valid.canonicalStationVersion(), valid.canonicalStationSetSha256(), valid.sourceLineageSha256(), valid.evidenceHash(), valid.freshUntil()))) {
+			assertFailure(service(new StationTimetableSnapshot(identity, base, canonical())),
 				request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
 		}
-		assertFailure(service(new RouteTimetableSnapshot("cache", " ", valid, NOW.plusSeconds(60), base)),
-			request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
 	}
 
 	@Test
@@ -355,10 +435,8 @@ class StationTimetableSearchServiceTest {
 			base.transitFrequencies(), base.officialFares(), base.feedEndDate(), base.routeAccessData());
 		assertThat(service(snapshot(mixedStops, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))))
 			.directionGroups()).isNotEmpty();
-		RouteTimetable lineMismatchNode = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(), base.transitTrips(),
-			base.transitStopTimes(), base.transitFrequencies(), base.officialFares(), base.feedEndDate(),
-			new RouteAccessData(List.of(new PathwayNode("platform", "station", "other", "PLATFORM")), List.of(), List.of(), List.of()));
-		assertFailure(service(snapshot(lineMismatchNode, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.STATION_LINE_NOT_FOUND);
+		assertFailure(service(snapshot(base, NOW.plusSeconds(60), Set.of(new StationLine("station", "other")))),
+			request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.STATION_LINE_NOT_FOUND);
 		RouteTimetable nullDirection = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(),
 			List.of(new TransitRoute("route", "line", "L", "line", null, "Asia/Seoul")), base.transitTrips(), base.transitStopTimes(),
 			base.transitFrequencies(), base.officialFares(), base.feedEndDate(), base.routeAccessData());
@@ -388,6 +466,10 @@ class StationTimetableSearchServiceTest {
 		assertThat(invokeStatic("calendarSignature", new Class<?>[]{ServiceCalendar.class}, calendarPattern(31))).isEqualTo(DayType.WEEKDAY);
 		assertThat(invokeStatic("calendarSignature", new Class<?>[]{ServiceCalendar.class}, calendarPattern(32))).isEqualTo(DayType.SATURDAY);
 		assertThat(invokeStatic("calendarSignature", new Class<?>[]{ServiceCalendar.class}, calendarPattern(64))).isEqualTo(DayType.SUNDAY_HOLIDAY);
+		// #476: 토요일 시간표가 없는 기관의 휴일 시간표(토·일 운행)는 휴일 서명이다.
+		assertThat(invokeStatic("calendarSignature", new Class<?>[]{ServiceCalendar.class}, calendarPattern(96))).isEqualTo(DayType.SUNDAY_HOLIDAY);
+		assertThat(invokeStatic("calendarSignature", new Class<?>[]{ServiceCalendar.class}, calendarPattern(127))).isNull();
+		assertThat(invokeStatic("calendarSignature", new Class<?>[]{ServiceCalendar.class}, calendarPattern(0))).isNull();
 		for (java.time.DayOfWeek day : java.time.DayOfWeek.values()) {
 			assertThat((Boolean) invokeStatic("runsOn", new Class<?>[]{ServiceCalendar.class, java.time.DayOfWeek.class}, calendar(), day)).isTrue();
 		}
@@ -527,14 +609,10 @@ class StationTimetableSearchServiceTest {
 		assertFailure(service(snapshot(removalOnly, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
 	}
 
-	private static StationTimetableSearchService service(RouteTimetableSnapshot snapshot) {
-		LoadRouteTimetablePort port = new LoadRouteTimetablePort() {
-			@Override public RouteTimetable loadRouteTimetable() { return snapshot.timetable(); }
-			@Override public RouteTimetableSnapshot loadStationTimetableSnapshot() { return snapshot; }
-		};
-		return new StationTimetableSearchService(port, Clock.fixed(NOW, ZoneOffset.UTC));
+	private static StationTimetableSearchService service(StationTimetableSnapshot snapshot) {
+		return service(() -> snapshot);
 	}
-	private static StationTimetableSearchService service(LoadRouteTimetablePort port) {
+	private static StationTimetableSearchService service(StationTimetableSnapshotPort port) {
 		return new StationTimetableSearchService(port, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 	private static void assertFailure(StationTimetableSearchService service, SearchRequest request, Failure expected) {
@@ -555,10 +633,17 @@ class StationTimetableSearchServiceTest {
 		}
 	}
 
-	private static RouteTimetableSnapshot snapshot(RouteTimetable timetable, Instant freshUntil) {
-		return new RouteTimetableSnapshot("cache", "artifact", new PlannerIdentity("a".repeat(64), "b".repeat(64), "c".repeat(64),
-			"sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64), "f".repeat(64)), freshUntil, timetable);
+	private static StationTimetableSnapshot snapshot(RouteTimetable timetable, Instant freshUntil) {
+		return snapshot(timetable, freshUntil, canonical());
 	}
+	private static StationTimetableSnapshot snapshot(RouteTimetable timetable, Instant freshUntil, Set<StationLine> canonical) {
+		return new StationTimetableSnapshot(identity(freshUntil), timetable, canonical);
+	}
+	private static SourceIdentity identity(Instant freshUntil) {
+		return new SourceIdentity("artifact", "a".repeat(64), "sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64),
+			"f".repeat(64), freshUntil);
+	}
+	private static Set<StationLine> canonical() { return Set.of(new StationLine("station", "line")); }
 
 	private static SearchRequest request(Selector selector) { return new SearchRequest("station", "line", selector); }
 	private static ServiceCalendar calendar() {
@@ -570,7 +655,7 @@ class StationTimetableSearchServiceTest {
 			List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			List.of(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
 			List.of(stop), List.of(frequency), List.of(), null,
-			new RouteAccessData(List.of(new PathwayNode("platform", "station", "line", "PLATFORM")), List.of(), List.of(), List.of()));
+			RouteAccessData.empty());
 	}
 	private static void stubCorruptedStop(TransitStopTime stop) {
 		when(stop.tripId()).thenReturn("trip");
@@ -596,6 +681,6 @@ class StationTimetableSearchServiceTest {
 		for (TransitTrip trip : trips) stops.add(new TransitStopTime(trip.id(), 1, "station", "line", 32_400, 32_400, 0, 0));
 		return new RouteTimetable(calendars, dates, List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			trips, stops, frequencies, List.of(), null,
-			new RouteAccessData(List.of(new PathwayNode("platform", "station", "line", "PLATFORM")), List.of(), List.of(), List.of()));
+			RouteAccessData.empty());
 	}
 }
