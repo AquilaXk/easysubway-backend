@@ -22,7 +22,36 @@ class JourneyFrontierPolicyV1Test {
 	@Test
 	void publishesTheFixedPolicyIdentity() {
 		assertThat(JourneyFrontierPolicyV1.identity())
-			.isEqualTo(new JourneyFrontierPolicyV1.Identity("FRONTIER_POLICY_V1", "1.0.0"));
+			.isEqualTo(new JourneyFrontierPolicyV1.Identity("FRONTIER_POLICY_V1", "1.1.0"));
+	}
+
+	@Test
+	void safestConnectionCreditsTransferSlackOnlyUpToTenMinutesAndThenPrefersEarlierArrival() {
+		// #469 R4: 25분 대기(늦은 도착)와 11분 대기(이른 도착)는 둘 다 10분 상한이라 같은 안전도이고, 더 이른 도착이 대표다.
+		FeasibleCandidate longWait = candidate("a-long-wait", 20, 3_000, 1, 100, 100, 0, 1_500);
+		FeasibleCandidate calm = candidate("b-calm", 20, 2_000, 1, 100, 100, 0, 660);
+		FeasibleCandidate tight = candidate("c-tight", 20, 1_500, 1, 100, 100, 0, 300);
+
+		var outcome = JourneyFrontierPolicyV1.evaluate(List.of(longWait, calm, tight),
+			EnumSet.of(ObjectiveTag.SAFEST_CONNECTION), 1);
+
+		var success = (JourneyFrontierPolicyV1.Success) outcome;
+		assertThat(success.labels()).singleElement().satisfies(label ->
+			assertThat(label.candidate().journeyId()).isEqualTo("b-calm"));
+	}
+
+	@Test
+	void safestConnectionStillRanksSlackBelowTheCapByItsFullValue() {
+		FeasibleCandidate nineMinutes = candidate("a-nine", 20, 3_000, 1, 100, 100, 0, 540);
+		FeasibleCandidate fiveMinutes = candidate("b-five", 20, 2_000, 1, 100, 100, 0, 300);
+
+		var outcome = JourneyFrontierPolicyV1.evaluate(List.of(fiveMinutes, nineMinutes),
+			EnumSet.of(ObjectiveTag.SAFEST_CONNECTION), 1);
+
+		var success = (JourneyFrontierPolicyV1.Success) outcome;
+		assertThat(success.labels()).singleElement().satisfies(label ->
+			assertThat(label.candidate().journeyId()).isEqualTo("a-nine"));
+		assertThat(JourneyFrontierPolicyV1.SAFEST_CONNECTION_SLACK_CREDIT_CAP_SECONDS).isEqualTo(600);
 	}
 
 	@Test

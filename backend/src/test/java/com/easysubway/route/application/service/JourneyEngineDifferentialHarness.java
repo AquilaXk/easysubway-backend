@@ -32,11 +32,10 @@ import java.util.TreeSet;
  *   집합의 라벨 벡터 집합과 같아야 한다. 엔진의 각 여정 trace는 같은 벡터를 가진 기준 해 후보 trace 중 하나와 같아야
  *   하고(벡터가 같은 여러 경로 중 하나만 남기는 canonical trace 규칙을 허용), 엔진 결과 안에 같은 trace가 두 번
  *   나오면 안 된다.</li>
- *   <li>출발 시각 고정(DepartAt): point 탐색은 계약상 (도착 시각, 환승 수) 파레토만 보존하고, 무단차 선호 프로필에서는
- *   계단 경고 유무를 차원으로 더한다. 그래서 기준 해 파레토 집합을 그 키로 사영한 파레토 집합과 엔진 결과 키 집합이
- *   같아야 한다. 결과 상한({@code max(alternativeCount, maxTransfers + 1)})을 넘으면 문서화된 절단 순서
- *   ({@link #truncate})로 고른 키 집합과 정확히 같아야 한다. 엔진의 각 여정은 원시 승차·환승 사실로 실행 가능해야
- *   하고 지표가 다시 계산한 값과 같아야 한다.</li>
+ *   <li>출발 시각 고정(DepartAt): point 탐색은 계약상 (도착 시각, 환승 수) 파레토를 보존하고, 엄격 무단차가 아닌 모든
+ *   프로필에서는 계단 경고 유무를 차원으로 더한다(#469). 그래서 기준 해 파레토 집합을 그 키로 사영한 파레토 집합에서
+ *   문서화된 결과 구성 규칙({@link #compose})으로 고른 키 집합과 엔진 결과 키 집합이 정확히 같아야 한다. 엔진의 각
+ *   여정은 원시 승차·환승 사실로 실행 가능해야 하고 지표가 다시 계산한 값과 같아야 한다.</li>
  * </ul>
  *
  * <h2>기준 해 입력은 엔진을 거치지 않는다</h2>
@@ -47,7 +46,8 @@ import java.util.TreeSet;
  *   <li>보행 프로필별 승차 여유: 표준·계단 회피 60초, 느린 걸음 90초, 무단차 180초</li>
  *   <li>환승 동선 선택: (역, 출발 노선, 도착 노선)마다 이용 가능한 동선 하나를 쓴다. 무단차 선호는 계단 없는 동선을
  *   먼저, 그다음 짧은 거리를 고르고, 거리가 같으면 실측 시간이 짧은 동선, 그다음 계단 없는 동선이다.
- *   point 탐색의 무단차 선호만 경고가 다른 대안 동선을 함께 본다.</li>
+ *   point 탐색은 엄격 무단차가 아니면 계단 여부가 다른 대안 동선을 함께 본다(#469). 그래서 기준 해에는 이용 가능한
+ *   모든 동선을 준다.</li>
  *   <li>대안 창({@link JourneyProfileExactOracle#ALTERNATIVE_WINDOW_SECONDS}, 30분, #461): 출발 시간대의 각 시점은
  *   가장 이른 도착 + 창 안, 도착 희망·막차는 가장 늦은 준비 시각 - 창 안의 여정만 파레토 집합에 넣는다.
  *   DepartAt은 창이 없다.</li>
@@ -88,6 +88,11 @@ final class JourneyEngineDifferentialHarness {
 			return profile == JourneyRequest.MobilityProfile.STEP_FREE && constraint == JourneyRequest.ConstraintMode.NONE;
 		}
 
+		/** 엄격 무단차가 아니면 계단 동선을 쓸 수 있어 계단 경고가 결과를 가르는 차원이 된다(#469). */
+		boolean allowsStairs() {
+			return constraint == JourneyRequest.ConstraintMode.NONE;
+		}
+
 		int boardingSlackSeconds() {
 			return switch (profile) {
 				case STANDARD, NO_STAIRS -> 60;
@@ -118,18 +123,20 @@ final class JourneyEngineDifferentialHarness {
 	 * 한 질의의 판정. {@code expectedLabels}는 기준 해가 요구한 비교 단위 수(DepartBetween은 모든 시점의 합),
 	 * {@code maxTransfersUsed}는 기준 해 결과의 최대 환승 수, {@code serviceDayCrossing}은 기준 해 결과에
 	 * 서비스일 날짜와 실제 달력 날짜가 다른(자정 이후) 승차가 있는지, {@code zeroSlack}은 기준 해 결과에 환승 여유가
-	 * 정확히 0초인 경계 연결이 있는지, {@code truncatedPointFront}는 point 파레토 집합이 결과 상한을 넘어 절단 순서를
-	 * 비교했는지다.
+	 * 정확히 0초인 경계 연결이 있는지, {@code truncatedPointFront}는 point 파레토 집합이 {@code alternativeCount}를 넘어
+	 * 결과 구성 규칙으로 골랐는지, {@code stairFreeAlternative}는 계단 경고 차원 덕분에만 남은 계단 없는 point 키가
+	 * 기준 해 파레토 집합에 있었는지(#469)다.
 	 */
 	record Verdict(
 		Case testCase, String mismatch, int expectedLabels, int actualLabels, int maxTransfersUsed,
-		boolean serviceDayCrossing, int extraEnginePoints, boolean zeroSlack, boolean truncatedPointFront
+		boolean serviceDayCrossing, int extraEnginePoints, boolean zeroSlack, boolean truncatedPointFront,
+		boolean stairFreeAlternative
 	) {
 		boolean matched() { return mismatch == null; }
 
-		Verdict withTruncatedPointFront() {
+		Verdict withPointFront(boolean truncated, boolean stairFree) {
 			return new Verdict(testCase, mismatch, expectedLabels, actualLabels, maxTransfersUsed, serviceDayCrossing,
-				extraEnginePoints, zeroSlack, true);
+				extraEnginePoints, zeroSlack, truncated, stairFree);
 		}
 	}
 
@@ -164,7 +171,7 @@ final class JourneyEngineDifferentialHarness {
 		} catch (EngineFailure failure) {
 			Throwable cause = failure.getCause();
 			return new Verdict(testCase, "engine threw " + cause.getClass().getSimpleName() + ": " + cause.getMessage(),
-				0, 0, -1, false, 0, false, false);
+				0, 0, -1, false, 0, false, false, false);
 		}
 	}
 
@@ -192,8 +199,8 @@ final class JourneyEngineDifferentialHarness {
 		LocalDate serviceDate = ServiceDayResolver.resolve(readyAt).serviceDate();
 		List<JourneyProfileExactOracle.Ride> rides = rides(source, List.of(serviceDate));
 		List<JourneyProfileExactOracle.Access> usable = usable(accesses(source, query));
-		// point 탐색은 무단차 선호일 때만 경고가 다른 대안 동선을 함께 본다. 그 밖에는 선택된 동선 하나다.
-		List<JourneyProfileExactOracle.Access> accesses = mobility.prefersStepFree() ? usable : canonical(usable, false);
+		// point 탐색은 엄격 무단차가 아니면 계단 여부가 다른 대안 동선을 함께 본다(#469). 엄격 무단차는 선택된 동선 하나다.
+		List<JourneyProfileExactOracle.Access> accesses = mobility.allowsStairs() ? usable : canonical(usable, false);
 		Instant deadline = terminal(query.destinationStationId(), rides);
 		List<JourneyProfileExactOracle.Candidate> expected = deadline == null || !deadline.isAfter(readyAt) ? List.of()
 			: new JourneyProfileExactOracle().solvePoint(oracleQuery(query, readyAt, deadline),
@@ -208,18 +215,21 @@ final class JourneyEngineDifferentialHarness {
 			String unsound = unsound(itinerary, rides, accesses, readyAt, deadline, mobility.boardingSlackSeconds());
 			if (unsound != null) problems.add("infeasible engine itinerary: " + unsound + " " + vector(itinerary));
 		}
-		boolean warningDimension = mobility.prefersStepFree();
+		boolean warningDimension = mobility.allowsStairs();
 		List<long[]> front = pointFront(expected, warningDimension);
 		List<String> actualKeys = actual.stream().map(itinerary -> pointKey(itinerary, warningDimension)).toList();
-		int limit = Math.max(query.alternativeCount(), query.maxTransfers() + 1);
+		int limit = query.alternativeCount();
+		if (actual.size() > limit) problems.add("engine returned " + actual.size() + " journeys over alternativeCount " + limit);
 		if (new TreeSet<>(actualKeys).size() != actualKeys.size()) problems.add("duplicate engine key " + actualKeys);
-		TreeSet<String> selected = keys(truncate(front, limit, warningDimension));
+		TreeSet<String> selected = keys(compose(front, limit, mobility.prefersStepFree()));
 		if (!selected.equals(new TreeSet<>(actualKeys))) {
-			problems.add((front.size() > limit ? "truncated point front differs: full front " + keys(front) + ", " : "point front differs: ")
+			problems.add((front.size() > limit ? "composed point front differs: full front " + keys(front) + ", " : "point front differs: ")
 				+ "expected " + selected + " actual " + new TreeSet<>(actualKeys));
 		}
-		Verdict verdict = verdict(testCase, problems, front.size(), actual.size(), expected);
-		return front.size() > limit ? verdict.withTruncatedPointFront() : verdict;
+		// 계단 경고 차원이 없었다면 지배되었을 계단 없는 키가 있는지(새 차원이 실제로 결과를 바꾼 질의).
+		boolean stairFreeAlternative = warningDimension && front.size() > pointFront(expected, false).size();
+		return verdict(testCase, problems, front.size(), actual.size(), expected)
+			.withPointFront(front.size() > limit, stairFreeAlternative);
 	}
 
 	/** point 결과의 (도착, 승차 수[, 계단 경고]) 파레토 키. 같은 키는 하나만 남긴다. */
@@ -245,28 +255,39 @@ final class JourneyEngineDifferentialHarness {
 	}
 
 	/**
-	 * 제품 계약: point 결과 상한({@code max(alternativeCount, maxTransfers + 1)}) 절단 순서.
-	 * (1) 도착 시각, 다음 승차 수 순으로 앞에서 상한만큼 남긴다. (2) 무단차 선호면 (계단 경고 없음, 도착, 승차 수)
-	 * 순으로 가장 앞선 라벨이 남지 않았을 때, 맨 앞(가장 이른 도착)을 뺀 자리 중 승차 수가 겹치는 가장 뒤 자리를
-	 * 그 라벨로 바꾼다. 바꿀 자리가 없으면 그대로 둔다. 파레토 집합 안에서는 (도착, 승차 수)가 같은 두 키가
-	 * 없으므로(계단 경고만 다르면 경고 없는 쪽이 지배) 이 순서는 결정적이다.
+	 * 제품 계약(#469): point 결과 구성. 파레토 키 집합에서 최대 {@code alternativeCount}개를 고른다.
+	 * <ol>
+	 *   <li>묶음 대표: 빠른 경로 = (도착, 승차 수, 계단) 최소, 환승 적은 경로 = (승차 수, 도착, 계단) 최소,
+	 *   계단 없는 경로 = 계단 경고가 없는 키 중 (도착, 승차 수) 최소(없으면 비움).</li>
+	 *   <li>순서: 빠른 → 환승 적은 → 계단 없는. 무단차 선호는 빠른 → 계단 없는 → 환승 적은. 이미 고른 키는 건너뛴다.</li>
+	 *   <li>남는 자리는 나머지 키를 (도착, 승차 수, 계단) 순으로 채운다.</li>
+	 * </ol>
+	 * 결과는 (도착, 승차 수, 계단) 순이다. 파레토 집합 안에서는 (도착, 승차 수)가 같은 두 키가 없으므로(계단 경고만
+	 * 다르면 경고 없는 쪽이 지배) 이 규칙은 결정적이다.
 	 */
-	static List<long[]> truncate(List<long[]> front, int limit, boolean prefersStepFree) {
-		List<long[]> ordered = new ArrayList<>(front);
-		ordered.sort(Comparator.<long[]>comparingLong(key -> key[0]).thenComparingLong(key -> key[1]));
-		if (ordered.size() <= limit) return ordered;
-		List<long[]> kept = new ArrayList<>(ordered.subList(0, limit));
-		if (!prefersStepFree) return kept;
-		long[] preferred = ordered.stream().min(Comparator.<long[]>comparingLong(key -> key[2])
-			.thenComparingLong(key -> key[0]).thenComparingLong(key -> key[1])).orElseThrow();
-		if (kept.contains(preferred)) return kept;
-		for (int index = kept.size() - 1; index >= 1; index -= 1) {
-			long boardings = kept.get(index)[1];
-			if (kept.stream().filter(key -> key[1] == boardings).count() > 1) {
-				kept.set(index, preferred);
-				break;
-			}
+	static List<long[]> compose(List<long[]> front, int alternativeCount, boolean prefersStepFree) {
+		Comparator<long[]> byArrival = Comparator.<long[]>comparingLong(key -> key[0])
+			.thenComparingLong(key -> key[1]).thenComparingLong(key -> key[2]);
+		Comparator<long[]> byTransfers = Comparator.<long[]>comparingLong(key -> key[1])
+			.thenComparingLong(key -> key[0]).thenComparingLong(key -> key[2]);
+		long[] fastest = front.stream().min(byArrival).orElse(null);
+		long[] fewest = front.stream().min(byTransfers).orElse(null);
+		long[] stairFree = front.stream().filter(key -> key[2] == 0).min(byArrival).orElse(null);
+		List<long[]> categories = new ArrayList<>();
+		categories.add(fastest);
+		categories.add(prefersStepFree ? stairFree : fewest);
+		categories.add(prefersStepFree ? fewest : stairFree);
+		List<long[]> kept = new ArrayList<>();
+		for (long[] key : categories) {
+			if (key != null && kept.size() < alternativeCount && !kept.contains(key)) kept.add(key);
 		}
+		List<long[]> rest = new ArrayList<>(front);
+		rest.sort(byArrival);
+		for (long[] key : rest) {
+			if (kept.size() >= alternativeCount) break;
+			if (!kept.contains(key)) kept.add(key);
+		}
+		kept.sort(byArrival);
 		return kept;
 	}
 
@@ -418,7 +439,7 @@ final class JourneyEngineDifferentialHarness {
 		List<JourneyProfileExactOracle.Candidate> all = expectedByPoint.values().stream().flatMap(List::stream).toList();
 		Verdict verdict = verdict(testCase, problems, expectedLabels, actualLabels, all);
 		return new Verdict(testCase, verdict.mismatch(), verdict.expectedLabels(), verdict.actualLabels(),
-			verdict.maxTransfersUsed(), verdict.serviceDayCrossing(), extra, verdict.zeroSlack(), false);
+			verdict.maxTransfersUsed(), verdict.serviceDayCrossing(), extra, verdict.zeroSlack(), false, false);
 	}
 
 	private static List<JourneyProfileExactOracle.Candidate> solvePointOrEmpty(
@@ -472,7 +493,7 @@ final class JourneyEngineDifferentialHarness {
 		boolean zeroSlack = expected.stream().anyMatch(candidate -> candidate.minimumConnectionSlack()
 			instanceof JourneyProfileExactOracle.ConnectionSlack.MinimumTransferSeconds seconds && seconds.seconds() == 0);
 		return new Verdict(testCase, problems.isEmpty() ? null : String.join("\n    ", problems),
-			expectedLabels, actualLabels, maxTransfers, crossing, 0, zeroSlack, false);
+			expectedLabels, actualLabels, maxTransfers, crossing, 0, zeroSlack, false, false);
 	}
 
 	private static Verdict failClosed(Case testCase, List<JourneyProfileExactOracle.Candidate> expected) {
