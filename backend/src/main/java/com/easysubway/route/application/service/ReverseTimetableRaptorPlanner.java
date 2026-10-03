@@ -658,16 +658,15 @@ final class ReverseTimetableRaptorPlanner {
 				limits.count(JourneyRaptorPruningInventoryV1.PROFILE_TRANSFER_BUDGET);
 				return;
 			}
-			ReverseLabel label = new ReverseLabel(transfersUsed, station, line, departure, arrivalAtDestination,
+			ReverseLabel label = new ReverseLabel(new ReverseStateKey(transfersUsed, station, line,
+				trips.blockedGroup(patternTrips.trip(index).realtimeOverlay())), departure, arrivalAtDestination,
 				accessSeconds, accessMeters, stairs, slack, potential, ride, access, parent);
 			if (admit(label)) queue.add(new QueueEntry(potential, sequence++, null, label));
 		}
 
 		private boolean admit(ReverseLabel candidate) {
 			limits.consumeWork();
-			List<ReverseLabel> labels = labelsByState.computeIfAbsent(
-				new ReverseStateKey(candidate.transfersUsed(), candidate.station(), candidate.line()),
-				ignored -> new ArrayList<>(4));
+			List<ReverseLabel> labels = labelsByState.computeIfAbsent(candidate.stateKey(), ignored -> new ArrayList<>(4));
 			// 한 번 훑으며 (1) 창 시작이 올라 창 밖이 된 라벨을 비우고(창 안 라벨을 지배할 수 없음: 출발이 더 이름)
 			// (2) 후보를 지배하는 라벨이 있으면 거절하고 (3) 후보가 지배하는 라벨을 뺀다. 파레토 집합 안에서는 후보를
 			// 지배하는 라벨과 후보가 지배하는 라벨이 함께 있을 수 없으므로(추이성) 거절될 후보는 아무것도 빼지 않는다.
@@ -710,8 +709,7 @@ final class ReverseTimetableRaptorPlanner {
 		}
 
 		private boolean isCurrent(ReverseLabel label) {
-			List<ReverseLabel> labels = labelsByState.get(
-				new ReverseStateKey(label.transfersUsed(), label.station(), label.line()));
+			List<ReverseLabel> labels = labelsByState.get(label.stateKey());
 			if (labels == null) return false;
 			for (ReverseLabel existing : labels) {
 				if (existing == label) return true;
@@ -750,14 +748,17 @@ final class ReverseTimetableRaptorPlanner {
 	private record QueueEntry(long potential, long sequence, Seed seed, ReverseLabel label) {
 	}
 
-	private record ReverseStateKey(int transfersUsed, int station, int line) {
+	/**
+	 * 상태 키. {@code blockedGroup}은 라벨 승차 열차의 운행일 overlay가 막는 전환 집합의 번호다(같은 집합이면 같은 번호).
+	 * 앞쪽 환승 판정은 앞 승차와 이 열차의 overlay 합집합으로 하므로, 차단 집합이 같은 라벨끼리만 지배를 비교해야
+	 * 정확하다(#461 리뷰 F1).
+	 */
+	private record ReverseStateKey(int transfersUsed, int station, int line, int blockedGroup) {
 	}
 
 	/** 승차 하나부터 도착역까지의 뒷부분 여정. 같은 상태 안 비교는 객체 동일성으로 한다. */
 	private static final class ReverseLabel {
-		private final int transfersUsed;
-		private final int station;
-		private final int line;
+		private final ReverseStateKey stateKey;
 		private final int departure;
 		private final int arrivalAtDestination;
 		private final long accessSeconds;
@@ -771,13 +772,11 @@ final class ReverseTimetableRaptorPlanner {
 		private String traceKey;
 
 		private ReverseLabel(
-			int transfersUsed, int station, int line, int departure, int arrivalAtDestination,
+			ReverseStateKey stateKey, int departure, int arrivalAtDestination,
 			long accessSeconds, long accessMeters, long stairs, long slack, long potential,
 			TraceRide ride, TraceAccess access, ReverseLabel parent
 		) {
-			this.transfersUsed = transfersUsed;
-			this.station = station;
-			this.line = line;
+			this.stateKey = stateKey;
 			this.departure = departure;
 			this.arrivalAtDestination = arrivalAtDestination;
 			this.accessSeconds = accessSeconds;
@@ -790,9 +789,10 @@ final class ReverseTimetableRaptorPlanner {
 			this.parent = parent;
 		}
 
-		int transfersUsed() { return transfersUsed; }
-		int station() { return station; }
-		int line() { return line; }
+		ReverseStateKey stateKey() { return stateKey; }
+		int transfersUsed() { return stateKey.transfersUsed(); }
+		int station() { return stateKey.station(); }
+		int line() { return stateKey.line(); }
 		int departure() { return departure; }
 		int arrivalAtDestination() { return arrivalAtDestination; }
 		long accessSeconds() { return accessSeconds; }
@@ -1014,6 +1014,9 @@ final class ReverseTimetableRaptorPlanner {
 		private final LocalDate anchorServiceDate;
 		private final ReverseLimitTracker limits;
 		private final Map<Integer, ReversePatternTrips> byPattern = new HashMap<>();
+		private final Map<RouteTimetableRaptorPlanner.RealtimeOverlay, Integer> groupByOverlay =
+			new java.util.IdentityHashMap<>();
+		private final Map<java.util.BitSet, Integer> groupByBlockedTransitions = new HashMap<>();
 
 		private ReverseTrips(List<DateBlock> blocks, LocalDate anchorServiceDate, ReverseLimitTracker limits) {
 			this.blocks = List.copyOf(blocks);
@@ -1046,6 +1049,20 @@ final class ReverseTimetableRaptorPlanner {
 
 		private boolean noActiveService() {
 			return blocks.isEmpty();
+		}
+
+		/** overlay가 막는 전환 집합의 번호. 집합 내용이 같으면 overlay가 달라도 같은 번호다. */
+		private int blockedGroup(RouteTimetableRaptorPlanner.RealtimeOverlay overlay) {
+			Integer known = groupByOverlay.get(overlay);
+			if (known != null) return known;
+			java.util.BitSet blocked = overlay.blockedTransitionsCopy();
+			Integer group = groupByBlockedTransitions.get(blocked);
+			if (group == null) {
+				group = groupByBlockedTransitions.size();
+				groupByBlockedTransitions.put(blocked, group);
+			}
+			groupByOverlay.put(overlay, group);
+			return group;
 		}
 
 		private List<RouteTimetableRaptorPlanner.RealtimeOverlay> overlays() {

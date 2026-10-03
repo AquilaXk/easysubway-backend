@@ -5614,6 +5614,11 @@ public final class RouteTimetableRaptorPlanner {
 			return tripIndexes.length == 0 && blockedTransitions.isEmpty();
 		}
 
+		/** 이 overlay가 막는 전환 집합의 복사본. 역방향 탐색이 같은 차단 집합의 라벨끼리만 비교할 때 쓴다. */
+		BitSet blockedTransitionsCopy() {
+			return (BitSet) blockedTransitions.clone();
+		}
+
 		boolean isTransitionBlocked(int transition) {
 			return transition >= 0 && blockedTransitions.get(transition);
 		}

@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
@@ -138,12 +139,27 @@ final class JourneyEngineDifferentialHarness {
 	 * 결함이므로 그대로 던진다.
 	 */
 	static Verdict check(Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime) {
+		return check(testCase, source, runtime, Set.of());
+	}
+
+	/**
+	 * #461 리뷰 F1: 요청 시점 시설 차단을 넣은 비교. 엔진은 차단 edge id를 {@code FacilityAvailabilityPort}로 받아 요청마다
+	 * 한 번 차단 overlay를 만들고(운영 경로와 같음), 기준 해는 그 edge를 쓰는 환승을 이용 불가로 둔다. 프로필 세 모드만
+	 * 받는다(출발 시각 고정은 이 하네스에서 시설 차단 경로를 거치지 않는다).
+	 */
+	static Verdict check(
+		Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime, Set<String> blockedEdgeIds
+	) {
+		Objects.requireNonNull(blockedEdgeIds, "blockedEdgeIds");
+		if (testCase.mode() == Mode.DEPART_AT && !blockedEdgeIds.isEmpty()) {
+			throw new IllegalArgumentException("facility blocks are compared only for profile modes");
+		}
 		try {
 			return switch (testCase.mode()) {
 				case DEPART_AT -> departAt(testCase, source, runtime);
-				case ARRIVE_BY -> arriveBy(testCase, source, runtime);
-				case DEPART_BETWEEN -> departBetween(testCase, source, runtime);
-				case LAST_CONNECTION -> lastConnection(testCase, source, runtime);
+				case ARRIVE_BY -> arriveBy(testCase, source, runtime, blockedEdgeIds);
+				case DEPART_BETWEEN -> departBetween(testCase, source, runtime, blockedEdgeIds);
+				case LAST_CONNECTION -> lastConnection(testCase, source, runtime, blockedEdgeIds);
 			};
 		} catch (EngineFailure failure) {
 			Throwable cause = failure.getCause();
@@ -271,19 +287,21 @@ final class JourneyEngineDifferentialHarness {
 
 	// ---------------------------------------------------------------- ArriveBy (reverse range RAPTOR)
 
-	private static Verdict arriveBy(Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime) {
+	private static Verdict arriveBy(
+		Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime, Set<String> blocked
+	) {
 		JourneyRaptorQuery query = testCase.query();
 		var arriveBy = (JourneyRaptorQuery.ArriveBy) query.temporalQuery();
 		LocalDate first = arriveBy.earliestReadyAt().minusSeconds(SERVICE_DAY_LIMIT - 1)
 			.atZone(ServiceDayResolver.ZONE).toLocalDate();
 		LocalDate last = arriveBy.arrivalDeadline().atZone(ServiceDayResolver.ZONE).toLocalDate();
 		List<JourneyProfileExactOracle.Ride> rides = rides(source, first.datesUntil(last.plusDays(1)).toList());
-		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query)),
+		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query, blocked)),
 			Mobility.of(query).prefersStepFree());
 		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solveLatestReadyWindow(
 			oracleQuery(query, arriveBy.earliestReadyAt(), arriveBy.arrivalDeadline()),
 			window(rides, arriveBy.earliestReadyAt(), arriveBy.arrivalDeadline()), accesses);
-		var planned = plan(query, runtime);
+		var planned = plan(query, runtime, blocked);
 		if (planned == null) return failClosed(testCase, expected);
 		var reverse = ((JourneyProfileRaptorPort.ArriveByPlan) planned.temporalPlan()).result();
 		List<JourneyProfileRaptorPort.Itinerary> actual = reverse instanceof JourneyProfileRaptorPort.ReversePlan.Found found
@@ -295,18 +313,20 @@ final class JourneyEngineDifferentialHarness {
 
 	// ---------------------------------------------------------------- LastConnection (reverse, one service day)
 
-	private static Verdict lastConnection(Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime) {
+	private static Verdict lastConnection(
+		Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime, Set<String> blocked
+	) {
 		JourneyRaptorQuery query = testCase.query();
 		LocalDate serviceDate = ((JourneyRaptorQuery.LastConnection) query.temporalQuery()).serviceDate();
 		List<JourneyProfileExactOracle.Ride> rides = rides(source, List.of(serviceDate));
-		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query)),
+		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query, blocked)),
 			Mobility.of(query).prefersStepFree());
 		Instant earliest = serviceDate.atStartOfDay(ServiceDayResolver.ZONE).toInstant();
 		Instant terminal = terminal(query.destinationStationId(), rides);
 		List<JourneyProfileExactOracle.Candidate> expected = terminal == null || !terminal.isAfter(earliest) ? List.of()
 			: new JourneyProfileExactOracle().solveLatestReadyWindow(oracleQuery(query, earliest, terminal),
 				window(rides, earliest, terminal), accesses);
-		var planned = plan(query, runtime);
+		var planned = plan(query, runtime, blocked);
 		if (planned == null) return failClosed(testCase, expected);
 		var plan = (JourneyProfileRaptorPort.LastConnectionPlan) planned.temporalPlan();
 		List<JourneyProfileRaptorPort.Itinerary> actual = plan.result() instanceof JourneyProfileRaptorPort.ReversePlan.Found found
@@ -322,7 +342,9 @@ final class JourneyEngineDifferentialHarness {
 
 	// ---------------------------------------------------------------- DepartBetween (forward range McRAPTOR)
 
-	private static Verdict departBetween(Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime) {
+	private static Verdict departBetween(
+		Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime, Set<String> blocked
+	) {
 		JourneyRaptorQuery query = testCase.query();
 		Mobility mobility = Mobility.of(query);
 		var range = (JourneyRaptorQuery.DepartBetween) query.temporalQuery();
@@ -330,7 +352,8 @@ final class JourneyEngineDifferentialHarness {
 			.atZone(ServiceDayResolver.ZONE).toLocalDate().plusDays(1);
 		LocalDate lastNative = range.latestReadyAt().atZone(ServiceDayResolver.ZONE).toLocalDate();
 		List<JourneyProfileExactOracle.Ride> rides = rides(source, firstNative.datesUntil(lastNative.plusDays(1)).toList());
-		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query)), mobility.prefersStepFree());
+		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query, blocked)),
+			mobility.prefersStepFree());
 		Instant deadline = terminal(query.destinationStationId(), rides);
 
 		// 시간대 안의 출발 사건(출발역 승차 - 승차 여유)과 서비스일 조각마다의 마지막 준비 시각이 필수 시점이다.
@@ -356,7 +379,7 @@ final class JourneyEngineDifferentialHarness {
 			if (!expected.isEmpty()) expectedByPoint.put(breakpoint, expected);
 		}
 
-		var planned = plan(query, runtime);
+		var planned = plan(query, runtime, blocked);
 		if (planned == null) {
 			return failClosed(testCase, expectedByPoint.values().stream().flatMap(List::stream).toList());
 		}
@@ -458,9 +481,15 @@ final class JourneyEngineDifferentialHarness {
 	}
 
 	private static JourneyProfileRaptorPort.PlanningResult.Planned plan(
-		JourneyRaptorQuery query, RaptorRouteBundleRuntimeView runtime
+		JourneyRaptorQuery query, RaptorRouteBundleRuntimeView runtime, Set<String> blocked
 	) {
-		var result = engine(() -> new JourneyProfileRaptorAdapter().planRuntime(query, runtime, null, LIMITS));
+		// 차단이 있으면 신선한 시설 가동 뷰를 주는 포트로 어댑터를 만든다. 해석되지 않는 edge id가 있으면 운영처럼 뷰 전체가
+		// 무시되므로, 호출자는 번들에 있는 edge만 넘긴다.
+		JourneyProfileRaptorAdapter adapter = blocked.isEmpty() ? new JourneyProfileRaptorAdapter()
+			: new JourneyProfileRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared(),
+				() -> com.easysubway.journey.application.FacilityAvailabilityView.blocked(Instant.now(), blocked),
+				false, java.time.Clock.systemUTC());
+		var result = engine(() -> adapter.planRuntime(query, runtime, null, LIMITS));
 		return result instanceof JourneyProfileRaptorPort.PlanningResult.Planned planned ? planned : null;
 	}
 
@@ -541,8 +570,14 @@ final class JourneyEngineDifferentialHarness {
 	}
 
 	private static List<JourneyProfileExactOracle.Access> accesses(RouteTimetable source, JourneyRaptorQuery query) {
+		return accesses(source, query, Set.of());
+	}
+
+	private static List<JourneyProfileExactOracle.Access> accesses(
+		RouteTimetable source, JourneyRaptorQuery query, Set<String> blocked
+	) {
 		return JourneyProfileOracleAccessInputs.normalize(source.routeAccessData(), query.mobilityProfile(),
-			query.constraintMode(), query.walkingPace().speedMetersPerHour(), ORACLE_MAX_ACCESSES);
+			query.constraintMode(), query.walkingPace().speedMetersPerHour(), ORACLE_MAX_ACCESSES, blocked);
 	}
 
 	private static List<JourneyProfileExactOracle.Access> usable(List<JourneyProfileExactOracle.Access> accesses) {

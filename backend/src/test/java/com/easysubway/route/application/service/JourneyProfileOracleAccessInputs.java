@@ -23,6 +23,18 @@ final class JourneyProfileOracleAccessInputs {
 		LoadRouteTimetablePort.RouteAccessData data, MobilityProfile profile, ConstraintMode constraint,
 		int walkingSpeedMetersPerHour, int maximumAccesses
 	) {
+		return normalize(data, profile, constraint, walkingSpeedMetersPerHour, maximumAccesses, Set.of());
+	}
+
+	/**
+	 * #461 리뷰 F1: 요청 시점 시설 차단(가동 중단 동선)을 반영한다. 차단된 pathway edge를 쓰는 환승은 이용할 수 없다.
+	 * 엔진은 같은 edge id를 요청마다 한 번 캡처한 차단 overlay로 받는다({@code JourneyFacilityBlockOverlay}).
+	 */
+	static List<JourneyProfileExactOracle.Access> normalize(
+		LoadRouteTimetablePort.RouteAccessData data, MobilityProfile profile, ConstraintMode constraint,
+		int walkingSpeedMetersPerHour, int maximumAccesses, Set<String> blockedEdgeIds
+	) {
+		Objects.requireNonNull(blockedEdgeIds, "blockedEdgeIds");
 		Objects.requireNonNull(data, "data");
 		Objects.requireNonNull(profile, "profile");
 		Objects.requireNonNull(constraint, "constraint");
@@ -51,11 +63,12 @@ final class JourneyProfileOracleAccessInputs {
 			if (normalEdgeId != null) {
 				requireCapacity(result, maximumAccesses);
 				addTransfer(result, rule, edge(edges, text(normalEdgeId, "normal pathway")), evidence, nodes, profile, constraint,
-					normalEdgeId.equals(strictEdgeId), walkingSpeedMetersPerHour);
+					normalEdgeId.equals(strictEdgeId), walkingSpeedMetersPerHour, blockedEdgeIds);
 			}
 			if (strictEdgeId != null && !strictEdgeId.equals(normalEdgeId)) {
 				requireCapacity(result, maximumAccesses);
-				addTransfer(result, rule, edge(edges, strictEdgeId), evidence, nodes, profile, constraint, true, walkingSpeedMetersPerHour);
+				addTransfer(result, rule, edge(edges, strictEdgeId), evidence, nodes, profile, constraint, true, walkingSpeedMetersPerHour,
+					blockedEdgeIds);
 			}
 		}
 		return List.copyOf(result);
@@ -69,7 +82,7 @@ final class JourneyProfileOracleAccessInputs {
 		List<JourneyProfileExactOracle.Access> result, LoadRouteTimetablePort.TransferRule rule,
 		LoadRouteTimetablePort.PathwayEdge edge, Map<String, LoadRouteTimetablePort.RouteEdgeEvidence> evidence,
 		Map<String, LoadRouteTimetablePort.PathwayNode> nodes, MobilityProfile profile, ConstraintMode constraint,
-		boolean strictPath, int speed
+		boolean strictPath, int speed, Set<String> blockedEdgeIds
 	) {
 		LoadRouteTimetablePort.RouteEdgeEvidence destination = exactlyOne(evidence.values(), item -> "TRANSFER".equals(item.edgeType())
 			&& edge.id().equals(item.edgeId()) && rule.toStationId().equals(item.stationId()) && rule.toLineId().equals(item.lineId()), "transfer evidence");
@@ -79,7 +92,8 @@ final class JourneyProfileOracleAccessInputs {
 		result.add(access(JourneyProfileExactOracle.AccessKind.TRANSFER, destination.id(), rule.id(), edge, direction,
 			rule.fromStationId(), rule.fromLineId(), rule.toStationId(), rule.toLineId(), transferSeconds(edge, speed, profile),
 			edge.distanceMeters(), edge.includesStairs() ? 1 : 0,
-			verified(edge, destination) && "VERIFIED".equals(rule.verificationStatus()), allowed(edge, constraint, strict)));
+			verified(edge, destination) && "VERIFIED".equals(rule.verificationStatus()),
+			allowed(edge, constraint, strict) && !blockedEdgeIds.contains(edge.id())));
 	}
 
 	private static boolean allowed(LoadRouteTimetablePort.PathwayEdge edge, ConstraintMode constraint, boolean strict) {

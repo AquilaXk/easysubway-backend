@@ -229,6 +229,29 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("#461 F1: a label on a date whose overlay blocks the upstream transfer does not dominate another date's label")
+	void stateDominanceIsLimitedToLabelsWithTheSameBlockedTransfers() {
+		var compiled = forward.compile(dateSpecificBlockedTransferTimetable());
+		var blocked = new java.util.BitSet();
+		for (int transition : compiled.transitionIdsForEdge("transfer")) blocked.set(transition);
+		assertThat(blocked.isEmpty()).isFalse();
+		var nextDayOverlay = RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked);
+
+		// 다음 날 급행(05:15 -> 05:25, 기준일 29:15 -> 29:25)은 전날 완행(29:05 -> 29:40)보다 늦게 떠나 일찍 닿는다.
+		// 다음 날 overlay가 환승 동선을 막으므로 급행은 앞 승차와 이을 수 없고, 막히지 않은 완행 여정만 실행 가능하다.
+		var result = planner.arriveBy(crossDateQuery(0, 107_000), compiled, SERVICE_DATE, SERVICE_DATE.plusDays(1),
+			date -> date.equals(SERVICE_DATE) ? RouteTimetableRaptorPlanner.RealtimeOverlay.empty() : nextDayOverlay,
+			limits(), null);
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).singleElement().satisfies(itinerary -> assertThat(itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId).toList())
+			.containsExactly("feeder", "slow"));
+	}
+
+	@Test
 	void selectsDateLocalRealtimeOccurrencesForReverseSearchAndLastConnection() {
 		var source = repeatedDailyDirectTimetable();
 		var compiled = forward.compile(source);
@@ -1189,6 +1212,28 @@ class ReverseTimetableRaptorPlannerTest {
 			stop("predecessor-27h", 2, "station-transfer", "line-a", 97_800, 0, 0),
 			stop("next-day", 1, "station-transfer", "line-b", 12_600, 0, 0),
 			stop("next-day", 2, "station-b", "line-b", 13_200, 0, 0)),
+			List.of(), List.of(), null, access(true, true, 300, 180, true));
+	}
+
+	private static RouteTimetable dateSpecificBlockedTransferTimetable() {
+		var firstDay = new LoadRouteTimetablePort.ServiceCalendar(
+			"first-day", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var nextDay = new LoadRouteTimetablePort.ServiceCalendar(
+			"next-day", true, true, true, true, true, true, true,
+			SERVICE_DATE.plusDays(1), SERVICE_DATE.plusDays(1), "Asia/Seoul");
+		var trips = List.of(
+			new LoadRouteTimetablePort.TransitTrip("feeder", "route-a", "first-day", "terminal", "0", "LOCAL", 0),
+			new LoadRouteTimetablePort.TransitTrip("slow", "route-b", "first-day", "terminal", "0", "LOCAL", 0),
+			new LoadRouteTimetablePort.TransitTrip("express", "route-b-express", "next-day", "terminal", "0", "EXPRESS", 0));
+		var routes = trips.stream().map(value -> new LoadRouteTimetablePort.TransitRoute(
+			value.routeId(), value.routeId(), value.routeId(), value.routeId(), "terminal", "Asia/Seoul")).toList();
+		return new RouteTimetable(List.of(firstDay, nextDay), List.of(), routes, trips, List.of(
+			stop("feeder", 1, "station-a", "line-a", 102_600, 0, 0),
+			stop("feeder", 2, "station-transfer", "line-a", 103_200, 0, 0),
+			stop("slow", 1, "station-transfer", "line-b", 104_700, 0, 0),
+			stop("slow", 2, "station-b", "line-b", 106_800, 0, 0),
+			stop("express", 1, "station-transfer", "line-b", 18_900, 0, 0),
+			stop("express", 2, "station-b", "line-b", 19_500, 0, 0)),
 			List.of(), List.of(), null, access(true, true, 300, 180, true));
 	}
 
