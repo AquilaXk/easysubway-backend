@@ -336,11 +336,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			status = timetable.transitionVerificationStatus(transition);
 			if (includesStairs) {
 				// #469: 경유역 접속 환승에 근거 없는 계단 없는 동선이 있으면 이 여정의 계단 없는 경로는 확정할 수 없다.
-				int[] group = timetable.isOutOfStationTransition(transition)
-					? footpathGroup(timetable.footpathsFromStation(station), fromLine, toLine, transition)
-					: timetable.transferTransitions(station, fromLine, toLine);
 				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.hasUnconfirmedStairFreeAlternative(
-					timetable, group, transition, profileBit, facilityOverlay);
+					timetable, timetable.transitionGroup(transition), transition, profileBit, facilityOverlay);
 			}
 
 			if (timetable.isOutOfStationTransition(transition)) {
@@ -427,21 +424,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			null,
 			leg1.unconfirmedStairFreeTransfer() || leg2.unconfirmedStairFreeTransfer() || junctionUnconfirmedStairFree
 		);
-	}
-
-	private static int[] footpathGroup(
-		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths, int fromLine, int toLine, int transition
-	) {
-		if (footpaths != null) {
-			for (RouteTimetableRaptorPlanner.OutOfStationFootpath footpath : footpaths) {
-				int[] group = footpath.candidateTransitions();
-				if (footpath.fromLine() == fromLine && footpath.toLine() == toLine
-					&& java.util.Arrays.stream(group).anyMatch(candidate -> candidate == transition)) {
-					return group;
-				}
-			}
-		}
-		return new int[0];
 	}
 
 	private static List<JourneyAlternatives.Category> ordered(java.util.Set<JourneyAlternatives.Category> categories) {

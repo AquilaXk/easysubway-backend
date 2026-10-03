@@ -128,8 +128,9 @@ public final class JourneyAlternatives {
 					kept.add(representative);
 				}
 			}
-			for (T candidate : byArrival) {
-				if (kept.size() >= alternativeCount) break;
+			// 후보가 대안 수보다 많으므로 도착 순으로 훑으면 항상 대안 수만큼 채운다.
+			for (int index = 0; kept.size() < alternativeCount; index += 1) {
+				T candidate = byArrival.get(index);
 				if (!containsSame(kept, candidate)) kept.add(candidate);
 			}
 			kept.sort(arrivalOrder);
