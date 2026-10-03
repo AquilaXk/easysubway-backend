@@ -77,7 +77,10 @@ class StationTimetableSearchControllerTest {
 		mockMvc.perform(post(StationTimetableSearchController.PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 			.contentType(MediaType.APPLICATION_JSON).content(request()))
 			.andExpect(status().isOk()).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
-			.andExpect(jsonPath("$.directionGroups[0].departures[0].departureAt").value("2026-08-24T09:00:00+09:00"));
+			.andExpect(jsonPath("$.directionGroups[0].departures[0].departureAt").value("2026-08-24T09:00:00+09:00"))
+			.andExpect(jsonPath("$.directionGroups[0].nextStationId").value("next"))
+			.andExpect(jsonPath("$.directionGroups[0].directionName").value("direction"))
+			.andExpect(jsonPath("$.directionGroups[0].departures[0].terminalStationId").value("next"));
 		verify(sessions, times(1)).authorize("session-token");
 	}
 
@@ -384,7 +387,8 @@ class StationTimetableSearchControllerTest {
 			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")), List.of(),
 			List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			List.of(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
-			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0)), List.of(), List.of(), null,
+			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0),
+				new TransitStopTime("trip", 2, "next", "line", 33_000, 33_000, 0, 0)), List.of(), List.of(), null,
 			RouteAccessData.empty());
 		var snapshot = new StationTimetableSnapshot(new StationTimetableSearchService.SourceIdentity("artifact", "a".repeat(64),
 			"sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64), "f".repeat(64), NOW.plusSeconds(60)), timetable,

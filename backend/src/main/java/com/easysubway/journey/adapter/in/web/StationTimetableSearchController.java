@@ -83,10 +83,10 @@ final class StationTimetableSearchController {
 		return new Response("STATION_TIMETABLE_SEARCH_V3", result.stationId(), result.lineId(), selector(result.selector()),
 			result.resolvedDayType().name(), StationTimetableSearchService.SERVICE_ZONE.getId(),
 			result.directionGroups().stream().map(group -> new DirectionGroup(
-				group.directionName(), group.departures().stream().map(departure -> new Departure(
+				group.nextStationId(), group.directionName(), group.departures().stream().map(departure -> new Departure(
 					departure.serviceDate().toString(), departure.secondsFromServiceDayStart(), departure.departureAt()
 						.atZone(StationTimetableSearchService.SERVICE_ZONE).format(SEOUL_RFC3339_SECONDS),
-					departure.servicePattern(), departure.serviceClass())).toList())).toList(),
+					departure.servicePattern(), departure.serviceClass(), departure.terminalStationId())).toList())).toList(),
 			new SourceIdentity(result.sourceIdentity().timetableArtifactId(), result.sourceIdentity().timetableSnapshotSha256(),
 				result.sourceIdentity().canonicalStationVersion(), result.sourceIdentity().canonicalStationSetSha256(),
 				result.sourceIdentity().sourceLineageSha256(), result.sourceIdentity().evidenceHash(),
@@ -188,8 +188,10 @@ final class StationTimetableSearchController {
 	record ServiceDateSelectorResponse(String kind, String serviceDate) implements SelectorResponse { }
 	record DayTypeSelectorResponse(String kind, String dayType, String referenceDate) implements SelectorResponse { }
 	record NextDeparturesSelectorResponse(String kind, String asOf, int horizonDays) implements SelectorResponse { }
-	record DirectionGroup(String directionName, List<Departure> departures) { }
-	record Departure(String serviceDate, int secondsFromServiceDayStart, String departureAt, String servicePattern, String serviceClass) { }
+	// directionName은 원천 방면 이름이 있을 때만 값을 싣고 없으면 null이다(#476). 빈 문자열·추정값을 쓰지 않는다.
+	record DirectionGroup(String nextStationId, String directionName, List<Departure> departures) { }
+	record Departure(String serviceDate, int secondsFromServiceDayStart, String departureAt, String servicePattern, String serviceClass,
+		String terminalStationId) { }
 	record SourceIdentity(String timetableArtifactId, String timetableSnapshotSha256, String canonicalStationVersion,
 		String canonicalStationSetSha256, String sourceLineageSha256, String evidenceHash, String freshUntil) { }
 }

@@ -35,6 +35,7 @@ class StationTimetableRealBundleProbeTest {
 	private static final List<String[]> PROBES = List.of(
 		new String[] {"station-f497b2d7043f", "line-98718184f016", "인천 1호선 박촌"},
 		new String[] {"station-gangnam", "seoul-2", "2호선 강남"},
+		new String[] {"station-44dc03b65cae", "line-5b8d9b05e7e6", "대구 1호선 반월당"},
 		new String[] {"station-gangnam", "seoul-4", "강남(4호선 아님: 정본 역·노선 아님)"});
 
 	@Test
@@ -74,8 +75,9 @@ class StationTimetableRealBundleProbeTest {
 				try {
 					var result = service.search(new SearchRequest(probe[0], probe[1], new Selector.ServiceDateSelector(date)));
 					outcome = result.resolvedDayType() + " " + result.directionGroups().stream()
-						.map(group -> group.directionName() + "=" + group.departures().size() + "편 첫차 "
-							+ group.departures().getFirst().departureAt() + " " + group.departures().getFirst().servicePattern())
+						.map(group -> "next=" + group.nextStationId() + " directionName=" + group.directionName() + " "
+							+ group.departures().size() + "편 첫 " + group.departures().getFirst().departureAt() + " "
+							+ group.departures().getFirst().servicePattern() + " 종착 " + group.departures().getFirst().terminalStationId())
 						.toList() + " source " + result.sourceIdentity().timetableArtifactId() + "/"
 						+ result.sourceIdentity().timetableSnapshotSha256() + " freshUntil " + result.sourceIdentity().freshUntil();
 				} catch (FailureException exception) {
@@ -85,6 +87,21 @@ class StationTimetableRealBundleProbeTest {
 					(System.nanoTime() - started) / 1_000_000, outcome);
 			}
 		}
+		// 정본 역·노선 전체를 같은 날짜로 조회해 결과 분포를 남긴다.
+		Map<String, Integer> outcomes = new java.util.TreeMap<>();
+		for (var stationLine : runtime.canonicalStationLines()) {
+			String key;
+			try {
+				var result = service.search(new SearchRequest(stationLine.stationId(), stationLine.lineId(),
+					new Selector.ServiceDateSelector(LocalDate.parse("2026-10-06"))));
+				key = "OK groups=" + result.directionGroups().size();
+			} catch (FailureException exception) {
+				key = "FAILURE " + exception.failure();
+				System.out.println("failure " + exception.failure() + " " + stationLine);
+			}
+			outcomes.merge(key, 1, Integer::sum);
+		}
+		System.out.println("2026-10-06 all canonical station-lines: " + outcomes);
 		assertThat(runtime.canonicalStationLines()).isNotEmpty();
 	}
 

@@ -73,6 +73,10 @@ public final class StationTimetableSearchService {
 			throw failure(Failure.TIMETABLE_NOT_COVERED);
 		}
 		List<DepartureCandidate> candidates = departures(timetable, trips, routes, request.stationId(), request.lineId());
+		// 다음 정차역이 있는 출발만 시간표에 싣는다. 노선 끝 역처럼 출발이 하나도 없으면 시간표 범위 밖이다.
+		if (candidates.isEmpty()) {
+			throw failure(Failure.TIMETABLE_NOT_COVERED);
+		}
 
 		Set<String> servingServiceIds = new HashSet<>();
 		for (DepartureCandidate candidate : candidates) servingServiceIds.add(candidate.trip().serviceId());
@@ -115,13 +119,26 @@ public final class StationTimetableSearchService {
 			TransitTrip trip = trips.get(stop.tripId());
 			if (trip == null) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			TransitRoute route = routes.get(trip.routeId());
-			if (route == null || !lineId.equals(route.lineId()) || !SERVICE_ZONE.getId().equals(route.timezone())
-				|| route.directionName() == null || route.directionName().isBlank()) {
+			if (route == null || !lineId.equals(route.lineId()) || !SERVICE_ZONE.getId().equals(route.timezone())) {
 				throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			}
+			// 방향은 이 역 다음에 서는 역(다음 정차역)으로 묶는다. 종착역(headsign)으로 묶으면 2호선처럼 양방향이 같은
+			// 종착역을 쓰는 노선에서 방향이 섞인다. 원천의 방면 이름은 값이 있을 때만 그대로 싣는다.
+			List<TransitStopTime> tripStops = stopsByTrip.getOrDefault(stop.tripId(), List.of());
+			if (!tripStops.contains(stop)) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
+			TransitStopTime nextStop = null;
+			TransitStopTime terminalStop = null;
+			for (TransitStopTime candidate : tripStops) {
+				if (candidate.stopSequence() > stop.stopSequence()
+					&& (nextStop == null || candidate.stopSequence() < nextStop.stopSequence())) nextStop = candidate;
+				if (terminalStop == null || candidate.stopSequence() > terminalStop.stopSequence()) terminalStop = candidate;
+			}
+			if (nextStop == null) continue;
+			Direction direction = new Direction(nextStop.stationId(), terminalStop.stationId(),
+				route.directionName() == null || route.directionName().isBlank() ? null : route.directionName());
 			List<TransitFrequency> frequencies = frequenciesByTrip.getOrDefault(stop.tripId(), List.of());
 			if (frequencies.isEmpty()) {
-				result.add(new DepartureCandidate(route.directionName(), trip, stop.departureSeconds()));
+				result.add(new DepartureCandidate(direction, trip, stop.departureSeconds()));
 				continue;
 			}
 			int firstDeparture = stopsByTrip.getOrDefault(stop.tripId(), List.of()).stream()
@@ -149,7 +166,7 @@ public final class StationTimetableSearchService {
 					if (departure < 0 || departure >= LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE) {
 						throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 					}
-					result.add(new DepartureCandidate(route.directionName(), trip, departure));
+					result.add(new DepartureCandidate(direction, trip, departure));
 					base = nextFrequencyBase(base, frequency.headwaySeconds());
 				}
 			}
@@ -202,7 +219,7 @@ public final class StationTimetableSearchService {
 			validateDepartureOrderAndIdentity(result);
 			Map<String, Departure> firstByDirection = new HashMap<>();
 			for (Departure departure : result) {
-				firstByDirection.merge(departure.directionName(), departure,
+				firstByDirection.merge(departure.nextStationId(), departure,
 					(left, right) -> left.departureAt().isBefore(right.departureAt()) ? left : right);
 			}
 			result = new ArrayList<>(firstByDirection.values());
@@ -228,8 +245,9 @@ public final class StationTimetableSearchService {
 			Instant departureAt = serviceDate.atStartOfDay(SERVICE_ZONE)
 				.plusSeconds(candidate.secondsFromServiceDayStart()).toInstant();
 			target.add(new Departure(
-				candidate.directionName(), serviceDate, candidate.secondsFromServiceDayStart(), departureAt,
-				candidate.trip().servicePattern(), candidate.trip().serviceClass()
+				candidate.direction().nextStationId(), candidate.direction().directionName(), serviceDate,
+				candidate.secondsFromServiceDayStart(), departureAt, candidate.trip().servicePattern(),
+				candidate.trip().serviceClass(), candidate.direction().terminalStationId()
 			));
 		}
 	}
@@ -316,19 +334,34 @@ public final class StationTimetableSearchService {
 	private static List<DirectionGroup> group(List<Departure> departures) {
 		Map<String, List<Departure>> grouped = new HashMap<>();
 		for (Departure departure : departures) {
-			grouped.computeIfAbsent(departure.directionName(), ignored -> new ArrayList<>()).add(departure);
+			grouped.computeIfAbsent(departure.nextStationId(), ignored -> new ArrayList<>()).add(departure);
 		}
 		return grouped.entrySet().stream().sorted(Map.Entry.comparingByKey())
-			.map(entry -> new DirectionGroup(entry.getKey(), entry.getValue().stream()
+			.map(entry -> new DirectionGroup(entry.getKey(), groupDirectionName(entry.getValue()), entry.getValue().stream()
 				.sorted(Comparator.comparing(Departure::serviceDate).thenComparingInt(Departure::secondsFromServiceDayStart)).toList()))
 			.toList();
 	}
 
+	// 원천 방면 이름은 그룹의 모든 출발이 같은 이름을 가질 때만 싣는다. 일부만 있으면 싣지 않고(추정 금지),
+	// 같은 다음 정차역에 서로 다른 이름이 붙으면 원천 불일치다.
+	private static String groupDirectionName(List<Departure> departures) {
+		Set<String> names = new HashSet<>();
+		boolean missing = false;
+		for (Departure departure : departures) {
+			if (departure.directionName() == null) missing = true; else names.add(departure.directionName());
+		}
+		if (names.size() > 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
+		return missing || names.isEmpty() ? null : names.iterator().next();
+	}
+
+	// 같은 시각·다음 정차역·운행 유형·종착역의 출발이 둘이면 원천 중복이다. 종착역이 다르면 서로 다른 열차다
+	// (seq126 실측: 1호선 신도림에서 광명행과 인천행이 같은 초에 같은 다음 역으로 출발한다).
 	private static void validateDepartureOrderAndIdentity(List<Departure> departures) {
 		Set<String> unique = new HashSet<>();
 		for (Departure departure : departures) {
-			String identity = departure.directionName() + "\u0000" + departure.serviceDate() + "\u0000"
-				+ departure.secondsFromServiceDayStart() + "\u0000" + departure.servicePattern() + "\u0000" + departure.serviceClass();
+			String identity = departure.nextStationId() + "\u0000" + departure.serviceDate() + "\u0000"
+				+ departure.secondsFromServiceDayStart() + "\u0000" + departure.servicePattern() + "\u0000" + departure.serviceClass()
+				+ "\u0000" + departure.terminalStationId();
 			if (!unique.add(identity)) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 		}
 	}
@@ -381,14 +414,16 @@ public final class StationTimetableSearchService {
 		List<DirectionGroup> directionGroups, SourceIdentity sourceIdentity) {
 		public SearchResult { directionGroups = List.copyOf(directionGroups); }
 	}
-	public record DirectionGroup(String directionName, List<Departure> departures) {
+	/** 다음 정차역 하나로 묶은 출발. {@code directionName}은 원천 방면 이름이 있을 때만 있고, 없으면 null이다. */
+	public record DirectionGroup(String nextStationId, String directionName, List<Departure> departures) {
 		public DirectionGroup { departures = List.copyOf(departures); }
 	}
-	public record Departure(String directionName, LocalDate serviceDate, int secondsFromServiceDayStart,
-		Instant departureAt, String servicePattern, String serviceClass) { }
+	public record Departure(String nextStationId, String directionName, LocalDate serviceDate, int secondsFromServiceDayStart,
+		Instant departureAt, String servicePattern, String serviceClass, String terminalStationId) { }
 	public record SourceIdentity(String timetableArtifactId, String timetableSnapshotSha256, String canonicalStationVersion,
 		String canonicalStationSetSha256, String sourceLineageSha256, String evidenceHash, Instant freshUntil) { }
-	private record DepartureCandidate(String directionName, TransitTrip trip, int secondsFromServiceDayStart) { }
+	private record Direction(String nextStationId, String terminalStationId, String directionName) { }
+	private record DepartureCandidate(Direction direction, TransitTrip trip, int secondsFromServiceDayStart) { }
 	public enum Failure { INVALID_JOURNEY_REQUEST, STATION_LINE_NOT_FOUND, TIMETABLE_NOT_COVERED, TIMETABLE_UNAVAILABLE, TIMETABLE_STALE, TIMETABLE_IDENTITY_MISMATCH }
 	public static final class FailureException extends RuntimeException {
 		private final Failure failure;

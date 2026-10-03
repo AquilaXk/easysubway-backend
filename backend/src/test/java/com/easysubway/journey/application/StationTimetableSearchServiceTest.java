@@ -177,7 +177,10 @@ class StationTimetableSearchServiceTest {
 		List<TransitStopTime> orderedStops = List.of(
 			new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0),
 			new TransitStopTime("a-late", 1, "station", "line", 33_000, 33_000, 0, 0),
-			new TransitStopTime("b-early", 1, "station", "line", 32_700, 32_700, 0, 0));
+			new TransitStopTime("b-early", 1, "station", "line", 32_700, 32_700, 0, 0),
+			new TransitStopTime("trip", 2, "next", "line", 33_600, 33_600, 0, 0),
+			new TransitStopTime("a-late", 2, "next", "line", 33_600, 33_600, 0, 0),
+			new TransitStopTime("b-early", 2, "next", "line", 33_300, 33_300, 0, 0));
 		timetable = new RouteTimetable(timetable.serviceCalendars(), timetable.serviceCalendarDates(), timetable.transitRoutes(),
 			timetable.transitTrips(), orderedStops, timetable.transitFrequencies(), timetable.officialFares(), timetable.feedEndDate(), timetable.routeAccessData());
 		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
@@ -225,10 +228,9 @@ class StationTimetableSearchServiceTest {
 		RouteTimetable timetable = timetable(List.of(calendar()), List.of(), List.of(
 			new TransitFrequency("trip", 32_700, 33_300, 300, false)), List.of());
 
-		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
-			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
-
-		assertThat(result.directionGroups()).isEmpty();
+		// 정확한 시각이 없는 간격 운행은 출발을 만들지 않는다. 출발이 하나도 없으면 시간표 범위 밖이다.
+		assertFailure(service(snapshot(timetable, NOW.plusSeconds(60))), request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_NOT_COVERED);
 	}
 
 	@Test
@@ -236,13 +238,12 @@ class StationTimetableSearchServiceTest {
 		RouteTimetable template = timetable();
 		RouteTimetable timetable = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(),
 			template.transitRoutes(), template.transitTrips(),
-			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 1, 0)),
+			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 1, 0),
+				new TransitStopTime("trip", 2, "next", "line", 33_000, 33_000, 0, 0)),
 			template.transitFrequencies(), template.officialFares(), template.feedEndDate(), template.routeAccessData());
 
-		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
-			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
-
-		assertThat(result.directionGroups()).isEmpty();
+		assertFailure(service(snapshot(timetable, NOW.plusSeconds(60))), request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_NOT_COVERED);
 	}
 
 	@Test
@@ -268,9 +269,8 @@ class StationTimetableSearchServiceTest {
 				new TransitStopTime("frequency", 2, "later", "line", 107_990, 107_990, 0, 0)),
 			List.of(new TransitFrequency("frequency", 107_950, 107_960, 300, true)), template.officialFares(),
 			template.feedEndDate(), template.routeAccessData());
-		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
-			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
-		assertThat(result.directionGroups()).isEmpty();
+		assertFailure(service(snapshot(timetable, NOW.plusSeconds(60))), request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_NOT_COVERED);
 	}
 
 	@Test
@@ -333,8 +333,7 @@ class StationTimetableSearchServiceTest {
 		assertFailure(service(snapshot(missingTrip, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
 		for (TransitRoute route : List.of(
 			new TransitRoute("route", "other", "L", "line", "direction", "Asia/Seoul"),
-			new TransitRoute("route", "line", "L", "line", "direction", "UTC"),
-			new TransitRoute("route", "line", "L", "line", "", "Asia/Seoul"))) {
+			new TransitRoute("route", "line", "L", "line", "direction", "UTC"))) {
 			RouteTimetable invalidRoute = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), List.of(route),
 				base.transitTrips(), base.transitStopTimes(), base.transitFrequencies(), base.officialFares(), base.feedEndDate(), base.routeAccessData());
 			assertFailure(service(snapshot(invalidRoute, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
@@ -440,7 +439,12 @@ class StationTimetableSearchServiceTest {
 		RouteTimetable nullDirection = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(),
 			List.of(new TransitRoute("route", "line", "L", "line", null, "Asia/Seoul")), base.transitTrips(), base.transitStopTimes(),
 			base.transitFrequencies(), base.officialFares(), base.feedEndDate(), base.routeAccessData());
-		assertFailure(service(snapshot(nullDirection, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
+		// #476: 원천 방면 이름이 없어도 다음 정차역으로 묶고 이름은 비워 둔다(추정하지 않는다).
+		assertThat(service(snapshot(nullDirection, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement().satisfies(group -> {
+				assertThat(group.nextStationId()).isEqualTo("next");
+				assertThat(group.directionName()).isNull();
+			});
 		RouteTimetable missingRoute = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(),
 			List.of(new TransitTrip("trip", "missing", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)), base.transitStopTimes(),
 			base.transitFrequencies(), base.officialFares(), base.feedEndDate(), base.routeAccessData());
@@ -566,7 +570,9 @@ class StationTimetableSearchServiceTest {
 			List.of(new TransitTrip("late", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0),
 				new TransitTrip("early", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
 			List.of(new TransitStopTime("late", 1, "station", "line", 33_000, 33_000, 0, 0),
-				new TransitStopTime("early", 1, "station", "line", 32_400, 32_400, 0, 0)), List.of(), List.of(), null, base.routeAccessData());
+				new TransitStopTime("late", 2, "next", "line", 33_600, 33_600, 0, 0),
+				new TransitStopTime("early", 1, "station", "line", 32_400, 32_400, 0, 0),
+				new TransitStopTime("early", 2, "next", "line", 33_000, 33_000, 0, 0)), List.of(), List.of(), null, base.routeAccessData());
 		assertThat(service(snapshot(nextOrder, NOW.plusSeconds(60))).search(request(new Selector.NextDeparturesSelector(Instant.parse("2026-08-24T00:00:00Z"), 1)))
 			.directionGroups().getFirst().departures().getFirst().secondsFromServiceDayStart()).isEqualTo(32_400);
 	}
@@ -607,6 +613,116 @@ class StationTimetableSearchServiceTest {
 			new ServiceCalendarDate("weekday", LocalDate.parse("2026-08-24"), 2),
 			new ServiceCalendarDate("weekday", LocalDate.parse("2026-08-23"), 1)), List.of(), List.of());
 		assertFailure(service(snapshot(removalOnly, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
+	}
+
+	@Test
+	void lineTwoDeparturesWithTheSameHeadsignAreSplitByTheNextStoppingStation() {
+		// #476 seq126 실측: 2호선 강남의 "성수" 행 열차는 역삼 쪽(432편)과 교대 쪽(399편) 양방향에 모두 있다.
+		// 종착역(headsign)으로 묶으면 방향이 섞이므로 다음 정차역으로 묶는다. 원천 방면 이름은 비어 있다.
+		String gangnam = "station-gangnam", yeoksam = "station-6cb6f7dc212c", gyodae = "station-7dfc6ea6a83c";
+		RouteTimetable timetable = new RouteTimetable(List.of(calendar()), List.of(),
+			List.of(new TransitRoute("route-kric-capital-s1102", "seoul-2", "S1102", "", "", "Asia/Seoul")),
+			List.of(new TransitTrip("outer", "route-kric-capital-s1102", "weekday", "성수", "", "SUBWAY", "LOCAL", null, 0),
+				new TransitTrip("inner", "route-kric-capital-s1102", "weekday", "성수", "", "SUBWAY", "LOCAL", null, 0)),
+			List.of(new TransitStopTime("outer", 1, gangnam, "seoul-2", 32_400, 32_400, 0, 0),
+				new TransitStopTime("outer", 2, yeoksam, "seoul-2", 32_520, 32_520, 0, 0),
+				new TransitStopTime("outer", 3, "station-seongsu-outer", "seoul-2", 33_600, 33_600, 0, 0),
+				new TransitStopTime("inner", 1, gangnam, "seoul-2", 32_460, 32_460, 0, 0),
+				new TransitStopTime("inner", 2, gyodae, "seoul-2", 32_580, 32_580, 0, 0),
+				new TransitStopTime("inner", 3, "station-seongsu-inner", "seoul-2", 36_000, 36_000, 0, 0)),
+			List.of(), List.of(), null, RouteAccessData.empty());
+
+		var result = new StationTimetableSearchService(() -> new StationTimetableSnapshot(identity(NOW.plusSeconds(60)), timetable,
+			Set.of(new StationLine(gangnam, "seoul-2"))), Clock.fixed(NOW, ZoneOffset.UTC)).search(
+			new SearchRequest(gangnam, "seoul-2", new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
+
+		assertThat(result.directionGroups()).extracting(StationTimetableSearchService.DirectionGroup::nextStationId)
+			.containsExactly(yeoksam, gyodae);
+		assertThat(result.directionGroups()).allSatisfy(group -> assertThat(group.directionName()).isNull());
+		assertThat(result.directionGroups().getFirst().departures()).singleElement().satisfies(departure -> {
+			assertThat(departure.secondsFromServiceDayStart()).isEqualTo(32_400);
+			assertThat(departure.terminalStationId()).isEqualTo("station-seongsu-outer");
+		});
+		assertThat(result.directionGroups().getLast().departures()).singleElement().satisfies(departure ->
+			assertThat(departure.terminalStationId()).isEqualTo("station-seongsu-inner"));
+	}
+
+	@Test
+	void sameSecondDeparturesToDifferentTerminalsAreDistinctButAnExactDuplicateFailsClosed() {
+		RouteTimetable template = timetable();
+		RouteTimetable twoTerminals = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(), template.transitRoutes(),
+			List.of(new TransitTrip("gwangmyeong", "route", "weekday", "광명", "", "SUBWAY", "LOCAL", null, 0),
+				new TransitTrip("incheon", "route", "weekday", "인천", "", "SUBWAY", "LOCAL", null, 0)),
+			List.of(new TransitStopTime("gwangmyeong", 1, "station", "line", 26_040, 26_040, 0, 0),
+				new TransitStopTime("gwangmyeong", 2, "next", "line", 26_220, 26_220, 0, 0),
+				new TransitStopTime("gwangmyeong", 3, "terminal-gwangmyeong", "line", 27_120, 27_120, 0, 0),
+				new TransitStopTime("incheon", 1, "station", "line", 26_040, 26_040, 0, 0),
+				new TransitStopTime("incheon", 2, "next", "line", 26_220, 26_220, 0, 0),
+				new TransitStopTime("incheon", 3, "terminal-incheon", "line", 29_000, 29_000, 0, 0)),
+			List.of(), List.of(), null, RouteAccessData.empty());
+		assertThat(service(snapshot(twoTerminals, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement().satisfies(group -> assertThat(group.departures())
+				.extracting(StationTimetableSearchService.Departure::terminalStationId)
+				.containsExactlyInAnyOrder("terminal-gwangmyeong", "terminal-incheon"));
+
+		RouteTimetable exactDuplicate = timetable(List.of(calendar()), List.of(), List.of(), List.of(
+			new TransitTrip("trip-duplicate", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)));
+		assertFailure(service(snapshot(exactDuplicate, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
+	}
+
+	@Test
+	void departuresEndingAtTheRequestedStationAreNotListedAndAnArrivalOnlyStationIsNotCovered() {
+		RouteTimetable template = timetable();
+		RouteTimetable mixed = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(), template.transitRoutes(),
+			List.of(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0),
+				new TransitTrip("terminating", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
+			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0),
+				new TransitStopTime("trip", 2, "next", "line", 33_000, 33_000, 0, 0),
+				new TransitStopTime("terminating", 1, "previous", "line", 31_800, 31_800, 0, 0),
+				new TransitStopTime("terminating", 2, "station", "line", 32_100, 32_100, 0, 0)),
+			List.of(), List.of(), null, RouteAccessData.empty());
+		var result = service(snapshot(mixed, NOW.plusSeconds(60))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
+		assertThat(result.directionGroups()).singleElement().satisfies(group -> assertThat(group.departures())
+			.extracting(StationTimetableSearchService.Departure::secondsFromServiceDayStart).containsExactly(32_400));
+
+		RouteTimetable arrivalsOnly = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(),
+			template.transitRoutes(), List.of(new TransitTrip("terminating", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
+			List.of(new TransitStopTime("terminating", 1, "previous", "line", 31_800, 31_800, 0, 0),
+				new TransitStopTime("terminating", 2, "station", "line", 32_100, 32_100, 0, 0)),
+			List.of(), List.of(), null, RouteAccessData.empty());
+		assertFailure(service(snapshot(arrivalsOnly, NOW.plusSeconds(60))), request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_NOT_COVERED);
+	}
+
+	@Test
+	void sourceDirectionNameIsKeptOnlyWhenEveryDepartureOfTheGroupCarriesTheSameValue() {
+		RouteTimetable named = timetable();
+		assertThat(service(snapshot(named, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement()
+			.satisfies(group -> assertThat(group.directionName()).isEqualTo("direction"));
+
+		RouteTimetable partial = withSecondRoute(named, "");
+		assertThat(service(snapshot(partial, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement()
+			.satisfies(group -> assertThat(group.directionName()).isNull());
+
+		RouteTimetable conflicting = withSecondRoute(named, "other direction");
+		assertFailure(service(snapshot(conflicting, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
+	}
+
+	private static RouteTimetable withSecondRoute(RouteTimetable base, String directionName) {
+		List<TransitTrip> trips = new java.util.ArrayList<>(base.transitTrips());
+		trips.add(new TransitTrip("trip-2", "route-2", "weekday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0));
+		List<TransitStopTime> stops = new java.util.ArrayList<>(base.transitStopTimes());
+		stops.add(new TransitStopTime("trip-2", 1, "station", "line", 32_700, 32_700, 0, 0));
+		stops.add(new TransitStopTime("trip-2", 2, "next", "line", 33_300, 33_300, 0, 0));
+		List<TransitRoute> routes = new java.util.ArrayList<>(base.transitRoutes());
+		routes.add(new TransitRoute("route-2", "line", "L", "line", directionName, "Asia/Seoul"));
+		return new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(), routes, trips, stops,
+			base.transitFrequencies(), base.officialFares(), base.feedEndDate(), base.routeAccessData());
 	}
 
 	private static StationTimetableSearchService service(StationTimetableSnapshot snapshot) {
@@ -654,7 +770,7 @@ class StationTimetableSearchServiceTest {
 		return new RouteTimetable(List.of(calendar()), List.of(),
 			List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			List.of(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
-			List.of(stop), List.of(frequency), List.of(), null,
+			List.of(stop, new TransitStopTime("trip", 2, "next", "line", 50_000, 50_000, 0, 0)), List.of(frequency), List.of(), null,
 			RouteAccessData.empty());
 	}
 	private static void stubCorruptedStop(TransitStopTime stop) {
@@ -678,7 +794,10 @@ class StationTimetableSearchServiceTest {
 		trips.add(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0));
 		trips.addAll(extraTrips);
 		List<TransitStopTime> stops = new java.util.ArrayList<>();
-		for (TransitTrip trip : trips) stops.add(new TransitStopTime(trip.id(), 1, "station", "line", 32_400, 32_400, 0, 0));
+		for (TransitTrip trip : trips) {
+			stops.add(new TransitStopTime(trip.id(), 1, "station", "line", 32_400, 32_400, 0, 0));
+			stops.add(new TransitStopTime(trip.id(), 2, "next", "line", 33_000, 33_000, 0, 0));
+		}
 		return new RouteTimetable(calendars, dates, List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			trips, stops, frequencies, List.of(), null,
 			RouteAccessData.empty());
