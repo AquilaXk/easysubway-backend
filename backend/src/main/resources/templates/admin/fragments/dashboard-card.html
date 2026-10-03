@@ -13,7 +13,10 @@
 -->
 <a th:fragment="card(card)" class="dashboard-card metric-cell" th:href="@{${card.href}}"
    th:attr="data-metric-key=${card.metricKey}">
-	<span class="dashboard-card-title" th:text="${card.title}">제목</span>
+	<div class="dashboard-card-head">
+		<span class="dashboard-card-title" th:text="${card.title}">제목</span>
+		<span class="dashboard-card-indicator" aria-hidden="true"></span>
+	</div>
 	<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
 	<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
 	     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"

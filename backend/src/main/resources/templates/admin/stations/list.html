@@ -126,8 +126,19 @@
 					</td>
 					<td th:text="${station.lineNames}">4호선</td>
 					<td th:text="${station.region}">수도권</td>
-					<td class="cell-num" th:text="|${station.exitCount} / ${station.facilityCount} / ${station.layoutSourceCount}|">0 / 0 / 0</td>
-					<td class="cell-num" th:text="|${station.routeNodeCount} / ${station.routeEdgeCount}|">0 / 0</td>
+					<td class="cell-num">
+						<span class="admin-metric-split">
+							<span class="admin-split-item" title="출구 수"><span class="admin-split-label">출구</span><strong th:text="${station.exitCount}">0</strong></span>
+							<span class="admin-split-item" title="시설 수"><span class="admin-split-label">시설</span><strong th:text="${station.facilityCount}">0</strong></span>
+							<span class="admin-split-item" title="자료 수"><span class="admin-split-label">자료</span><strong th:text="${station.layoutSourceCount}">0</strong></span>
+						</span>
+					</td>
+					<td class="cell-num">
+						<span class="admin-metric-split">
+							<span class="admin-split-item" title="노드 수"><span class="admin-split-label">노드</span><strong th:text="${station.routeNodeCount}">0</strong></span>
+							<span class="admin-split-item" title="간선 수"><span class="admin-split-label">간선</span><strong th:text="${station.routeEdgeCount}">0</strong></span>
+						</span>
+					</td>
 					<td>
 						<!-- 마지막 확인: 상대 시간 + 정확한 날짜 병기(색 단독 금지 아님, 시간 정보). lastVerifiedAt은 뷰모델에서
 						     ISO 문자열(yyyy-MM-dd)로 직렬화돼 오므로 표시 계층에서 LocalDate로 되돌려 상대 시간을 계산한다.

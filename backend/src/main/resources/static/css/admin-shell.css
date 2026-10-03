@@ -255,7 +255,6 @@
 }
 
 .admin-dashboard-page .admin-topbar-row {
-	justify-content: flex-start;
 	min-height: 38px;
 }
 
@@ -288,7 +287,8 @@
 	gap: 9px;
 	width: min(520px, 44vw);
 	min-width: 360px;
-	height: 42px;
+	height: 38px;
+	margin-left: auto;
 	padding: 0 13px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-control);
@@ -334,10 +334,45 @@
 
 .admin-topbar-context {
 	display: flex;
-	align-items: baseline;
-	gap: 8px;
+	align-items: center;
+	gap: 12px;
 	min-width: 0;
 	font-size: 14px;
+}
+
+.admin-topbar-location {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: var(--admin-fs-control);
+	color: var(--admin-ink-2);
+}
+
+.admin-topbar-crumb-parent {
+	color: var(--admin-ink-3);
+	font-weight: var(--admin-w-body);
+}
+
+.admin-topbar-crumb-sep {
+	color: var(--admin-ink-3);
+	font-size: var(--admin-fs-meta);
+}
+
+.admin-topbar-crumb-current {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-search-kbd {
+	padding: 1px 6px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink-3);
+	background: var(--admin-bg);
+	line-height: 1.4;
+	margin-left: auto;
 }
 
 .admin-topbar-brand {
@@ -375,6 +410,18 @@
 
 .admin-topbar-logout-form {
 	margin: 0;
+}
+
+.admin-user-menu-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px 14px;
+	margin: 6px 0;
+	border-top: 1px solid var(--admin-border);
+	border-bottom: 1px solid var(--admin-border);
+	background: var(--admin-bg);
+	font-size: var(--admin-fs-meta);
 }
 
 /* 상태 스트립: 정적·무채색·비인터랙티브. 각 항목은 라벨 + 값으로 의미를 드러내고, title 툴팁으로
@@ -431,7 +478,13 @@
 }
 
 .admin-env-badge {
-	font-size: 12px;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
 }
 
 .admin-env-badge::before {
@@ -440,12 +493,21 @@
 }
 
 .admin-env-badge.is-production {
+	background: var(--admin-danger-soft);
+	border-color: var(--admin-danger);
 	color: var(--admin-danger);
 }
 
-.admin-env-badge.is-staging,
+.admin-env-badge.is-staging {
+	background: var(--admin-warn-soft);
+	border-color: var(--admin-warn);
+	color: var(--admin-warn);
+}
+
 .admin-env-badge.is-development {
-	color: var(--admin-ink-2);
+	background: var(--admin-accent-soft);
+	border-color: var(--admin-accent);
+	color: var(--admin-accent-ink);
 }
 
 .admin-page-head {
@@ -588,6 +650,8 @@
 
 	.admin-topbar-sep,
 	.admin-topbar-scope,
+	.admin-topbar-location,
+	.admin-topbar-context .admin-env-badge,
 	.admin-topbar-search {
 		display: none;
 	}
