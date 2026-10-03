@@ -49,6 +49,27 @@ public interface DatapackReleaseChannelCommandPort {
 		LocalDateTime createdAt
 	);
 
+	/**
+	 * git 원본 release request 발행의 채널 관측을 기록한다(#456, 관측 전용). 승격·롤백 상태는 바꾸지 않는다.
+	 * sequence가 커질 때만 갱신(APPLIED)하고, 같은 sequence·manifest 재관측은 no-op(UNCHANGED),
+	 * sequence 역행이나 같은 sequence의 다른 manifest는 거부(REJECTED)한다.
+	 */
+	ChannelObservationOutcome observeRelease(ChannelObservation observation);
+
+	record ChannelObservation(
+		String channel,
+		long releaseSequence,
+		String manifestSha256,
+		String releaseRequestId,
+		String bindingSignatureSha256,
+		String deliveryIdempotencyKey,
+		String workflowRunUrl,
+		LocalDateTime observedAt
+	) {
+	}
+
+	enum ChannelObservationOutcome { APPLIED, UNCHANGED, REJECTED }
+
 	record ReleaseChannelEvent(
 		String id,
 		String channel,

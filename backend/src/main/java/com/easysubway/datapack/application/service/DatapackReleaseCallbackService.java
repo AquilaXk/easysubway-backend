@@ -1,6 +1,8 @@
 package com.easysubway.datapack.application.service;
 
 import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort;
+import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort.ChannelObservation;
+import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort.ChannelObservationOutcome;
 import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort.PassingReleaseEvidence;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository;
@@ -28,6 +30,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 워크플로가 보낸 release callback payload를 수신해 HMAC 검증 → release request 상태 전이 → 멱등 재수신
  * no-op를 처리한다. PASS 시 production 채널로 best-effort 자동 promote를 시도한다.
  * promote 게이트 거부 시에도 status=PUBLISHED를 유지하고 promote_outcome=REJECTED를 기록한다.
+ *
+ * <p>git 원본 release request(#456): backend에 request 행이 없는 PASS callback은 HMAC 검증 뒤
+ * catalog/current.json과 서명된 release-request binding 결속이 모두 일치할 때만 delivery를
+ * DELIVERED로 종결하고 배포 채널 관측을 갱신한다. 상태 전이·승인·승격은 만들지 않는다.
+ * 결속 불일치는 DEAD_LETTER, binding 부재는 RELEASE_REQUEST_MISSING, 읽기 실패는 오류로 거부한다.
  */
 @Service
 public class DatapackReleaseCallbackService {
@@ -37,6 +44,11 @@ public class DatapackReleaseCallbackService {
 	// 게시 콜백을 수용하는 진행 중 상태. DISPATCHED·DISPATCH_FAILED는 backend dispatch 발화가
 	// 제거된 뒤(#2564) 새로 생기지 않는 이력 상태지만, 남은 행이 수동 게시 결과로 종결될 수
 	// 있도록 APPROVED와 동등하게 수용한다(거부하면 해당 행은 영구 미종결로 남는다).
+	// backend request 행 없이 기록된 delivery의 candidate 표식. 재조정은 이 표식이 있는 delivery만
+	// git 원본 관측 경로로 보낸다(request 행이 사라진 backend 원본 delivery와 구분).
+	static final String NO_BACKEND_REQUEST_CANDIDATE_ID = "missing-request";
+	private static final String OBSERVED = "OBSERVED";
+
 	private static final Set<DatapackReleaseRequestStatus> CALLBACK_ACCEPTED_STATUSES = Set.of(
 		DatapackReleaseRequestStatus.APPROVED,
 		DatapackReleaseRequestStatus.DISPATCHED,
@@ -89,7 +101,7 @@ public class DatapackReleaseCallbackService {
 			status -> receiveTerminalReplay(cmd, fields));
 		if (terminalReplay != null) return terminalReplay;
 		boolean knownRequest = repository.findByApprovalId(cmd.releaseRequestId()).isPresent();
-		var catalogValidation = pass && knownRequest ? validatePublishedCatalog(cmd) : null;
+		var catalogValidation = pass ? validatePublishedCatalog(cmd, knownRequest) : null;
 		return transactionTemplate.execute(status -> receiveVerified(cmd, fields, catalogValidation));
 	}
 
@@ -107,7 +119,12 @@ public class DatapackReleaseCallbackService {
 			return new CallbackResult("DEAD_LETTER", false);
 		}
 		var request = repository.findByApprovalId(cmd.releaseRequestId()).orElse(null);
-		if (request == null) return null;
+		if (request == null) {
+			if (existingSequence.isEmpty()) return null;
+			var state = existingSequence.get().state();
+			if (state == State.DELIVERED) return new CallbackResult(OBSERVED, true);
+			return state == State.DEAD_LETTER ? new CallbackResult("DEAD_LETTER", true) : null;
+		}
 		var deliveryTerminal = existingSequence.isPresent()
 			&& (existingSequence.get().state() == State.DELIVERED
 				|| existingSequence.get().state() == State.DEAD_LETTER);
@@ -132,12 +149,10 @@ public class DatapackReleaseCallbackService {
         var request = repository.findByApprovalId(cmd.releaseRequestId()).orElse(null);
         var delivery = deliveryRepository.upsertSameDelivery(DatapackReleaseDelivery.pending(
             cmd.releaseRequestId(), cmd.releaseSequence(), cmd.manifestSha256(), cmd.channel(),
-            request == null ? "missing-request" : request.candidateId(), fields.payloadSha256(),
+            request == null ? NO_BACKEND_REQUEST_CANDIDATE_ID : request.candidateId(), fields.payloadSha256(),
             CallbackSignature.sha256(cmd.verifierValue()), now));
         if (request == null) {
-            deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
-                delivery.attempts(), null, "NOT_FOUND", "RELEASE_REQUEST_MISSING", now);
-            return new CallbackResult("MISSING_REQUEST", false);
+			return receiveGitRelease(cmd, delivery, catalogValidation, now);
         }
         if (!cmd.channel().equals(request.targetChannel())) {
             deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
@@ -199,6 +214,46 @@ public class DatapackReleaseCallbackService {
 
         return new CallbackResult(terminal.name(), false);
     }
+
+	private CallbackResult receiveGitRelease(CallbackCommand cmd, DatapackReleaseDelivery delivery,
+		PublishedCatalogValidation catalogValidation, LocalDateTime now) {
+		if (catalogValidation == null || catalogValidation.bindingMissing()) {
+			deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+				delivery.attempts(), null, "NOT_FOUND", "RELEASE_REQUEST_MISSING", now);
+			return new CallbackResult("MISSING_REQUEST", false);
+		}
+		if (catalogValidation.mismatch() != null) {
+			var mismatch = catalogValidation.mismatch();
+			deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+				delivery.attempts(), null, mismatch.httpClass(), mismatch.detail(), now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		var outcome = observeGitRelease(delivery, cmd.workflowRunUrl(),
+			catalogValidation.bindingSignatureSha256(), now);
+		if (outcome == ChannelObservationOutcome.REJECTED) {
+			deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+				delivery.attempts(), null, "CONFLICT", "CHANNEL_OBSERVATION_REGRESSION", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		deliveryRepository.mark(delivery.idempotencyKey(), State.DELIVERED,
+			delivery.attempts() + 1, null, "2XX", observationDetail(outcome), now);
+		return new CallbackResult(OBSERVED, false);
+	}
+
+	/** 수신·재조정이 같은 binding 검증을 통과한 delivery만 호출한다. 관측 전용이며 승격 상태는 바꾸지 않는다. */
+	private ChannelObservationOutcome observeGitRelease(DatapackReleaseDelivery delivery,
+		String workflowRunUrl, String bindingSignatureSha256, LocalDateTime now) {
+		return channelCommandPort.observeRelease(new ChannelObservation(
+			delivery.channel(), delivery.releaseSequence(), delivery.manifestSha256(),
+			delivery.releaseRequestId(), bindingSignatureSha256, delivery.idempotencyKey(),
+			workflowRunUrl, now));
+	}
+
+	private static String observationDetail(ChannelObservationOutcome outcome) {
+		return outcome == ChannelObservationOutcome.APPLIED
+			? "GIT_RELEASE_OBSERVED"
+			: "GIT_RELEASE_OBSERVATION_UNCHANGED";
+	}
 
 	private CallbackResult receiveLegacy(CallbackCommand cmd) {
 		var fields = new LegacyCanonicalFields(cmd.schemaVersion(), cmd.artifactKind(),
@@ -264,20 +319,27 @@ public class DatapackReleaseCallbackService {
 			&& "PASS".equals(cmd.routeRegressionStatus());
 	}
 
-	private PublishedCatalogValidation validatePublishedCatalog(CallbackCommand cmd) {
+	private PublishedCatalogValidation validatePublishedCatalog(CallbackCommand cmd, boolean knownRequest) {
 		var currentMismatch = currentReleaseMismatch(cmd);
-		if (currentMismatch != null) return new PublishedCatalogValidation(currentMismatch, false);
-		var binding = releaseCatalog.findByRequest(cmd.channel(), cmd.releaseRequestId())
-			.orElseThrow(DatapackReleaseCatalogPort.Unavailable::new);
+		if (currentMismatch != null) {
+			return new PublishedCatalogValidation(currentMismatch, false, null, false);
+		}
+		var binding = releaseCatalog.findByRequest(cmd.channel(), cmd.releaseRequestId()).orElse(null);
+		if (binding == null) {
+			// backend request 행이 있으면 binding 미게시는 일시 장애로 재시도한다. git 원본은 binding이
+			// 유일한 발행 근거라 없으면 지금처럼 RELEASE_REQUEST_MISSING으로 거부한다.
+			if (knownRequest) throw new DatapackReleaseCatalogPort.Unavailable();
+			return new PublishedCatalogValidation(null, false, null, true);
+		}
 		if (!binding.signatureValid()
 			|| binding.releaseSequence() != cmd.releaseSequence()
 			|| !binding.channel().equals(cmd.channel())
 			|| !binding.releaseRequestId().equals(cmd.releaseRequestId())
 			|| !binding.manifestSha256().equals(cmd.manifestSha256())) {
 			return new PublishedCatalogValidation(
-				new CurrentReleaseMismatch("CONFLICT", "RELEASE_REQUEST_BINDING_MISMATCH"), false);
+				new CurrentReleaseMismatch("CONFLICT", "RELEASE_REQUEST_BINDING_MISMATCH"), false, null, false);
 		}
-		return new PublishedCatalogValidation(null, binding.noChange());
+		return new PublishedCatalogValidation(null, binding.noChange(), binding.signatureSha256(), false);
 	}
 
 	private static String expectedIdempotencyKey(CallbackCommand cmd) {
@@ -302,7 +364,8 @@ public class DatapackReleaseCallbackService {
 	}
 
 	private record CurrentReleaseMismatch(String httpClass, String detail) {}
-	private record PublishedCatalogValidation(CurrentReleaseMismatch mismatch, boolean noChange) {}
+	private record PublishedCatalogValidation(CurrentReleaseMismatch mismatch, boolean noChange,
+		String bindingSignatureSha256, boolean bindingMissing) {}
 
     private void tryPromote(DatapackReleaseRequest r, CallbackCommand cmd) {
 		tryPromote(r, cmd.manifestSha256(), cmd.workflowRunUrl(), cmd.evidenceBundleSha256(),
@@ -339,6 +402,17 @@ public class DatapackReleaseCallbackService {
 			return new CallbackResult("DEAD_LETTER", false);
 		}
 		var request = repository.findByApprovalId(delivery.releaseRequestId()).orElse(null);
+		if (request == null && NO_BACKEND_REQUEST_CANDIDATE_ID.equals(delivery.candidateId())) {
+			var outcome = observeGitRelease(delivery, null, catalog.signatureSha256(), now);
+			if (outcome == ChannelObservationOutcome.REJECTED) {
+				markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+					"CONFLICT", "CHANNEL_OBSERVATION_REGRESSION", now);
+				return new CallbackResult("DEAD_LETTER", false);
+			}
+			markClaimed(delivery, State.DELIVERED, delivery.attempts() + 1, null,
+				"RECONCILED", observationDetail(outcome), now);
+			return new CallbackResult(OBSERVED, false);
+		}
 		if (request == null
 			|| !request.candidateId().equals(delivery.candidateId())
 			|| !request.targetChannel().equals(delivery.channel())) {
