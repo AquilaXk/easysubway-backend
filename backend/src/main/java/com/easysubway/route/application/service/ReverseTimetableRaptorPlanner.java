@@ -355,7 +355,7 @@ final class ReverseTimetableRaptorPlanner {
 		/** 출발역에서 (역, 승차 노선)으로 타기 전까지 필요한 최소 승차 수({@link #ridesBeforeBoarding}). */
 		private final int[] ridesBefore;
 		/** 패턴·하차 위치마다 그 앞 승차 위치들의 최소 선행 승차 수(출발역 승차는 0). */
-		private final Map<Integer, int[]> ridesBeforeAlight = new HashMap<>();
+		private final int[][] ridesBeforeAlight;
 		private final PriorityQueue<QueueEntry> queue = new PriorityQueue<>(QUEUE_ORDER);
 		private final Map<ReverseStateKey, List<ReverseLabel>> labelsByState = new HashMap<>();
 		private final List<Candidate> candidates = new ArrayList<>();
@@ -378,6 +378,7 @@ final class ReverseTimetableRaptorPlanner {
 			this.origin = origin;
 			this.destination = destination;
 			this.fromOrigin = RouteTimetableRaptorPlanner.computeProfileLowerBoundsFrom(timetable, origin, trips.overlays());
+			this.ridesBeforeAlight = new int[timetable.routePatternCount()][];
 			this.windowStart = query.earliestReadyAtSeconds();
 			this.ridesBefore = ridesBeforeBoarding(timetable, query, origin, query.maxTransfers());
 		}
@@ -390,9 +391,10 @@ final class ReverseTimetableRaptorPlanner {
 
 		/** 이 패턴의 alight 위치에서 내리는 승차 중 출발역에서 가장 적은 선행 승차로 닿는 값. */
 		private int ridesBeforeAlight(int pattern, int alight) {
-			int[] values = ridesBeforeAlight.computeIfAbsent(pattern, key -> {
-				int[] stops = timetable.stopsByPattern(key);
-				RouteTimetableRaptorPlanner.ScheduledTrip representative = timetable.patternRepresentative(key);
+			int[] values = ridesBeforeAlight[pattern];
+			if (values == null) {
+				int[] stops = timetable.stopsByPattern(pattern);
+				RouteTimetableRaptorPlanner.ScheduledTrip representative = timetable.patternRepresentative(pattern);
 				int[] result = new int[stops.length];
 				int best = RouteTimetableRaptorPlanner.UNREACHABLE_BOARDINGS;
 				for (int position = 0; position < stops.length; position += 1) {
@@ -402,8 +404,9 @@ final class ReverseTimetableRaptorPlanner {
 							timetable.lineIndex(representative.lineId(position))));
 					}
 				}
-				return result;
-			});
+				values = result;
+				ridesBeforeAlight[pattern] = values;
+			}
 			return values[alight];
 		}
 
@@ -1013,15 +1016,19 @@ final class ReverseTimetableRaptorPlanner {
 		private final List<DateBlock> blocks;
 		private final LocalDate anchorServiceDate;
 		private final ReverseLimitTracker limits;
-		private final Map<Integer, ReversePatternTrips> byPattern = new HashMap<>();
+		/** 패턴 번호로 바로 찾는 질의 단위 캐시(#462). 처음 보는 패턴만 펼친다. */
+		private final ReversePatternTrips[] byPattern;
 		private final Map<RouteTimetableRaptorPlanner.RealtimeOverlay, Integer> groupByOverlay =
 			new java.util.IdentityHashMap<>();
 		private final Map<java.util.BitSet, Integer> groupByBlockedTransitions = new HashMap<>();
 
-		private ReverseTrips(List<DateBlock> blocks, LocalDate anchorServiceDate, ReverseLimitTracker limits) {
+		private ReverseTrips(
+			List<DateBlock> blocks, LocalDate anchorServiceDate, ReverseLimitTracker limits, int patternCount
+		) {
 			this.blocks = List.copyOf(blocks);
 			this.anchorServiceDate = anchorServiceDate;
 			this.limits = limits;
+			this.byPattern = new ReversePatternTrips[patternCount];
 		}
 
 		/** 취소되면 null이다. */
@@ -1035,16 +1042,18 @@ final class ReverseTimetableRaptorPlanner {
 			BooleanSupplier cancelled
 		) {
 			List<DateBlock> blocks = new ArrayList<>();
+			int patternCount = 0;
 			for (LocalDate serviceDate = firstServiceDate; !serviceDate.isAfter(lastServiceDate);
 				serviceDate = serviceDate.plusDays(1)) {
 				if (cancelled.getAsBoolean()) return null;
 				limits.consumeWork();
 				RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay = activeDays.apply(serviceDate);
+				patternCount = activeServiceDay.patternCount();
 				if (activeServiceDay.routePatternTripLinkCount() == 0) continue;
 				blocks.add(new DateBlock(serviceDate, activeServiceDay,
 					Objects.requireNonNull(overlays.apply(serviceDate), "realtime overlay must not be null")));
 			}
-			return new ReverseTrips(blocks, anchorServiceDate, limits);
+			return new ReverseTrips(blocks, anchorServiceDate, limits, patternCount);
 		}
 
 		private boolean noActiveService() {
@@ -1071,7 +1080,7 @@ final class ReverseTimetableRaptorPlanner {
 
 		/** 한 패턴의 날짜별 열차. 펼친 열차마다 작업량 1이다. */
 		private ReversePatternTrips pattern(int pattern) {
-			ReversePatternTrips cached = byPattern.get(pattern);
+			ReversePatternTrips cached = byPattern[pattern];
 			if (cached != null) return cached;
 			List<DatedScheduledTrip> datedTrips = new ArrayList<>();
 			List<Integer> offsets = new ArrayList<>();
@@ -1093,7 +1102,7 @@ final class ReverseTimetableRaptorPlanner {
 			}
 			ReversePatternTrips value = new ReversePatternTrips(datedTrips,
 				offsets.stream().mapToInt(Integer::intValue).toArray(), starts, ordered, blockOverlays);
-			byPattern.put(pattern, value);
+			byPattern[pattern] = value;
 			return value;
 		}
 	}

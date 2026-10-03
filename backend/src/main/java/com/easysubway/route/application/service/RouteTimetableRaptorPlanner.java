@@ -2157,7 +2157,7 @@ public final class RouteTimetableRaptorPlanner {
 		ServiceDay serviceDay = new ServiceDay(serviceDate, latestReadyAtSeconds);
 		ScanInput profileInput = scanInput(query, serviceDay);
 		throwIfCancelled(profileInput);
-		ProfileDatedTripView trips = datedTrips.forReadinessAnchor(serviceDay.date(), limits);
+		ProfileDatedTripView trips = datedTrips.forReadinessAnchor(serviceDay.date(), limits, timetable.routePatternCount());
 		if (trips.isEmpty()) return List.of();
 		int origin = timetable.stationIndex(profileInput.originStationId());
 		int destination = timetable.stationIndex(profileInput.destinationStationId());
@@ -3713,6 +3713,11 @@ public final class RouteTimetableRaptorPlanner {
 			return tripsByPattern.get(pattern);
 		}
 
+		/** 컴파일 시간표의 패턴 수. 비운행 패턴도 빈 목록으로 칸을 갖는다. */
+		int patternCount() {
+			return tripsByPattern.size();
+		}
+
 		int routePatternTripLinkCount() {
 			return tripsByPattern.stream()
 				.mapToInt(List::size)
@@ -4474,8 +4479,8 @@ public final class RouteTimetableRaptorPlanner {
 
 	/** 원본 운행일·실시간 관측을 보존하고 준비시각 기준 좌표로만 탐색한다. */
 	private record ProfileDatedTripOccurrences(List<ProfileServiceDateBlock> blocks) {
-		private ProfileDatedTripView forReadinessAnchor(LocalDate anchorDate, ProfileLimitTracker limits) {
-			return new ProfileDatedTripView(blocks, anchorDate, limits);
+		private ProfileDatedTripView forReadinessAnchor(LocalDate anchorDate, ProfileLimitTracker limits, int patternCount) {
+			return new ProfileDatedTripView(blocks, anchorDate, limits, patternCount);
 		}
 	}
 
@@ -4560,12 +4565,16 @@ public final class RouteTimetableRaptorPlanner {
 		private final List<ProfileServiceDateBlock> blocks;
 		private final LocalDate anchorDate;
 		private final ProfileLimitTracker limits;
-		private final Map<Integer, ProfilePatternTrips> byPattern = new HashMap<>();
+		/** 패턴 번호로 바로 찾는 질의 단위 캐시(#462). 처음 보는 패턴만 펼친다. */
+		private final ProfilePatternTrips[] byPattern;
 
-		private ProfileDatedTripView(List<ProfileServiceDateBlock> blocks, LocalDate anchorDate, ProfileLimitTracker limits) {
+		private ProfileDatedTripView(
+			List<ProfileServiceDateBlock> blocks, LocalDate anchorDate, ProfileLimitTracker limits, int patternCount
+		) {
 			this.blocks = blocks;
 			this.anchorDate = anchorDate;
 			this.limits = limits;
+			this.byPattern = new ProfilePatternTrips[patternCount];
 		}
 
 		private boolean isEmpty() {
@@ -4578,7 +4587,7 @@ public final class RouteTimetableRaptorPlanner {
 
 		/** 탐색이 처음 보는 패턴만 날짜별 열차로 펼친다. 펼친 열차마다 작업량 1이다. */
 		private ProfilePatternTrips tripsByPattern(int pattern) {
-			ProfilePatternTrips cached = byPattern.get(pattern);
+			ProfilePatternTrips cached = byPattern[pattern];
 			if (cached != null) return cached;
 			List<ProfileDatedTrip> trips = new ArrayList<>();
 			int[] starts = new int[blocks.size()];
@@ -4595,7 +4604,7 @@ public final class RouteTimetableRaptorPlanner {
 				}
 			}
 			ProfilePatternTrips value = new ProfilePatternTrips(List.copyOf(trips), starts, ordered);
-			byPattern.put(pattern, value);
+			byPattern[pattern] = value;
 			return value;
 		}
 
@@ -4995,7 +5004,8 @@ public final class RouteTimetableRaptorPlanner {
 		/** 도착역까지 남은 최소 승차 수({@link #forwardRemainingBoardings}). */
 		private final int[] remainingBoardings;
 		/** 패턴·승차 위치마다 그 뒤 하차로 도착역까지 남는 최소 승차 수(그 노선으로 내린 상태 기준). */
-		private final Map<Integer, int[]> remainingAfterBoarding = new HashMap<>();
+		/** 패턴별 승차 위치마다 남은 최소 승차 수. 패턴 번호로 찾는 질의 단위 캐시다(#462). */
+		private final int[][] remainingAfterBoarding;
 		private int expandedRoutes;
 		private int expandedTrips;
 		private int expandedTransfers;
@@ -5019,6 +5029,7 @@ public final class RouteTimetableRaptorPlanner {
 			this.windowSeconds = windowSeconds;
 			this.remainingBoardings = forwardRemainingBoardings(
 				timetable, input, accessOverlay, destination, input.maxTransfers() + 1);
+			this.remainingAfterBoarding = new int[timetable.routePatternCount()][];
 		}
 
 		/** 지금 승차 수에서 이 상태로 내린 뒤 도착역까지 가면 승차 예산을 넘는가. */
@@ -5028,9 +5039,10 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		private int remainingAfterBoarding(int pattern, int position) {
-			int[] values = remainingAfterBoarding.computeIfAbsent(pattern, key -> {
-				int[] stops = timetable.stopsByPattern(key);
-				ScheduledTrip representative = timetable.patternRepresentative(key);
+			int[] values = remainingAfterBoarding[pattern];
+			if (values == null) {
+				int[] stops = timetable.stopsByPattern(pattern);
+				ScheduledTrip representative = timetable.patternRepresentative(pattern);
 				int[] result = new int[stops.length];
 				for (int board = 0; board < stops.length; board += 1) {
 					int line = timetable.lineIndex(representative.lineId(board));
@@ -5041,8 +5053,9 @@ public final class RouteTimetableRaptorPlanner {
 					}
 					result[board] = best;
 				}
-				return result;
-			});
+				values = result;
+				remainingAfterBoarding[pattern] = values;
+			}
 			return values[position];
 		}
 
