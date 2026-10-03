@@ -3171,6 +3171,11 @@ public final class RouteTimetableRaptorPlanner {
 		private final int stationCount;
 		private final int lineCount;
 		private final long[] transferKeys;
+		/**
+		 * #462: (역, 출발 노선)마다 정렬된 {@link #transferKeys}에서 그 접두사가 시작하는 칸. 칸 {@code p}의 범위는
+		 * {@code [transferRangeStart[p], transferRangeStart[p + 1])}이고 그 안에서 도착 노선만 찾는다.
+		 */
+		private final int[] transferRangeStart;
 		private final int[][] transferTransitions;
 		private final int[] durationSeconds;
 		private final int[] distanceMeters;
@@ -3197,6 +3202,13 @@ public final class RouteTimetableRaptorPlanner {
 			this.stationCount = stationCount;
 			this.lineCount = lineCount;
 			this.transferKeys = transferKeys;
+			this.transferRangeStart = new int[stationCount * lineCount + 1];
+			for (long key : transferKeys) {
+				transferRangeStart[(int) (key / lineCount) + 1] += 1;
+			}
+			for (int prefix = 0; prefix < stationCount * lineCount; prefix += 1) {
+				transferRangeStart[prefix + 1] += transferRangeStart[prefix];
+			}
 			this.transferTransitions = transferTransitions;
 			this.outOfStation = outOfStation;
 			this.outOfStationFootpaths = outOfStationFootpaths;
@@ -3605,8 +3617,13 @@ public final class RouteTimetableRaptorPlanner {
 				return NO_TRANSITIONS;
 			}
 			long key = transferKey(station, fromLine, toLine, lineCount);
-			int index = Arrays.binarySearch(transferKeys, key);
-			return index >= 0 ? transferTransitions[index] : NO_TRANSITIONS;
+			int prefix = station * lineCount + fromLine;
+			for (int index = transferRangeStart[prefix]; index < transferRangeStart[prefix + 1]; index += 1) {
+				if (transferKeys[index] == key) {
+					return transferTransitions[index];
+				}
+			}
+			return NO_TRANSITIONS;
 		}
 		private boolean isEligible(
 			int transition, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance, boolean requireMeasurement
