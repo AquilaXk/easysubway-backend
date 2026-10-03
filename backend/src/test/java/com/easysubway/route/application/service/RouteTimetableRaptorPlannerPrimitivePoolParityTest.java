@@ -125,8 +125,8 @@ class RouteTimetableRaptorPlannerPrimitivePoolParityTest {
 				rStart, rArr, rBoard, 0, 0, rWarn,
 				rSec, rDist, rStairs, 0, -1, -1, -1, -1, -1, null, null, rSlack);
 
-			boolean expected = lStart == rStart
-				&& lArr == rArr
+			// #461: 시작 시각은 상태 비교 차원이 아니다(출발 범위 탐색의 모든 라벨이 남은 모든 시점에 쓰인다).
+			boolean expected = lArr == rArr
 				&& lBoard == rBoard
 				&& lSec == rSec
 				&& lDist == rDist
@@ -207,8 +207,8 @@ class RouteTimetableRaptorPlannerPrimitivePoolParityTest {
 		ConnectionSlack lSlack,
 		ConnectionSlack rSlack
 	) {
-		boolean noWorse = lStart >= rStart
-			&& lArrival <= rArrival
+		// #461: 시작 시각은 상태 지배 차원이 아니다. 인자는 무작위 입력의 기록용으로만 남긴다.
+		boolean noWorse = lArrival <= rArrival
 			&& lAccessSec <= rAccessSec
 			&& lAccessMeters <= rAccessMeters
 			&& lStairs <= rStairs
@@ -220,8 +220,7 @@ class RouteTimetableRaptorPlannerPrimitivePoolParityTest {
 			return false;
 		}
 
-		return lStart > rStart
-			|| lArrival < rArrival
+		return lArrival < rArrival
 			|| lAccessSec < rAccessSec
 			|| lAccessMeters < rAccessMeters
 			|| lStairs < rStairs

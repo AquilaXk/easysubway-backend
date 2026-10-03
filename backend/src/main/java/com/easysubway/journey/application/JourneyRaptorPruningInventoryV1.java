@@ -14,9 +14,18 @@ import java.util.Set;
 public final class JourneyRaptorPruningInventoryV1 {
 
 	public static final AlgorithmSemanticIdentity FORWARD_RANGE_RAPTOR =
-		new AlgorithmSemanticIdentity("EASYSUBWAY_RAPTOR_SUITE_V2", "FORWARD_RANGE_RAPTOR", "1.0.0");
+		new AlgorithmSemanticIdentity("EASYSUBWAY_RAPTOR_SUITE_V2", "FORWARD_RANGE_RAPTOR", "2.0.0");
 	public static final AlgorithmSemanticIdentity REVERSE_RANGE_RAPTOR =
-		new AlgorithmSemanticIdentity("EASYSUBWAY_RAPTOR_SUITE_V2", "REVERSE_RANGE_RAPTOR", "1.0.0");
+		new AlgorithmSemanticIdentity("EASYSUBWAY_RAPTOR_SUITE_V2", "REVERSE_RANGE_RAPTOR", "2.0.0");
+
+	/**
+	 * #461: 한 시점의 대안은 가장 빠른 여정 기준 {@link #PROFILE_ALTERNATIVE_WINDOW_SECONDS} 안에서만 고른다.
+	 * 출발 시간대는 도착 상한(가장 이른 도착 + 창), 도착 희망·막차는 준비 하한(가장 늦은 준비 − 창)이다.
+	 */
+	public static final String PROFILE_ALTERNATIVE_WINDOW = "PROFILE_ALTERNATIVE_WINDOW_V1";
+	public static final int PROFILE_ALTERNATIVE_WINDOW_SECONDS = 30 * 60;
+	/** #461: 시각을 뺀 완화에서도 환승 예산 안에 도착(출발)역에 닿을 수 없는 부분 여정을 버린다. */
+	public static final String PROFILE_TRANSFER_BUDGET = "PROFILE_TRANSFER_BUDGET_V1";
 
 	private static final List<Definition> DEFINITIONS = List.of(
 		definition("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1", both(),
@@ -35,6 +44,12 @@ public final class JourneyRaptorPruningInventoryV1 {
 			"A reverse destination frontier retains no candidate dominated after verified exit completion."),
 		definition("REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1", reverse(),
 			"Equal reverse destination vectors retain only the canonical lowest trace."),
+		definition(PROFILE_ALTERNATIVE_WINDOW, both(),
+			"A profile point keeps only itineraries inside the alternative window of its fastest itinerary; a partial "
+				+ "trace is dropped only when its time plus a valid lower bound already leaves that window."),
+		definition(PROFILE_TRANSFER_BUDGET, both(),
+			"A partial trace is dropped only when even a time-free relaxation with the same transfer eligibility "
+				+ "needs more boardings than the query's transfer budget allows."),
 		definition("FAIL_CLOSED_FRONTIER_CAPACITY_V1", both(),
 			"A frontier above its configured capacity fails the request and never returns a truncated success.")
 	);

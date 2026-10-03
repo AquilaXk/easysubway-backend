@@ -18,10 +18,10 @@ class JourneyRaptorPruningInventoryV1Test {
 	void publishesExactlyTheActiveProfileRulesWithAdoptedAlgorithmIdentities() {
 		assertThat(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR)
 			.isEqualTo(new JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity(
-				"EASYSUBWAY_RAPTOR_SUITE_V2", "FORWARD_RANGE_RAPTOR", "1.0.0"));
+				"EASYSUBWAY_RAPTOR_SUITE_V2", "FORWARD_RANGE_RAPTOR", "2.0.0"));
 		assertThat(JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR)
 			.isEqualTo(new JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity(
-				"EASYSUBWAY_RAPTOR_SUITE_V2", "REVERSE_RANGE_RAPTOR", "1.0.0"));
+				"EASYSUBWAY_RAPTOR_SUITE_V2", "REVERSE_RANGE_RAPTOR", "2.0.0"));
 
 		assertThat(JourneyRaptorPruningInventoryV1.definitions())
 			.extracting(JourneyRaptorPruningInventoryV1.Definition::pruningRuleId)
@@ -34,6 +34,8 @@ class JourneyRaptorPruningInventoryV1Test {
 				"REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1",
 				"REVERSE_DESTINATION_DOMINANCE_V1",
 				"REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1",
+				"PROFILE_ALTERNATIVE_WINDOW_V1",
+				"PROFILE_TRANSFER_BUDGET_V1",
 				"FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 		assertThat(JourneyRaptorPruningInventoryV1.definitions()).allSatisfy(definition -> {
 			assertThat(definition.algorithmSemanticIdentities()).isNotEmpty();

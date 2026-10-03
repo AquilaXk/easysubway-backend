@@ -192,7 +192,7 @@ public final class JourneyProfileFullCorpusRunner {
 	) {
 		JourneyRaptorQuery query = query(candidate,
 			new JourneyRaptorQuery.ArriveBy(candidate.readyAt(), candidate.arrivalAtDestination()));
-		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solve(
+		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solveLatestReadyWindow(
 			oracleQuery(candidate, candidate.readyAt(), candidate.arrivalAtDestination(), limits, boardingSlackSeconds), rides, accesses);
 		return JourneyProfileMeasuredExecution.reverseRow(regionId,
 			JourneyProfileMeasuredExecution.measure(query, compiled.runtime(), resourcePolicy.profilePlanningLimits()), expected);
@@ -210,7 +210,7 @@ public final class JourneyProfileFullCorpusRunner {
 	) {
 		List<JourneyProfileExactOracle.Ride> rides = rawRides(compiled, List.of(candidate.serviceDate()), limits);
 		Instant earliestReadyAt = candidate.serviceDate().atStartOfDay(ServiceDayResolver.ZONE).toInstant();
-		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solve(
+		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solveLatestReadyWindow(
 			oracleQuery(candidate, earliestReadyAt, terminalDeadline, limits, boardingSlackSeconds), rides, accesses);
 		if (expected.isEmpty()) {
 			throw unavailable("raw last-connection oracle found no path");
@@ -233,7 +233,7 @@ public final class JourneyProfileFullCorpusRunner {
 		Instant earliestReadyAt = cutoffReadyAt(candidate.readyAt(), compiled.identity().activeFromInstant());
 		JourneyRaptorQuery query = query(candidate,
 			new JourneyRaptorQuery.ArriveBy(earliestReadyAt, candidate.arrivalAtDestination()));
-		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solve(
+		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solveLatestReadyWindow(
 			oracleQuery(candidate, earliestReadyAt, candidate.arrivalAtDestination(), limits, boardingSlackSeconds), rides, accesses);
 		return JourneyProfileMeasuredExecution.cutoffRow(regionId,
 			JourneyProfileMeasuredExecution.measure(query, compiled.runtime(), resourcePolicy.profilePlanningLimits()), expected);
@@ -406,8 +406,8 @@ public final class JourneyProfileFullCorpusRunner {
 		for (Instant readyAt : breakpoints) {
 			if (!deadline.isAfter(readyAt)) continue;
 			var query = oracleQuery(candidate, readyAt, deadline, limits, boardingSlackSeconds);
-			var expected = readyAt.equals(latestReadyAt) ? oracle.solvePoint(query, rides, accesses)
-				: oracle.solveDepartureWindow(query, latestReadyAt.isAfter(deadline) ? deadline : latestReadyAt, rides, accesses);
+			// #461: 엔진·차분 하네스와 같은 정의다. 시점마다 고정 준비 시각의 파레토 집합을 대안 창 안에서 만든다.
+			var expected = oracle.solvePointArrivalWindow(query, rides, accesses);
 			if (!expected.isEmpty()) ordered.put(readyAt, expected);
 		}
 		if (ordered.isEmpty()) throw unavailable("raw departure-window oracle has no feasible breakpoint");

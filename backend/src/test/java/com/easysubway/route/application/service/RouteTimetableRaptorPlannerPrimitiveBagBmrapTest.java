@@ -201,9 +201,10 @@ class RouteTimetableRaptorPlannerPrimitiveBagBmrapTest {
 		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, l0, l1)).isFalse();
 
 		// 3. 각 차원별 단독 우세 (strictly better) 검증
-		// 3-1. 출발 시각 더 늦음 (더 늦게 출발해도 동착)
+		// 3-1. 시작 시각만 늦음: #461부터 시작 시각은 상태 지배 차원이 아니므로 지배하지 않고 같은 벡터다.
 		int lStart = pool.allocate(110, 1000, 1, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
-		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lStart, l0)).isTrue();
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lStart, l0)).isFalse();
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.sameVector(pool, lStart, l0)).isTrue();
 
 		// 3-2. 도착 시각 더 빠름
 		int lArrival = pool.allocate(100, 990, 1, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);

@@ -18,25 +18,33 @@ import java.util.function.BooleanSupplier;
  */
 final class JourneyProfileExactOracle {
 
+	/**
+	 * #461 제품 계약: 한 시점의 대안 창 길이. 출발 시간대의 각 시점은 가장 이른 도착 + 창 안, 도착 희망·막차는
+	 * 가장 늦은 준비 시각 - 창 안의 여정만 파레토 집합에 넣는다. 엔진 상수와 같아야 한다(테스트로 고정).
+	 */
+	static final long ALTERNATIVE_WINDOW_SECONDS = 30 * 60;
+
+	/** 창 없는 프로필 파레토 집합(준비 시각도 기준). */
 	List<Candidate> solve(Query query, List<Ride> rides, List<Access> accesses) {
-		return solve(query, rides, accesses, ReadyAt.PROFILE, null);
+		return solve(query, rides, accesses, ReadyAt.PROFILE, Window.NONE);
 	}
 
+	/** 창 없는 고정 준비 시각 파레토 집합. */
 	List<Candidate> solvePoint(Query query, List<Ride> rides, List<Access> accesses) {
-		return solve(query, rides, accesses, ReadyAt.FIXED, null);
+		return solve(query, rides, accesses, ReadyAt.FIXED, Window.NONE);
 	}
 
-	List<Candidate> solveDepartureWindow(
-		Query query, Instant latestReadyAt, List<Ride> rides, List<Access> accesses
-	) {
-		Objects.requireNonNull(latestReadyAt, "latestReadyAt");
-		if (!latestReadyAt.isAfter(query.earliestReadyAt()) || latestReadyAt.isAfter(query.arrivalDeadline())) {
-			throw new IllegalArgumentException("departure window must be ordered within the query deadline");
-		}
-		return solve(query, rides, accesses, ReadyAt.WINDOW, latestReadyAt);
+	/** 도착 희망·막차: 가장 늦은 준비 시각 - 창보다 늦게 준비하는 여정만 두고 파레토 집합을 만든다. */
+	List<Candidate> solveLatestReadyWindow(Query query, List<Ride> rides, List<Access> accesses) {
+		return solve(query, rides, accesses, ReadyAt.PROFILE, Window.LATEST_READY);
 	}
 
-	private List<Candidate> solve(Query query, List<Ride> rides, List<Access> accesses, ReadyAt readyAtMode, Instant latestReadyAt) {
+	/** 출발 시간대의 한 시점: 가장 이른 도착 + 창보다 늦게 도착하지 않는 여정만 두고 파레토 집합을 만든다. */
+	List<Candidate> solvePointArrivalWindow(Query query, List<Ride> rides, List<Access> accesses) {
+		return solve(query, rides, accesses, ReadyAt.FIXED, Window.EARLIEST_ARRIVAL);
+	}
+
+	private List<Candidate> solve(Query query, List<Ride> rides, List<Access> accesses, ReadyAt readyAtMode, Window window) {
 		Objects.requireNonNull(query, "query");
 		rides = List.copyOf(Objects.requireNonNull(rides, "rides"));
 		accesses = List.copyOf(Objects.requireNonNull(accesses, "accesses"));
@@ -63,9 +71,22 @@ final class JourneyProfileExactOracle {
 			if (!first.pickupAllowed() || !first.fromStationId().equals(query.originStationId())) continue;
 			Instant readyAt = lastDeparture(first, query.boardingSlackSeconds());
 			if (readyAt.isBefore(query.earliestReadyAt())) continue;
-			enumerate(query, rides, accesses, List.of(first), List.of(), candidates, work, readyAtMode, latestReadyAt);
+			enumerate(query, rides, accesses, List.of(first), List.of(), candidates, work, readyAtMode);
 		}
-		return pareto(candidates, work);
+		return pareto(withinWindow(candidates, window), work);
+	}
+
+	/** 창은 실행 가능한 모든 여정에서 정한다. 파레토 계산 전에 거른다. */
+	private static List<Candidate> withinWindow(List<Candidate> candidates, Window window) {
+		if (window == Window.NONE || candidates.isEmpty()) return candidates;
+		if (window == Window.EARLIEST_ARRIVAL) {
+			Instant last = candidates.stream().map(Candidate::arrivalAtDestination).min(Comparator.naturalOrder())
+				.orElseThrow().plusSeconds(ALTERNATIVE_WINDOW_SECONDS);
+			return candidates.stream().filter(candidate -> !candidate.arrivalAtDestination().isAfter(last)).toList();
+		}
+		Instant first = candidates.stream().map(Candidate::readyAt).max(Comparator.naturalOrder())
+			.orElseThrow().minusSeconds(ALTERNATIVE_WINDOW_SECONDS);
+		return candidates.stream().filter(candidate -> !candidate.readyAt().isBefore(first)).toList();
 	}
 
 	private static void enumerate(
@@ -76,8 +97,7 @@ final class JourneyProfileExactOracle {
 		List<Access> chainAccesses,
 		List<Candidate> candidates,
 		Work work,
-		ReadyAt readyAtMode,
-		Instant latestReadyAt
+		ReadyAt readyAtMode
 	) {
 		Ride last = chain.getLast();
 		// #454: 도착역 승강장에 내리면 도착이다(하차 이동 없음).
@@ -88,7 +108,7 @@ final class JourneyProfileExactOracle {
 			if (!readyAt.isBefore(query.earliestReadyAt()) && !arrivalAt.isAfter(query.arrivalDeadline())) {
 				work.consume();
 				candidates.add(candidate(chain, chainAccesses,
-					projectReadyAt(query, readyAt, readyAtMode, latestReadyAt), arrivalAt, query.boardingSlackSeconds()));
+					readyAtMode == ReadyAt.FIXED ? query.earliestReadyAt() : readyAt, arrivalAt, query.boardingSlackSeconds()));
 			}
 		}
 		if (chain.size() - 1 >= query.maxTransfers()) return;
@@ -105,7 +125,7 @@ final class JourneyProfileExactOracle {
 				nextChain.add(next);
 				List<Access> nextAccesses = new ArrayList<>(chainAccesses);
 				nextAccesses.add(transfer);
-			enumerate(query, rides, accesses, List.copyOf(nextChain), List.copyOf(nextAccesses), candidates, work, readyAtMode, latestReadyAt);
+			enumerate(query, rides, accesses, List.copyOf(nextChain), List.copyOf(nextAccesses), candidates, work, readyAtMode);
 			}
 		}
 	}
@@ -187,15 +207,9 @@ final class JourneyProfileExactOracle {
 		return first.departureAt().minusSeconds(boardingSlackSeconds);
 	}
 
-	private static Instant projectReadyAt(Query query, Instant readyAt, ReadyAt mode, Instant latestReadyAt) {
-		return switch (mode) {
-			case PROFILE -> readyAt;
-			case FIXED -> query.earliestReadyAt();
-			case WINDOW -> readyAt.isAfter(latestReadyAt) ? latestReadyAt : readyAt;
-		};
-	}
+	private enum ReadyAt { PROFILE, FIXED }
 
-	private enum ReadyAt { PROFILE, FIXED, WINDOW }
+	private enum Window { NONE, EARLIEST_ARRIVAL, LATEST_READY }
 
 	private static boolean matchesTransfer(Ride previous, Ride next, Access access) {
 		return access.kind() == AccessKind.TRANSFER && access.usable() && previous.dropOffAllowed()

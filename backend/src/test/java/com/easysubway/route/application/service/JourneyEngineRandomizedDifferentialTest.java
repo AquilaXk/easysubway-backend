@@ -42,7 +42,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JourneyEngineRandomizedDifferentialTest {
 
 	static final long DEFAULT_BASE_SEED = 4_600_000L;
-	static final int SYNTHETIC_BUNDLES = 80;
+	static final int SYNTHETIC_BUNDLES = 150;
+	static final int FACILITY_BLOCK_BUNDLES = 60;
 	static final int QUERIES_PER_BUNDLE = 20;
 	static final int LINE4_QUERIES = 240;
 	private static final int REPORTED_COUNTEREXAMPLES = 3;
@@ -73,6 +74,62 @@ class JourneyEngineRandomizedDifferentialTest {
 		assertThat(tally.mismatches).as("엔진-기준 해 불일치(최소 반례):\n%s", String.join("\n", counterexamples)).isZero();
 		assertThat(tally.queries).isGreaterThanOrEqualTo(bundles * QUERIES_PER_BUNDLE);
 		if (bundles >= SYNTHETIC_BUNDLES) tally.requireCoverage();
+	}
+
+	/**
+	 * #461 리뷰 F1: 요청 시점 시설 차단(가동 중단 환승 동선)도 차분 검증 대상으로 둔다. 번들마다 환승 규칙이 쓰는 동선
+	 * 일부를 시드 고정으로 막고, 프로필 세 모드를 차단 overlay를 받은 엔진과 그 동선을 이용 불가로 둔 기준 해로 비교한다.
+	 * 막힌 동선이 실제로 결과를 바꾼 질의가 충분한지도 확인한다.
+	 */
+	@Test
+	@DisplayName("시설 차단으로 환승 동선 일부가 막혀도 프로필 세 모드가 기준 해 파레토 집합과 정확히 같다")
+	void facilityBlockedTransfersMatchTheExactOracle() {
+		long baseSeed = environmentLong("EASYSUBWAY_DIFFERENTIAL_BASE_SEED", DEFAULT_BASE_SEED);
+		Tally tally = new Tally();
+		List<String> counterexamples = new ArrayList<>();
+		int changedByBlocking = 0;
+		int bundlesWithBlocks = 0;
+		for (int offset = 0; offset < FACILITY_BLOCK_BUNDLES; offset += 1) {
+			long seed = baseSeed + offset;
+			var bundle = JourneyEngineSyntheticBundles.generate(seed);
+			Set<String> blocked = blockedTransferEdges(bundle.timetable(), seed);
+			if (blocked.isEmpty()) continue;
+			bundlesWithBlocks += 1;
+			var runtime = compile(bundle.timetable());
+			for (Case testCase : syntheticCases(bundle, QUERIES_PER_BUNDLE)) {
+				if (testCase.mode() == Mode.DEPART_AT) continue;
+				Verdict verdict = JourneyEngineDifferentialHarness.check(testCase, bundle.timetable(), runtime, blocked);
+				tally.add(verdict);
+				if (!verdict.matched() && counterexamples.size() < REPORTED_COUNTEREXAMPLES) {
+					counterexamples.add(testCase.describe() + " blocked=" + blocked + "\n    " + verdict.mismatch());
+				}
+				Verdict open = JourneyEngineDifferentialHarness.check(testCase, bundle.timetable(), runtime);
+				if (open.expectedLabels() != verdict.expectedLabels() || open.maxTransfersUsed() != verdict.maxTransfersUsed()) {
+					changedByBlocking += 1;
+				}
+			}
+		}
+		System.out.println("#461 facility-block differential: " + tally.summary() + " bundlesWithBlocks=" + bundlesWithBlocks
+			+ " changedByBlocking=" + changedByBlocking);
+		assertThat(tally.mismatches).as("시설 차단 엔진-기준 해 불일치:\n%s", String.join("\n", counterexamples)).isZero();
+		assertThat(bundlesWithBlocks).as("차단 동선이 있는 번들").isGreaterThanOrEqualTo(FACILITY_BLOCK_BUNDLES / 2);
+		assertThat(changedByBlocking).as("차단이 기준 해 결과를 바꾼 질의").isGreaterThanOrEqualTo(30);
+		for (Mode mode : List.of(Mode.ARRIVE_BY, Mode.DEPART_BETWEEN, Mode.LAST_CONNECTION)) {
+			assertThat(tally.nonEmptyByMode.getOrDefault(mode, 0)).as("차단 상태에서 비어 있지 않은 %s 질의", mode)
+				.isGreaterThanOrEqualTo(30);
+		}
+	}
+
+	/** 환승 규칙이 쓰는 동선마다 40% 확률로 막는다(시드 고정). */
+	private static Set<String> blockedTransferEdges(RouteTimetable timetable, long seed) {
+		Random random = new Random(seed ^ 0x461L);
+		Set<String> blocked = new java.util.TreeSet<>();
+		for (LoadRouteTimetablePort.TransferRule rule : timetable.routeAccessData().transferRules()) {
+			for (String edgeId : java.util.Arrays.asList(rule.pathwayEdgeId(), rule.strictStepFreePathwayEdgeId())) {
+				if (edgeId != null && random.nextInt(10) < 4) blocked.add(edgeId);
+			}
+		}
+		return Set.copyOf(blocked);
 	}
 
 	@Test

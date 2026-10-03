@@ -179,7 +179,7 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void projectsMeasuredReverseResultsOnlyAfterIndependentOracleParity() {
 		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
-		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+		var expected = new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
 			"station-a", "station-b", instantAt(30_000), instantAt(37_000), 0,
 			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
 			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
@@ -218,9 +218,9 @@ class JourneyProfileRaptorAdapterTest {
 	void projectsMeasuredDepartureRowsOnlyAfterIndependentBreakpointOracleParity() {
 		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
 		var request = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(31_000)));
-		var expected = new JourneyProfileExactOracle().solveDepartureWindow(new JourneyProfileExactOracle.Query(
-			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_000),
-			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), instantAt(31_000),
+		var expected = new JourneyProfileExactOracle().solvePointArrivalWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(31_000), instantAt(37_000),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
 			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
 			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
 				request.walkingPace().speedMetersPerHour(), 10));
@@ -285,7 +285,7 @@ class JourneyProfileRaptorAdapterTest {
 		var source = timetable(List.of(new LoadRouteTimetablePort.TransitFrequency(
 			"direct", 36_000, 36_600, 300, true)));
 		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_050)));
-		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+		var expected = new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
 			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_050),
 			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
 			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 10),
@@ -304,9 +304,9 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void retainsWaitingForTheFirstTrainAfterTheDepartureWindow() {
 		var request = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(31_000)));
-		var expected = new JourneyProfileExactOracle().solveDepartureWindow(new JourneyProfileExactOracle.Query(
-			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_000),
-			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), instantAt(31_000),
+		var expected = new JourneyProfileExactOracle().solvePointArrivalWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(31_000), instantAt(37_000),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
 			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
 			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
 				request.walkingPace().speedMetersPerHour(), 10));
@@ -397,7 +397,7 @@ class JourneyProfileRaptorAdapterTest {
 						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:59:00Z"));
 						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:10:00Z"));
 					}))));
-		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+		var expected = new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
 			request.originStationId(), request.destinationStationId(), instantAt(96_000), instantAt(98_043),
 			request.maxTransfers(), STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
 			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 10),
