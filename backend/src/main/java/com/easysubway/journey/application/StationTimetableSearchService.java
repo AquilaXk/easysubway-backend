@@ -284,13 +284,13 @@ public final class StationTimetableSearchService {
 	// 같은 날 함께 돌거나, 운행 중인 서비스의 달력이 없거나 종류를 정할 수 없으면 원천 불일치로 실패한다.
 	private static DayType resolveDayType(RouteTimetable timetable, LocalDate serviceDate, Set<String> servingServiceIds) {
 		DayType civil = DayType.from(serviceDate);
+		// activeServices가 모든 달력의 시간대(Asia/Seoul)를 먼저 검사한다.
+		Set<String> active = new HashSet<>(activeServices(timetable, serviceDate));
 		Map<String, List<ServiceCalendar>> calendars = new HashMap<>();
 		for (ServiceCalendar calendar : timetable.serviceCalendars()) {
-			if (!SERVICE_ZONE.getId().equals(calendar.timezone())) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			if (!servingServiceIds.contains(calendar.serviceId())) continue;
 			calendars.computeIfAbsent(calendar.serviceId(), ignored -> new ArrayList<>()).add(calendar);
 		}
-		Set<String> active = new HashSet<>(activeServices(timetable, serviceDate));
 		active.retainAll(servingServiceIds);
 		if (active.isEmpty()) {
 			// 이 역·노선의 서비스가 그 날 빠지기만 하고 대신 도는 서비스가 없으면 날짜 종류를 정할 수 없다.

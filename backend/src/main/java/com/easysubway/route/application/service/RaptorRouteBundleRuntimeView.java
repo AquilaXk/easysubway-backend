@@ -26,7 +26,7 @@ public final class RaptorRouteBundleRuntimeView
 	private final Map<String, OfficialFareQuote> officialFareQuotes;
 	private final Set<StationLine> canonicalStationLines;
 	private final Object stationTimetableIndexLock = new Object();
-	private volatile StationTimetableIndex stationTimetableIndex;
+	private StationTimetableIndex stationTimetableIndex;
 
 	private RaptorRouteBundleRuntimeView(
 		String routeBundleSha256,
@@ -128,8 +128,6 @@ public final class RaptorRouteBundleRuntimeView
 	// 이전 세대 색인은 그 세대 객체와 함께 버려진다.
 	@Override
 	public StationTimetableIndex stationTimetableIndex() {
-		StationTimetableIndex index = stationTimetableIndex;
-		if (index != null) return index;
 		synchronized (stationTimetableIndexLock) {
 			if (stationTimetableIndex == null) stationTimetableIndex = StationTimetableIndex.of(compiledTimetable.source());
 			return stationTimetableIndex;

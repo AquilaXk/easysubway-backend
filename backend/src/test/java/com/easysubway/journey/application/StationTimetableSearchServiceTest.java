@@ -190,6 +190,40 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
+	void agencyThatExplicitlyKeepsItsWeekdayTimetableOnAnotherAgencysHolidayIsServed() {
+		// 이 역·노선 달력에 그 날 예외가 있으면(평일 시간표를 명시적으로 유지) 원천이 판단한 것이므로 그대로 따른다.
+		List<ServiceCalendar> calendars = List.of(
+			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-holiday", false, false, false, false, false, false, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"));
+		var result = service(snapshot(timetable(calendars, List.of(
+				new ServiceCalendarDate("ghost", LocalDate.parse("2026-10-09"), 1),
+				new ServiceCalendarDate("other-holiday", LocalDate.parse("2026-10-09"), 1),
+				new ServiceCalendarDate("weekday", LocalDate.parse("2026-10-09"), 1)), List.of(), List.of()),
+			Instant.parse("2026-10-12T00:00:00Z"))).search(request(new Selector.ServiceDateSelector(LocalDate.parse("2026-10-09"))));
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.WEEKDAY);
+	}
+
+	@Test
+	void dateWithoutAnyServingServiceKeepsItsCivilLabelDespiteUnrelatedExceptions() {
+		ServiceCalendar ended = new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-10-01"), "Asia/Seoul");
+		ServiceCalendar otherWeekday = new ServiceCalendar("other-weekday", true, true, true, true, true, false, false,
+			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul");
+		ServiceCalendar otherExtra = new ServiceCalendar("other-extra", true, true, true, true, true, false, false,
+			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul");
+		var result = service(snapshot(timetable(List.of(ended, otherWeekday, otherExtra), List.of(
+				new ServiceCalendarDate("other-weekday", LocalDate.parse("2026-10-08"), 2),
+				new ServiceCalendarDate("other-extra", LocalDate.parse("2026-10-08"), 1),
+				new ServiceCalendarDate("other-weekday", LocalDate.parse("2026-10-07"), 1),
+				new ServiceCalendarDate("weekday", LocalDate.parse("2026-10-07"), 2)), List.of(), List.of()),
+			Instant.parse("2026-10-12T00:00:00Z"))).search(request(new Selector.ServiceDateSelector(LocalDate.parse("2026-10-08"))));
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.WEEKDAY);
+		assertThat(result.directionGroups()).isEmpty();
+	}
+
+	@Test
 	void holidayElsewhereDoesNotFailAStationLineAlreadyOnItsHolidayCalendar() {
 		// 토요일 시간표가 없는 기관은 토요일 공휴일(2026-10-03)에도 이미 휴일 달력을 쓰므로 자기 예외가 없어도 빠진 것이 아니다.
 		List<ServiceCalendar> calendars = List.of(
