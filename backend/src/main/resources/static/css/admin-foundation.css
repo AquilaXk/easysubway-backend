@@ -17,7 +17,9 @@ body.admin-v3 {
 	margin: 0;
 	background: var(--admin-bg);
 	color: var(--admin-ink);
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 .admin-v3 a:focus-visible,

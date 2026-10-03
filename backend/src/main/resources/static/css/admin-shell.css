@@ -247,7 +247,9 @@
 }
 
 .admin-topbar {
-	margin-bottom: 16px;
+	margin-bottom: 20px;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--admin-border);
 }
 
 .admin-dashboard-page .admin-topbar {

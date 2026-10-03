@@ -196,7 +196,7 @@
 
 .admin-v3 th,
 .admin-v3 td {
-	padding: 13px 16px;
+	padding: 14px 16px;
 	border-bottom: 1px solid var(--admin-border);
 	text-align: left;
 	vertical-align: top;
@@ -977,7 +977,7 @@
 	min-width: 22px;
 	height: 20px;
 	padding: 0 7px;
-	border-radius: var(--admin-radius-badge);
+	border-radius: 999px;
 	background: var(--admin-accent);
 	color: var(--admin-on-primary);
 	font-size: 12px;
@@ -1139,8 +1139,8 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	padding: 2px 8px;
-	border-radius: var(--admin-radius-badge);
+	padding: 2px 10px;
+	border-radius: 999px;
 	font-size: 12px;
 	font-weight: var(--admin-w-strong);
 	/* 표 셀 안에서 상태·SLA 경과 뱃지(shell::status/statusAuto 공용)가 세로로 꺾이지 않게 한다(#2349 PR⑩a). */
@@ -1162,25 +1162,25 @@
 
 .admin-status.good {
 	background: var(--admin-good-soft);
-	border-color: color-mix(in srgb, var(--admin-good) 28%, transparent);
+	border-color: color-mix(in srgb, var(--admin-good) 20%, transparent);
 	color: var(--admin-good);
 }
 
 .admin-status.warn {
 	background: var(--admin-warn-soft);
-	border-color: color-mix(in srgb, var(--admin-warn) 32%, transparent);
+	border-color: color-mix(in srgb, var(--admin-warn) 20%, transparent);
 	color: var(--admin-warn);
 }
 
 .admin-status.bad {
 	background: var(--admin-danger-soft);
-	border-color: color-mix(in srgb, var(--admin-danger) 28%, transparent);
+	border-color: color-mix(in srgb, var(--admin-danger) 20%, transparent);
 	color: var(--admin-danger);
 }
 
 .admin-status.info {
 	background: var(--admin-info-soft);
-	border-color: color-mix(in srgb, var(--admin-info) 28%, transparent);
+	border-color: color-mix(in srgb, var(--admin-info) 20%, transparent);
 	color: var(--admin-info);
 }
 
@@ -1428,32 +1428,34 @@ label.admin-radio input[type="radio"] {
 
 .login-screen {
 	display: grid;
-	min-height: 100vh;
 	place-items: center;
+	min-height: 100vh;
 	padding: 32px 18px;
-	background: var(--admin-bg);
+	background: radial-gradient(ellipse at 50% 25%, var(--es-surface-brand-chrome) 0%, var(--admin-bg) 75%);
 }
 
 .login-card {
 	width: min(100%, 420px);
-	padding: 32px;
+	padding: 36px 32px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
-	box-shadow: none;
+	box-shadow: var(--admin-shadow-card);
 }
 
 .login-brand {
 	display: grid;
 	justify-items: center;
+	text-align: center;
 	gap: 10px;
 	color: var(--admin-ink);
-	text-align: center;
 }
 
 .login-brand img {
 	width: 48px;
 	height: 48px;
+	border-radius: 8px;
+	box-shadow: var(--admin-shadow-card);
 	object-fit: contain;
 }
 
@@ -1461,12 +1463,38 @@ label.admin-radio input[type="radio"] {
 	font-size: 15px;
 	font-weight: var(--admin-w-strong);
 	letter-spacing: -0.02em;
+	color: var(--admin-ink);
+}
+
+.login-console-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-accent-ink);
+	background: var(--admin-accent-soft);
+	border: 1px solid var(--admin-border);
+	letter-spacing: 0.02em;
 }
 
 .login-card h1 {
-	margin: 18px 0 8px;
-	font-size: 30px;
-	line-height: 1.2;
+	margin: 16px 0 6px;
+	font-size: 26px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.25;
+	letter-spacing: -0.03em;
+	text-align: center;
+	color: var(--admin-ink);
+}
+
+.login-subtitle {
+	margin: 0 0 20px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.5;
 	text-align: center;
 }
 
@@ -1486,6 +1514,7 @@ label.admin-radio input[type="radio"] {
 .login-field label {
 	font-size: 13px;
 	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
 }
 
 .login-field input,
@@ -1494,15 +1523,30 @@ label.admin-radio input[type="radio"] {
 	min-height: 48px;
 }
 
+.login-field input {
+	padding: 0 14px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: 14px;
+	transition: border-color 0.15s ease;
+}
+
+.login-field input:focus {
+	border-color: var(--admin-border-strong);
+}
+
 .login-remember {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
-	margin-top: 16px;
+	margin-top: 18px;
 	color: var(--admin-ink-2);
 	font-size: 13px;
 	font-weight: var(--admin-w-body);
 	cursor: pointer;
+	user-select: none;
 }
 
 .login-remember input {
@@ -1510,31 +1554,55 @@ label.admin-radio input[type="radio"] {
 	height: 16px;
 	margin: 0;
 	accent-color: var(--admin-primary);
+	border-radius: 4px;
 }
 
 .login-submit {
-	margin-top: 18px;
+	margin-top: 20px;
+	font-size: 15px;
+	font-weight: var(--admin-w-strong);
+	letter-spacing: -0.01em;
+	border-radius: var(--admin-radius-control);
+	transition: background-color 0.15s ease;
 }
 
-/* retry warning(#2349 PR⑨): 로그인 재시도 안내는 role="alert"인데도 설명문(.login-card p)과
-   같은 무채색 톤이라 오류 상태로 식별되지 않았다. 기존 하단 구분선 블록 패턴은 유지하고,
-   상태 컴포넌트(.admin-status/.status)와 같은 warn 톤(색+글자 강조)만 병기한다. */
+/* retry warning(#2349 PR⑨): 로그인 재시도 안내 */
 .login-note {
 	margin-top: 18px;
-	padding-top: 16px;
-	border-top: 1px solid var(--admin-warn);
+	padding: 12px 14px;
+	border-radius: var(--admin-radius-control);
+	border: 1px solid color-mix(in srgb, var(--admin-warn) 32%, transparent);
+	background: var(--admin-warn-soft);
 	color: var(--admin-warn);
 	font-size: 13px;
 	font-weight: var(--admin-w-strong);
+	line-height: 1.4;
+	text-align: center;
+}
+
+.login-footer {
+	margin-top: 24px;
+	padding-top: 16px;
+	border-top: 1px solid var(--admin-border);
+	text-align: center;
+}
+
+.login-security-notice {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--admin-ink-3);
+	letter-spacing: -0.01em;
 }
 
 @media (max-width: 520px) {
 	.login-card {
-		padding: 28px 22px;
+		padding: 28px 20px;
 	}
 
 	.login-card h1 {
-		font-size: 26px;
+		font-size: 24px;
 	}
 }
 
@@ -2178,8 +2246,8 @@ label.admin-radio input[type="radio"] {
 	background: var(--admin-surface);
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
-	box-shadow: none;
-	padding: 12px;
+	box-shadow: var(--admin-shadow-card);
+	padding: 14px;
 }
 
 .admin-alert-center.is-open .admin-alert-panel {
@@ -2287,11 +2355,11 @@ label.admin-radio input[type="radio"] {
 	right: 0;
 	z-index: 70;
 	width: min(280px, 90vw);
-	padding: 12px;
+	padding: 14px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
-	box-shadow: none;
+	box-shadow: var(--admin-shadow-card);
 }
 
 /* no-JS 폴백(#2049 리뷰): x-cloak 대신 has-js 초기화 창에서만 패널을 숨긴다. JS가 있으면
