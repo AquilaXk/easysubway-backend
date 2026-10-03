@@ -421,6 +421,7 @@
     "allocatedBytesRegression": 0.3,
     "retainedBytesRegression": 0.3,
     "normalizedLatencyFactor": 2.5,
-    "normalizedCompileFactor": 2.5
+    "normalizedCompileFactor": 2.5,
+    "stablePointP50Factor": 1.5
   }
 }

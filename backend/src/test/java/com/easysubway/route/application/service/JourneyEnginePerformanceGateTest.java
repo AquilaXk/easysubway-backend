@@ -50,9 +50,11 @@ import org.junit.jupiter.api.Test;
  *   결과 수, 한도 초과 수)는 결정적이라 잡음이 없다. 기준선과 양방향 2% 안이어야 한다. 크게 좋아져도 실패해
  *   기준선을 새로 고치게 한다(ratchet).</li>
  *   <li>질의별 할당량과 컴파일 보유 힙은 JIT 판단에 따라 조금 흔들린다. 30% 넘게 늘면 실패한다.</li>
- *   <li>벽시계 지연과 컴파일 시간은 CI 러너마다 다르다. 같은 JVM에서 잰 고정 보정 작업 시간으로 나눈 값을 쓰고,
- *   예열 2회 뒤 5회 측정의 중앙값을 쓰며, 2.5배 넘게 느려질 때만 실패한다. 작은 회귀는 결정적 카운터가 잡는다.
- *   보정 작업과 엔진의 속도 비율은 CPU 아키텍처마다 달라서 벽시계 기준선은 Backend CI 러너 측정값을 쓴다.</li>
+ *   <li>벽시계 지연과 컴파일 시간은 같은 JVM에서 잰 고정 보정 작업 시간으로 나눈 값을 쓴다. p50은 측정 5회 각각의
+ *   p50의 중앙값, p99는 5회 표본을 모두 모은 최근순위 p99다. 출발 시각 고정(DepartAt) p50은 잡음이 작아 1.5배,
+ *   나머지(p99, 프로필 모드, 컴파일)는 2.5배를 넘으면 실패한다. 이 한도보다 작은 상수배 둔화(작업량 카운터가 그대로인
+ *   내부 루프 비용 증가 등)는 설계상 통과시킨다. 보정 작업과 엔진의 속도 비율은 CPU 아키텍처마다 달라서 벽시계
+ *   기준선은 Backend CI 러너 측정값을 쓴다.</li>
  * </ul>
  *
  * <p>측정은 새 JVM 하나에서 한다({@link #forkedMeasurement()}). 기준선 갱신 절차는 엔진 설계 문서
@@ -167,6 +169,10 @@ class JourneyEnginePerformanceGateTest {
 			.singleElement().asString().contains("allocatedBytesPerQuery");
 		assertThat(regressions(baseline, tree(sample(1_000, 5_100_000, 1_000_000, 100_000_000, "bundle"))))
 			.anySatisfy(message -> assertThat(message).contains("DEPART_AT.p50Nanos"));
+		// 출발 시각 고정 p50은 1.5배를 넘으면 실패한다. 같은 배율의 p99(2.5배 한도)는 통과한다.
+		assertThat(regressions(baseline, tree(sample(1_000, 3_100_000, 1_000_000, 100_000_000, "bundle"))))
+			.singleElement().asString().contains("DEPART_AT.p50Nanos", "x1.5");
+		assertThat(regressions(baseline, tree(sample(1_000, 2_800_000, 1_000_000, 100_000_000, "bundle")))).isEmpty();
 		// 러너가 두 배 느리면 보정 작업도 두 배 느리므로 정규화 지연은 그대로다.
 		assertThat(regressions(baseline, tree(sample(1_000, 4_000_000, 1_000_000, 200_000_000, "bundle")))).isEmpty();
 		assertThat(regressions(baseline, tree(sample(1_000, 2_000_000, 1_000_000, 100_000_000, "other"))))
@@ -240,7 +246,7 @@ class JourneyEnginePerformanceGateTest {
 		Map<String, Object> method = new LinkedHashMap<>();
 		method.put("warmupRounds", WARMUP_ROUNDS);
 		method.put("measuredRounds", MEASURED_ROUNDS);
-		method.put("aggregation", "median of per-round nearest-rank percentiles");
+		method.put("aggregation", "p50: median of per-round nearest-rank p50; p99: nearest-rank p99 of pooled measured-round samples");
 		method.put("profileLimits", Map.of("maxEstimatedWork", BENCHMARK_LIMITS.maxEstimatedWork(),
 			"maxLabelsPerState", BENCHMARK_LIMITS.maxLabelsPerState(),
 			"maxDestinationProfileLabels", BENCHMARK_LIMITS.maxDestinationProfileLabels(),
@@ -275,6 +281,7 @@ class JourneyEnginePerformanceGateTest {
 			for (Query query : queries) run(query, runtime, planner, adapter, BENCHMARK_LIMITS);
 		}
 		Map<Mode, List<long[]>> nanosByRound = new EnumMap<>(Mode.class);
+		Map<Mode, List<Long>> pooledNanos = new EnumMap<>(Mode.class);
 		Map<Mode, List<Long>> bytesByRound = new EnumMap<>(Mode.class);
 		Map<Mode, Map<String, Long>> work = null;
 		for (int round = 0; round < MEASURED_ROUNDS; round += 1) {
@@ -300,6 +307,7 @@ class JourneyEnginePerformanceGateTest {
 				long[] sorted = nanos.get(mode).stream().mapToLong(Long::longValue).sorted().toArray();
 				nanosByRound.computeIfAbsent(mode, ignored -> new ArrayList<>())
 					.add(new long[] {percentile(sorted, 50), percentile(sorted, 99)});
+				pooledNanos.computeIfAbsent(mode, ignored -> new ArrayList<>()).addAll(nanos.get(mode));
 				bytesByRound.computeIfAbsent(mode, ignored -> new ArrayList<>())
 					.add(bytes.get(mode).stream().mapToLong(Long::longValue).sum() / bytes.get(mode).size());
 			}
@@ -311,7 +319,9 @@ class JourneyEnginePerformanceGateTest {
 			Map<String, Object> value = new LinkedHashMap<>();
 			value.put("queries", queries.stream().filter(query -> query.mode() == mode).count());
 			value.put("p50Nanos", median(nanosByRound.get(mode).stream().mapToLong(pair -> pair[0]).toArray()));
-			value.put("p99Nanos", median(nanosByRound.get(mode).stream().mapToLong(pair -> pair[1]).toArray()));
+			// p99는 측정 5회 표본을 모두 모아 계산한다(질의 수가 적은 모드도 표본이 5배라 최댓값 하나에 끌려가지 않는다).
+			value.put("p99Nanos", percentile(pooledNanos.get(mode).stream().mapToLong(Long::longValue).sorted().toArray(), 99));
+			value.put("latencySamples", pooledNanos.get(mode).size());
 			value.put("allocatedBytesPerQuery", median(bytesByRound.get(mode).stream().mapToLong(Long::longValue).toArray()));
 			value.put("work", work.get(mode));
 			modes.put(mode.name(), value);
@@ -478,9 +488,14 @@ class JourneyEnginePerformanceGateTest {
 
 	// ---------------------------------------------------------------- 판정
 
+	/**
+	 * 허용폭. {@code stablePointP50Factor}는 출발 시각 고정 탐색 p50에만 쓴다. 이 계열은 질의가 많고(40~160건) 결과가
+	 * 성공 경로라 CI 실행 간 정규화 편차가 1.1~1.2배였다. 나머지 지연은 p99 꼬리(GC·JIT), 질의 수가 적은 프로필 모드,
+	 * 한도 직후 거절 비용처럼 편차가 커서 2.5배로 둔다.
+	 */
 	record Tolerances(double workCounterRelative, double allocatedBytesRegression, double retainedBytesRegression,
-		double normalizedLatencyFactor, double normalizedCompileFactor) {
-		static final Tolerances DEFAULT = new Tolerances(0.02, 0.30, 0.30, 2.5, 2.5);
+		double normalizedLatencyFactor, double normalizedCompileFactor, double stablePointP50Factor) {
+		static final Tolerances DEFAULT = new Tolerances(0.02, 0.30, 0.30, 2.5, 2.5, 1.5);
 
 		Map<String, Object> asMap() {
 			Map<String, Object> value = new LinkedHashMap<>();
@@ -489,6 +504,7 @@ class JourneyEnginePerformanceGateTest {
 			value.put("retainedBytesRegression", retainedBytesRegression);
 			value.put("normalizedLatencyFactor", normalizedLatencyFactor);
 			value.put("normalizedCompileFactor", normalizedCompileFactor);
+			value.put("stablePointP50Factor", stablePointP50Factor);
 			return value;
 		}
 
@@ -496,7 +512,7 @@ class JourneyEnginePerformanceGateTest {
 			if (node == null || !node.isObject()) throw new IllegalArgumentException("baseline tolerances are required");
 			return new Tolerances(required(node, "workCounterRelative"), required(node, "allocatedBytesRegression"),
 				required(node, "retainedBytesRegression"), required(node, "normalizedLatencyFactor"),
-				required(node, "normalizedCompileFactor"));
+				required(node, "normalizedCompileFactor"), required(node, "stablePointP50Factor"));
 		}
 
 		private static double required(JsonNode node, String name) {
@@ -537,8 +553,10 @@ class JourneyEnginePerformanceGateTest {
 					continue;
 				}
 				for (String latency : List.of("p50Nanos", "p99Nanos")) {
+					double factor = mode.equals(Mode.DEPART_AT.name()) && latency.equals("p50Nanos")
+						? tolerances.stablePointP50Factor() : tolerances.normalizedLatencyFactor();
 					compareFactor(problems, id + " " + mode + "." + latency, expected.path(latency).asDouble() / baselineCalibration,
-						actual.path(latency).asDouble() / measuredCalibration, tolerances.normalizedLatencyFactor());
+						actual.path(latency).asDouble() / measuredCalibration, factor);
 				}
 				compareRegression(problems, id + " " + mode + ".allocatedBytesPerQuery",
 					expected.path("allocatedBytesPerQuery").asDouble(), actual.path("allocatedBytesPerQuery").asDouble(),
