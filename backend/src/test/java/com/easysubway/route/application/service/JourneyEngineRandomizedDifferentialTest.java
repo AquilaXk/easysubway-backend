@@ -114,8 +114,8 @@ class JourneyEngineRandomizedDifferentialTest {
 						Verdict verdict = JourneyEngineDifferentialHarness.check(testCase, timetable, runtime);
 						tally.add(verdict);
 						if (!verdict.matched() && counterexamples.size() < REPORTED_COUNTEREXAMPLES) {
-							counterexamples.add(testCase.describe() + " delta=" + delta + "\n    " + verdict.mismatch()
-								+ "\n" + JourneyEngineSyntheticBundles.describe(timetable));
+							counterexamples.add("delta=" + delta + " original mismatch:\n    " + verdict.mismatch() + "\n"
+								+ minimalCounterexample(testCase, timetable));
 						}
 					}
 				}

@@ -122,13 +122,39 @@ final class JourneyEngineDifferentialHarness {
 		boolean matched() { return mismatch == null; }
 	}
 
+	/**
+	 * 엔진이 던진 예외도 불일치다. 예외로 끝나면 결과가 없으므로 다른 불일치와 똑같이 시드·질의를 출력하고 최소 반례
+	 * 축소를 돌린다(예: 환승 여유가 음수인 경로를 만들어 지표 계산이 거절하는 결함). 기준 해 쪽 예외는 하네스나 입력의
+	 * 결함이므로 그대로 던진다.
+	 */
 	static Verdict check(Case testCase, RouteTimetable source, RaptorRouteBundleRuntimeView runtime) {
-		return switch (testCase.mode()) {
-			case DEPART_AT -> departAt(testCase, source, runtime);
-			case ARRIVE_BY -> arriveBy(testCase, source, runtime);
-			case DEPART_BETWEEN -> departBetween(testCase, source, runtime);
-			case LAST_CONNECTION -> lastConnection(testCase, source, runtime);
-		};
+		try {
+			return switch (testCase.mode()) {
+				case DEPART_AT -> departAt(testCase, source, runtime);
+				case ARRIVE_BY -> arriveBy(testCase, source, runtime);
+				case DEPART_BETWEEN -> departBetween(testCase, source, runtime);
+				case LAST_CONNECTION -> lastConnection(testCase, source, runtime);
+			};
+		} catch (EngineFailure failure) {
+			Throwable cause = failure.getCause();
+			return new Verdict(testCase, "engine threw " + cause.getClass().getSimpleName() + ": " + cause.getMessage(),
+				0, 0, -1, false, 0, false);
+		}
+	}
+
+	/** 엔진 호출 안에서 난 예외만 표시해 기준 해 예외와 구분한다. */
+	private static <T> T engine(java.util.function.Supplier<T> call) {
+		try {
+			return call.get();
+		} catch (RuntimeException exception) {
+			throw new EngineFailure(exception);
+		}
+	}
+
+	private static final class EngineFailure extends RuntimeException {
+		private EngineFailure(RuntimeException cause) {
+			super(cause);
+		}
 	}
 
 	// ---------------------------------------------------------------- DepartAt (point RAPTOR)
@@ -147,9 +173,9 @@ final class JourneyEngineDifferentialHarness {
 			: new JourneyProfileExactOracle().solvePoint(oracleQuery(query, readyAt, deadline),
 				window(rides, readyAt, deadline), accesses);
 
-		List<JourneyProfileRaptorPort.Itinerary> actual = new RouteTimetableRaptorPlanner()
+		List<JourneyProfileRaptorPort.Itinerary> actual = engine(() -> new RouteTimetableRaptorPlanner()
 			.journeyItineraries(query, runtime.compiledTimetable()).itineraries().stream()
-			.map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList();
+			.map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList());
 
 		List<String> problems = new ArrayList<>();
 		for (JourneyProfileRaptorPort.Itinerary itinerary : actual) {
@@ -395,7 +421,7 @@ final class JourneyEngineDifferentialHarness {
 	private static JourneyProfileRaptorPort.PlanningResult.Planned plan(
 		JourneyRaptorQuery query, RaptorRouteBundleRuntimeView runtime
 	) {
-		var result = new JourneyProfileRaptorAdapter().planRuntime(query, runtime, null, LIMITS);
+		var result = engine(() -> new JourneyProfileRaptorAdapter().planRuntime(query, runtime, null, LIMITS));
 		return result instanceof JourneyProfileRaptorPort.PlanningResult.Planned planned ? planned : null;
 	}
 
