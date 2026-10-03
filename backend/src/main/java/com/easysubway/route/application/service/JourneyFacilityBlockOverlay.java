@@ -3,6 +3,7 @@ package com.easysubway.route.application.service;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import com.easysubway.journey.application.FacilityAvailabilityView;
 import com.easysubway.journey.application.FacilityStatusUnavailableException;
+import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyRequest;
 import java.time.Clock;
 import java.time.Duration;
@@ -40,6 +41,17 @@ final class JourneyFacilityBlockOverlay {
 		JourneyRequest.ConstraintMode constraintMode,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable
 	) {
+		return captureWithStatus(constraintMode, timetable).overlay();
+	}
+
+	/**
+	 * #469: 차단 overlay와 함께 시설 가동 정보를 실제로 적용했는지 돌려준다. 뷰가 신선하지 않아 차단 0건으로 탐색하면
+	 * {@code UNOBSERVED}다. 그 경우 계단 없는 여정의 엘리베이터 현재 가동은 확인되지 않은 것이다.
+	 */
+	Capture captureWithStatus(
+		JourneyRequest.ConstraintMode constraintMode,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable
+	) {
 		FacilityAvailabilityView view = currentView();
 		BitSet blocked = new BitSet();
 		String unusableReason = unusableReason(view, clock.instant());
@@ -47,12 +59,21 @@ final class JourneyFacilityBlockOverlay {
 			unusableReason = compileBlocked(view, timetable, blocked);
 		}
 		if (unusableReason == null) {
-			return RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked);
+			return new Capture(RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked),
+				JourneyAlternatives.FacilityStatus.APPLIED);
 		}
 		if (required && constraintMode == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
 			throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: " + unusableReason);
 		}
-		return RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		return new Capture(RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			JourneyAlternatives.FacilityStatus.UNOBSERVED);
+	}
+
+	record Capture(RouteTimetableRaptorPlanner.RealtimeOverlay overlay, JourneyAlternatives.FacilityStatus status) {
+		Capture {
+			java.util.Objects.requireNonNull(overlay, "overlay");
+			java.util.Objects.requireNonNull(status, "status");
+		}
 	}
 
 	private FacilityAvailabilityView currentView() {

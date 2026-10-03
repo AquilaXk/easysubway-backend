@@ -320,6 +320,57 @@ class JourneyRaptorAdapterTest {
 				org.assertj.core.groups.Tuple.tuple(0, true));
 	}
 
+	@Test
+	void reportsCategoriesStairFreeIncludedAndUnobservedFacilityStatusByDefault() {
+		// #469: 운영 기본 배선(시설 가동 정보 없음)에서는 facilityStatus가 UNOBSERVED다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(true, true));
+		var request = accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 2, 3);
+
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).extracting(JourneyCandidate::alternativeCategories).containsExactly(
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST),
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE),
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FEWEST_TRANSFERS));
+		assertThat(result.stairFreeAlternative()).isEqualTo(new com.easysubway.journey.application.JourneyAlternatives
+			.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.INCLUDED,
+				com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED));
+	}
+
+	@Test
+	void outOfServiceStepFreePathwayIsNotFoundWithAppliedFacilityStatus() {
+		// #469: 신선한 가동 정보가 계단 없는 동선을 막으면 확인된 사실이므로 UNDETERMINED가 아니라 NOT_FOUND다.
+		Instant readyAt = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false, true));
+		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.blocked(readyAt, Set.of("e-h-step-free")),
+			false, Clock.fixed(readyAt, ServiceDayResolver.ZONE));
+
+		var result = adapter.plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+			snapshot(runtime), readyAt, null, measurement());
+
+		assertThat(result.candidates()).extracting(candidate -> candidate.accessibility().stairFree()).containsExactly(false);
+		assertThat(result.stairFreeAlternative()).isEqualTo(new com.easysubway.journey.application.JourneyAlternatives
+			.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND,
+				com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.APPLIED));
+	}
+
+	@Test
+	void unverifiedStepFreePathwayIsReportedAsUndetermined() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false,
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.StepFreePathway.UNVERIFIED));
+
+		var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+			snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).extracting(candidate -> candidate.accessibility().stairFree()).containsExactly(false);
+		assertThat(result.stairFreeAlternative().status())
+			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+	}
+
 	private static JourneyRequest accessibleAlternativesRequest(
 		JourneyRequest.MobilityProfile profile, int maxTransfers, int alternativeCount
 	) {
