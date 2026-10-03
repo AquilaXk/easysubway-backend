@@ -16,14 +16,22 @@ public interface StationTimetableSnapshotPort {
 
 	StationTimetableSnapshot loadStationTimetableSnapshot();
 
-	/** One bundle generation: its identity, its timetable rows and its canonical station-line set. */
+	/** One bundle generation: its identity, its per-generation timetable index and its canonical station-line set. */
 	record StationTimetableSnapshot(
 		StationTimetableSearchService.SourceIdentity sourceIdentity,
-		RouteTimetable timetable,
+		StationTimetableIndex index,
 		Set<StationLine> canonicalStationLines) {
 
 		public StationTimetableSnapshot {
 			canonicalStationLines = canonicalStationLines == null ? null : Set.copyOf(canonicalStationLines);
+		}
+
+		/** 색인을 따로 들고 있지 않은 호출자(테스트 등)용. 호출마다 새 색인을 만들므로 운영 경로는 세대 색인을 넘긴다. */
+		public StationTimetableSnapshot(
+			StationTimetableSearchService.SourceIdentity sourceIdentity,
+			RouteTimetable timetable,
+			Set<StationLine> canonicalStationLines) {
+			this(sourceIdentity, timetable == null ? null : StationTimetableIndex.of(timetable), canonicalStationLines);
 		}
 	}
 

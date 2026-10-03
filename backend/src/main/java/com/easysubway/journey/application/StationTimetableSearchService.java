@@ -48,7 +48,7 @@ public final class StationTimetableSearchService {
 		} catch (RuntimeException exception) {
 			throw failure(Failure.TIMETABLE_UNAVAILABLE);
 		}
-		if (snapshot == null || snapshot.timetable() == null) {
+		if (snapshot == null || snapshot.index() == null) {
 			throw failure(Failure.TIMETABLE_UNAVAILABLE);
 		}
 		if (snapshot.sourceIdentity() == null || snapshot.sourceIdentity().freshUntil() == null) {
@@ -58,21 +58,23 @@ public final class StationTimetableSearchService {
 			throw failure(Failure.TIMETABLE_STALE);
 		}
 		SourceIdentity source = sourceIdentity(snapshot.sourceIdentity());
-		RouteTimetable timetable = snapshot.timetable();
+		StationTimetableIndex index = snapshot.index();
+		RouteTimetable timetable = index.timetable();
 		if (snapshot.canonicalStationLines() == null) {
 			throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 		}
-		if (!snapshot.canonicalStationLines().contains(
-			new StationTimetableSnapshotPort.StationLine(request.stationId(), request.lineId()))) {
+		StationTimetableSnapshotPort.StationLine stationLine =
+			new StationTimetableSnapshotPort.StationLine(request.stationId(), request.lineId());
+		if (!snapshot.canonicalStationLines().contains(stationLine)) {
 			throw failure(Failure.STATION_LINE_NOT_FOUND);
 		}
 
-		Map<String, TransitTrip> trips = uniqueById(timetable.transitTrips(), TransitTrip::id);
-		Map<String, TransitRoute> routes = uniqueById(timetable.transitRoutes(), TransitRoute::id);
-		if (!hasTimetableCoverage(timetable, request.stationId(), request.lineId())) {
+		index.requireStructurallyValid();
+		if (!index.covers(stationLine)) {
 			throw failure(Failure.TIMETABLE_NOT_COVERED);
 		}
-		List<DepartureCandidate> candidates = departures(timetable, trips, routes, request.stationId(), request.lineId());
+		// #476 F3: 역·노선별 출발 후보는 세대 색인에 한 번 계산해 두고 재사용한다(요청마다 전국 정차 행을 훑지 않는다).
+		List<DepartureCandidate> candidates = index.departures(stationLine, key -> departures(index, key));
 		// 다음 정차역이 있는 출발만 시간표에 싣는다. 노선 끝 역처럼 출발이 하나도 없으면 시간표 범위 밖이다.
 		if (candidates.isEmpty()) {
 			throw failure(Failure.TIMETABLE_NOT_COVERED);
@@ -103,39 +105,23 @@ public final class StationTimetableSearchService {
 		);
 	}
 
-	private static boolean hasTimetableCoverage(RouteTimetable timetable, String stationId, String lineId) {
-		return timetable.transitStopTimes().stream()
-			.anyMatch(stop -> stationId.equals(stop.stationId()) && lineId.equals(stop.lineId()));
-	}
-
 	private static List<DepartureCandidate> departures(
-		RouteTimetable timetable,
-		Map<String, TransitTrip> trips,
-		Map<String, TransitRoute> routes,
-		String stationId,
-		String lineId
+		StationTimetableIndex index,
+		StationTimetableSnapshotPort.StationLine stationLine
 	) {
-		Map<String, List<TransitStopTime>> stopsByTrip = new HashMap<>();
-		for (TransitStopTime stop : timetable.transitStopTimes()) {
-			stopsByTrip.computeIfAbsent(stop.tripId(), ignored -> new ArrayList<>()).add(stop);
-		}
-		Map<String, List<TransitFrequency>> frequenciesByTrip = new HashMap<>();
-		for (TransitFrequency frequency : timetable.transitFrequencies()) {
-			frequenciesByTrip.computeIfAbsent(frequency.tripId(), ignored -> new ArrayList<>()).add(frequency);
-		}
+		String lineId = stationLine.lineId();
 		List<DepartureCandidate> result = new ArrayList<>();
-		for (TransitStopTime stop : timetable.transitStopTimes()) {
-			if (!stationId.equals(stop.stationId()) || !lineId.equals(stop.lineId())) continue;
+		for (TransitStopTime stop : index.stopsAt(stationLine)) {
 			if (stop.pickupType() == 1) continue;
-			TransitTrip trip = trips.get(stop.tripId());
+			TransitTrip trip = index.trip(stop.tripId());
 			if (trip == null) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-			TransitRoute route = routes.get(trip.routeId());
+			TransitRoute route = index.route(trip.routeId());
 			if (route == null || !lineId.equals(route.lineId()) || !SERVICE_ZONE.getId().equals(route.timezone())) {
 				throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			}
 			// 방향은 이 역 다음에 서는 역(다음 정차역)으로 묶는다. 종착역(headsign)으로 묶으면 2호선처럼 양방향이 같은
 			// 종착역을 쓰는 노선에서 방향이 섞인다. 원천의 방면 이름은 값이 있을 때만 그대로 싣는다.
-			List<TransitStopTime> tripStops = stopsByTrip.getOrDefault(stop.tripId(), List.of());
+			List<TransitStopTime> tripStops = index.stopsOfTrip(stop.tripId());
 			if (!tripStops.contains(stop)) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			TransitStopTime nextStop = null;
 			TransitStopTime terminalStop = null;
@@ -147,7 +133,7 @@ public final class StationTimetableSearchService {
 			if (nextStop == null) continue;
 			Direction direction = new Direction(nextStop.stationId(), terminalStop.stationId(),
 				route.directionName() == null || route.directionName().isBlank() ? null : route.directionName());
-			List<TransitFrequency> frequencies = frequenciesByTrip.getOrDefault(stop.tripId(), List.of());
+			List<TransitFrequency> frequencies = index.frequenciesOfTrip(stop.tripId());
 			if (frequencies.isEmpty()) {
 				result.add(new DepartureCandidate(direction, trip, stop.departureSeconds()));
 				continue;
@@ -164,7 +150,7 @@ public final class StationTimetableSearchService {
 					} catch (ArithmeticException exception) {
 						throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 					}
-					if (!validFrequencyInstance(stopsByTrip.get(stop.tripId()), shift)) {
+					if (!validFrequencyInstance(index.stopsOfTrip(stop.tripId()), shift)) {
 						base = nextFrequencyBase(base, frequency.headwaySeconds());
 						continue;
 					}
@@ -484,11 +470,5 @@ public final class StationTimetableSearchService {
 		}
 		public Failure failure() { return failure; }
 		public FailureDetail detail() { return detail; }
-	}
-
-	private static <T> Map<String, T> uniqueById(List<T> values, java.util.function.Function<T, String> id) {
-		Map<String, T> result = new HashMap<>();
-		for (T value : values) if (result.put(id.apply(value), value) != null) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-		return result;
 	}
 }

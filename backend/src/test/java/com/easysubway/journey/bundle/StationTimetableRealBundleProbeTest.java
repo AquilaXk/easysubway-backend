@@ -63,10 +63,14 @@ class StationTimetableRealBundleProbeTest {
 			RouteBundleServingEvidence.unobservable(), runtime, now), 0);
 		registry.activate(manifestSha, 0);
 		var service = new StationTimetableSearchService(new RouteBundleStationTimetableAdapter(registry), clock);
+		// #476 F3: 세대 색인 보유 메모리(색인 골격 + 정본 역·노선 전체의 출발 후보)를 GC 뒤 사용 힙 차이로 잰다.
+		long beforeIndex = usedHeapAfterGc();
+		var index = runtime.stationTimetableIndex();
+		long afterIndex = usedHeapAfterGc();
 
 		System.out.printf("bundle %s seq %d freshUntil %s stationLines %d stopTimes %d%n",
 			manifest.get("bundleId").asText(), manifest.get("releaseSequence").asLong(), manifest.get("freshUntil").asText(),
-			runtime.canonicalStationLines().size(), runtime.stationTimetable().transitStopTimes().size());
+			runtime.canonicalStationLines().size(), runtime.stationTimetableIndex().timetable().transitStopTimes().size());
 		for (String[] probe : PROBES) {
 			for (LocalDate date : List.of(LocalDate.parse("2026-10-06"), LocalDate.parse("2026-10-09"),
 				LocalDate.parse("2026-10-10"), LocalDate.parse("2026-10-11"))) {
@@ -90,6 +94,17 @@ class StationTimetableRealBundleProbeTest {
 		// 정본 역·노선 전체를 같은 날짜로 조회해 결과 분포를 남긴다.
 		Map<String, Integer> outcomes = new java.util.TreeMap<>();
 		for (var stationLine : runtime.canonicalStationLines()) {
+			for (String extraDate : List.of("2026-10-03", "2026-10-09", "2026-10-10")) {
+				String extraKey;
+				try {
+					service.search(new SearchRequest(stationLine.stationId(), stationLine.lineId(),
+						new Selector.ServiceDateSelector(LocalDate.parse(extraDate))));
+					extraKey = extraDate + " OK";
+				} catch (FailureException exception) {
+					extraKey = extraDate + " " + exception.failure() + (exception.detail().name().equals("NONE") ? "" : ":" + exception.detail());
+				}
+				outcomes.merge(extraKey, 1, Integer::sum);
+			}
 			String key;
 			try {
 				var result = service.search(new SearchRequest(stationLine.stationId(), stationLine.lineId(),
@@ -102,7 +117,20 @@ class StationTimetableRealBundleProbeTest {
 			outcomes.merge(key, 1, Integer::sum);
 		}
 		System.out.println("2026-10-06 all canonical station-lines: " + outcomes);
+		long afterAllCandidates = usedHeapAfterGc();
+		System.out.printf("INDEX MEMORY skeleton=%.1fMiB withAllStationLineCandidates=%.1fMiB (same index instance reused: %s)%n",
+			(afterIndex - beforeIndex) / 1048576.0, (afterAllCandidates - beforeIndex) / 1048576.0,
+			index == runtime.stationTimetableIndex());
 		assertThat(runtime.canonicalStationLines()).isNotEmpty();
+	}
+
+	private static long usedHeapAfterGc() throws InterruptedException {
+		Runtime runtime = Runtime.getRuntime();
+		for (int attempt = 0; attempt < 3; attempt++) {
+			System.gc();
+			Thread.sleep(200);
+		}
+		return runtime.totalMemory() - runtime.freeMemory();
 	}
 
 	private static RouteBundleIdentity identity(JsonNode manifest) {

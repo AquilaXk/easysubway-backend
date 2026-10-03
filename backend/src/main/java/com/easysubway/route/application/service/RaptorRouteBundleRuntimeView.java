@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.bundle.RouteBundleFacilityCatalog;
+import com.easysubway.journey.application.StationTimetableIndex;
 import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
 import com.easysubway.journey.bundle.RouteBundleRuntimeView;
 import com.easysubway.journey.bundle.RouteBundleStationTimetableSource;
@@ -24,6 +25,8 @@ public final class RaptorRouteBundleRuntimeView
 	private final List<Facility> smrtElevatorFacilities;
 	private final Map<String, OfficialFareQuote> officialFareQuotes;
 	private final Set<StationLine> canonicalStationLines;
+	private final Object stationTimetableIndexLock = new Object();
+	private volatile StationTimetableIndex stationTimetableIndex;
 
 	private RaptorRouteBundleRuntimeView(
 		String routeBundleSha256,
@@ -121,9 +124,16 @@ public final class RaptorRouteBundleRuntimeView
 		return officialFareQuotes;
 	}
 
+	// #476 F3: 역 시간표 색인은 이 세대 객체에 묶어 처음 쓰일 때 한 번만 만든다. 세대가 바뀌면 새 객체가 새 색인을 만들고,
+	// 이전 세대 색인은 그 세대 객체와 함께 버려진다.
 	@Override
-	public RouteTimetable stationTimetable() {
-		return compiledTimetable.source();
+	public StationTimetableIndex stationTimetableIndex() {
+		StationTimetableIndex index = stationTimetableIndex;
+		if (index != null) return index;
+		synchronized (stationTimetableIndexLock) {
+			if (stationTimetableIndex == null) stationTimetableIndex = StationTimetableIndex.of(compiledTimetable.source());
+			return stationTimetableIndex;
+		}
 	}
 
 	@Override

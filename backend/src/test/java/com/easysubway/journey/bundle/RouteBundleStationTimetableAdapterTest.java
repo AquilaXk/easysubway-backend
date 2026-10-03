@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.journey.application.StationTimetableSearchService.Failure;
 import com.easysubway.journey.application.StationTimetableSearchService.FailureException;
 import com.easysubway.journey.application.StationTimetableSearchService.SourceIdentity;
+import com.easysubway.journey.application.StationTimetableIndex;
 import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import java.time.Clock;
@@ -28,12 +29,14 @@ class RouteBundleStationTimetableAdapterTest {
 	@Test
 	void readsTheActiveBundleTimetableCanonicalStationLinesAndIdentity() {
 		var clock = new MutableClock(NOW);
-		var runtime = new StationRuntime(RouteTimetable.empty(), Set.of(new StationLine("station-a", "line-1")));
+		var runtime = new StationRuntime(StationTimetableIndex.of(RouteTimetable.empty()), Set.of(new StationLine("station-a", "line-1")));
 		var adapter = new RouteBundleStationTimetableAdapter(activeRegistry(clock, runtime));
 
 		var snapshot = adapter.loadStationTimetableSnapshot();
 
-		assertThat(snapshot.timetable()).isSameAs(runtime.stationTimetable());
+		// #476 F3: 같은 세대의 색인을 그대로 넘기고 요청마다 새로 만들지 않는다.
+		assertThat(snapshot.index()).isSameAs(runtime.stationTimetableIndex());
+		assertThat(adapter.loadStationTimetableSnapshot().index()).isSameAs(snapshot.index());
 		assertThat(snapshot.canonicalStationLines()).containsExactly(new StationLine("station-a", "line-1"));
 		assertThat(snapshot.sourceIdentity()).isEqualTo(new SourceIdentity(
 			"nationwide-route-bundle-1", TIMETABLE_SHA, "sha256:" + STATION_SET_SHA, STATION_SET_SHA, PROVENANCE_SHA,
@@ -51,7 +54,7 @@ class RouteBundleStationTimetableAdapterTest {
 	void stagedButNotActivatedBundleIsTimetableUnavailable() {
 		var clock = new MutableClock(NOW);
 		var registry = new RouteBundleActivationRegistry(clock);
-		registry.stage(candidate(new StationRuntime(RouteTimetable.empty(), Set.of())), 0);
+		registry.stage(candidate(new StationRuntime(StationTimetableIndex.of(RouteTimetable.empty()), Set.of())), 0);
 
 		assertFailure(new RouteBundleStationTimetableAdapter(registry), Failure.TIMETABLE_UNAVAILABLE);
 	}
@@ -60,7 +63,7 @@ class RouteBundleStationTimetableAdapterTest {
 	void expiredActiveBundleIsTimetableStaleNeverTheExpiredRows() {
 		var clock = new MutableClock(NOW);
 		var adapter = new RouteBundleStationTimetableAdapter(activeRegistry(clock,
-			new StationRuntime(RouteTimetable.empty(), Set.of(new StationLine("station-a", "line-1")))));
+			new StationRuntime(StationTimetableIndex.of(RouteTimetable.empty()), Set.of(new StationLine("station-a", "line-1")))));
 		clock.set(FRESH_UNTIL);
 
 		assertFailure(adapter, Failure.TIMETABLE_STALE);
@@ -119,7 +122,7 @@ class RouteBundleStationTimetableAdapterTest {
 			new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "AQID"));
 	}
 
-	private record StationRuntime(RouteTimetable stationTimetable, Set<StationLine> canonicalStationLines)
+	private record StationRuntime(StationTimetableIndex stationTimetableIndex, Set<StationLine> canonicalStationLines)
 		implements RouteBundleRuntimeView, RouteBundleStationTimetableSource {
 	}
 

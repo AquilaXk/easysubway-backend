@@ -44,7 +44,7 @@ public final class RouteBundleStationTimetableAdapter implements StationTimetabl
 				identity.provenanceSha256(),
 				active.admissionEvidence().manifestSha256(),
 				identity.freshUntilInstant()),
-			source.stationTimetable(),
+			source.stationTimetableIndex(),
 			source.canonicalStationLines());
 	}
 }

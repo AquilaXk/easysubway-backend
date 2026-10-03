@@ -207,6 +207,31 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
+	void stationTimetableIndexIsBuiltOncePerGenerationAndReusedAcrossRequests() {
+		// #476 F3: 전국 번들의 정차 행(seq126 677,156건)을 요청마다 훑지 않는다. 색인은 세대마다 한 번 만들고 재사용한다.
+		RouteTimetable source = timetable();
+		RouteTimetable counted = mock(RouteTimetable.class);
+		when(counted.serviceCalendars()).thenReturn(source.serviceCalendars());
+		when(counted.serviceCalendarDates()).thenReturn(source.serviceCalendarDates());
+		when(counted.transitRoutes()).thenReturn(source.transitRoutes());
+		when(counted.transitTrips()).thenReturn(source.transitTrips());
+		when(counted.transitStopTimes()).thenReturn(source.transitStopTimes());
+		when(counted.transitFrequencies()).thenReturn(source.transitFrequencies());
+		when(counted.feedEndDate()).thenReturn(source.feedEndDate());
+		StationTimetableIndex index = StationTimetableIndex.of(counted);
+		StationTimetableSnapshot snapshot = new StationTimetableSnapshot(identity(NOW.plusSeconds(60)), index, canonical());
+		StationTimetableSearchService service = service(snapshot);
+
+		for (LocalDate date : List.of(LocalDate.parse("2026-08-24"), LocalDate.parse("2026-08-25"), LocalDate.parse("2026-08-26"))) {
+			assertThat(service.search(request(new Selector.ServiceDateSelector(date))).directionGroups()).hasSize(1);
+		}
+
+		org.mockito.Mockito.verify(counted, org.mockito.Mockito.times(2)).transitStopTimes();
+		org.mockito.Mockito.verify(counted, org.mockito.Mockito.times(1)).transitTrips();
+		assertThat(snapshot.index()).isSameAs(index);
+	}
+
+	@Test
 	void stationLineServedByCalendarsOfDifferentClassesOnOneDateFailsClosed() {
 		RouteTimetable timetable = timetable(List.of(
 			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
@@ -401,7 +426,7 @@ class StationTimetableSearchServiceTest {
 		}
 		assertFailure(service(() -> { throw new FailureException(Failure.STATION_LINE_NOT_FOUND); }), request,
 			Failure.TIMETABLE_UNAVAILABLE);
-		assertFailure(service(new StationTimetableSnapshot(identity(NOW.plusSeconds(60)), null, canonical())), request,
+		assertFailure(service(new StationTimetableSnapshot(identity(NOW.plusSeconds(60)), (RouteTimetable) null, canonical())), request,
 			Failure.TIMETABLE_UNAVAILABLE);
 		assertFailure(service(new StationTimetableSnapshot(null, timetable(), canonical())), request,
 			Failure.TIMETABLE_IDENTITY_MISMATCH);
