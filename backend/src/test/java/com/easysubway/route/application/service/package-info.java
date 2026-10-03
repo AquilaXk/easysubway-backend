@@ -1,0 +1,182 @@
+/**
+ * Journey V3 서버 공인 경로 엔진(RAPTOR 계열) 설계 문서와 그 검증 체계.
+ *
+ * <p>이 문서는 경로 엔진의 설계 문서다(#460, 에픽 #457). 엔진 코드는 같은 패키지의 main 소스에 있고, 이 문서는
+ * 엔진을 검증하는 차분 검증·성능 회귀 게이트와 함께 테스트 소스에 둔다(main에 두면 문서만 있는 소스가 커버리지
+ * 인벤토리에 들어간다). 알고리즘, 자료구조, 복잡도, 정확성 검증 방식, 측정 결과,
+ * 성능 회귀 게이트의 기준선 갱신 절차를 적는다. 수치는 이 문서를 쓴 시점의 커밋된 기준선
+ * {@code backend/src/test/resources/journey-benchmark/engine-performance-baseline.json}에서 옮겼다.
+ * 엔진을 바꾸면 그 PR에서 이 문서와 기준선을 함께 고친다.</p>
+ *
+ * <h2>1. 범위와 진입점</h2>
+ * <p>여정은 출발역 승강장에서 타서 도착역 승강장에서 내리는 것으로 끝난다(#454). 진입·하차 이동은 경로에 넣지 않고,
+ * 승차 사이의 환승 이동만 넣는다. 질의 모드와 엔진은 다음과 같다.</p>
+ * <table>
+ *   <caption>질의 모드별 엔진</caption>
+ *   <tr><th>모드</th><th>진입점</th><th>엔진</th><th>보존하는 기준</th></tr>
+ *   <tr><td>출발 시각 고정(DepartAt)</td><td>{@code JourneyRaptorAdapter} → {@code RouteTimetableRaptorPlanner#journeyItineraries}</td>
+ *     <td>라운드 기반 RAPTOR</td><td>도착 시각 × 승차 수. 무단차 선호는 계단 경고 유무를 더한다</td></tr>
+ *   <tr><td>출발 시간대(DepartBetween)</td><td>{@code JourneyProfileRaptorAdapter} → {@code departureProfile}</td>
+ *     <td>전방 range McRAPTOR(라벨 설정)</td><td>준비 시각, 도착 시각, 승차 수, 환승 보행 시간·거리, 계단 수,
+ *     최소 환승 여유, 경고 집합</td></tr>
+ *   <tr><td>도착 희망(ArriveBy)</td><td>{@code JourneyProfileRaptorAdapter} → {@code ReverseTimetableRaptorPlanner#arriveBy}</td>
+ *     <td>역방향 탐색</td><td>위와 같다(경고 집합 대신 계단 수)</td></tr>
+ *   <tr><td>막차(LastConnection)</td><td>{@code ReverseTimetableRaptorPlanner#lastConnection}</td>
+ *     <td>역방향 탐색(그 서비스일 하루)</td><td>위와 같다. 마감은 도착역 마지막 하차 시각이다</td></tr>
+ * </table>
+ *
+ * <h2>2. 알고리즘</h2>
+ * <h3>2.1 출발 시각 고정: 라운드 기반 RAPTOR</h3>
+ * <ul>
+ *   <li>서비스일은 03:00 경계로 정한다({@code ServiceDayResolver}). point 탐색은 그 하루의 운행만 본다.</li>
+ *   <li>라운드 k에서 k번째 승차를 확장한다. 상태 칸은 (라운드, 역, 들어온 노선, 경고 상태)마다 하나다. 들어온 노선을
+ *   상태에 두는 이유는 환승 동선이 (역, 출발 노선, 도착 노선)마다 다르기 때문이다.</li>
+ *   <li>패턴(같은 정차 순서의 열차 묶음)을 표시된 첫 위치부터 훑으며, 위치마다 경고 상태별로 탈 수 있는 가장 이른
+ *   열차 하나(bag)를 유지한다. bag은 위치당 {@code PARETO_LIMIT}(4)개로 묶는다.</li>
+ *   <li>목표 가지치기: 도착역까지의 최소 운행 시간 하한(패턴 최소 주행 시간 위의 역방향 Dijkstra)을 더해도 이미 찾은
+ *   도착보다 늦으면 버린다. 하한은 과대 추정하면 안 된다(아래 변이 M9).</li>
+ *   <li>결과: 승차 수마다 가장 이른 도착 하나(무단차 선호는 경고 상태별 하나)를 모아 파레토 집합을 만들고
+ *   {@code max(alternativeCount, maxTransfers + 1)}개로 자른다.</li>
+ * </ul>
+ * <h3>2.2 출발 시간대: 전방 range McRAPTOR</h3>
+ * <ul>
+ *   <li>시간대 안의 출발 사건(출발역 출발 − 승차 여유)과 서비스일 조각마다의 마지막 준비 시각이 시점(breakpoint)이다.
+ *   늦은 시점부터 이른 시점 순으로 같은 라벨 저장소를 다시 쓴다(rRAPTOR). 시작 시각이 늦은 라벨이 다른 기준에서
+ *   같거나 나으면 이른 시작 라벨을 지배하므로 앞선 반복의 결과를 그대로 재사용한다.</li>
+ *   <li>상태는 (승차 수, 역, 들어온 노선)이고, 라벨은 FIFO로 전파한다. 지배 판정은 시작(클수록 좋음), 도착, 승차 수,
+ *   환승 보행 시간·거리, 계단 수, 최소 환승 여유(클수록 좋음), 경고 집합(부분집합) 8개 기준이다.</li>
+ *   <li>시점마다 도착역의 모든 상태 라벨에서 시작 시각을 뺀 기준으로 파레토 집합을 다시 만든다.</li>
+ * </ul>
+ * <h3>2.3 도착 희망·막차: 역방향 탐색</h3>
+ * <ul>
+ *   <li>마감 전 도착역 하차 사건마다 승차를 거슬러 올라가며 출발역까지 trace를 만든다(깊이 우선). 각 단계는
+ *   활성 운행 전체에서 같은 역에 내리는 앞선 승차를 찾는다. 상태(열차, 승차·하차 위치, 환승 수)마다 파레토 집합만
+ *   남긴다.</li>
+ *   <li>준비 시각은 첫 승차 출발 − 승차 여유이고, 준비 시각이 늦을수록 좋다. 막차는 그 서비스일의 도착역 마지막
+ *   하차 시각을 마감으로 둔 도착 희망 질의다.</li>
+ *   <li>준비 시각 하한({@code earliestReadyAt})은 출발역에 닿았을 때만 검사한다. 그래서 짧은 시간대 질의도
+ *   이틀치 도착 사건을 모두 거슬러 올라간다(5절 측정에서 작업량 초과의 원인).</li>
+ * </ul>
+ * <h3>2.4 환승 동선 선택과 가지치기 규칙</h3>
+ * <ul>
+ *   <li>(역, 출발 노선, 도착 노선)마다 검증·이용 가능 동선 하나를 쓴다. 무단차 선호는 계단 없는 동선을 먼저, 다음은
+ *   짧은 거리, 거리가 같으면 짧은 실측 시간, 다음은 계단 없는 동선이다. point 탐색의 무단차 선호만 경고가 다른
+ *   대안 동선도 함께 본다. 엄격 무단차(REQUIRE_STEP_FREE)는 계단 동선을 막는다.</li>
+ *   <li>프로필 탐색의 가지치기 규칙은 닫힌 목록 {@code JourneyRaptorPruningInventoryV1}에 있다: 환승 자격,
+ *   상태 지배, 같은 벡터의 canonical trace, 도착 지배, 한도 초과 시 fail-closed. point 탐색은 여기에 목표
+ *   가지치기를 더한다.</li>
+ *   <li>한도(작업량, 상태당 라벨, 도착 라벨, 시점 수)를 넘으면 잘린 결과를 성공으로 돌려주지 않고 거절한다.</li>
+ * </ul>
+ *
+ * <h2>3. 자료구조</h2>
+ * <ul>
+ *   <li>{@code CompiledTimetable}: 역·노선 정수 색인, 패턴별 정차 배열({@code stopsByPattern})과 역별 패턴 역색인
+ *   ({@code patternsByStop}), 패턴 최소 주행 시간, 서비스일별 활성 운행 캐시(최근 8일). 런타임 세대마다 한 번
+ *   만들고 질의끼리 공유한다(불변).</li>
+ *   <li>환승 전환: (역, 출발 노선, 도착 노선)을 정수 하나로 접어 정렬한 키 배열과 후보 배열(CSR). 이진 탐색으로
+ *   찾고, 후보는 실측 시간·경고 수·거리·간선 ID 순으로 정렬해 둔다. 프로필별 차단·경고는 비트 마스크다.</li>
+ *   <li>{@code ScanWorkspace}: point 탐색의 상태 칸을 평면 int 배열로 두고 풀({@code ScanWorkspacePool})에서
+ *   빌려 쓴다. 질의마다 배열을 새로 만들지 않는다.</li>
+ *   <li>{@code PrimitiveProfileLabelPool}: 전방 프로필 라벨을 필드별 원시 배열(SoA)에 저장하고 부모 색인으로
+ *   trace를 잇는다. 같은 벡터 판정용 trace 키는 처음 필요할 때 계산해 둔다.</li>
+ * </ul>
+ *
+ * <h2>4. 복잡도</h2>
+ * <p>K = 최대 승차 수(환승 + 1), P = 패턴 수, S = 패턴당 정차 수, T = 활성 운행 수, L = 상태당 라벨 수.</p>
+ * <ul>
+ *   <li>point RAPTOR: 라운드마다 표시된 패턴만 훑으므로 최악 O(K × (Σ 패턴 길이 + 훑은 열차 수 + 환승 후보)).
+ *   bag과 경고 상태가 상수(4 × 8)라 라벨 폭증이 없다. 측정에서 도시철도 규모 질의 하나가 수백 마이크로초다.</li>
+ *   <li>전방 range McRAPTOR: 시점 수 × 상태 수 × L에 비례하고, L은 기준이 8개라 이론상 지수적으로 커질 수 있다.
+ *   그래서 상태당 라벨 한도로 막는다.</li>
+ *   <li>역방향 탐색: 탐색 마디마다 O(T × S)를 훑고 마디 수는 환승 깊이에 대해 지수적이다. 준비 시각 하한이 출발역에서만
+ *   적용되므로 질의 시간대 폭과 무관하게 이틀치 운행을 거슬러 올라간다.</li>
+ * </ul>
+ *
+ * <h2>5. 정확성 검증 방식(기준 해 차분)</h2>
+ * <ul>
+ *   <li>기준 해 {@code JourneyProfileExactOracle}(테스트 전용)은 원시 시간표와 원시 동선 근거만으로 승차 사슬을
+ *   환승 한도까지 전수 열거하고 7개 기준 파레토 집합을 만든다. 엔진·가지치기 코드에 의존하지 않는다.</li>
+ *   <li>같음의 정의: 프로필 질의는 엔진 라벨 벡터 집합 = 기준 해 파레토 벡터 집합이고, 엔진의 각 trace는 같은 벡터의
+ *   기준 해 trace 중 하나이며 중복 trace가 없어야 한다. point 질의는 (도착, 승차 수[, 계단 경고]) 사영 파레토 집합이
+ *   같아야 하고 각 여정이 원시 사실로 실행 가능해야 한다. 정의와 엔진과 공유하는 제품 계약(승차 여유 표, 동선 선택,
+ *   서비스일 범위)은 {@code JourneyEngineDifferentialHarness}에 적었다.</li>
+ *   <li>입력: 시드 고정 합성 번들 80개 × 20질의(노선 2~5개, 환승역, 급행 패턴, 승하차 금지 정차, 요일 달력·운행 제외일,
+ *   자정을 넘는 운행과 03:00 경계, 계단·무단차·이중·이용 불가 동선, 거리 없는 실측 환승, 30초 격자와 여유 0초 연결),
+ *   경계 연결 일람(보행 프로필 7 × 걸음 속도 3 × 여유 −1/0/+1초 × 모드 4), 실데이터 4호선 코리도 슬라이스 240질의.
+ *   불일치가 나오면 같은 질의가 계속 틀리는 동안 열차와 환승 규칙을 하나씩 지운 최소 반례와 시드를 출력한다.</li>
+ *   <li>결과(이 문서 시점): 2,092질의 중 불일치 0건(일치율 100%). 합성 1,600, 경계 252, 실데이터 240.</li>
+ *   <li>결함 주입: 15개 변이 중 13개를 잡았다(차분 검증 11, 성능 게이트만 2). 성능 게이트만 잡은 둘은 목표 가지치기를
+ *   끈 변이(정확성 중립, 확장 열차 수 5배 증가로 검출)와 하한을 60초 과대 추정한 변이다. 후자는 정확성 결함이지만
+ *   현재 입력에서는 결과를 바꾸지 않았고, 확장 열차 수가 이유 없이 줄어든 것을 양방향 허용폭이 잡았다. 남은 2개는 같은 벡터 trace의 동률 순서를 뒤집는 변이와 앞선 출발 시각
+ *   검사가 이미 거른 조건만 바꾸는 변이로, 결과가 같은 동치 변이다. 상세는 #460 PR에 남긴다.</li>
+ * </ul>
+ *
+ * <h2>6. 측정 결과(기준선, Adoptium 21, aarch64, 새 JVM에서 예열 2회·측정 5회 중앙값)</h2>
+ * <table>
+ *   <caption>번들과 컴파일</caption>
+ *   <tr><th>번들</th><th>역</th><th>운행</th><th>정차</th><th>컴파일</th><th>컴파일 할당</th><th>보유 힙</th></tr>
+ *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>80 ms</td><td>27.4 MB</td><td>3.2 MB</td></tr>
+ *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>7.6 ms</td><td>4.4 MB</td><td>0.55 MB</td></tr>
+ *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>0.4 ms</td><td>0.1 MB</td><td>0.02 MB</td></tr>
+ * </table>
+ * <table>
+ *   <caption>탐색 지연과 결과(벤치마크 한도: 작업량 500만, 상태당 라벨 64, 도착 라벨 64, 시점 64)</caption>
+ *   <tr><th>번들</th><th>모드</th><th>질의</th><th>p50</th><th>p99</th><th>질의당 할당</th><th>작업량 합</th>
+ *     <th>상태 라벨 최대</th><th>거절</th></tr>
+ *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>190 µs</td><td>331 µs</td><td>43 KB</td>
+ *     <td>열차 7,157·환승 73,280 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>district</td><td>DepartAt</td><td>40</td><td>37 µs</td><td>77 µs</td><td>11 KB</td>
+ *     <td>열차 712·환승 4,201 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>42.9 ms</td><td>44.3 ms</td><td>14.4 MB</td><td>60,000,012</td>
+ *     <td>0</td><td>12/12(작업량)</td></tr>
+ *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>3.3 ms</td><td>9.1 ms</td><td>6.3 MB</td><td>899,375</td>
+ *     <td>65</td><td>12/12(상태당 라벨)</td></tr>
+ *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>1.7 ms</td><td>49.5 ms</td><td>10.1 MB</td><td>15,260,560</td>
+ *     <td>65</td><td>6/6(작업량 3, 상태당 라벨 3)</td></tr>
+ *   <tr><td>line4</td><td>DepartAt</td><td>40</td><td>58 µs</td><td>105 µs</td><td>33 KB</td><td>열차 79 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>ArriveBy</td><td>24</td><td>146 µs</td><td>213 µs</td><td>64 KB</td><td>268,418</td><td>1</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>DepartBetween</td><td>24</td><td>38 µs</td><td>100 µs</td><td>119 KB</td><td>6,898</td><td>4</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>LastConnection</td><td>12</td><td>171 µs</td><td>235 µs</td><td>71 KB</td><td>180,744</td><td>1</td><td>0</td></tr>
+ * </table>
+ * <table>
+ *   <caption>운영 배포 후보 정책 한도로 재현한 프로필 질의(작업량 1000, 상태당 라벨 8, 도착 라벨 16, 시점 32)</caption>
+ *   <tr><th>번들</th><th>ArriveBy 거절</th><th>DepartBetween 거절</th><th>LastConnection 거절</th></tr>
+ *   <tr><td>metro</td><td>12/12(작업량)</td><td>12/12(작업량)</td><td>6/6(작업량)</td></tr>
+ *   <tr><td>district</td><td>12/12(작업량)</td><td>12/12(작업량)</td><td>6/6(작업량)</td></tr>
+ *   <tr><td>line4</td><td>11/12(작업량, 나머지 1건은 경로 없음)</td><td>0/12(12건 모두 결과 있음)</td><td>6/6(작업량)</td></tr>
+ * </table>
+ * <p>정책 값의 정의 위치는 easysubway-platform {@code tools/platform/render-journey-kubernetes-candidate.mjs}
+ * 44~49행이다. 작업량으로 거절된 질의는 모두 한도 직후(1,001 단위)에 멈췄고, 그 시점까지 라벨은 거의 쌓이지 않았다
+ * (상태 라벨 최대 0~1). 실데이터 슬라이스의 출발 시간대 12건은 작업량 합 2,971, 상태 라벨 최대 4, 도착 라벨 최대 1로
+ * 한도 안에서 끝났다. 운행 3편짜리 실데이터 슬라이스에서도 도착 희망 질의 하나가 평균 약 1.1만 작업 단위를 쓰므로
+ * 작업량 1000으로는 역방향 탐색이 끝나지 않는다. 프로필 모드의 확장성 개선은 별도 하위 이슈에서 다룬다.</p>
+ *
+ * <h2>7. 성능 회귀 게이트와 기준선 갱신 절차</h2>
+ * <ul>
+ *   <li>게이트는 {@code JourneyEnginePerformanceGateTest}이며 Backend CI 테스트 shard에서 매번 돈다. 측정은 테스트 JVM이
+ *   아니라 새로 띄운 JVM에서 한다. 같은 JVM에서 앞선 테스트가 JIT 프로파일을 오염시키면 할당량이 최대 8배, 지연이
+ *   2.6배까지 흔들리는 것을 확인했기 때문이다. 결정적 작업량
+ *   카운터(확장 노선·열차·환승, 소비 작업량, 라벨 최대치, 가지치기 규칙별 횟수, 결과·거절 수, 운영 정책 재현 결과)는
+ *   양방향 2%, 질의당 할당과 보유 힙은 +30%, 벽시계 지연과 컴파일 시간은 고정 보정 작업 시간으로 나눈 값의 2.5배가
+ *   허용폭이다. 카운터가 2% 넘게 좋아져도 기준선이 낡았다는 뜻이라 실패한다.</li>
+ *   <li>갱신이 필요한 경우: 엔진 동작을 의도적으로 바꿨을 때, 번들·질의 집합·한도를 바꿨을 때, 게이트가 "stale" 또는
+ *   "identity changed"로 실패할 때. 의도하지 않은 회귀는 기준선을 고치지 말고 코드를 고친다.</li>
+ *   <li>절차: (1) backend 디렉터리에서 {@code EASYSUBWAY_PERF_BASELINE_WRITE=true ./gradlew test --rerun --tests
+ *   'com.easysubway.route.application.service.JourneyEnginePerformanceGateTest'}를 실행해 기준선을 다시 쓴다.
+ *   (2) 같은 명령을 환경 변수 없이 두 번 더 돌려 통과하는지 확인한다. (3) 바뀐 카운터와 지연을 PR 본문에 전후 표로
+ *   남기고, 이 문서 6절 표를 함께 고친다. (4) CI 러너에서 벽시계 값이 크게 다르면 shard 산출물의 JUnit XML
+ *   system-out에 찍힌 측정 JSON으로 지연 값을 확인한다.</li>
+ *   <li>차분 검증 확장 실행: {@code EASYSUBWAY_DIFFERENTIAL_BUNDLES}(기본 80)와 {@code EASYSUBWAY_DIFFERENTIAL_BASE_SEED}로
+ *   번들 수와 시작 시드를 바꾼다. 반례에 찍힌 seed가 번들 시드다.</li>
+ * </ul>
+ *
+ * <h2>8. 알려진 한계</h2>
+ * <ul>
+ *   <li>운영 범위 번들은 배포 서버에만 있어 CI에서 쓸 수 없다. 격자 번들은 규모와 모양이 수도권보다 단순하므로 수치는
+ *   같은 번들끼리의 회귀 비교에만 쓴다. 운영 지연은 {@code EASYSUBWAY_BENCHMARK=true} 운영 범위 벤치마크로 잰다.</li>
+ *   <li>기준 해는 전수 열거라 출발 시간대 질의는 환승 2회까지만 무작위로 비교한다(3회는 다른 세 모드가 덮는다).</li>
+ *   <li>기준 해 입력 정규화는 규칙 최소 환승 시간을 쓰지 않고 동선 실측 시간만 쓴다. 엔진은 거리 없는 동선에서
+ *   둘 중 큰 값을 쓰므로 생성기는 규칙 값을 동선 값 이하로 둔다. 저신뢰·미검증 근거의 배제 규칙도 비교 범위 밖이다.</li>
+ * </ul>
+ */
+package com.easysubway.route.application.service;

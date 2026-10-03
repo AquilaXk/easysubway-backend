@@ -1,0 +1,423 @@
+{
+  "schemaVersion" : 1,
+  "method" : {
+    "warmupRounds" : 2,
+    "measuredRounds" : 5,
+    "aggregation" : "median of per-round nearest-rank percentiles",
+    "profileLimits" : {
+      "maxDestinationProfileLabels" : 64,
+      "maxLabelsPerState" : 64,
+      "maxEstimatedWork" : 5000000,
+      "maxProfileBreakpoints" : 64
+    },
+    "java" : "Eclipse Adoptium 21.0.8",
+    "arch" : "aarch64",
+    "processors" : 12
+  },
+  "calibrationNanos" : 104211667,
+  "workloads" : {
+    "metro-grid-v1" : {
+      "bundle" : {
+        "sha256" : "15e4d2e58402fad29ddda99a26d29e7a875c037efb6c731e5e634786780b7492",
+        "stations" : 192,
+        "trips" : 7298,
+        "stopTimes" : 110384,
+        "transferRules" : 128
+      },
+      "querySet" : {
+        "id" : "metro-grid-queries-v1",
+        "count" : 160,
+        "sha256" : "f769c2a2ca17d48057d30d12c3b7b668b49f06813861c5d2e9ef519c860efeb3"
+      },
+      "compile" : {
+        "nanos" : 79791000,
+        "allocatedBytes" : 27382448,
+        "retainedBytes" : 3232728
+      },
+      "modes" : {
+        "DEPART_AT" : {
+          "queries" : 160,
+          "p50Nanos" : 190333,
+          "p99Nanos" : 330666,
+          "allocatedBytesPerQuery" : 43091,
+          "work" : {
+            "expandedRoutes" : 12540,
+            "expandedTransfers" : 73280,
+            "expandedTrips" : 7157,
+            "itineraries" : 169
+          }
+        }
+      },
+      "candidatePolicyReplay" : {
+        "limits" : {
+          "maxDestinationProfileLabels" : 16,
+          "maxLabelsPerState" : 8,
+          "maxEstimatedWork" : 1000,
+          "maxProfileBreakpoints" : 32
+        },
+        "modes" : {
+          "ARRIVE_BY" : {
+            "failClosed" : 12,
+            "failClosed.MAX_ESTIMATED_WORK" : 12,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "queries" : 12,
+            "workConsumed" : 12012
+          },
+          "DEPART_BETWEEN" : {
+            "failClosed" : 12,
+            "failClosed.MAX_ESTIMATED_WORK" : 12,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.FORWARD_STATE_DOMINANCE_V1" : 0,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
+            "queries" : 12,
+            "workConsumed" : 12012
+          },
+          "LAST_CONNECTION" : {
+            "failClosed" : 6,
+            "failClosed.MAX_ESTIMATED_WORK" : 6,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "queries" : 6,
+            "workConsumed" : 6006
+          }
+        }
+      }
+    },
+    "district-grid-v1" : {
+      "bundle" : {
+        "sha256" : "69d0b59fc4c05600d0080a82c0bd038fec4ee10edc80844f367df5efb3ff32f3",
+        "stations" : 48,
+        "trips" : 1634,
+        "stopTimes" : 12472,
+        "transferRules" : 32
+      },
+      "querySet" : {
+        "id" : "district-grid-queries-v1",
+        "count" : 70,
+        "sha256" : "a09d5396e464e1e97104b81ff7b4fbd4d799ce748a55204310d39169cadf4ca5"
+      },
+      "compile" : {
+        "nanos" : 7586125,
+        "allocatedBytes" : 4449744,
+        "retainedBytes" : 548616
+      },
+      "modes" : {
+        "DEPART_AT" : {
+          "queries" : 40,
+          "p50Nanos" : 36875,
+          "p99Nanos" : 76750,
+          "allocatedBytesPerQuery" : 10892,
+          "work" : {
+            "expandedRoutes" : 1476,
+            "expandedTransfers" : 4201,
+            "expandedTrips" : 712,
+            "itineraries" : 40
+          }
+        },
+        "ARRIVE_BY" : {
+          "queries" : 12,
+          "p50Nanos" : 42941584,
+          "p99Nanos" : 44252708,
+          "allocatedBytesPerQuery" : 14385108,
+          "work" : {
+            "failClosed" : 12,
+            "failClosed.MAX_ESTIMATED_WORK" : 12,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 766256,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "workConsumed" : 60000012
+          }
+        },
+        "DEPART_BETWEEN" : {
+          "queries" : 12,
+          "p50Nanos" : 3278916,
+          "p99Nanos" : 9074500,
+          "allocatedBytesPerQuery" : 6303750,
+          "work" : {
+            "failClosed" : 12,
+            "failClosed.MAX_LABELS_PER_STATE" : 12,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 17,
+            "peakStateLabels" : 65,
+            "profileBreakpoints" : 70,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 12,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.FORWARD_STATE_DOMINANCE_V1" : 232942,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 9056,
+            "workConsumed" : 899375
+          }
+        },
+        "LAST_CONNECTION" : {
+          "queries" : 6,
+          "p50Nanos" : 1711209,
+          "p99Nanos" : 49471542,
+          "allocatedBytesPerQuery" : 10143968,
+          "work" : {
+            "failClosed" : 6,
+            "failClosed.MAX_ESTIMATED_WORK" : 3,
+            "failClosed.MAX_LABELS_PER_STATE" : 3,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 65,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 3,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 198264,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "workConsumed" : 15260560
+          }
+        }
+      },
+      "candidatePolicyReplay" : {
+        "limits" : {
+          "maxDestinationProfileLabels" : 16,
+          "maxLabelsPerState" : 8,
+          "maxEstimatedWork" : 1000,
+          "maxProfileBreakpoints" : 32
+        },
+        "modes" : {
+          "ARRIVE_BY" : {
+            "failClosed" : 12,
+            "failClosed.MAX_ESTIMATED_WORK" : 12,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "queries" : 12,
+            "workConsumed" : 12012
+          },
+          "DEPART_BETWEEN" : {
+            "failClosed" : 12,
+            "failClosed.MAX_ESTIMATED_WORK" : 12,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.FORWARD_STATE_DOMINANCE_V1" : 0,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
+            "queries" : 12,
+            "workConsumed" : 12012
+          },
+          "LAST_CONNECTION" : {
+            "failClosed" : 6,
+            "failClosed.MAX_ESTIMATED_WORK" : 6,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "queries" : 6,
+            "workConsumed" : 6006
+          }
+        }
+      }
+    },
+    "line4-corridor-slice" : {
+      "bundle" : {
+        "sha256" : "27c4cf3f27c6e9ce4960515e33a303c5b3e82114e9dd7ad9887b23d6aaed16fd",
+        "stations" : 48,
+        "trips" : 3,
+        "stopTimes" : 141,
+        "transferRules" : 0
+      },
+      "querySet" : {
+        "id" : "line4-corridor-queries-v1",
+        "count" : 100,
+        "sha256" : "25a9cb6f1b4a011362d7317a59c951211cad8fdbf6fc19b3938a439374c6cd45"
+      },
+      "compile" : {
+        "nanos" : 423542,
+        "allocatedBytes" : 118056,
+        "retainedBytes" : 23736
+      },
+      "modes" : {
+        "DEPART_AT" : {
+          "queries" : 40,
+          "p50Nanos" : 58209,
+          "p99Nanos" : 105125,
+          "allocatedBytesPerQuery" : 33225,
+          "work" : {
+            "expandedRoutes" : 160,
+            "expandedTransfers" : 0,
+            "expandedTrips" : 79,
+            "itineraries" : 40
+          }
+        },
+        "ARRIVE_BY" : {
+          "queries" : 24,
+          "p50Nanos" : 146375,
+          "p99Nanos" : 212792,
+          "allocatedBytesPerQuery" : 64368,
+          "work" : {
+            "failClosed" : 0,
+            "found" : 23,
+            "itineraries" : 64,
+            "peakDestinationLabels" : 3,
+            "peakStateLabels" : 1,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 5310,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 1,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "workConsumed" : 268418
+          }
+        },
+        "DEPART_BETWEEN" : {
+          "queries" : 24,
+          "p50Nanos" : 37625,
+          "p99Nanos" : 100458,
+          "allocatedBytesPerQuery" : 119438,
+          "work" : {
+            "failClosed" : 0,
+            "found" : 24,
+            "itineraries" : 36,
+            "peakDestinationLabels" : 1,
+            "peakStateLabels" : 4,
+            "profileBreakpoints" : 38,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 14,
+            "pruning.FORWARD_STATE_DOMINANCE_V1" : 1414,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 1812,
+            "workConsumed" : 6898
+          }
+        },
+        "LAST_CONNECTION" : {
+          "queries" : 12,
+          "p50Nanos" : 170750,
+          "p99Nanos" : 235416,
+          "allocatedBytesPerQuery" : 70828,
+          "work" : {
+            "failClosed" : 0,
+            "found" : 12,
+            "itineraries" : 35,
+            "peakDestinationLabels" : 3,
+            "peakStateLabels" : 1,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 3588,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 1,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "workConsumed" : 180744
+          }
+        }
+      },
+      "candidatePolicyReplay" : {
+        "limits" : {
+          "maxDestinationProfileLabels" : 16,
+          "maxLabelsPerState" : 8,
+          "maxEstimatedWork" : 1000,
+          "maxProfileBreakpoints" : 32
+        },
+        "modes" : {
+          "ARRIVE_BY" : {
+            "failClosed" : 11,
+            "failClosed.MAX_ESTIMATED_WORK" : 11,
+            "found" : 0,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 0,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 162,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "queries" : 12,
+            "workConsumed" : 11161
+          },
+          "DEPART_BETWEEN" : {
+            "failClosed" : 0,
+            "found" : 12,
+            "itineraries" : 15,
+            "peakDestinationLabels" : 1,
+            "peakStateLabels" : 4,
+            "profileBreakpoints" : 16,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 2,
+            "pruning.FORWARD_STATE_DOMINANCE_V1" : 727,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 660,
+            "queries" : 12,
+            "workConsumed" : 2971
+          },
+          "LAST_CONNECTION" : {
+            "failClosed" : 6,
+            "failClosed.MAX_ESTIMATED_WORK" : 6,
+            "itineraries" : 0,
+            "peakDestinationLabels" : 0,
+            "peakStateLabels" : 1,
+            "profileBreakpoints" : 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 69,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
+            "queries" : 6,
+            "workConsumed" : 6006
+          }
+        }
+      }
+    }
+  },
+  "tolerances" : {
+    "workCounterRelative" : 0.02,
+    "allocatedBytesRegression" : 0.3,
+    "retainedBytesRegression" : 0.3,
+    "normalizedLatencyFactor" : 2.5,
+    "normalizedCompileFactor" : 2.5
+  }
+}
