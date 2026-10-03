@@ -112,6 +112,22 @@ class StationTimetableSearchControllerTest {
 	}
 
 	@Test
+	void holidayCalendarGapKeepsThePublicNotCoveredCodeAndExistingErrorShape() throws Exception {
+		// #476 F2: 원인 구분(공휴일 예외 누락)은 서버 로그로만 남기고 응답은 기존 JourneyError 형식·코드 그대로다.
+		StationTimetableSearchService failing = mock(StationTimetableSearchService.class);
+		when(failing.search(any())).thenThrow(new StationTimetableSearchService.FailureException(
+			StationTimetableSearchService.Failure.TIMETABLE_NOT_COVERED,
+			StationTimetableSearchService.FailureDetail.HOLIDAY_CALENDAR_EXCEPTION_MISSING));
+		mockMvc = mvc(failing);
+		when(sessions.authorize("session-token")).thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
+		mockMvc.perform(post(StationTimetableSearchController.PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+			.contentType(MediaType.APPLICATION_JSON).content(request()))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("TIMETABLE_NOT_COVERED"))
+			.andExpect(jsonPath("$.detail").doesNotExist());
+	}
+
+	@Test
 	void mapsEveryStationTimetableFailureToItsPublicStatusAndCode() throws Exception {
 		for (var expected : List.of(
 			new FailureExpectation(StationTimetableSearchService.Failure.INVALID_JOURNEY_REQUEST, 400),

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.easysubway.journey.application.StationTimetableSearchService.DayType;
 import com.easysubway.journey.application.StationTimetableSearchService.Failure;
+import com.easysubway.journey.application.StationTimetableSearchService.FailureDetail;
 import com.easysubway.journey.application.StationTimetableSearchService.FailureException;
 import com.easysubway.journey.application.StationTimetableSearchService.SearchRequest;
 import com.easysubway.journey.application.StationTimetableSearchService.Selector;
@@ -35,7 +36,8 @@ class StationTimetableSearchServiceTest {
 	private static final Instant NOW = Instant.parse("2026-08-24T00:00:00Z");
 
 	@Test
-	void unrelatedSundayOnlyAddedServiceKeepsCivilWeekdayDayType() {
+	void sundayOnlyServiceAddedOnlyForAnUnrelatedAgencyMarksAHolidayGapForThisStationLine() {
+		// #476 F2: 다른 서비스만 휴일 달력을 더한 평일에 이 역·노선은 예외가 없으므로 평일 시간표를 성공으로 내지 않는다.
 		RouteTimetable timetable = timetable(List.of(
 			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
 				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
@@ -44,10 +46,12 @@ class StationTimetableSearchServiceTest {
 			List.of(new ServiceCalendarDate("added", LocalDate.parse("2026-08-25"), 1)),
 			List.of(), List.of());
 
-		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
-			LocalDate.parse("2026-08-25"))));
-
-		assertThat(result.resolvedDayType()).isEqualTo(DayType.WEEKDAY);
+		assertThatThrownBy(() -> service(snapshot(timetable, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-25")))))
+			.isInstanceOf(FailureException.class)
+			.satisfies(error -> assertThat(((FailureException) error).detail()).isEqualTo(FailureDetail.HOLIDAY_CALENDAR_EXCEPTION_MISSING))
+			.extracting(error -> ((FailureException) error).failure())
+			.isEqualTo(Failure.TIMETABLE_NOT_COVERED);
 	}
 
 	@Test
@@ -139,6 +143,70 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
+	void holidayMarkedOnlyInOtherAgencyCalendarsIsNotServedAsAWeekdayTimetable() {
+		// #476 F2: seq126에서 대구·부산·대전 달력에는 공휴일 예외가 없다(data#919). 2026-10-09(금, 한글날)는 다른 기관 달력에
+		// 휴일 예외가 있는데 이 역·노선 달력에는 없으므로, 평일 시간표를 성공으로 내지 않고 명시적으로 범위 밖으로 답한다.
+		List<ServiceCalendar> calendars = List.of(
+			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("holiday", false, false, false, false, false, false, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-holiday", false, false, false, false, false, true, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"));
+		List<ServiceCalendarDate> otherAgencyOnly = List.of(
+			new ServiceCalendarDate("other-weekday", LocalDate.parse("2026-10-09"), 2),
+			new ServiceCalendarDate("other-holiday", LocalDate.parse("2026-10-09"), 1));
+		List<TransitTrip> holidayTrip = List.of(
+			new TransitTrip("holiday-trip", "route", "holiday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0));
+		StationTimetableSearchService gap = service(snapshot(timetable(calendars, otherAgencyOnly, List.of(), holidayTrip),
+			Instant.parse("2026-10-12T00:00:00Z")));
+
+		for (Selector selector : List.<Selector>of(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-10-09")),
+			new Selector.DayTypeSelector(DayType.WEEKDAY, LocalDate.parse("2026-10-09")),
+			new Selector.NextDeparturesSelector(Instant.parse("2026-10-08T23:00:00Z"), 1))) {
+			assertThatThrownBy(() -> gap.search(request(selector)))
+				.isInstanceOf(FailureException.class)
+				.satisfies(error -> {
+					assertThat(((FailureException) error).failure()).isEqualTo(Failure.TIMETABLE_NOT_COVERED);
+					assertThat(((FailureException) error).detail()).isEqualTo(FailureDetail.HOLIDAY_CALENDAR_EXCEPTION_MISSING);
+				});
+		}
+		// 평일인 다른 날은 그대로 평일 시간표다.
+		assertThat(gap.search(request(new Selector.ServiceDateSelector(LocalDate.parse("2026-10-08")))).resolvedDayType())
+			.isEqualTo(DayType.WEEKDAY);
+
+		// 이 역·노선 달력에도 휴일 예외가 실리면(data#919 해결) 휴일 시간표로 정상 응답한다.
+		List<ServiceCalendarDate> fixed = new java.util.ArrayList<>(otherAgencyOnly);
+		fixed.add(new ServiceCalendarDate("weekday", LocalDate.parse("2026-10-09"), 2));
+		fixed.add(new ServiceCalendarDate("holiday", LocalDate.parse("2026-10-09"), 1));
+		var served = service(snapshot(timetable(calendars, fixed, List.of(), holidayTrip), Instant.parse("2026-10-12T00:00:00Z")))
+			.search(request(new Selector.ServiceDateSelector(LocalDate.parse("2026-10-09"))));
+		assertThat(served.resolvedDayType()).isEqualTo(DayType.SUNDAY_HOLIDAY);
+		assertThat(served.directionGroups()).singleElement().satisfies(group -> assertThat(group.departures())
+			.extracting(StationTimetableSearchService.Departure::servicePattern).containsExactly("EXPRESS"));
+	}
+
+	@Test
+	void holidayElsewhereDoesNotFailAStationLineAlreadyOnItsHolidayCalendar() {
+		// 토요일 시간표가 없는 기관은 토요일 공휴일(2026-10-03)에도 이미 휴일 달력을 쓰므로 자기 예외가 없어도 빠진 것이 아니다.
+		List<ServiceCalendar> calendars = List.of(
+			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("weekend-holiday", false, false, false, false, false, true, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+			new ServiceCalendar("other-holiday", false, false, false, false, false, false, true,
+				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"));
+		var result = service(snapshot(timetable(calendars,
+			List.of(new ServiceCalendarDate("other-holiday", LocalDate.parse("2026-10-03"), 1)), List.of(),
+			List.of(new TransitTrip("holiday-trip", "route", "weekend-holiday", "headsign", "0", "SUBWAY", "EXPRESS", null, 0))),
+			Instant.parse("2026-10-12T00:00:00Z"))).search(request(new Selector.ServiceDateSelector(LocalDate.parse("2026-10-03"))));
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.SUNDAY_HOLIDAY);
+	}
+
+	@Test
 	void stationLineServedByCalendarsOfDifferentClassesOnOneDateFailsClosed() {
 		RouteTimetable timetable = timetable(List.of(
 			new ServiceCalendar("weekday", true, true, true, true, true, false, false,
@@ -163,12 +231,10 @@ class StationTimetableSearchServiceTest {
 			new ServiceCalendar("other-weekday", true, true, true, true, true, false, false,
 				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
 			new ServiceCalendar("other-saturday", false, false, false, false, false, true, false,
-				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
-			new ServiceCalendar("other-holiday", false, false, false, false, false, true, true,
 				LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			// 휴일이 아닌 대체(다른 기관이 평일에 토요일 시간표를 쓰는 경우)는 이 역·노선의 판정에 영향이 없다.
 			List.of(new ServiceCalendarDate("other-weekday", LocalDate.parse("2026-08-25"), 2),
-				new ServiceCalendarDate("other-saturday", LocalDate.parse("2026-08-25"), 1),
-				new ServiceCalendarDate("other-holiday", LocalDate.parse("2026-08-25"), 1)), List.of(), List.of());
+				new ServiceCalendarDate("other-saturday", LocalDate.parse("2026-08-25"), 1)), List.of(), List.of());
 
 		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
 			LocalDate.parse("2026-08-25"))));

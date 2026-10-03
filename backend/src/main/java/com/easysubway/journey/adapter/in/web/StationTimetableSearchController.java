@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 final class StationTimetableSearchController {
+	private static final Logger log = LoggerFactory.getLogger(StationTimetableSearchController.class);
 	static final String PATH = "/api/v3/station-timetables/search";
 	private static final ObjectMapper REQUEST_JSON = new ObjectMapper(JsonFactory.builder()
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
@@ -75,6 +78,11 @@ final class StationTimetableSearchController {
 		try {
 			return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(map(service.search(request)));
 		} catch (FailureException exception) {
+			if (exception.detail() != StationTimetableSearchService.FailureDetail.NONE) {
+				// #476 F2: 같은 공개 코드 안의 원인 구분은 응답 형식을 바꾸지 않고 서버 로그로 남긴다.
+				log.warn("station timetable search {} detail={} stationId={} lineId={}", exception.failure(), exception.detail(),
+					request.stationId(), request.lineId());
+			}
 			throw new StationTimetableSearchWebException(status(exception.failure()), exception.failure().name());
 		}
 	}

@@ -80,12 +80,23 @@ public final class StationTimetableSearchService {
 
 		Set<String> servingServiceIds = new HashSet<>();
 		for (DepartureCandidate candidate : candidates) servingServiceIds.add(candidate.trip().serviceId());
-		DayType resolvedDayType = resolveDayType(timetable, selectorServiceDate(request.selector()), servingServiceIds);
+		LocalDate referenceDate = selectorServiceDate(request.selector());
+		DayType resolvedDayType = resolveDayType(timetable, referenceDate, servingServiceIds);
+		if (!(request.selector() instanceof Selector.NextDeparturesSelector)) {
+			requireHolidayCalendarCoverage(timetable, referenceDate, servingServiceIds, resolvedDayType);
+		}
 		if (request.selector() instanceof Selector.DayTypeSelector dayType
 			&& dayType.dayType() != resolvedDayType) {
 			throw failure(Failure.INVALID_JOURNEY_REQUEST);
 		}
 		List<Departure> selected = select(candidates, timetable, request.selector());
+		if (request.selector() instanceof Selector.NextDeparturesSelector) {
+			// 다음 출발은 여러 서비스일에 걸치므로, 실제로 출발을 내는 서비스일마다 같은 기준을 적용한다.
+			for (LocalDate serviceDate : selected.stream().map(Departure::serviceDate).distinct().toList()) {
+				requireHolidayCalendarCoverage(timetable, serviceDate, servingServiceIds,
+					resolveDayType(timetable, serviceDate, servingServiceIds));
+			}
+		}
 		return new SearchResult(
 			request.stationId(), request.lineId(), request.selector(), resolvedDayType,
 			group(selected), source
@@ -317,6 +328,33 @@ public final class StationTimetableSearchService {
 		return classes.iterator().next();
 	}
 
+	// #476 F2: 번들의 다른 기관 달력이 그 날을 휴일로 표시(휴일 종류 달력 추가)했는데 이 역·노선 달력에는 그 날 예외가 하나도
+	// 없고 휴일 시간표도 돌지 않으면, 평일·토요일 시간표를 성공으로 내지 않는다(fallback 금지). 근거는 번들에 이미 있는 예외뿐이며
+	// 서버가 공휴일을 따로 조회하거나 추정하지 않는다. 기관 달력에 예외가 실리면(data#919) 자동으로 정상 응답한다.
+	private static void requireHolidayCalendarCoverage(
+		RouteTimetable timetable, LocalDate serviceDate, Set<String> servingServiceIds, DayType resolvedDayType
+	) {
+		if (resolvedDayType == DayType.SUNDAY_HOLIDAY) return;
+		Map<String, Integer> calendarCounts = new HashMap<>();
+		Map<String, ServiceCalendar> calendarsById = new HashMap<>();
+		for (ServiceCalendar calendar : timetable.serviceCalendars()) {
+			calendarCounts.merge(calendar.serviceId(), 1, Integer::sum);
+			calendarsById.put(calendar.serviceId(), calendar);
+		}
+		boolean holidayElsewhere = false;
+		for (ServiceCalendarDate exception : timetable.serviceCalendarDates()) {
+			if (!serviceDate.equals(exception.date())) continue;
+			if (servingServiceIds.contains(exception.serviceId())) return;
+			if (exception.exceptionType() == 1 && calendarCounts.getOrDefault(exception.serviceId(), 0) == 1
+				&& calendarSignature(calendarsById.get(exception.serviceId())) == DayType.SUNDAY_HOLIDAY) {
+				holidayElsewhere = true;
+			}
+		}
+		if (holidayElsewhere) {
+			throw new FailureException(Failure.TIMETABLE_NOT_COVERED, FailureDetail.HOLIDAY_CALENDAR_EXCEPTION_MISSING);
+		}
+	}
+
 	private static DayType calendarSignature(ServiceCalendar calendar) {
 		if (calendar.monday() && calendar.tuesday() && calendar.wednesday() && calendar.thursday() && calendar.friday()
 			&& !calendar.saturday() && !calendar.sunday()) return DayType.WEEKDAY;
@@ -433,10 +471,19 @@ public final class StationTimetableSearchService {
 	private record Direction(String nextStationId, String terminalStationId, String directionName) { }
 	private record DepartureCandidate(Direction direction, TransitTrip trip, int secondsFromServiceDayStart) { }
 	public enum Failure { INVALID_JOURNEY_REQUEST, STATION_LINE_NOT_FOUND, TIMETABLE_NOT_COVERED, TIMETABLE_UNAVAILABLE, TIMETABLE_STALE, TIMETABLE_IDENTITY_MISMATCH }
+	/** 같은 오류 코드 안에서 원인을 구분한다. 응답 형식(JourneyError)은 그대로이고 서버 로그로 남긴다. */
+	public enum FailureDetail { NONE, HOLIDAY_CALENDAR_EXCEPTION_MISSING }
 	public static final class FailureException extends RuntimeException {
 		private final Failure failure;
-		public FailureException(Failure failure) { super(failure.name()); this.failure = failure; }
+		private final FailureDetail detail;
+		public FailureException(Failure failure) { this(failure, FailureDetail.NONE); }
+		public FailureException(Failure failure, FailureDetail detail) {
+			super(detail == FailureDetail.NONE ? failure.name() : failure.name() + ":" + detail.name());
+			this.failure = failure;
+			this.detail = Objects.requireNonNull(detail, "detail");
+		}
 		public Failure failure() { return failure; }
+		public FailureDetail detail() { return detail; }
 	}
 
 	private static <T> Map<String, T> uniqueById(List<T> values, java.util.function.Function<T, String> id) {
