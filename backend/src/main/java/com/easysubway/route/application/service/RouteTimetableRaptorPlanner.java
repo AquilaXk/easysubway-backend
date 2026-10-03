@@ -2566,7 +2566,7 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			scheduledTrips = List.copyOf(compiledTrips);
 			CompiledRoutePatterns routePatterns = compileRoutePatterns(scheduledTrips, stationIndex);
-			stopsByPattern = routePatterns.stopsByPattern();
+			stopsByPattern = routePatterns.stopsByPattern().toArray(int[][]::new);
 			patternsByStop = invertPatterns(stopsByPattern, stationIndex.size());
 			tripsByPattern = routePatterns.tripsByPattern();
 			// 패턴 키에 노선 순서가 들어 있어 같은 패턴의 열차는 위치마다 노선이 같다. 탐색 내부 루프가 노선 ID 문자열로
@@ -3046,13 +3046,12 @@ public final class RouteTimetableRaptorPlanner {
 			List<ScheduledTrip> activeTrips = scheduledTrips.stream()
 				.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
 				.toList();
-			List<List<ScheduledTrip>> activeTripsByPattern = new ArrayList<>(tripsByPattern.size());
-			for (List<ScheduledTrip> trips : tripsByPattern) {
-				activeTripsByPattern.add(trips.stream()
+			List<List<ScheduledTrip>> activeTripsByPattern = tripsByPattern.stream()
+				.map(trips -> trips.stream()
 					.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
-					.toList());
-			}
-			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips, List.copyOf(activeTripsByPattern));
+					.toList())
+				.toList();
+			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips, activeTripsByPattern);
 			activeServiceDays.put(serviceDate, compiled);
 			if (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
 				activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
@@ -3142,7 +3141,7 @@ public final class RouteTimetableRaptorPlanner {
 					tripsByPattern.add(List.copyOf(group));
 				}
 			}
-			return new CompiledRoutePatterns(stopsByPattern.toArray(int[][]::new), List.copyOf(tripsByPattern));
+			return new CompiledRoutePatterns(List.copyOf(stopsByPattern), List.copyOf(tripsByPattern));
 		}
 
 		private static boolean canShareScanPattern(ScheduledTrip earlier, ScheduledTrip later) {
@@ -5003,8 +5002,10 @@ public final class RouteTimetableRaptorPlanner {
 		private int arrivalBound = UNREACHED;
 		/** 도착역까지 남은 최소 승차 수({@link #forwardRemainingBoardings}). */
 		private final int[] remainingBoardings;
-		/** 패턴·승차 위치마다 그 뒤 하차로 도착역까지 남는 최소 승차 수(그 노선으로 내린 상태 기준). */
-		/** 패턴별 승차 위치마다 남은 최소 승차 수. 패턴 번호로 찾는 질의 단위 캐시다(#462). */
+		/**
+		 * 패턴·승차 위치마다 그 뒤 하차로 도착역까지 남는 최소 승차 수(그 노선으로 내린 상태 기준). 패턴 번호로 찾는
+		 * 질의 단위 캐시이고 처음 보는 패턴만 채운다(#462).
+		 */
 		private final int[][] remainingAfterBoarding;
 		private int expandedRoutes;
 		private int expandedTrips;
@@ -5775,7 +5776,7 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	private record CompiledRoutePatterns(
-		int[][] stopsByPattern,
+		List<int[]> stopsByPattern,
 		List<List<ScheduledTrip>> tripsByPattern
 	) {
 	}
