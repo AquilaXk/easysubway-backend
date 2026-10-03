@@ -29,8 +29,10 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  * #461: 실제 서버 경로 번들에서 수도권 평일 축소 fixture({@code route/real-derived/capital-weekday-v1.json.gz})를 만든다.
  *
  * <p>CI에서는 돌지 않는다. 원본 번들은 data 레포 Datapack candidate 산출물의 {@code server-route-bundle} 디렉터리다.
- * 실행: {@code EASYSUBWAY_CAPITAL_FIXTURE_SOURCE=<server-route-bundle 디렉터리> ./gradlew test --tests
- * 'com.easysubway.journey.bundle.CapitalRealDerivedFixtureBuilderTest'}. 운영과 같은
+ * 실행: {@code EASYSUBWAY_CAPITAL_FIXTURE_SOURCE=<server-route-bundle 디렉터리>
+ * EASYSUBWAY_CAPITAL_FIXTURE_SOURCE_RUN=<data 레포 Datapack candidate workflow run id> ./gradlew test --tests
+ * 'com.easysubway.journey.bundle.CapitalRealDerivedFixtureBuilderTest'}. 다시 만들면 {@code CapitalRealDerivedFixture}의
+ * 기대 provenance와 fixture sha256 상수도 함께 바꿔야 로더가 읽는다. 운영과 같은
  * {@link RouteBundleSqliteRuntimeCompiler}로 읽은 시간표에서 수도권 24개 노선 중 기준일에 운행하는 열차와 그 역의
  * 검증된 환승 근거만 남긴다. 원본 번들 manifest의 bundleId·releaseSequence·payload digest를 fixture에 기록한다.</p>
  */
@@ -84,6 +86,15 @@ class CapitalRealDerivedFixtureBuilderTest {
 		ObjectNode root2 = json.createObjectNode();
 		root2.put("schemaVersion", 1);
 		ObjectNode provenance = root2.putObject("provenance");
+		String sourceRun = System.getenv("EASYSUBWAY_CAPITAL_FIXTURE_SOURCE_RUN");
+		if (sourceRun == null || !sourceRun.matches("[0-9]+")) {
+			throw new IllegalStateException("EASYSUBWAY_CAPITAL_FIXTURE_SOURCE_RUN must be the data workflow run id");
+		}
+		ObjectNode sourceArtifact = provenance.putObject("sourceArtifact");
+		sourceArtifact.put("repository", "AquilaXk/easysubway-data");
+		sourceArtifact.put("workflowRunId", Long.parseLong(sourceRun));
+		sourceArtifact.put("artifactName", "easysubway-datapack-candidate-" + sourceRun);
+		sourceArtifact.put("path", "server-route-bundle");
 		provenance.put("bundleId", manifest.get("bundleId").asText());
 		provenance.put("releaseSequence", manifest.get("releaseSequence").asLong());
 		provenance.put("activeFrom", manifest.get("activeFrom").asText());

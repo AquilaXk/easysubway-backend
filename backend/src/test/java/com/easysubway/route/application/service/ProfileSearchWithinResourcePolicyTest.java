@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
@@ -32,6 +33,7 @@ class ProfileSearchWithinResourcePolicyTest {
 		var runtime = RaptorRouteBundleRuntimeView.compile("a".repeat(64), 1, CapitalRealDerivedFixture.load());
 		var adapter = new JourneyProfileRaptorAdapter();
 		List<String> failures = new ArrayList<>();
+		List<String> windowViolations = new ArrayList<>();
 		int index = 0;
 		for (Case testCase : cases()) {
 			var query = testCase.query(index++);
@@ -40,8 +42,51 @@ class ProfileSearchWithinResourcePolicyTest {
 			System.out.println("#461 policy " + testCase.mode() + " " + testCase.origin() + "->" + testCase.destination()
 				+ " " + testCase.profile() + " " + outcome);
 			if (!outcome.startsWith("found")) failures.add(testCase + " -> " + outcome);
+			windowViolations.addAll(windowViolations(testCase, result));
 		}
 		assertThat(failures).as("운영 정책 안에서 경로를 찾지 못한 질의").isEmpty();
+		assertThat(windowViolations).as("30분 대안 창을 벗어난 결과").isEmpty();
+	}
+
+	@Test
+	@DisplayName("실데이터 fixture는 고정된 원본 번들에서 자른 것이다")
+	void capitalFixtureComesFromThePinnedSourceBundle() {
+		// 로더가 fixture sha256과 provenance(번들 ID·release·payload digest·data workflow run)를 대조한다.
+		var timetable = CapitalRealDerivedFixture.load();
+		assertThat(timetable.transitTrips()).hasSize(9_691);
+		assertThat(CapitalRealDerivedFixture.stations()).hasSize(656);
+		assertThat(timetable.routeAccessData().transferRules()).hasSize(297);
+	}
+
+	/**
+	 * 결과 의미(#461): 출발 시간대의 각 시점은 가장 이른 도착 + 30분 안, 도착 희망·막차는 가장 늦은 준비 시각 - 30분
+	 * 이후의 여정만 담는다.
+	 */
+	static List<String> windowViolations(Case testCase, JourneyProfileRaptorPort.PlanningResult result) {
+		long window = JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW_SECONDS;
+		List<String> violations = new ArrayList<>();
+		if (!(result instanceof JourneyProfileRaptorPort.PlanningResult.Planned planned)) return violations;
+		switch (planned.temporalPlan()) {
+			case JourneyProfileRaptorPort.DepartureWindowPlan plan -> {
+				for (var point : plan.points()) {
+					long first = point.itineraries().stream().mapToLong(it -> it.plannedArrivalAtDestination().getEpochSecond())
+						.min().orElseThrow();
+					long last = point.itineraries().stream().mapToLong(it -> it.plannedArrivalAtDestination().getEpochSecond())
+						.max().orElseThrow();
+					if (last - first > window) violations.add(testCase + " point " + point.readyAt() + " arrival span " + (last - first));
+				}
+			}
+			case JourneyProfileRaptorPort.ArriveByPlan plan -> violations.addAll(readinessSpan(testCase, plan.result(), window));
+			case JourneyProfileRaptorPort.LastConnectionPlan plan -> violations.addAll(readinessSpan(testCase, plan.result(), window));
+		}
+		return violations;
+	}
+
+	private static List<String> readinessSpan(Case testCase, JourneyProfileRaptorPort.ReversePlan result, long window) {
+		if (!(result instanceof JourneyProfileRaptorPort.ReversePlan.Found found)) return List.of();
+		long first = found.itineraries().stream().mapToLong(it -> it.plannedReadyAt().getEpochSecond()).min().orElseThrow();
+		long last = found.itineraries().stream().mapToLong(it -> it.plannedReadyAt().getEpochSecond()).max().orElseThrow();
+		return last - first > window ? List.of(testCase + " readiness span " + (last - first)) : List.of();
 	}
 
 	static List<Case> cases() {

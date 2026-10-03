@@ -19,6 +19,9 @@ import java.util.zip.GZIPInputStream;
  * <p>원본은 data 레포 Datapack candidate 산출물의 전국 서버 경로 번들이다(출처 digest는 fixture의 provenance).
  * 수도권 24개 노선 중 {@link #SERVICE_DATE}에 운행하는 열차 9,691편, 656역, 검증된 환승 297건이다.
  * 다시 만드는 방법은 {@code CapitalRealDerivedFixtureBuilderTest}에 있다.</p>
+ *
+ * <p>로더는 fixture 파일의 sha256과 provenance(원본 번들 ID·release·payload digest·기준일·출처 data workflow run)를 아래
+ * 상수와 대조하고 다르면 읽지 않는다. fixture를 다시 만들면 이 상수를 함께 바꿔야 한다.</p>
  */
 final class CapitalRealDerivedFixture {
 
@@ -42,6 +45,16 @@ final class CapitalRealDerivedFixture {
 	static final String YEOUIDO = "station-b2cbb36a5868";
 	static final String KONKUK_UNIV = "station-e773d203ef9f";
 
+	/** fixture 파일(gzip) 바이트의 sha256. */
+	static final String FIXTURE_SHA256 = "b90ce040036aa0a36018ed9bb849024a6a6d0f0094f3b432dcfb6a3b5eec7517";
+	/** 원본: data 레포 Datapack candidate workflow run의 server-route-bundle 산출물. */
+	static final long SOURCE_WORKFLOW_RUN_ID = 37_088_712_672L;
+	static final String SOURCE_BUNDLE_ID = "nationwide-route-bundle-1";
+	static final long SOURCE_RELEASE_SEQUENCE = 125L;
+	static final String SOURCE_TIMETABLE_SHA256 = "c4d9accbf455235d5f12dc3d67307bf515da2602bee07f33f16fcea8c5b5330c";
+	static final String SOURCE_TOPOLOGY_SHA256 = "25e77986199fafd1f6522e37880c2a184ea9ab5e3ee29bd8c14748b9b3d4b188";
+	static final String SOURCE_ACCESSIBILITY_SHA256 = "e1d0c531e038d2d21c03414b66c03f1c83f72bc08d84aa87c9a22301e383dbf9";
+
 	private static RouteTimetable cached;
 
 	private CapitalRealDerivedFixture() {
@@ -62,12 +75,37 @@ final class CapitalRealDerivedFixture {
 	}
 
 	private static RouteTimetable read() {
-		try (InputStream stream = new GZIPInputStream(Objects.requireNonNull(
-			CapitalRealDerivedFixture.class.getClassLoader().getResourceAsStream(RESOURCE), RESOURCE))) {
-			return decode(new ObjectMapper().readTree(stream));
+		try (InputStream raw = Objects.requireNonNull(
+			CapitalRealDerivedFixture.class.getClassLoader().getResourceAsStream(RESOURCE), RESOURCE)) {
+			byte[] bytes = raw.readAllBytes();
+			String digest = java.util.HexFormat.of().formatHex(
+				java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+			if (!FIXTURE_SHA256.equals(digest)) {
+				throw new IllegalStateException("capital fixture digest changed: " + digest);
+			}
+			try (InputStream stream = new GZIPInputStream(new java.io.ByteArrayInputStream(bytes))) {
+				JsonNode root = new ObjectMapper().readTree(stream);
+				requireProvenance(root.path("provenance"));
+				return decode(root);
+			}
 		} catch (IOException exception) {
 			throw new UncheckedIOException(exception);
+		} catch (java.security.NoSuchAlgorithmException exception) {
+			throw new IllegalStateException(exception);
 		}
+	}
+
+	private static void requireProvenance(JsonNode provenance) {
+		JsonNode source = provenance.path("sourceArtifact");
+		boolean matches = SOURCE_BUNDLE_ID.equals(provenance.path("bundleId").asText())
+			&& provenance.path("releaseSequence").asLong() == SOURCE_RELEASE_SEQUENCE
+			&& SOURCE_TIMETABLE_SHA256.equals(provenance.path("timetableSha256").asText())
+			&& SOURCE_TOPOLOGY_SHA256.equals(provenance.path("topologySha256").asText())
+			&& SOURCE_ACCESSIBILITY_SHA256.equals(provenance.path("accessibilitySha256").asText())
+			&& SERVICE_DATE.toString().equals(provenance.path("serviceDate").asText())
+			&& "AquilaXk/easysubway-data".equals(source.path("repository").asText())
+			&& source.path("workflowRunId").asLong() == SOURCE_WORKFLOW_RUN_ID;
+		if (!matches) throw new IllegalStateException("capital fixture provenance does not match the pinned source");
 	}
 
 	private static RouteTimetable decode(JsonNode root) {
