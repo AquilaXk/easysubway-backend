@@ -106,7 +106,7 @@ class JourneySearchControllerTest {
 		assertThat(fields(result)).containsExactlyInAnyOrder(
 			"contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
 			"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity",
-			"requestPolicy", "journeys"
+			"requestPolicy", "journeys", "stairFreeAlternative"
 		);
 		verify(sessionService).authorize("session-token", 2);
 		var request = ArgumentCaptor.forClass(JourneyRequest.class);
@@ -572,7 +572,7 @@ class JourneySearchControllerTest {
 				1
 			),
 			List.of(candidate),
-			JourneyExecutionResult.SafetyBoundary.observed()
+			JourneyExecutionResult.SafetyBoundary.observed(), TestJourneyCandidates.stairFreeAlternative(List.of(candidate))
 		);
 	}
 

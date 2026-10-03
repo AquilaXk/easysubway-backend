@@ -52,6 +52,9 @@ class JourneyProfileResponseMapperTest {
 			.isEqualTo("a".repeat(64));
 		assertThat(json.path("journeys").get(0).path("journey").path("timeSource").asText())
 			.isEqualTo("TIMETABLE");
+		// #469: 프로필 응답 여정은 objectiveTags를 쓰므로 검색 전용 alternativeCategories 키가 없다.
+		assertThat(json.path("journeys").get(0).path("journey").has("alternativeCategories")).isFalse();
+		assertThat(json.path("journeys").get(0).has("objectiveTags")).isTrue();
 	}
 
 	@Test

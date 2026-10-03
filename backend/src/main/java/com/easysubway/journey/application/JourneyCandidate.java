@@ -18,7 +18,8 @@ public record JourneyCandidate(
 	TimeSource timeSource,
 	Accessibility accessibility,
 	Fare fare,
-	List<Leg> legs
+	List<Leg> legs,
+	List<JourneyAlternatives.Category> alternativeCategories
 ) {
 	public JourneyCandidate {
 		journeyId = requireText(journeyId, "journeyId");
@@ -44,12 +45,25 @@ public record JourneyCandidate(
 		fare = Objects.requireNonNull(fare, "fare");
 		legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 		if (legs.isEmpty()) throw new IllegalArgumentException("legs must not be empty");
+		// #469: 검색 결과 여정이 대표하는 묶음(정렬·중복 없음). 채움 여정과 결과 구성을 거치지 않은 프로필 여정은 빈 목록이다.
+		alternativeCategories = List.copyOf(Objects.requireNonNull(alternativeCategories, "alternativeCategories"));
+		if (alternativeCategories.stream().distinct().count() != alternativeCategories.size()
+			|| !alternativeCategories.stream().sorted().toList().equals(alternativeCategories)) {
+			throw new IllegalArgumentException("alternativeCategories must be unique and ordered");
+		}
 		boolean candidateHasRealtime = realtimeDepartureTime != null;
 		for (Leg leg : legs) {
 			if (leg instanceof Ride ride && (ride.realtimeDepartureTime() != null) != candidateHasRealtime) {
 				throw new IllegalArgumentException("ride realtime fields do not match candidate timeSource");
 			}
 		}
+	}
+
+	/** #469: 결과 구성에서 정한 대표 묶음을 붙인 사본. */
+	public JourneyCandidate withAlternativeCategories(List<JourneyAlternatives.Category> categories) {
+		return new JourneyCandidate(journeyId, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime,
+			realtimeArrivalTime, durationSeconds, transferCount, walkingDistanceMeters, timeSource, accessibility, fare, legs,
+			Objects.requireNonNull(categories, "categories"));
 	}
 
 	public Status status() {

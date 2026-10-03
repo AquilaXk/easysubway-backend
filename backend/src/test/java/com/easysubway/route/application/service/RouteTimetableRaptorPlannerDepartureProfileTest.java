@@ -75,9 +75,9 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				JourneyRequest.MobilityProfile.SLOW,
 				JourneyRequest.ConstraintMode.NONE,
 				0, 1, () -> false);
-			assertThat(point.itineraries()).isEqualTo(planner.journeyItineraries(
+			assertThat(point.itineraries()).isEqualTo(projectionOnly(planner.journeyItineraries(
 				pointQuery, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
-				new JourneyRequestMeasurement(REQUEST_ID), REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION).itineraries());
+				new JourneyRequestMeasurement(REQUEST_ID), REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION).itineraries()));
 		});
 	}
 
@@ -720,5 +720,14 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 		return new LoadRouteTimetablePort.RouteEdgeEvidence(
 			id, stationId, lineId, edgeId, edgeType,
 			"OFFICIAL_SOURCE", "VERIFIED", true, null);
+	}
+
+	/** #469: point 결과 구성 정보(대표 묶음·근거 없는 계단 없는 동선 여부)를 빼고 여정 투영만 비교한다. */
+	private static List<RouteTimetableRaptorPlanner.JourneyItinerary> projectionOnly(
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries
+	) {
+		return itineraries.stream().map(it -> new RouteTimetableRaptorPlanner.JourneyItinerary(it.serviceDate(),
+			it.plannedDepartureTime(), it.plannedArrivalTime(), it.realtimeDepartureTime(), it.realtimeArrivalTime(),
+			it.metrics(), it.legs(), it.persona(), null, false)).toList();
 	}
 }

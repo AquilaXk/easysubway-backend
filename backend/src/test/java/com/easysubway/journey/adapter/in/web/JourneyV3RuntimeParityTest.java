@@ -1,5 +1,7 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.application.TestJourneyCandidates;
+
 import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -482,7 +484,10 @@ class JourneyV3RuntimeParityTest {
 			List.of(TestRides.candidateRide(
 				"line-1", "trip-1", "station-destination", "station-origin", "station-destination",
 				departure, arrival, null, null
-			))
+			)),
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST,
+				com.easysubway.journey.application.JourneyAlternatives.Category.FEWEST_TRANSFERS,
+				com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE)
 		);
 		return new JourneyExecutionResult.Success(
 			REQUEST_ID, "query-1", NOW, NOW.plusSeconds(600), departure, LocalDate.of(2026, 8, 24),
@@ -499,7 +504,7 @@ class JourneyV3RuntimeParityTest {
 				1
 			),
 			List.of(journey),
-			JourneyExecutionResult.SafetyBoundary.observed()
+			JourneyExecutionResult.SafetyBoundary.observed(), TestJourneyCandidates.stairFreeAlternative(List.of(journey))
 		);
 	}
 

@@ -118,7 +118,8 @@ public final class JourneyApplicationService {
 				),
 				plan.candidates(),
 				safetyBoundary(request, snapshot, plan),
-				requestMeasurement
+				requestMeasurement,
+				plan.stairFreeAlternative()
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {

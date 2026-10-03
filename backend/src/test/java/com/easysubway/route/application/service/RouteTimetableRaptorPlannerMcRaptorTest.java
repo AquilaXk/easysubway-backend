@@ -506,48 +506,51 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 	}
 
 	@Test
-	@DisplayName("limitDestinationLabels 분기 검증")
-	void testLimitDestinationLabelsBranches() {
-		var qStepFree = new JourneyRaptorQuery(
+	@DisplayName("#469 composeAlternatives 결과 구성 분기 검증")
+	void testComposeAlternativesBranches() {
+		var standardTwo = composeInput(JourneyRequest.MobilityProfile.SLOW, 2);
+		var standardThree = composeInput(JourneyRequest.MobilityProfile.SLOW, 3);
+		var preferTwo = composeInput(JourneyRequest.MobilityProfile.STEP_FREE, 2);
+		byte stairs = (byte) 2;
+		var fast = new RouteTimetableRaptorPlanner.Label("s", 1000, 900, 3, List.of(), null, 0, stairs, 0);
+		var mid = new RouteTimetableRaptorPlanner.Label("s", 1100, 900, 2, List.of(), null, 0, stairs, 0);
+		var slowStairFree = new RouteTimetableRaptorPlanner.Label("s", 1300, 900, 2, List.of(), null, 0, (byte) 0, 0);
+		var direct = new RouteTimetableRaptorPlanner.Label("s", 1500, 900, 1, List.of(), null, 0, (byte) 0, 0);
+
+		// 1. 상한 안이면 도착 순으로만 정렬한다.
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(mid, fast), standardTwo).items())
+			.containsExactly(fast, mid);
+		// 2. 표준: 빠른 → 환승 적은.
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, slowStairFree, direct), standardTwo).items())
+			.containsExactly(fast, direct);
+		// 3. 무단차 선호: 빠른 → 계단 없는.
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, slowStairFree, direct), preferTwo).items())
+			.containsExactly(fast, slowStairFree);
+		// 4. 세 묶음을 모두 담고 도착 순으로 낸다.
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(direct, mid, fast, slowStairFree), standardThree).items())
+			.containsExactly(fast, slowStairFree, direct);
+		// 5. 계단 없는 라벨이 없으면 그 묶음은 비우고 남은 자리를 도착 순으로 채운다.
+		var stairsDirect = new RouteTimetableRaptorPlanner.Label("s", 1500, 900, 1, List.of(), null, 0, stairs, 0);
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, stairsDirect), preferTwo).items())
+			.containsExactly(fast, stairsDirect);
+		// 6. 빠른 경로가 환승도 가장 적으면 둘째 자리는 계단 없는 경로다.
+		var fastFew = new RouteTimetableRaptorPlanner.Label("s", 1000, 900, 1, List.of(), null, 0, stairs, 0);
+		var lateStairFree = new RouteTimetableRaptorPlanner.Label("s", 1200, 900, 2, List.of(), null, 0, (byte) 0, 0);
+		var lateStairs = new RouteTimetableRaptorPlanner.Label("s", 1100, 900, 3, List.of(), null, 0, stairs, 0);
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(lateStairs, lateStairFree, fastFew), standardTwo).items())
+			.containsExactly(fastFew, lateStairFree);
+	}
+
+	private static RouteTimetableRaptorPlanner.ScanInput composeInput(
+		JourneyRequest.MobilityProfile profile, int alternativeCount
+	) {
+		return RouteTimetableRaptorPlanner.scanInput(new JourneyRaptorQuery(
 			"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION,
 			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-05T23:00:00Z")),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.WalkingPace.SLOW, JourneyRequest.MobilityProfile.STEP_FREE,
-			JourneyRequest.ConstraintMode.NONE, 0, 2, () -> false
-		);
-		var inStepFree = RouteTimetableRaptorPlanner.scanInput(qStepFree);
-
-		var qNormal = new JourneyRaptorQuery(
-			"01ARZ3NDEKTSV4RRFFQ69G5FAV", ORIGIN, DESTINATION,
-			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-05T23:00:00Z")),
-			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.WalkingPace.SLOW, JourneyRequest.MobilityProfile.SLOW,
-			JourneyRequest.ConstraintMode.NONE, 0, 2, () -> false
-		);
-		var inNormal = RouteTimetableRaptorPlanner.scanInput(qNormal);
-
-		var l0 = new RouteTimetableRaptorPlanner.Label("s", 1000, 900, 0, List.of(), null, 0, (byte) 1, 0);
-		var l1 = new RouteTimetableRaptorPlanner.Label("s", 1100, 900, 1, List.of(), null, 0, (byte) 1, 0);
-		var l2 = new RouteTimetableRaptorPlanner.Label("s", 1200, 900, 1, List.of(), null, 0, (byte) 1, 0);
-		var lStepFree = new RouteTimetableRaptorPlanner.Label("s", 1300, 900, 1, List.of(), null, 0, (byte) 0, 0);
-		var lFastStepFree = new RouteTimetableRaptorPlanner.Label("s", 950, 900, 1, List.of(), null, 0, (byte) 0, 0);
-
-		// 1. ordered.size() <= limit
-		assertThat(RouteTimetableRaptorPlanner.limitDestinationLabels(List.of(l0), inStepFree)).hasSize(1);
-
-		// 2. !input.prefersStepFree()
-		assertThat(RouteTimetableRaptorPlanner.limitDestinationLabels(List.of(l0, l1, l2), inNormal)).hasSize(2);
-
-		// 3. already contains preferred step-free
-		assertThat(RouteTimetableRaptorPlanner.limitDestinationLabels(List.of(lFastStepFree, l0, l1), inStepFree)).contains(lFastStepFree);
-
-		// 4. evict duplicate boardings with preferred step-free
-		var result = RouteTimetableRaptorPlanner.limitDestinationLabels(List.of(l1, l2, lStepFree), inStepFree);
-		assertThat(result).contains(lStepFree);
-
-		// 5. victim < 0 (no duplicate boardings beyond index 0)
-		var noDupResult = RouteTimetableRaptorPlanner.limitDestinationLabels(List.of(l0, l1, lStepFree), inStepFree);
-		assertThat(noDupResult).doesNotContain(lStepFree);
+			JourneyRequest.WalkingPace.SLOW, profile,
+			JourneyRequest.ConstraintMode.NONE, 3, alternativeCount, () -> false
+		));
 	}
 
 	@Test
@@ -565,7 +568,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 			inVerified.originStationId(), inVerified.destinationStationId(), inVerified.serviceDay(),
 			inVerified.readyAtSeconds(), inVerified.accessProfileBit(), inVerified.mobilityPreset(),
 			inVerified.constraintMode(), inVerified.walkingSpeedMetersPerHour(), inVerified.boardingSlackSeconds(),
-			false, inVerified.realtimeRequired(), inVerified.maxTransfers(), inVerified.candidateLimit(),
+			false, inVerified.realtimeRequired(), inVerified.maxTransfers(), inVerified.alternativeCount(),
 			inVerified.cancellationSignal()
 		);
 

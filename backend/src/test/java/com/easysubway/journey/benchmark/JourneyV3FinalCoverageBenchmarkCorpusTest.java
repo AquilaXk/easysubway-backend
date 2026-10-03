@@ -147,7 +147,7 @@ class JourneyV3FinalCoverageBenchmarkCorpusTest {
 			new JourneyExecutionResult.RequestPolicy(timePolicy,
 				JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
 				JourneyRequest.ConstraintMode.NONE, 1, 1), List.of(journey),
-			safetyBoundary, requestMeasurement);
+			safetyBoundary, requestMeasurement, TestJourneyCandidates.stairFreeAlternative(List.of(journey)));
 	}
 
 	private static JourneyExecutionResult.ActiveReadinessIdentity activeReadiness() {

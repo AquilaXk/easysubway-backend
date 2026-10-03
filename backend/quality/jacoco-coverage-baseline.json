@@ -21,11 +21,11 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "ad9ad6fbd1a91961c6b034c87a846d0184a0da4d7735d04226d7be3680ca9c2c"
+    "sourceInventorySha256": "3a1cabae6e0daf8a3dbbb0673eec1ac5f08aff3c9a415df749d294916b1da549"
   },
   "scope": {
-    "criticalSourceCount": 461,
-    "reportedSourceCount": 461,
+    "criticalSourceCount": 462,
+    "reportedSourceCount": 462,
     "missingSourceCount": 0,
     "excludedSourceCount": 1
   },
@@ -147,6 +147,7 @@
     {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityAvailabilityPort.java","sha256":"36e8d361a2a288cee0f22b1e18c5700c0134764101d35caa8c9682b473311d51","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityAvailabilityPort.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityAvailabilityView.java","sha256":"25999305556470e466ddbb3c36674eac89c06a4c1b19c2588da0f54b36ce91d2","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityAvailabilityView.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":3,"total":3,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/FacilityStatusUnavailableException.java","sha256":"ca29d4854ff5bba42562a847efc0a8c5141bed272abb81c9d0f2f44cf5b21931","packageName":"com.easysubway.journey.application","sourceFileName":"FacilityStatusUnavailableException.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":4,"total":4,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
+    {"path":"backend/src/main/java/com/easysubway/journey/application/JourneyAlternatives.java","sha256":"120174cf8dc9aee41c063be69dbed02e8fa38e2a8bc939ef1c8f4316c15145b3","packageName":"com.easysubway.journey.application","sourceFileName":"JourneyAlternatives.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":67,"total":67,"basisPoints":10000},"branch":{"missed":0,"covered":46,"total":46,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/JourneyApplicationDeadlineExecutor.java","sha256":"358f6013507bafa2e178cb73eb303827e9278476de2095ec9a1910bd16395088","packageName":"com.easysubway.journey.application","sourceFileName":"JourneyApplicationDeadlineExecutor.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":17,"covered":104,"total":121,"basisPoints":8595},"branch":{"missed":9,"covered":21,"total":30,"basisPoints":7000}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/JourneyApplicationService.java","sha256":"45531c147b9f267d0befca6772d41119b9487cba089408b23f104e5cf7efe81d","packageName":"com.easysubway.journey.application","sourceFileName":"JourneyApplicationService.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":2,"covered":119,"total":121,"basisPoints":9834},"branch":{"missed":13,"covered":79,"total":92,"basisPoints":8586}},
     {"path":"backend/src/main/java/com/easysubway/journey/application/JourneyCandidate.java","sha256":"e8ab0925f9728109ad29d6745a643f5556e9c41675c3c50553544e4a5a4d888d","packageName":"com.easysubway.journey.application","sourceFileName":"JourneyCandidate.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":140,"total":140,"basisPoints":10000},"branch":{"missed":4,"covered":102,"total":106,"basisPoints":9622}},
@@ -504,20 +505,20 @@
   "boundaries": [
     {
       "id": "JOURNEY_ROUTE",
-      "sourceCount": 261,
-      "reportedSourceCount": 261,
+      "sourceCount": 262,
+      "reportedSourceCount": 262,
       "missingSourceCount": 0,
       "line": {
         "missed": 1119,
-        "covered": 15354,
-        "total": 16473,
-        "basisPoints": 9320
+        "covered": 15421,
+        "total": 16540,
+        "basisPoints": 9323
       },
       "branch": {
         "missed": 1705,
-        "covered": 6473,
-        "total": 8178,
-        "basisPoints": 7915
+        "covered": 6519,
+        "total": 8224,
+        "basisPoints": 7926
       }
     },
     {

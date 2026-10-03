@@ -46,6 +46,10 @@ class JourneyEngineRandomizedDifferentialTest {
 	static final int FACILITY_BLOCK_BUNDLES = 60;
 	static final int QUERIES_PER_BUNDLE = 20;
 	static final int LINE4_QUERIES = 240;
+	/** #469 표준·느린 걸음 전용 point 질의 수(번들당). */
+	static final int STAIR_ALTERNATIVE_QUERIES_PER_BUNDLE = 20;
+	/** #469 표준·느린 걸음 각각 계단 없는 대안이 남은 point 질의 최소 수(150 번들 실측 표준 29·느린 걸음 36의 절반 안쪽). */
+	static final int STAIR_FREE_ALTERNATIVE_MINIMUM = 14;
 	private static final int REPORTED_COUNTEREXAMPLES = 3;
 
 	@Test
@@ -120,6 +124,73 @@ class JourneyEngineRandomizedDifferentialTest {
 		}
 	}
 
+	/**
+	 * #469: 표준·느린 걸음(제약 없음)의 출발 시각 고정 질의만 모아 비교한다. 혼합 무작위 질의에서는 계단 없는 대안
+	 * 동선이 결과를 바꾸는 경우가 드물어(번들 150개 질의 3,000건 중 표준·느린 걸음 4건), 이 차원이 실제로 비교되도록
+	 * 따로 돌린다(같은 번들 3,000건에서 표준 29건·느린 걸음 36건).
+	 */
+	@Test
+	@DisplayName("표준·느린 걸음 출발 시각 고정 질의에서 계단 없는 대안까지 기준 해와 정확히 같다(#469)")
+	void standardProfileStairAlternativesMatchTheExactOracle() {
+		long baseSeed = environmentLong("EASYSUBWAY_DIFFERENTIAL_BASE_SEED", DEFAULT_BASE_SEED);
+		int bundles = (int) environmentLong("EASYSUBWAY_DIFFERENTIAL_BUNDLES", SYNTHETIC_BUNDLES);
+		Tally tally = new Tally();
+		List<String> counterexamples = new ArrayList<>();
+		for (int offset = 0; offset < bundles; offset += 1) {
+			long seed = baseSeed + offset;
+			var bundle = JourneyEngineSyntheticBundles.generate(seed);
+			var runtime = compile(bundle.timetable());
+			for (Case testCase : stairAlternativeCases(bundle, STAIR_ALTERNATIVE_QUERIES_PER_BUNDLE)) {
+				Verdict verdict = JourneyEngineDifferentialHarness.check(testCase, bundle.timetable(), runtime);
+				tally.add(verdict);
+				if (!verdict.matched() && counterexamples.size() < REPORTED_COUNTEREXAMPLES) {
+					counterexamples.add("original mismatch:\n    " + verdict.mismatch() + "\n"
+						+ minimalCounterexample(testCase, bundle.timetable()));
+				}
+			}
+		}
+		System.out.println("#469 stair-alternative differential: " + tally.summary());
+		assertThat(tally.mismatches).as("엔진-기준 해 불일치(최소 반례):\n%s", String.join("\n", counterexamples)).isZero();
+		assertThat(tally.queries).isEqualTo(bundles * STAIR_ALTERNATIVE_QUERIES_PER_BUNDLE);
+		if (bundles >= SYNTHETIC_BUNDLES) {
+			for (JourneyRequest.MobilityProfile profile : List.of(
+				JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.MobilityProfile.SLOW)) {
+				Mobility mobility = new Mobility(profile, JourneyRequest.ConstraintMode.NONE);
+				assertThat(tally.stairFreeAlternativeByMobility.getOrDefault(mobility, 0))
+					.as("계단 없는 대안이 남은 %s point 질의", mobility).isGreaterThanOrEqualTo(STAIR_FREE_ALTERNATIVE_MINIMUM);
+			}
+		}
+	}
+
+	private static List<Case> stairAlternativeCases(JourneyEngineSyntheticBundles.Bundle bundle, int count) {
+		Random random = new Random(bundle.seed() * 1_000_003L + 469);
+		List<String> served = servedStations(bundle.timetable());
+		List<Mobility> mobilities = List.of(
+			new Mobility(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE),
+			new Mobility(JourneyRequest.MobilityProfile.SLOW, JourneyRequest.ConstraintMode.NONE));
+		List<Case> cases = new ArrayList<>();
+		Instant day = bundle.queryDate().atStartOfDay(ServiceDayResolver.ZONE).toInstant();
+		int start = bundle.band().startSeconds - 1_800;
+		int span = bundle.band().endSeconds - start;
+		for (int index = 0; index < count; index += 1) {
+			String origin = served.get(random.nextInt(served.size()));
+			String destination;
+			do destination = served.get(random.nextInt(served.size())); while (destination.equals(origin));
+			var temporal = new JourneyRaptorQuery.DepartAt(day.plusSeconds(start + random.nextInt(span)));
+			Mobility mobility = mobilities.get(index % mobilities.size());
+			JourneyRequest.WalkingPace pace = JourneyRequest.WalkingPace.values()[random.nextInt(3)];
+			int maxTransfers = 1 + random.nextInt(3);
+			int alternatives = 1 + random.nextInt(3);
+			var query = new JourneyRaptorQuery(
+				JourneyProfileFullCorpusRunner.requestId("stair-alternative-" + bundle.seed() + "-" + index, origin,
+					destination, temporal),
+				origin, destination, temporal, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, pace,
+				mobility.profile(), mobility.constraint(), maxTransfers, alternatives, () -> false);
+			cases.add(new Case("stair-alternative", bundle.seed(), index, Mode.DEPART_AT, query));
+		}
+		return cases;
+	}
+
 	/** 환승 규칙이 쓰는 동선마다 40% 확률로 막는다(시드 고정). */
 	private static Set<String> blockedTransferEdges(RouteTimetable timetable, long seed) {
 		Random random = new Random(seed ^ 0x461L);
@@ -185,27 +256,32 @@ class JourneyEngineRandomizedDifferentialTest {
 	}
 
 	@Test
-	@DisplayName("무단차 선호 point 결과가 상한을 넘으면 문서화된 절단 순서로 고른 집합과 같다")
-	void truncatedPointFrontFollowsTheDocumentedOrder() {
+	@DisplayName("point 파레토 집합이 대안 수를 넘으면 문서화된 결과 구성 규칙으로 고른 집합과 같다(#469)")
+	void composedPointFrontFollowsTheDocumentedRule() {
 		RouteTimetable timetable = truncationTimetable();
 		var runtime = compile(timetable);
 		Instant readyAt = BOUNDARY_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant().plusSeconds(7 * 3_600 + 50 * 60);
-		int truncated = 0;
-		for (int alternatives = 1; alternatives <= 3; alternatives += 1) {
-			var temporal = new JourneyRaptorQuery.DepartAt(readyAt);
-			var query = new JourneyRaptorQuery(
-				JourneyProfileFullCorpusRunner.requestId("truncation-" + alternatives, "o", "d", temporal), "o", "d", temporal,
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.FAST,
-				JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, alternatives, () -> false);
-			Case testCase = new Case("truncation", alternatives, alternatives, Mode.DEPART_AT, query);
-			Verdict verdict = JourneyEngineDifferentialHarness.check(testCase, timetable, runtime);
-			assertThat(verdict.mismatch()).as(testCase.describe()).isNull();
-			// 파레토 키는 (08:30 환승1 계단), (08:36 환승1 무단차), (09:00 직행) 3개이고 상한은 max(대안 수, 2)다.
-			assertThat(verdict.expectedLabels()).isEqualTo(3);
-			assertThat(verdict.truncatedPointFront()).isEqualTo(alternatives < 3);
-			if (verdict.truncatedPointFront()) truncated += 1;
+		int composed = 0;
+		for (JourneyRequest.MobilityProfile profile : List.of(
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.MobilityProfile.SLOW)) {
+			for (int alternatives = 1; alternatives <= 3; alternatives += 1) {
+				var temporal = new JourneyRaptorQuery.DepartAt(readyAt);
+				var query = new JourneyRaptorQuery(
+					JourneyProfileFullCorpusRunner.requestId("composition-" + profile + "-" + alternatives, "o", "d", temporal),
+					"o", "d", temporal, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.FAST,
+					profile, JourneyRequest.ConstraintMode.NONE, 1, alternatives, () -> false);
+				Case testCase = new Case("composition", alternatives, alternatives, Mode.DEPART_AT, query);
+				Verdict verdict = JourneyEngineDifferentialHarness.check(testCase, timetable, runtime);
+				assertThat(verdict.mismatch()).as(testCase.describe()).isNull();
+				// 파레토 키는 (08:30 환승1 계단), (08:36 환승1 계단 없음), (09:00 직행) 3개다. 느린 걸음도 계단 없는
+				// 대안 동선을 보므로 같은 3개다(#469).
+				assertThat(verdict.expectedLabels()).as(testCase.describe()).isEqualTo(3);
+				assertThat(verdict.stairFreeAlternative()).as(testCase.describe()).isTrue();
+				assertThat(verdict.truncatedPointFront()).isEqualTo(alternatives < 3);
+				if (verdict.truncatedPointFront()) composed += 1;
+			}
 		}
-		assertThat(truncated).isEqualTo(2);
+		assertThat(composed).isEqualTo(4);
 	}
 
 	/**
@@ -503,6 +579,7 @@ class JourneyEngineRandomizedDifferentialTest {
 		int serviceDayCrossing;
 		int zeroSlack;
 		int truncatedPointFront;
+		final Map<Mobility, Integer> stairFreeAlternativeByMobility = new java.util.LinkedHashMap<>();
 		final Map<Mode, Integer> queriesByMode = new EnumMap<>(Mode.class);
 		final Map<Mode, Integer> nonEmptyByMode = new EnumMap<>(Mode.class);
 		final Map<Mobility, Integer> nonEmptyByMobility = new java.util.LinkedHashMap<>();
@@ -534,6 +611,9 @@ class JourneyEngineRandomizedDifferentialTest {
 			if (verdict.serviceDayCrossing()) serviceDayCrossing += 1;
 			if (verdict.zeroSlack()) zeroSlack += 1;
 			if (verdict.truncatedPointFront()) truncatedPointFront += 1;
+			if (verdict.stairFreeAlternative()) {
+				stairFreeAlternativeByMobility.merge(Mobility.of(verdict.testCase().query()), 1, Integer::sum);
+			}
 		}
 
 		/** 검증이 공허하지 않도록 비교가 실제로 일어난 범위를 강제한다. */
@@ -558,6 +638,7 @@ class JourneyEngineRandomizedDifferentialTest {
 				+ " withTransfer=" + withTransfer + " withTwoTransfers=" + withTwoTransfers
 				+ " serviceDayCrossing=" + serviceDayCrossing + " zeroSlack=" + zeroSlack
 				+ " truncatedPointFront=" + truncatedPointFront
+				+ " stairFreeAlternativeByMobility=" + stairFreeAlternativeByMobility
 				+ " extraEnginePoints=" + extraEnginePoints
 				+ " nonEmptyByMobility=" + nonEmptyByMobility + " millisByMode=" + nanosByMode.entrySet().stream()
 					.map(entry -> entry.getKey() + "=" + entry.getValue() / 1_000_000).toList()

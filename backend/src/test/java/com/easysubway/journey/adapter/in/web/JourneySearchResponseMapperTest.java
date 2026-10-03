@@ -4,6 +4,7 @@ import com.easysubway.journey.application.TestJourneyCandidates;
 import com.easysubway.journey.application.TestRides;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
@@ -56,7 +57,7 @@ class JourneySearchResponseMapperTest {
 				new JourneyCandidate.Transfer("station-transfer-a", "station-transfer-b", 45),
 				new JourneyCandidate.Exit("station-destination", 20)
 			)
-		);
+		).withAlternativeCategories(List.of(JourneyAlternatives.Category.FASTEST, JourneyAlternatives.Category.STAIR_FREE));
 		var second = TestJourneyCandidates.unavailableFare(
 			"journey-second",
 			PLANNED_DEPARTURE.plusSeconds(60),
@@ -79,7 +80,7 @@ class JourneySearchResponseMapperTest {
 				null,
 				null
 			))
-		);
+		).withAlternativeCategories(List.of(JourneyAlternatives.Category.FEWEST_TRANSFERS));
 		var success = success(
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			null,
@@ -152,7 +153,8 @@ class JourneySearchResponseMapperTest {
 			        },
 			        {"type":"TRANSFER","fromStationId":"station-transfer-a","toStationId":"station-transfer-b","durationSeconds":45},
 			        {"type":"EXIT","fromStationId":"station-destination","durationSeconds":20}
-			      ]
+			      ],
+			      "alternativeCategories":["FASTEST","STAIR_FREE"]
 			    },
 			    {
 			      "journeyId":"journey-second",
@@ -187,9 +189,11 @@ class JourneySearchResponseMapperTest {
 			        "alightingCarDoors":[],
 			        "boardingPlatformGaps":[],
 			        "alightingPlatformGaps":[]
-			      }]
+			      }],
+			      "alternativeCategories":["FEWEST_TRANSFERS"]
 			    }
-			  ]
+			  ],
+			  "stairFreeAlternative":{"status":"INCLUDED","facilityStatus":"UNOBSERVED"}
 			}
 			""");
 
@@ -388,7 +392,10 @@ class JourneySearchResponseMapperTest {
 			JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, List.of()),
 			JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("snap-1", "snap-2")),
-			List.of(new JourneyCandidate.Entry("station-origin", 30))
+			List.of(new JourneyCandidate.Entry("station-origin", 30)),
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST,
+				com.easysubway.journey.application.JourneyAlternatives.Category.FEWEST_TRANSFERS,
+				com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE)
 		);
 		JsonNode actual = JSON.valueToTree(JourneySearchResponseMapper.map(success(
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
@@ -448,7 +455,7 @@ class JourneySearchResponseMapperTest {
 			journeys,
 			timePolicy == JourneyRequest.TimePolicy.REALTIME_REQUIRED
 				? JourneyExecutionResult.SafetyBoundary.unobservable()
-				: JourneyExecutionResult.SafetyBoundary.observed()
+				: JourneyExecutionResult.SafetyBoundary.observed(), TestJourneyCandidates.stairFreeAlternative(journeys)
 		);
 	}
 }

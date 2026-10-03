@@ -287,6 +287,147 @@ class JourneyRaptorAdapterTest {
 		assertThat(defaultWired.candidates()).isEqualTo(explicitNoProvider.candidates());
 	}
 
+	@Test
+	void standardRequestReturnsStepFreePathwayAlternativeAsStairFreeCandidate() {
+		// #469 R1: 같은 환승역에 짧은 계단 동선과 긴 계단 없는 동선이 있으면 표준 요청도 계단 없는 여정을 함께 낸다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false, true));
+		var request = accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3);
+
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates())
+			.extracting(JourneyCandidate::transferCount, candidate -> candidate.accessibility().stairFree())
+			.containsExactly(org.assertj.core.groups.Tuple.tuple(1, false), org.assertj.core.groups.Tuple.tuple(1, true));
+	}
+
+	@Test
+	void directPlanNeverReturnsMoreCandidatesThanAlternativeCount() {
+		// #469 R2: 무단차 선호·환승 3·대안 3에서 파레토 여정이 4개여도 후보는 3개 이하다.
+		// JourneyExecutionResult.Success는 alternativeCount를 넘는 후보를 거절하므로(검색 실패) 어댑터가 지켜야 한다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(true, true));
+		var request = accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STEP_FREE, 3, 3);
+
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).hasSizeLessThanOrEqualTo(request.alternativeCount());
+		assertThat(result.candidates())
+			.extracting(JourneyCandidate::transferCount, candidate -> candidate.accessibility().stairFree())
+			.containsExactly(org.assertj.core.groups.Tuple.tuple(2, false), org.assertj.core.groups.Tuple.tuple(1, true),
+				org.assertj.core.groups.Tuple.tuple(0, true));
+	}
+
+	@Test
+	void reportsCategoriesStairFreeIncludedAndUnobservedFacilityStatusByDefault() {
+		// #469: 운영 기본 배선(시설 가동 정보 없음)에서는 facilityStatus가 UNOBSERVED다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(true, true));
+		var request = accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 2, 3);
+
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).extracting(JourneyCandidate::alternativeCategories).containsExactly(
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST),
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE),
+			List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FEWEST_TRANSFERS));
+		assertThat(result.stairFreeAlternative()).isEqualTo(new com.easysubway.journey.application.JourneyAlternatives
+			.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.INCLUDED,
+				com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED));
+	}
+
+	@Test
+	void outOfServiceStepFreePathwayIsNotFoundWithAppliedFacilityStatus() {
+		// #469: 신선한 가동 정보가 계단 없는 동선을 막으면 확인된 사실이므로 UNDETERMINED가 아니라 NOT_FOUND다.
+		Instant readyAt = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false, true));
+		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.blocked(readyAt, Set.of("e-h-step-free")),
+			false, Clock.fixed(readyAt, ServiceDayResolver.ZONE));
+
+		var result = adapter.plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+			snapshot(runtime), readyAt, null, measurement());
+
+		assertThat(result.candidates()).extracting(candidate -> candidate.accessibility().stairFree()).containsExactly(false);
+		assertThat(result.stairFreeAlternative()).isEqualTo(new com.easysubway.journey.application.JourneyAlternatives
+			.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND,
+				com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.APPLIED));
+	}
+
+	@Test
+	void unverifiedStepFreePathwayIsReportedAsUndetermined() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false,
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.StepFreePathway.UNVERIFIED));
+
+		var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+			snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).extracting(candidate -> candidate.accessibility().stairFree()).containsExactly(false);
+		assertThat(result.stairFreeAlternative().status())
+			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+	}
+
+	@Test
+	void viaSearchComposesCategoriesAndReportsUnverifiedJunctionAsUndetermined() {
+		// #469: 경유 검색도 같은 결과 구성 규칙을 쓰고, 경유역 접속 환승의 근거 없는 계단 없는 동선도 판정에 넣는다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetable(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.StepFreePathway.UNVERIFIED));
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates())
+			.extracting(JourneyCandidate::transferCount, JourneyCandidate::alternativeCategories)
+			.containsExactly(
+				org.assertj.core.groups.Tuple.tuple(1, List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST,
+					com.easysubway.journey.application.JourneyAlternatives.Category.FEWEST_TRANSFERS)),
+				org.assertj.core.groups.Tuple.tuple(2, List.of()));
+		assertThat(result.stairFreeAlternative().status())
+			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+	}
+
+	@Test
+	void viaSearchWithVerifiedStepFreeJunctionIncludesStairFreeJourneyForStepFreePreference() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetable(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.StepFreePathway.VERIFIED));
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STEP_FREE), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).isNotEmpty();
+		assertThat(result.candidates()).anyMatch(candidate -> candidate.accessibility().stairFree()
+			&& candidate.alternativeCategories().contains(
+				com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE));
+		assertThat(result.stairFreeAlternative().status())
+			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.INCLUDED);
+	}
+
+	private static JourneyRequest viaRequest(JourneyRequest.MobilityProfile profile) {
+		return new JourneyRequest(
+			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION, "v",
+			new JourneyRequest.Departure.Scheduled(RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD, profile,
+			JourneyRequest.ConstraintMode.NONE, 3, 3, () -> false);
+	}
+
+	private static JourneyRequest accessibleAlternativesRequest(
+		JourneyRequest.MobilityProfile profile, int maxTransfers, int alternativeCount
+	) {
+		return new JourneyRequest(
+			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION,
+			new JourneyRequest.Departure.Scheduled(RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD, profile,
+			JourneyRequest.ConstraintMode.NONE, maxTransfers, alternativeCount, () -> false);
+	}
+
 	// 대체 환승 픽스처: 기본 선택은 최단 검증 거리 "transfer"(100m, STANDARD 80초), 차단 시 "transfer-alt"(200m, 160초).
 	private static final Clock FACILITY_CLOCK = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
 
