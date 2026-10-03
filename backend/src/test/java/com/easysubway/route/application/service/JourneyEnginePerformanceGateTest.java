@@ -51,7 +51,7 @@ import org.junit.jupiter.api.Test;
  *   기준선을 새로 고치게 한다(ratchet).</li>
  *   <li>질의별 할당량과 컴파일 보유 힙은 JIT 판단에 따라 조금 흔들린다. 30% 넘게 늘면 실패한다.</li>
  *   <li>벽시계 지연과 컴파일 시간은 같은 JVM에서 잰 고정 보정 작업 시간으로 나눈 값을 쓴다. p50과 p99는 측정 5회
- *   각각의 최근순위 백분위의 중앙값이고, 성공 경로 계열은 회차당 질의가 100건 이상이다. 출발 시각 고정(DepartAt) p50은 잡음이 작아 1.5배,
+ *   각각의 최근순위 백분위의 중앙값이고, 성공 경로 계열은 회차당 질의가 100건 이상이다. 출발 시각 고정(DepartAt) p50은 잡음이 작아 2.0배,
  *   나머지(p99, 프로필 모드, 컴파일)는 2.5배를 넘으면 실패한다. 이 한도보다 작은 상수배 둔화(작업량 카운터가 그대로인
  *   내부 루프 비용 증가 등)는 설계상 통과시킨다. 보정 작업과 엔진의 속도 비율은 CPU 아키텍처마다 달라서 벽시계
  *   기준선은 Backend CI 러너 측정값을 쓴다.</li>
@@ -90,7 +90,11 @@ class JourneyEnginePerformanceGateTest {
 	 */
 	static final JourneyProfileResourcePolicy.ProfilePlanningLimits CANDIDATE_POLICY_LIMITS =
 		new JourneyProfileResourcePolicy.ProfilePlanningLimits(10_000_000L, 2_048, 128, 128);
-	/** 위 한도를 옮겨 온 정확한 출처(레포@커밋:경로#행). 기준선에 함께 기록되어 바뀌면 게이트가 실패한다. */
+	/**
+	 * 위 한도를 옮겨 온 정확한 출처(레포@커밋:경로#행). 기준선에 함께 기록되어 바뀌면 게이트가 실패한다. 커밋은
+	 * platform#218의 PR head이며 PR ref로 계속 열람할 수 있다. squash 병합된 main 커밋은 이 head와 같은 파일 내용을
+	 * 담은 다른 sha이므로, 병합 후에도 두 sha가 같은 정책 값에 대응한다(정책 JSON sha256 6fdecdfb…로 확인).
+	 */
 	static final String CANDIDATE_POLICY_SOURCE = "AquilaXk/easysubway-platform@1cb1a5f9012dc0710fb2f4b3f6e968ccb187f6d9"
 		+ ":tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49";
 	private static final Map<Mode, Integer> POLICY_REPLAY_COUNTS =
@@ -169,10 +173,10 @@ class JourneyEnginePerformanceGateTest {
 			.singleElement().asString().contains("allocatedBytesPerQuery");
 		assertThat(regressions(baseline, tree(sample(1_000, 5_100_000, 1_000_000, 100_000_000, "bundle"))))
 			.anySatisfy(message -> assertThat(message).contains("DEPART_AT.p50Nanos"));
-		// 출발 시각 고정 p50은 1.5배를 넘으면 실패한다. 같은 배율의 p99(2.5배 한도)는 통과한다.
-		assertThat(regressions(baseline, tree(sample(1_000, 3_100_000, 1_000_000, 100_000_000, "bundle"))))
-			.singleElement().asString().contains("DEPART_AT.p50Nanos", "x1.5");
-		assertThat(regressions(baseline, tree(sample(1_000, 2_800_000, 1_000_000, 100_000_000, "bundle")))).isEmpty();
+		// 출발 시각 고정 p50은 2.0배를 넘으면 실패한다. 같은 배율의 p99(2.5배 한도)는 통과한다.
+		assertThat(regressions(baseline, tree(sample(1_000, 4_100_000, 1_000_000, 100_000_000, "bundle"))))
+			.singleElement().asString().contains("DEPART_AT.p50Nanos", "x2.0");
+		assertThat(regressions(baseline, tree(sample(1_000, 3_900_000, 1_000_000, 100_000_000, "bundle")))).isEmpty();
 		// 러너가 두 배 느리면 보정 작업도 두 배 느리므로 정규화 지연은 그대로다.
 		assertThat(regressions(baseline, tree(sample(1_000, 4_000_000, 1_000_000, 200_000_000, "bundle")))).isEmpty();
 		assertThat(regressions(baseline, tree(sample(1_000, 2_000_000, 1_000_000, 100_000_000, "other"))))
@@ -492,12 +496,14 @@ class JourneyEnginePerformanceGateTest {
 
 	/**
 	 * 허용폭. {@code stablePointP50Factor}는 출발 시각 고정 탐색 p50에만 쓴다. 이 계열은 회차당 질의가 100건 이상이고
-	 * 결과가 성공 경로라, CI 4회 실행의 정규화 값이 중앙값 대비 0.7~1.16배 안에 있었다. 나머지 지연은 p99 꼬리(CI 러너의
-	 * 일시 정지), 질의 수가 적은 거절 비용 계열처럼 편차가 커서 2.5배로 둔다.
+	 * 결과가 성공 경로다. #460의 CI 4회에서는 정규화 값이 중앙값 대비 0.7~1.16배였지만, #461의 CI 3회(같은 커밋,
+	 * 출발 시각 고정 코드 변경 없음)에서는 0.67~1.52배(원값 district 99~177 µs, 최대/최소 약 1.8배)까지 흔들려
+	 * 1.5배로는 무관한 PR이 간헐 실패할 수 있어 2.0배로 둔다. 나머지 지연은 p99 꼬리(CI 러너의 일시 정지), 질의 수가
+	 * 적은 거절 비용 계열처럼 편차가 커서 2.5배로 둔다.
 	 */
 	record Tolerances(double workCounterRelative, double allocatedBytesRegression, double retainedBytesRegression,
 		double normalizedLatencyFactor, double normalizedCompileFactor, double stablePointP50Factor) {
-		static final Tolerances DEFAULT = new Tolerances(0.02, 0.30, 0.30, 2.5, 2.5, 1.5);
+		static final Tolerances DEFAULT = new Tolerances(0.02, 0.30, 0.30, 2.5, 2.5, 2.0);
 
 		Map<String, Object> asMap() {
 			Map<String, Object> value = new LinkedHashMap<>();
