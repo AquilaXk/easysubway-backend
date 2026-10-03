@@ -5935,7 +5935,8 @@ public final class RouteTimetableRaptorPlanner {
 final class JourneyProfilePruningObservationAccumulator {
 	private final String requestId;
 	private final JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity algorithmIdentity;
-	private final Map<String, Long> counts = new LinkedHashMap<>();
+	/** 규칙별 횟수. 가지치기마다 부르므로 박싱 없이 칸 하나짜리 배열을 고친다(#462). */
+	private final Map<String, long[]> counts = new HashMap<>();
 	private long workConsumed;
 	private long peakStateLabels;
 	private long peakDestinationLabels;
@@ -5947,12 +5948,13 @@ final class JourneyProfilePruningObservationAccumulator {
 	) {
 		this.requestId = Objects.requireNonNull(requestId, "requestId");
 		this.algorithmIdentity = Objects.requireNonNull(algorithmIdentity, "algorithmIdentity");
-		JourneyRaptorPruningInventoryV1.activeRuleIds(algorithmIdentity).forEach(rule -> counts.put(rule, 0L));
+		JourneyRaptorPruningInventoryV1.activeRuleIds(algorithmIdentity).forEach(rule -> counts.put(rule, new long[1]));
 	}
 
 	void increment(String ruleId) {
-		if (!counts.containsKey(ruleId)) throw new IllegalArgumentException("inactive pruning rule: " + ruleId);
-		counts.compute(ruleId, (ignored, count) -> Math.addExact(count, 1L));
+		long[] count = counts.get(ruleId);
+		if (count == null) throw new IllegalArgumentException("inactive pruning rule: " + ruleId);
+		count[0] = Math.addExact(count[0], 1L);
 	}
 
 	void consumeWork() {
@@ -5972,7 +5974,9 @@ final class JourneyProfilePruningObservationAccumulator {
 	}
 
 	JourneyRaptorPruningInventoryV1.CountSnapshot snapshot() {
-		return new JourneyRaptorPruningInventoryV1.CountSnapshot(requestId, algorithmIdentity, counts);
+		Map<String, Long> snapshot = new LinkedHashMap<>();
+		counts.forEach((rule, count) -> snapshot.put(rule, count[0]));
+		return new JourneyRaptorPruningInventoryV1.CountSnapshot(requestId, algorithmIdentity, snapshot);
 	}
 
 	JourneyProfileRaptorPort.PlanningMetrics planningMetrics() {
