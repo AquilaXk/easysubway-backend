@@ -85,7 +85,7 @@
  * <p>K = 최대 승차 수(환승 + 1), P = 패턴 수, S = 패턴당 정차 수, T = 활성 운행 수, L = 상태당 라벨 수.</p>
  * <ul>
  *   <li>point RAPTOR: 라운드마다 표시된 패턴만 훑으므로 최악 O(K × (Σ 패턴 길이 + 훑은 열차 수 + 환승 후보)).
- *   bag과 경고 상태가 상수(4 × 8)라 라벨 폭증이 없다. 측정에서 도시철도 규모 질의 하나가 수백 마이크로초다.</li>
+ *   bag과 경고 상태가 상수(4 × 8)라 라벨 폭증이 없다. 측정에서 도시철도 규모 질의 하나가 p50 약 0.5 ms다.</li>
  *   <li>전방 range McRAPTOR: 시점 수 × 상태 수 × L에 비례하고, L은 기준이 8개라 이론상 지수적으로 커질 수 있다.
  *   그래서 상태당 라벨 한도로 막는다.</li>
  *   <li>역방향 탐색: 탐색 마디마다 O(T × S)를 훑고 마디 수는 환승 깊이에 대해 지수적이다. 준비 시각 하한이 출발역에서만
@@ -111,32 +111,33 @@
  *   검사가 이미 거른 조건만 바꾸는 변이로, 결과가 같은 동치 변이다. 상세는 #460 PR에 남긴다.</li>
  * </ul>
  *
- * <h2>6. 측정 결과(기준선, Adoptium 21, aarch64, 새 JVM에서 예열 2회·측정 5회 중앙값)</h2>
+ * <h2>6. 측정 결과(기준선 = Backend CI 러너 ubuntu-latest amd64 4 vCPU, Adoptium 21.0.11, 새 JVM에서 예열 2회·측정 5회 중앙값)</h2>
+ * <p>결정적 카운터와 할당량은 로컬(aarch64)과 CI가 같았다. 벽시계는 CI가 1.4~4.4배 느리다(아래 7절).</p>
  * <table>
  *   <caption>번들과 컴파일</caption>
  *   <tr><th>번들</th><th>역</th><th>운행</th><th>정차</th><th>컴파일</th><th>컴파일 할당</th><th>보유 힙</th></tr>
- *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>80 ms</td><td>27.4 MB</td><td>3.2 MB</td></tr>
- *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>7.6 ms</td><td>4.4 MB</td><td>0.55 MB</td></tr>
- *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>0.4 ms</td><td>0.1 MB</td><td>0.02 MB</td></tr>
+ *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>113 ms</td><td>27.4 MB</td><td>3.2 MB</td></tr>
+ *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>14.1 ms</td><td>4.4 MB</td><td>0.55 MB</td></tr>
+ *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>1.8 ms</td><td>0.1 MB</td><td>0.03 MB</td></tr>
  * </table>
  * <table>
  *   <caption>탐색 지연과 결과(벤치마크 한도: 작업량 500만, 상태당 라벨 64, 도착 라벨 64, 시점 64)</caption>
  *   <tr><th>번들</th><th>모드</th><th>질의</th><th>p50</th><th>p99</th><th>질의당 할당</th><th>작업량 합</th>
  *     <th>상태 라벨 최대</th><th>거절</th></tr>
- *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>190 µs</td><td>331 µs</td><td>43 KB</td>
+ *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>478 µs</td><td>1.1 ms</td><td>44 KB</td>
  *     <td>열차 7,157·환승 73,280 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>district</td><td>DepartAt</td><td>40</td><td>37 µs</td><td>77 µs</td><td>11 KB</td>
+ *   <tr><td>district</td><td>DepartAt</td><td>40</td><td>69 µs</td><td>156 µs</td><td>11 KB</td>
  *     <td>열차 712·환승 4,201 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>42.9 ms</td><td>44.3 ms</td><td>14.4 MB</td><td>60,000,012</td>
+ *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>102.7 ms</td><td>104.5 ms</td><td>14.4 MB</td><td>60,000,012</td>
  *     <td>0</td><td>12/12(작업량)</td></tr>
- *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>3.3 ms</td><td>9.1 ms</td><td>6.3 MB</td><td>899,375</td>
+ *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>6.0 ms</td><td>14.7 ms</td><td>6.3 MB</td><td>899,375</td>
  *     <td>65</td><td>12/12(상태당 라벨)</td></tr>
- *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>1.7 ms</td><td>49.5 ms</td><td>10.1 MB</td><td>15,260,560</td>
+ *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>4.5 ms</td><td>127.5 ms</td><td>10.4 MB</td><td>15,260,560</td>
  *     <td>65</td><td>6/6(작업량 3, 상태당 라벨 3)</td></tr>
- *   <tr><td>line4</td><td>DepartAt</td><td>40</td><td>58 µs</td><td>105 µs</td><td>33 KB</td><td>열차 79 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>line4</td><td>ArriveBy</td><td>24</td><td>146 µs</td><td>213 µs</td><td>64 KB</td><td>268,418</td><td>1</td><td>0</td></tr>
- *   <tr><td>line4</td><td>DepartBetween</td><td>24</td><td>38 µs</td><td>100 µs</td><td>119 KB</td><td>6,898</td><td>4</td><td>0</td></tr>
- *   <tr><td>line4</td><td>LastConnection</td><td>12</td><td>171 µs</td><td>235 µs</td><td>71 KB</td><td>180,744</td><td>1</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>DepartAt</td><td>40</td><td>184 µs</td><td>288 µs</td><td>33 KB</td><td>열차 79 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>ArriveBy</td><td>24</td><td>554 µs</td><td>843 µs</td><td>63 KB</td><td>268,418</td><td>1</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>DepartBetween</td><td>24</td><td>142 µs</td><td>390 µs</td><td>120 KB</td><td>6,898</td><td>4</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>LastConnection</td><td>12</td><td>637 µs</td><td>860 µs</td><td>68 KB</td><td>180,744</td><td>1</td><td>0</td></tr>
  * </table>
  * <table>
  *   <caption>운영 배포 후보 정책 한도로 재현한 프로필 질의(작업량 1000, 상태당 라벨 8, 도착 라벨 16, 시점 32)</caption>
@@ -161,11 +162,18 @@
  *   허용폭이다. 카운터가 2% 넘게 좋아져도 기준선이 낡았다는 뜻이라 실패한다.</li>
  *   <li>갱신이 필요한 경우: 엔진 동작을 의도적으로 바꿨을 때, 번들·질의 집합·한도를 바꿨을 때, 게이트가 "stale" 또는
  *   "identity changed"로 실패할 때. 의도하지 않은 회귀는 기준선을 고치지 말고 코드를 고친다.</li>
- *   <li>절차: (1) backend 디렉터리에서 {@code EASYSUBWAY_PERF_BASELINE_WRITE=true ./gradlew test --rerun --tests
- *   'com.easysubway.route.application.service.JourneyEnginePerformanceGateTest'}를 실행해 기준선을 다시 쓴다.
- *   (2) 같은 명령을 환경 변수 없이 두 번 더 돌려 통과하는지 확인한다. (3) 바뀐 카운터와 지연을 PR 본문에 전후 표로
- *   남기고, 이 문서 6절 표를 함께 고친다. (4) CI 러너에서 벽시계 값이 크게 다르면 shard 산출물의 JUnit XML
- *   system-out에 찍힌 측정 JSON으로 지연 값을 확인한다.</li>
+ *   <li>기준선의 기준 플랫폼은 Backend CI 러너다. 보정 작업은 두 플랫폼에서 거의 같은 시간(약 105 ms)이 걸렸지만
+ *   엔진은 CI(amd64)가 로컬(aarch64)보다 1.4~4.4배 느렸다. 메모리 접근 위주인 엔진과 정렬 위주인 보정 작업의 플랫폼
+ *   간 비율이 달라서다. 그래서 벽시계 기준선은 CI 측정값을 쓴다. 지연에는 하한이 없으므로 더 빠른 개발 장비에서는
+ *   그대로 통과한다.</li>
+ *   <li>절차: (1) 엔진·번들·질의를 바꾼 커밋을 PR에 올린다. 게이트가 실패하면 실패 메시지에, 통과하면 shard 산출물
+ *   JUnit XML의 system-out에 "#460 engine performance measured" 다음으로 측정 JSON이 찍힌다. (2) 그 JSON에 기존
+ *   기준선의 {@code tolerances} 블록을 붙여 기준선 파일을 바꾼다. 로컬에서
+ *   {@code EASYSUBWAY_PERF_BASELINE_WRITE=true ./gradlew test --rerun --tests
+ *   'com.easysubway.route.application.service.JourneyEnginePerformanceGateTest'}로 쓴 기준선은 결정적 카운터 확인용이며
+ *   벽시계 값은 CI 값으로 바꿔야 한다. (3) 환경 변수 없이 같은 테스트를 로컬과 CI에서 다시 돌려 통과하는지 확인한다.
+ *   (4) 바뀐 카운터와 지연을 PR 본문에 전후 표로 남기고 이 문서 6절 표를 함께 고친다. 이 문서를 고치면 문서 파편
+ *   refresh와 {@code --check}도 같은 PR에서 실행한다.</li>
  *   <li>차분 검증 확장 실행: {@code EASYSUBWAY_DIFFERENTIAL_BUNDLES}(기본 80)와 {@code EASYSUBWAY_DIFFERENTIAL_BASE_SEED}로
  *   번들 수와 시작 시드를 바꾼다. 반례에 찍힌 seed가 번들 시드다.</li>
  * </ul>
