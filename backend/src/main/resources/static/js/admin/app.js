@@ -99,7 +99,13 @@ function adminReturnFocus(state, fallbackEl) {
 		document.body.addEventListener('htmx:beforeRequest', beginHtmxRequest);
 		document.body.addEventListener('htmx:afterRequest', endHtmxRequest);
 	}
-	document.body.addEventListener('htmx:responseError', function () {
+	document.body.addEventListener('htmx:responseError', function (evt) {
+		var detail = evt ? evt.detail : null;
+		var path = detail && detail.requestConfig ? detail.requestConfig.path : '';
+		var target = detail && detail.target ? detail.target.id : '';
+		if (path === '/admin/alerts' || target === 'admin-alert-live' || (detail && detail.xhr && detail.xhr.status === 0)) {
+			return;
+		}
 		window.dispatchEvent(
 			new CustomEvent('admin-toast', {
 				detail: {
