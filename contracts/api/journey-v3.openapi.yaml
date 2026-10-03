@@ -863,6 +863,12 @@ components:
         resolvedDayType:
           type: string
           enum: [WEEKDAY, SATURDAY, SUNDAY_HOLIDAY]
+          description: >-
+            Kind of calendar the requested station-line actually runs on the (reference) service date. Agencies
+            without a Saturday timetable run their holiday calendar on Saturdays, so their Saturdays report
+            SUNDAY_HOLIDAY. When other agencies' calendars mark the date as a holiday but this station-line's
+            calendars carry no exception for it, the search fails as TIMETABLE_NOT_COVERED instead of serving a
+            weekday or Saturday timetable.
         serviceTimezone:
           type: string
           enum: [Asia/Seoul]
