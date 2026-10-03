@@ -2972,31 +2972,42 @@ public final class RouteTimetableRaptorPlanner {
 			return stopsByPattern.length;
 		}
 
+		/** 없는 패턴(음수 포함)은 {@code null}이다(#462 배열 전환 전 계약). */
 		int[] stopsByPattern(int pattern) {
-			return stopsByPattern[pattern];
+			return Integer.compareUnsigned(pattern, stopsByPattern.length) < 0 ? stopsByPattern[pattern] : null;
 		}
 
 		int patternStopCount(int pattern) {
 			return stopsByPattern(pattern).length;
 		}
 
-		/** 역이 나오는 (패턴, 위치) 쌍을 이어 붙인 배열. 패턴 번호, 같은 패턴 안에서는 위치 순이다. */
+		/**
+		 * 역이 나오는 (패턴, 위치) 쌍을 이어 붙인 배열. 패턴 번호, 같은 패턴 안에서는 위치 순이다. 하한 Dijkstra 내부
+		 * 루프용이라 범위를 검사하지 않는다. 역 번호는 {@code [0, stationCount())} 안이어야 한다.
+		 */
 		int[] stopOccurrences(int station) {
 			return stopOccurrences[station];
 		}
 
-		/** 패턴의 위치 쌍별 최소 주행 시간({@code from * 정차 수 + to}). */
+		/**
+		 * 패턴의 위치 쌍별 최소 주행 시간({@code from * 정차 수 + to}). 내부 루프용이라 범위를 검사하지 않는다. 패턴
+		 * 번호는 {@code [0, routePatternCount())} 안이어야 한다(없는 패턴의 도달 불가 값은 {@link #minPatternRunningTime}).
+		 */
 		int[] minPatternRunningTimes(int pattern) {
 			return minPatternRunningTimes[pattern];
 		}
 
-		/** 패턴의 그 위치에서 타는 노선 색인. 같은 패턴의 모든 열차가 같은 값을 갖는다. */
+		/**
+		 * 패턴의 그 위치에서 타는 노선 색인. 같은 패턴의 모든 열차가 같은 값을 갖는다. 탐색 내부 루프용이라 범위를
+		 * 검사하지 않는다. 패턴과 위치는 유효한 패턴의 정차 위치여야 한다.
+		 */
 		int patternLine(int pattern, int position) {
 			return lineByPatternPosition[pattern][position];
 		}
 
+		/** 없는 역(음수 포함)은 빈 배열이다(#462 배열 전환 전 계약). */
 		int[] patternsByStop(int station) {
-			return patternsByStop[station];
+			return Integer.compareUnsigned(station, patternsByStop.length) < 0 ? patternsByStop[station] : NO_PATTERNS;
 		}
 
 		ScheduledTrip scheduledTrip(int index) {
@@ -3708,8 +3719,9 @@ public final class RouteTimetableRaptorPlanner {
 			return trips;
 		}
 
+		/** 없는 패턴(음수 포함)은 빈 목록이다(#462 배열 전환 전 계약). */
 		List<ScheduledTrip> tripsByPattern(int pattern) {
-			return tripsByPattern.get(pattern);
+			return Integer.compareUnsigned(pattern, tripsByPattern.size()) < 0 ? tripsByPattern.get(pattern) : List.of();
 		}
 
 		/** 컴파일 시간표의 패턴 수. 비운행 패턴도 빈 목록으로 칸을 갖는다. */

@@ -289,6 +289,27 @@ class RouteTimetableRaptorPlannerPrimitiveBagBmrapTest {
 	}
 
 	@Test
+	@DisplayName("#462 범위 밖(음수 포함) 패턴·역 조회는 배열 전환 전 계약대로 도달 불가 값·빈 값을 돌려준다")
+	void outOfRangePatternAndStationLookupsKeepTheirSentinelContract() {
+		var compiled = new RouteTimetableRaptorPlanner().compile(multiStationTimetable());
+		int patterns = compiled.routePatternCount();
+		int stations = compiled.stationCount();
+
+		assertThat(compiled.minPatternRunningTime(-1, 0, 1)).isEqualTo(Integer.MAX_VALUE / 2);
+		assertThat(compiled.minPatternRunningTime(patterns, 0, 1)).isEqualTo(Integer.MAX_VALUE / 2);
+		assertThat(compiled.stopsByPattern(-1)).isNull();
+		assertThat(compiled.stopsByPattern(patterns)).isNull();
+		assertThat(compiled.patternsByStop(-1)).isEmpty();
+		assertThat(compiled.patternsByStop(stations)).isEmpty();
+		var activeDay = compiled.activeServiceDay(SERVICE_DATE);
+		assertThat(activeDay.tripsByPattern(-1)).isEmpty();
+		assertThat(activeDay.tripsByPattern(patterns)).isEmpty();
+		// 범위 안 조회는 그대로다.
+		assertThat(compiled.stopsByPattern(0)).isNotEmpty();
+		assertThat(activeDay.tripsByPattern(0)).isNotEmpty();
+	}
+
+	@Test
 	@DisplayName("페르소나 분류 널/빈목록 가드 및 slackSeconds fallback 분기를 검증한다")
 	void personaEdgeCasesAndSlackCalculations() {
 		assertThat(RouteTimetableRaptorPlanner.classifyPersonas(null)).isEmpty();
