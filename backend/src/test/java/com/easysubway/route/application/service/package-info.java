@@ -1,7 +1,7 @@
 /**
  * Journey V3 서버 공인 경로 엔진(RAPTOR 계열) 설계 문서와 그 검증 체계.
  *
- * <p>이 문서는 경로 엔진의 설계 문서다(#460, 프로필 탐색 개편 #461, 에픽 #457). 엔진 코드는 같은 패키지의 main 소스에 있고, 이 문서는
+ * <p>이 문서는 경로 엔진의 설계 문서다(#460, 프로필 탐색 개편 #461, 저수준 최적화 #462, 에픽 #457). 엔진 코드는 같은 패키지의 main 소스에 있고, 이 문서는
  * 엔진을 검증하는 차분 검증·성능 회귀 게이트와 함께 테스트 소스에 둔다(main에 두면 문서만 있는 소스가 커버리지
  * 인벤토리에 들어간다). 알고리즘, 자료구조, 복잡도, 정확성 검증 방식, 측정 결과,
  * 성능 회귀 게이트의 기준선 갱신 절차를 적는다. 수치는 이 문서를 쓴 시점의 커밋된 기준선
@@ -100,9 +100,14 @@
  * <ul>
  *   <li>{@code CompiledTimetable}: 역·노선 정수 색인, 패턴별 정차 배열({@code stopsByPattern})과 역별 패턴 역색인
  *   ({@code patternsByStop}), 패턴 최소 주행 시간, 서비스일별 활성 운행 캐시(최근 8일). 런타임 세대마다 한 번
- *   만들고 질의끼리 공유한다(불변).</li>
- *   <li>환승 전환: (역, 출발 노선, 도착 노선)을 정수 하나로 접어 정렬한 키 배열과 후보 배열(CSR). 이진 탐색으로
- *   찾고, 후보는 실측 시간·경고 수·거리·간선 ID 순으로 정렬해 둔다. 프로필별 차단·경고는 비트 마스크다.</li>
+ *   만들고 질의끼리 공유한다(불변). 패턴 번호는 0부터 연속이라 패턴·역 단위 자료는 모두 번호로 바로 찾는 배열이다
+ *   (#462 전에는 {@code Map<Integer, ...>}이라 조회마다 박싱했다). 탐색 내부 루프용으로 (패턴, 위치)별 노선 색인과
+ *   역별 (패턴, 위치) 정차 색인을 함께 만든다.</li>
+ *   <li>환승 전환: (역, 출발 노선, 도착 노선)을 정수 하나로 접어 정렬한 키 배열과 후보 배열(CSR). (역, 출발 노선)마다
+ *   키 범위 시작 칸을 둔 표(역 수 × 노선 수 + 1)로 범위를 찾고 그 안에서 도착 노선만 훑는다(#462, 이전에는 전체
+ *   키 이진 탐색). 후보는 실측 시간·경고 수·거리·간선 ID 순으로 정렬해 둔다. 프로필별 차단·경고는 비트 마스크다.</li>
+ *   <li>하한 Dijkstra(목표 가지치기·프로필 창): 역마다 한 칸만 두는 int 배열 이진 힙(decrease-key, {@code StationHeap}).
+ *   완화마다 객체를 만들지 않고 큐 크기가 역 수를 넘지 않는다.</li>
  *   <li>{@code ScanWorkspace}: point 탐색의 상태 칸을 평면 int 배열로 두고 풀({@code ScanWorkspacePool})에서
  *   빌려 쓴다. 질의마다 배열을 새로 만들지 않는다.</li>
  *   <li>{@code PrimitiveProfileLabelPool}: 전방 프로필 라벨을 필드별 원시 배열(SoA)에 저장하고 부모 색인으로
@@ -111,15 +116,16 @@
  *   <li>프로필 질의의 날짜별 운행({@code ProfileDatedTripView}, {@code ReverseTrips}): 서비스일별 활성 운행만 고르고,
  *   패턴의 날짜별 열차 목록은 탐색이 그 패턴을 처음 볼 때 만든다. 실시간 변경이 없는 날짜 묶음은 비추월 순서라
  *   이분 탐색과 조기 종료를 쓴다.</li>
- *   <li>질의마다 역별 하한 배열(역 수)과 환승 예산 배열(역 수 × 노선 수)을 한 번 만든다. 역방향 라벨은 객체로 두고
- *   상태별 목록과 우선순위 큐로 관리한다.</li>
+ *   <li>질의마다 역별 하한 배열(역 수)과 환승 예산 배열(역 수 × 노선 수)을 한 번 만든다. 패턴별 날짜 열차와 패턴별
+ *   남은·선행 승차 수 캐시는 패턴 수 크기 배열이다(#462). 가지치기 규칙별 횟수는 규칙마다 {@code long[1]} 칸에
+ *   더한다. 역방향 라벨은 객체로 두고 상태별 목록과 우선순위 큐로 관리한다.</li>
  * </ul>
  *
  * <h2>4. 복잡도</h2>
  * <p>K = 최대 승차 수(환승 + 1), P = 패턴 수, S = 패턴당 정차 수, T = 활성 운행 수, L = 상태당 라벨 수.</p>
  * <ul>
  *   <li>point RAPTOR: 라운드마다 표시된 패턴만 훑으므로 최악 O(K × (Σ 패턴 길이 + 훑은 열차 수 + 환승 후보)).
- *   bag과 경고 상태가 상수(4 × 8)라 라벨 폭증이 없다. 측정에서 도시철도 규모 질의 하나가 p50 약 0.5 ms다.</li>
+ *   bag과 경고 상태가 상수(4 × 8)라 라벨 폭증이 없다. 측정에서 도시철도 규모(metro) 질의 하나가 CI p50 약 0.3 ms, 수도권 실데이터 fixture가 로컬 p50 약 1.5 ms다(6.1절).</li>
  *   <li>전방 range McRAPTOR: 상태 수 × L × (창 안 열차 수 × S)에 비례한다. L은 기준이 7개라 이론상 크게 자랄 수 있지만
  *   창이 열차를 30분 폭으로 자른다. 수도권 실측 상태 라벨 최대는 901이다. 그래서 상태당 라벨 한도로 막는다.</li>
  *   <li>역방향 다기준 탐색: 같은 구조의 거울이며 탐색 폭은 준비 시각 창(30분)과 마감이 정한다. 전처리로 하한
@@ -158,39 +164,60 @@
  * </ul>
  *
  * <h2>6. 측정 결과(기준선 = Backend CI 러너 ubuntu-latest amd64 4 vCPU, Adoptium 21.0.11, 같은 커밋 CI 3회 측정의 값별 중앙값,
- * 각 측정은 새 JVM에서 예열 2회·측정 5회. #461 커밋, run 37102993327)</h2>
- * <p>결정적 카운터와 운영 정책 재현 결과는 로컬(aarch64)과 CI 3회가 모두 같았고, 할당량은 12% 안에서 같았다.
- * 코드가 바뀌지 않은 출발 시각 고정 p50도 CI 3회 사이에 최대 1.8배(district 99~177 µs) 흔들려 7절의 허용폭을
- * 2.0배로 올렸다.</p>
+ * 각 측정은 새 JVM에서 예열 2회·측정 5회. #462 커밋, run 37117989628 시도 1~3)</h2>
+ * <p>결정적 카운터와 운영 정책 재현 결과는 로컬(aarch64)과 CI 3회가 모두 같았고, 할당량은 CI 3회 사이 1.2% 안에서
+ * 같았다(할당·보유 힙도 3회 중앙값을 쓴다). #461에서는 코드가 바뀌지 않은 출발 시각 고정 p50도 CI 3회 사이에 최대
+ * 1.8배(district 99~177 µs) 흔들려 7절의 허용폭을 2.0배로 올렸다. #462에서도 같은 코드의 CI 측정 묶음 사이 편차가
+ * 컸다(metro DepartAt p50: 직전 커밋 첫 실행 177 µs, 기준선 3회 249~345 µs).</p>
+ * <table>
+ *   <caption>#462 기준선 3회 측정(run 37117989628 시도 1·2·3, 보정 시간 98.09·97.76·98.16 ms)과 최대/최소 비</caption>
+ *   <tr><th>번들</th><th>모드</th><th>p50(µs)</th><th>p50 비</th><th>p99(µs)</th><th>p99 비</th></tr>
+ *   <tr><td>metro</td><td>DepartAt</td><td>249 · 313 · 346</td><td>1.39</td><td>787 · 796 · 1,098</td><td>1.40</td></tr>
+ *   <tr><td>district</td><td>DepartAt</td><td>127 · 97 · 121</td><td>1.31</td><td>242 · 331 · 235</td><td>1.41</td></tr>
+ *   <tr><td>district</td><td>ArriveBy</td><td>810 · 988 · 839</td><td>1.22</td><td>3,114 · 3,261 · 2,947</td><td>1.11</td></tr>
+ *   <tr><td>district</td><td>DepartBetween</td><td>1,097 · 1,034 · 1,082</td><td>1.06</td><td>3,365 · 3,215 · 3,417</td><td>1.06</td></tr>
+ *   <tr><td>district</td><td>LastConnection</td><td>623 · 588 · 615</td><td>1.06</td><td>876 · 931 · 928</td><td>1.06</td></tr>
+ *   <tr><td>line4</td><td>DepartAt</td><td>58 · 66 · 56</td><td>1.17</td><td>143 · 146 · 112</td><td>1.31</td></tr>
+ *   <tr><td>line4</td><td>ArriveBy</td><td>191 · 227 · 190</td><td>1.19</td><td>286 · 358 · 288</td><td>1.25</td></tr>
+ *   <tr><td>line4</td><td>DepartBetween</td><td>326 · 328 · 333</td><td>1.02</td><td>557 · 574 · 634</td><td>1.14</td></tr>
+ *   <tr><td>line4</td><td>LastConnection</td><td>204 · 244 · 186</td><td>1.31</td><td>329 · 363 · 284</td><td>1.28</td></tr>
+ * </table>
+ * <p>세 측정 안의 최대/최소 비는 1.02~1.41배였다. 다른 시점의 같은 엔진 실행(직전 커밋 d2b7dc8a)은 대부분 이보다 빨라
+ * (line4 DepartAt p50 27 µs, metro 177 µs) 기준선이 느린 쪽 묶음에서 정해졌다. 출발 시각 고정 p50 허용폭 2.0배와
+ * 비교하면 line4 DepartAt 기준선 57.6 µs의 한도는 정규화 전 약 115 µs다. 기준선을 바꾼 뒤 게이트가 실패하면 이 표의
+ * 편차와 먼저 비교한다.</p>
  * <table>
  *   <caption>번들과 컴파일</caption>
  *   <tr><th>번들</th><th>역</th><th>운행</th><th>정차</th><th>컴파일</th><th>컴파일 할당</th><th>보유 힙</th></tr>
- *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>121 ms</td><td>27.4 MB</td><td>3.2 MB</td></tr>
- *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>20.7 ms</td><td>4.6 MB</td><td>0.55 MB</td></tr>
- *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>1.1 ms</td><td>0.1 MB</td><td>0.03 MB</td></tr>
+ *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>151 ms</td><td>27.4 MB</td><td>3.25 MB</td></tr>
+ *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>19.4 ms</td><td>4.6 MB</td><td>0.55 MB</td></tr>
+ *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>1.0 ms</td><td>0.1 MB</td><td>0.03 MB</td></tr>
  * </table>
  * <table>
  *   <caption>탐색 지연과 결과(벤치마크 한도: 작업량 500만, 상태당 라벨 64, 도착 라벨 64, 시점 64)</caption>
  *   <tr><th>번들</th><th>모드</th><th>회차당 질의</th><th>p50</th><th>p99</th><th>질의당 할당</th><th>작업량 합</th>
  *     <th>상태 라벨 최대</th><th>거절</th></tr>
- *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>448 µs</td><td>1.14 ms</td><td>43 KB</td>
+ *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>313 µs</td><td>796 µs</td><td>12 KB</td>
  *     <td>열차 7,157·환승 73,280 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>district</td><td>DepartAt</td><td>100</td><td>135 µs</td><td>235 µs</td><td>11 KB</td>
+ *   <tr><td>district</td><td>DepartAt</td><td>100</td><td>120 µs</td><td>242 µs</td><td>8 KB</td>
  *     <td>열차 1,766·환승 10,891 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>888 µs</td><td>3.1 ms</td><td>279 KB</td><td>27,711</td>
+ *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>838 µs</td><td>3.1 ms</td><td>268 KB</td><td>27,711</td>
  *     <td>10</td><td>0</td></tr>
- *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>995 µs</td><td>3.1 ms</td><td>322 KB</td><td>23,085</td>
+ *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>1.08 ms</td><td>3.4 ms</td><td>306 KB</td><td>23,085</td>
  *     <td>65</td><td>1/12(상태당 라벨)</td></tr>
- *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>575 µs</td><td>970 µs</td><td>140 KB</td><td>5,809</td>
+ *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>615 µs</td><td>928 µs</td><td>134 KB</td><td>5,809</td>
  *     <td>65</td><td>1/6(상태당 라벨)</td></tr>
- *   <tr><td>line4</td><td>DepartAt</td><td>100</td><td>132 µs</td><td>286 µs</td><td>32 KB</td><td>열차 198 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>line4</td><td>ArriveBy</td><td>100</td><td>197 µs</td><td>452 µs</td><td>47 KB</td><td>9,729</td><td>0</td><td>0</td></tr>
- *   <tr><td>line4</td><td>DepartBetween</td><td>100</td><td>344 µs</td><td>624 µs</td><td>123 KB</td><td>8,359</td><td>1</td><td>0</td></tr>
- *   <tr><td>line4</td><td>LastConnection</td><td>100</td><td>206 µs</td><td>450 µs</td><td>46 KB</td><td>12,270</td><td>0</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>DepartAt</td><td>100</td><td>57 µs</td><td>143 µs</td><td>9 KB</td><td>열차 198 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>ArriveBy</td><td>100</td><td>190 µs</td><td>287 µs</td><td>37 KB</td><td>9,729</td><td>0</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>DepartBetween</td><td>100</td><td>328 µs</td><td>573 µs</td><td>99 KB</td><td>8,359</td><td>1</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>LastConnection</td><td>100</td><td>203 µs</td><td>328 µs</td><td>38 KB</td><td>12,270</td><td>0</td><td>0</td></tr>
  * </table>
- * <p>#460 기준선 대비: district 프로필 세 모드는 거절이 12/12·12/12·6/6에서 0·1·1건으로 줄고 p50이 64.0·6.7·80.1 ms에서
- * 0.89·1.0·0.58 ms가 됐다. 남은 거절은 벤치마크 한도(상태당 라벨 64)를 1 넘은 경우다. line4 출발 시간대는 하한·환승
- * 예산 전처리 고정 비용 때문에 p50이 81 µs에서 344 µs로 늘었다.</p>
+ * <p>#461 기준선(run 37102993327) 대비(#462): 작업량 카운터·거절·운영 정책 재현 결과는 모두 같다. 질의당 할당은
+ * metro DepartAt 43 → 12 KB, line4 DepartAt 32 → 9 KB, line4 DepartBetween 123 → 99 KB로 줄었다. 출발 시각 고정 p50은
+ * metro 448 → 313 µs, line4 132 → 57 µs다. 격자 번들은 패턴 수가 128 미만이라 Integer 캐시 덕에 박싱 비용이 원래
+ * 작았고, district 프로필 세 모드는 한도 직후 거절 비용이 대부분이라 차이가 CI 편차 안이다. 실데이터 규모의 효과는
+ * 6.1절에 있다. 남은 district 거절은 벤치마크 한도(상태당 라벨 64)를 1 넘은 경우다(#461에서 #460의 12/12·12/12·6/6에서
+ * 줄었다).</p>
  * <table>
  *   <caption>운영 배포 후보 정책 한도로 재현한 프로필 질의(platform#218: 작업량 1,000만, 상태당 라벨 2,048, 도착 라벨 128,
  *   시점 128)</caption>
@@ -208,6 +235,69 @@
  * 약 31 MB). 무거운 질의 128개를 동시에 돌려도(가상 스레드 병렬도 128로 강제) OOM 없이 모두 결과를 냈고 GC 후 최대
  * 917 MB였다. 운영에서는 프로필 탐색이 CPU만 쓰는 가상 스레드라 동시에 진행되는 탐색 수가 캐리어 병렬도(컨테이너 CPU
  * 한도 1.5 → 2)를 넘지 않는다. 병렬도가 약 25를 넘게 바뀌면 전역 동시성 상한을 다시 검토한다.</p>
+ * <h3>6.1 저수준 최적화(#462): 수도권 실데이터 전후</h3>
+ * <p>측정은 {@code CapitalEngineBenchmark}(수도권 fixture 656역·417패턴·9,691편, 출발 시각 고정 무작위 OD 400건,
+ * {@code ProfileSearchWithinResourcePolicyTest}의 프로필 질의 14건을 운영 후보 정책 한도로)를 로컬 aarch64 Adoptium
+ * 21에서 예열 3회·측정 5회로 돌린 값이다. 같은 장비에서 #461 엔진과 번갈아 두 번씩 쟀고, 결과·결정적 작업량
+ * 지문(sha256)은 네 모드 모두 #461과 같다. 지연은 CI와 플랫폼 비율이 달라 같은 장비 비교에만 쓴다.</p>
+ * <p>프로파일(JFR, 같은 작업 부하): 출발 시각 고정 시간의 약 55%가 목표 가지치기 하한 Dijkstra였고 그 안에서
+ * {@code Map<Integer, int[]>} 조회의 Integer 박싱(질의당 할당 4.1 MB의 대부분)과 {@code PriorityQueue} 정렬이
+ * 지배했다. 나머지는 환승 후보 이진 탐색과 정차마다의 노선 ID 문자열 조회였다. 프로필 모드는 가지치기 횟수
+ * 누적(containsKey·compute·Long 박싱)이 시간의 약 23%, 질의 단위 {@code HashMap<Integer, ...>} 캐시가 할당의
+ * 큰 몫이었다. 최적화 뒤 같은 작업 부하의 JFR 표본 수는 1,184개에서 528개로 줄었다.</p>
+ * <table>
+ *   <caption>모드별 전후(#461 엔진 → #462 엔진, 두 번 측정 범위)</caption>
+ *   <tr><th>모드</th><th>p50</th><th>p99</th><th>질의당 할당</th><th>처리량(단일 스레드)</th></tr>
+ *   <tr><td>DepartAt</td><td>4.0~4.2 → 1.5~1.6 ms</td><td>5.2~5.6 → 2.2~2.4 ms</td><td>4.12 MB → 20 KB</td>
+ *     <td>241~253 → 656~696 qps</td></tr>
+ *   <tr><td>DepartBetween</td><td>52 → 21~22 ms</td><td>116~123 → 53~55 ms</td><td>43.8~44.1 MB → 7.1 MB</td>
+ *     <td>18~19 → 40~42 qps</td></tr>
+ *   <tr><td>LastConnection</td><td>12.2~12.4 → 8.5~9.1 ms</td><td>15.8~16.6 → 11.7~12.7 ms</td><td>11.8 MB → 4.2 MB</td>
+ *     <td>92~96 → 131~140 qps</td></tr>
+ *   <tr><td>ArriveBy</td><td>12.0~12.6 → 8.8~9.4 ms</td><td>32~34 → 25~27 ms</td><td>24.4 MB → 9.4 MB</td>
+ *     <td>45~47 → 56~60 qps</td></tr>
+ * </table>
+ * <table>
+ *   <caption>채택한 기법(커밋마다 차분 검증 4종 불일치 0, 결과 지문 동일). 수치는 직전 커밋 대비 p50·할당</caption>
+ *   <tr><th>기법</th><th>효과</th></tr>
+ *   <tr><td>패턴 색인 맵을 원시 배열로(SoA·박싱 제거)</td><td>DepartAt 3.95 → 3.06 ms, 4.12 MB → 0.24 MB</td></tr>
+ *   <tr><td>하한 Dijkstra 원시 색인 힙(decrease-key)</td><td>DepartAt 3.06 → 2.41 ms, 237 KB → 20 KB</td></tr>
+ *   <tr><td>(패턴, 위치)별 노선 색인 사전 계산</td><td>DepartAt 2.39 → 2.1 ms, DepartBetween 49.6 → 34 ms</td></tr>
+ *   <tr><td>가지치기 횟수 박싱 없는 누적</td><td>DepartBetween 34 → 28 ms, 35.4 MB → 13.8 MB</td></tr>
+ *   <tr><td>환승 후보 (역, 출발 노선) 범위 표</td><td>DepartAt 2.14 → 1.8 ms, DepartBetween 28.2 → 25.5 ms</td></tr>
+ *   <tr><td>역별 (패턴, 위치) 정차 색인 사전 계산</td><td>DepartAt 1.8 → 1.5 ms</td></tr>
+ *   <tr><td>프로필 질의 단위 패턴 캐시를 배열로</td><td>DepartBetween 24.4 → 21 ms, 13.9 MB → 7.1 MB</td></tr>
+ * </table>
+ * <p>보유 메모리(런타임 세대마다 한 번, 질의끼리 공유). 새 표의 크기는 S = 역 수, L = 노선 수, N = 패턴 정차 수 합,
+ * P = 패턴 수일 때 환승 범위 표 (S × L + 1) × 4 B, (패턴, 위치) 노선 색인 N × 4 B + P개 배열 머리, 역별 (패턴, 위치) 정차
+ * 색인 2N × 4 B + S개 배열 머리다. 대신 패턴 번호 맵 4개({@code Map<Integer, ...>})의 항목·박싱 키가 빠진다. 같은 측정
+ * 방식(명시적 GC 전후 사용량, 3회 중앙값)으로 잰 컴파일 런타임 하나의 보유 힙은 다음과 같다.</p>
+ * <table>
+ *   <caption>컴파일 런타임 보유 힙(#461 엔진 → #462 엔진)</caption>
+ *   <tr><th>번들</th><th>S</th><th>L</th><th>P</th><th>N</th><th>새 표 공식 합</th><th>보유 힙</th></tr>
+ *   <tr><td>수도권 fixture</td><td>656</td><td>24</td><td>417</td><td>10,764</td><td>약 210 KB</td>
+ *     <td>7.46 → 7.61 MB(+145 KB, +1.9%)</td></tr>
+ *   <tr><td>전국 서버 경로 번들 release 126(data run 37109648483)</td><td>942</td><td>36</td><td>615</td><td>15,839</td>
+ *     <td>약 350 KB</td><td>18.23 → 18.47 MB(+234 KB, +1.3%)</td></tr>
+ * </table>
+ * <p>역 수 × 노선 수에 비례하는 항은 환승 범위 표 하나다. 역·노선이 크게 늘면(예: 역 3,000 × 노선 200이면 약 2.4 MB)
+ * 이 표를 다시 본다.</p>
+ * <p>넣지 않은 기법과 근거:</p>
+ * <ul>
+ *   <li>라운드별 개선 패턴 비트셋({@code long[]}) 순회로 정렬 대체: DepartAt p50 1.46~1.51 → 1.50~1.61 ms로 차이가
+ *   측정 잡음 안이었다. 표시는 이미 희소 목록과 패턴별 표시 배열이고 정렬 비중이 표본의 1% 미만이다.</li>
+ *   <li>이진 탐색(첫 승차 열차): point 탐색({@code earliestBoardableTrip})과 비추월 프로필 패턴(#461)에 이미 있다.
+ *   남은 비중이 DepartAt 표본의 약 3%라 출발 시각을 (패턴, 위치)별 원시 배열로 옮기는 추가 SoA는 하지 않았다.</li>
+ *   <li>작업 공간 재사용과 epoch 초기화: point 탐색은 이미 풀({@code ScanWorkspacePool})과 손댄 칸만 되돌리는
+ *   초기화를 쓴다. 초기화 비중이 표본의 0.5% 미만이다. 프로필 라벨은 이미 SoA({@code PrimitiveProfileLabelPool})다.</li>
+ *   <li>목표 가지치기: 이미 있다(하한·목표 지배). 도달하지 않은 들어온 노선의 환승 조회를 건너뛰면 DepartAt이
+ *   약 5% 빨라지지만 관측값 {@code expandedTransfers}의 의미가 바뀌어 넣지 않았다.</li>
+ *   <li>도착역별 하한 배열 캐시(사전 계산): 같은 도착역이 다시 오면 DepartAt p50이 약 14%(1.47 → 1.28 ms)
+ *   줄지만 런타임 세대마다 최대 역 수² × 4바이트(수도권 약 1.7 MB)를 더 보유하고 처음 오는 도착역에는 효과가
+ *   없다. 메모리 예산 결정이 필요해 보류했다.</li>
+ *   <li>마킹 패턴 위치 찾기에 정차 색인 재사용, 경고 상태 칸 계산 끌어올리기, 가지치기 규칙 직전 조회 기억:
+ *   세 가지 모두 측정 잡음 안이었다(JIT가 이미 같은 일을 하거나 비중이 작음).</li>
+ * </ul>
  *
  * <h2>7. 성능 회귀 게이트와 기준선 갱신 절차</h2>
  * <ul>
