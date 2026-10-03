@@ -2450,9 +2450,9 @@ public final class RouteTimetableRaptorPlanner {
 		private final Map<String, Integer> routeIndex;
 		private final Map<String, Integer> tripIndex;
 		private final Map<String, Integer> lineIndex;
-		private final Map<Integer, int[]> stopsByPattern;
-		private final Map<Integer, int[]> patternsByStop;
-		private final Map<Integer, List<ScheduledTrip>> tripsByPattern;
+		private final int[][] stopsByPattern;
+		private final int[][] patternsByStop;
+		private final List<List<ScheduledTrip>> tripsByPattern;
 		private final int[] patternByScheduledTrip;
 		private final Map<DayOfWeek, List<ServiceCalendar>> calendarsByDay;
 		private final Map<LocalDate, List<ServiceCalendarDate>> exceptionsByDate;
@@ -2461,7 +2461,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final OutOfStationFootpath[][] footpathsByFromStation;
 		private final OutOfStationFootpath[][] footpathsByToStationLine;
 		private final OutOfStationFootpath[][] footpathsByToStation;
-		private final Map<Integer, int[]> minPatternRunningTimes;
+		private final int[][] minPatternRunningTimes;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
@@ -2516,9 +2516,9 @@ public final class RouteTimetableRaptorPlanner {
 			tripsByPattern = routePatterns.tripsByPattern();
 			patternByScheduledTrip = new int[scheduledTrips.size()];
 			Arrays.fill(patternByScheduledTrip, -1);
-			for (Map.Entry<Integer, List<ScheduledTrip>> entry : tripsByPattern.entrySet()) {
-				for (ScheduledTrip trip : entry.getValue()) {
-					patternByScheduledTrip[trip.index()] = entry.getKey();
+			for (int pattern = 0; pattern < tripsByPattern.size(); pattern += 1) {
+				for (ScheduledTrip trip : tripsByPattern.get(pattern)) {
+					patternByScheduledTrip[trip.index()] = pattern;
 				}
 			}
 			calendarsByDay = compileCalendarsByDay(source.serviceCalendars());
@@ -2570,14 +2570,12 @@ public final class RouteTimetableRaptorPlanner {
 				footpathsByToStationLine[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
 			}
 
-			Map<Integer, int[]> minHopsMap = new HashMap<>();
-			for (Map.Entry<Integer, int[]> entry : stopsByPattern.entrySet()) {
-				int pattern = entry.getKey();
-				int[] pStops = entry.getValue();
-				int numStops = pStops.length;
+			minPatternRunningTimes = new int[stopsByPattern.length][];
+			for (int pattern = 0; pattern < stopsByPattern.length; pattern += 1) {
+				int numStops = stopsByPattern[pattern].length;
 				int[] minHops = new int[numStops * numStops];
 				Arrays.fill(minHops, Integer.MAX_VALUE / 2);
-				List<ScheduledTrip> pTrips = tripsByPattern.getOrDefault(pattern, List.of());
+				List<ScheduledTrip> pTrips = tripsByPattern.get(pattern);
 				for (ScheduledTrip trip : pTrips) {
 					for (int i = 0; i < numStops; i += 1) {
 						for (int j = i + 1; j < numStops; j += 1) {
@@ -2589,9 +2587,8 @@ public final class RouteTimetableRaptorPlanner {
 						}
 					}
 				}
-				minHopsMap.put(pattern, minHops);
+				minPatternRunningTimes[pattern] = minHops;
 			}
-			minPatternRunningTimes = Map.copyOf(minHopsMap);
 
 			List<Set<Integer>> linesByStation = new ArrayList<>(numStations);
 			for (int i = 0; i < numStations; i += 1) {
@@ -2680,12 +2677,11 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		int minPatternRunningTime(int pattern, int fromPos, int toPos) {
-			int[] hops = minPatternRunningTimes.get(pattern);
-			if (hops == null) {
+			// 없는 패턴(음수 포함)은 도달 불가 값이다. 부호 없는 비교로 음수도 범위 밖으로 본다.
+			if (Integer.compareUnsigned(pattern, minPatternRunningTimes.length) >= 0) {
 				return Integer.MAX_VALUE / 2;
 			}
-			int numStops = stopsByPattern.get(pattern).length;
-			return hops[fromPos * numStops + toPos];
+			return minPatternRunningTimes[pattern][fromPos * stopsByPattern[pattern].length + toPos];
 		}
 
 		OutOfStationFootpath[] footpathsToStation(int station) {
@@ -2890,11 +2886,11 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		int routePatternCount() {
-			return stopsByPattern.size();
+			return stopsByPattern.length;
 		}
 
 		int[] stopsByPattern(int pattern) {
-			return stopsByPattern.get(pattern);
+			return stopsByPattern[pattern];
 		}
 
 		int patternStopCount(int pattern) {
@@ -2902,7 +2898,7 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		int[] patternsByStop(int station) {
-			return patternsByStop.getOrDefault(station, NO_PATTERNS);
+			return patternsByStop[station];
 		}
 
 		ScheduledTrip scheduledTrip(int index) {
@@ -2932,7 +2928,7 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		int routePatternTripLinkCount() {
-			return tripsByPattern.values().stream().mapToInt(List::size).sum();
+			return tripsByPattern.stream().mapToInt(List::size).sum();
 		}
 
 		int scheduledTripCount() {
@@ -2952,16 +2948,13 @@ public final class RouteTimetableRaptorPlanner {
 			List<ScheduledTrip> activeTrips = scheduledTrips.stream()
 				.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
 				.toList();
-			Map<Integer, List<ScheduledTrip>> activeTripsByPattern = new HashMap<>();
-			for (Map.Entry<Integer, List<ScheduledTrip>> entry : tripsByPattern.entrySet()) {
-				List<ScheduledTrip> patternTrips = entry.getValue().stream()
+			List<List<ScheduledTrip>> activeTripsByPattern = new ArrayList<>(tripsByPattern.size());
+			for (List<ScheduledTrip> trips : tripsByPattern) {
+				activeTripsByPattern.add(trips.stream()
 					.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
-					.toList();
-				if (!patternTrips.isEmpty()) {
-					activeTripsByPattern.put(entry.getKey(), patternTrips);
-				}
+					.toList());
 			}
-			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips, Map.copyOf(activeTripsByPattern));
+			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips, List.copyOf(activeTripsByPattern));
 			activeServiceDays.put(serviceDate, compiled);
 			if (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
 				activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
@@ -3009,8 +3002,8 @@ public final class RouteTimetableRaptorPlanner {
 			Map<String, Integer> stationIndex
 		) {
 			Map<RoutePatternKey, List<ScheduledTrip>> groupedTrips = new LinkedHashMap<>();
-			Map<Integer, int[]> stopsByPattern = new HashMap<>();
-			Map<Integer, List<ScheduledTrip>> tripsByPattern = new HashMap<>();
+			List<int[]> stopsByPattern = new ArrayList<>();
+			List<List<ScheduledTrip>> tripsByPattern = new ArrayList<>();
 			for (ScheduledTrip trip : scheduledTrips) {
 				if (trip.stopTimes().isEmpty()) {
 					continue;
@@ -3047,15 +3040,11 @@ public final class RouteTimetableRaptorPlanner {
 					selectedGroup.add(trip);
 				}
 				for (List<ScheduledTrip> group : nonOvertakingGroups) {
-					int patternId = stopsByPattern.size();
-					stopsByPattern.put(
-						patternId,
-						entry.getKey().stationSequence().stream().mapToInt(Integer::intValue).toArray()
-					);
-					tripsByPattern.put(patternId, List.copyOf(group));
+					stopsByPattern.add(entry.getKey().stationSequence().stream().mapToInt(Integer::intValue).toArray());
+					tripsByPattern.add(List.copyOf(group));
 				}
 			}
-			return new CompiledRoutePatterns(Map.copyOf(stopsByPattern), Map.copyOf(tripsByPattern));
+			return new CompiledRoutePatterns(stopsByPattern.toArray(int[][]::new), List.copyOf(tripsByPattern));
 		}
 
 		private static boolean canShareScanPattern(ScheduledTrip earlier, ScheduledTrip later) {
@@ -3071,29 +3060,25 @@ public final class RouteTimetableRaptorPlanner {
 			return true;
 		}
 
-		private static Map<Integer, int[]> invertPatterns(Map<Integer, int[]> stopsByPattern, int stationCount) {
+		private static int[][] invertPatterns(int[][] stopsByPattern, int stationCount) {
 			List<List<Integer>> patternLists = new ArrayList<>(stationCount);
 			for (int index = 0; index < stationCount; index += 1) {
 				patternLists.add(new ArrayList<>());
 			}
-			for (Map.Entry<Integer, int[]> entry : stopsByPattern.entrySet()) {
-				for (int station : entry.getValue()) {
+			for (int pattern = 0; pattern < stopsByPattern.length; pattern += 1) {
+				for (int station : stopsByPattern[pattern]) {
 					List<Integer> patterns = patternLists.get(station);
-					if (!patterns.contains(entry.getKey())) {
-						patterns.add(entry.getKey());
+					if (!patterns.contains(pattern)) {
+						patterns.add(pattern);
 					}
 				}
 			}
-			Map<Integer, int[]> patternsByStop = new HashMap<>();
+			int[][] patternsByStop = new int[stationCount][];
 			for (int index = 0; index < patternLists.size(); index += 1) {
-				if (!patternLists.get(index).isEmpty()) {
-					patternsByStop.put(
-						index,
-						patternLists.get(index).stream().mapToInt(Integer::intValue).sorted().toArray()
-					);
-				}
+				patternsByStop[index] = patternLists.get(index).isEmpty() ? NO_PATTERNS
+					: patternLists.get(index).stream().mapToInt(Integer::intValue).sorted().toArray();
 			}
-			return Map.copyOf(patternsByStop);
+			return patternsByStop;
 		}
 
 		private static Map<DayOfWeek, List<ServiceCalendar>> compileCalendarsByDay(List<ServiceCalendar> calendars) {
@@ -3597,10 +3582,10 @@ public final class RouteTimetableRaptorPlanner {
 	static final class ActiveServiceDay {
 
 		private final List<ScheduledTrip> trips;
-		private final Map<Integer, List<ScheduledTrip>> tripsByPattern;
+		private final List<List<ScheduledTrip>> tripsByPattern;
 		private volatile Map<String, List<BoardingStop>> boardingsByStation;
 
-		private ActiveServiceDay(List<ScheduledTrip> trips, Map<Integer, List<ScheduledTrip>> tripsByPattern) {
+		private ActiveServiceDay(List<ScheduledTrip> trips, List<List<ScheduledTrip>> tripsByPattern) {
 			this.trips = List.copyOf(trips);
 			this.tripsByPattern = tripsByPattern;
 		}
@@ -3610,11 +3595,11 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		List<ScheduledTrip> tripsByPattern(int pattern) {
-			return tripsByPattern.getOrDefault(pattern, List.of());
+			return tripsByPattern.get(pattern);
 		}
 
 		int routePatternTripLinkCount() {
-			return tripsByPattern.values().stream()
+			return tripsByPattern.stream()
 				.mapToInt(List::size)
 				.sum();
 		}
@@ -5663,8 +5648,8 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	private record CompiledRoutePatterns(
-		Map<Integer, int[]> stopsByPattern,
-		Map<Integer, List<ScheduledTrip>> tripsByPattern
+		int[][] stopsByPattern,
+		List<List<ScheduledTrip>> tripsByPattern
 	) {
 	}
 
