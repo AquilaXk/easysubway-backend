@@ -156,6 +156,11 @@ public class DatapackReleaseCallbackService {
         }
 
         var request = repository.findByApprovalId(cmd.releaseRequestId()).orElse(null);
+		if (request != null && catalogValidation != null && catalogValidation.bindingMissing()) {
+			// binding 부재는 트랜잭션 밖에서 request 행이 없을 때 판정했다. 그 사이 행이 생겼으면
+			// binding 검증 없이 게시·승격하지 않고, backend 원본 경로와 같이 재시도로 돌린다.
+			throw new DatapackReleaseCatalogPort.Unavailable();
+		}
         var delivery = deliveryRepository.upsertSameDelivery(DatapackReleaseDelivery.pending(
             cmd.releaseRequestId(), cmd.releaseSequence(), cmd.manifestSha256(), cmd.channel(),
             request == null ? NO_BACKEND_REQUEST_CANDIDATE_ID : request.candidateId(), fields.payloadSha256(),

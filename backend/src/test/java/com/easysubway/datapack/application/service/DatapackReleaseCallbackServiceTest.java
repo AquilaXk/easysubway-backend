@@ -409,6 +409,23 @@ class DatapackReleaseCallbackServiceTest {
 	}
 
 	@Test
+	@DisplayName("#456 F2 binding 부재로 판정한 뒤 같은 id의 request 행이 생겨도 binding 검증 없이 게시·승격하지 않는다")
+	void requestRowAppearingAfterBindingMissingIsNotPublishedWithoutBinding() {
+		when(releaseCatalog.findByRequest(CHANNEL, APPROVAL_ID)).thenAnswer(invocation -> {
+			insertRow("DISPATCHED");
+			return Optional.empty();
+		});
+
+		assertThatThrownBy(() -> service.receive(command("PASS", computeSignature("PASS"))))
+			.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		assertThat(statusOf()).isEqualTo("DISPATCHED");
+		assertThat(promoteOutcomeOf()).isNull();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM datapack_release_deliveries", Integer.class)).isZero();
+		assertThat(observationCount()).isZero();
+	}
+
+	@Test
 	@DisplayName("#456 git 원본: 서명 binding 결속이 하나라도 다르면 DEAD_LETTER로 거부하고 관측하지 않는다")
 	void gitOriginBindingMismatchIsRejected() {
 		var mismatches = Map.of(
