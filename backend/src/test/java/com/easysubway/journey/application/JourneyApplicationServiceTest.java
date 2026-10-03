@@ -57,7 +57,7 @@ class JourneyApplicationServiceTest {
 			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
 		));
 		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates, OBSERVED_SCAN,
-			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), TestJourneyCandidates.stairFreeAlternative(plannerCandidates));
 
 		JourneyRequest request = request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2);
 		JourneyExecutionResult result = fakes.service().execute(request);
@@ -118,7 +118,7 @@ class JourneyApplicationServiceTest {
 			OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
 			JourneyRaptorPort.RouteMeasurementReceipt.observed(
-				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)), TestJourneyCandidates.stairFreeAlternative(List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE))));
 		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
 		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
 
@@ -154,7 +154,7 @@ class JourneyApplicationServiceTest {
 			OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
 			JourneyRaptorPort.RouteMeasurementReceipt.observed(
-				new JourneyRequestMeasurement.RouteObservation(otherIdentity, 0)));
+				new JourneyRequestMeasurement.RouteObservation(otherIdentity, 0)), TestJourneyCandidates.stairFreeAlternative(List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE))));
 		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
 		fakes.routeMeasurementIdentity = otherIdentity;
 
@@ -424,7 +424,10 @@ class JourneyApplicationServiceTest {
 		duplicate.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)
-		), OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+		), OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), TestJourneyCandidates.stairFreeAlternative(List.of(
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)
+		)));
 		assertFailure(duplicate.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
@@ -432,7 +435,10 @@ class JourneyApplicationServiceTest {
 		overLimit.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
-		), OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+		), OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), TestJourneyCandidates.stairFreeAlternative(List.of(
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
+			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
+		)));
 		assertFailure(overLimit.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 1)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
@@ -465,7 +471,7 @@ class JourneyApplicationServiceTest {
 				1
 			),
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
-			JourneyExecutionResult.SafetyBoundary.observed()
+			JourneyExecutionResult.SafetyBoundary.observed(), TestJourneyCandidates.stairFreeAlternative(List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)))
 		)).isInstanceOf(IllegalArgumentException.class);
 	}
 
@@ -596,7 +602,7 @@ class JourneyApplicationServiceTest {
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
 			OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
-			routeMeasurement);
+			routeMeasurement, TestJourneyCandidates.stairFreeAlternative(List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE))));
 		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
 		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
 		return fakes;
@@ -696,7 +702,7 @@ class JourneyApplicationServiceTest {
 		JourneyRaptorPort.RouteBoundaryReceipt boundaryReceipt
 	) {
 		return new JourneyRaptorPort.PlanResult(
-			"query-1", List.of(candidate("journey-1", timeSource)), OBSERVED_SCAN, boundaryReceipt);
+			"query-1", List.of(candidate("journey-1", timeSource)), OBSERVED_SCAN, boundaryReceipt, JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), TestJourneyCandidates.stairFreeAlternative(List.of(candidate("journey-1", timeSource))));
 	}
 
 	private static JourneyCandidate candidate(String journeyId, JourneyCandidate.TimeSource timeSource) {

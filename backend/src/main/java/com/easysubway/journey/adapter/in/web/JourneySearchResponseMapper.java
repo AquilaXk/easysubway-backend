@@ -27,7 +27,10 @@ final class JourneySearchResponseMapper {
 			success.serviceDayIdentity().cutoffLocalTime(),
 			mapSourceIdentity(success.sourceIdentity()),
 			mapRequestPolicy(success.requestPolicy()),
-			success.journeys().stream().map(JourneySearchResponseMapper::mapJourney).toList()
+			success.journeys().stream().map(JourneySearchResponseMapper::mapJourney).toList(),
+			new StairFreeAlternativeResponse(
+				success.stairFreeAlternative().status().name(),
+				success.stairFreeAlternative().facilityStatus().name())
 		);
 	}
 
@@ -71,7 +74,9 @@ final class JourneySearchResponseMapper {
 				List.copyOf(journey.accessibility().reasonCodes())
 			),
 			mapFare(journey.fare()),
-			journey.legs().stream().map(JourneySearchResponseMapper::mapLeg).toList()
+			journey.legs().stream().map(JourneySearchResponseMapper::mapLeg).toList(),
+			journey.alternativeCategories() == null ? null
+				: journey.alternativeCategories().stream().map(Enum::name).toList()
 		);
 	}
 
@@ -209,8 +214,13 @@ final class JourneySearchResponseMapper {
 		String serviceDayCutoff,
 		SourceIdentityResponse sourceIdentity,
 		RequestPolicyResponse requestPolicy,
-		List<JourneyResponse> journeys
+		List<JourneyResponse> journeys,
+		StairFreeAlternativeResponse stairFreeAlternative
 	) {
+	}
+
+	/** #469: 계단 없는 경로 묶음 결과와 시설 가동 정보 적용 여부. */
+	record StairFreeAlternativeResponse(String status, String facilityStatus) {
 	}
 
 	record SourceIdentityResponse(
@@ -246,7 +256,10 @@ final class JourneySearchResponseMapper {
 		String timeSource,
 		AccessibilityResponse accessibility,
 		FareResponse fare,
-		List<LegResponse> legs
+		List<LegResponse> legs,
+		// #469: 검색 응답 여정만 대표 묶음을 낸다. 프로필 응답 여정은 objectiveTags를 쓰므로 이 키가 없다.
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		List<String> alternativeCategories
 	) {
 	}
 

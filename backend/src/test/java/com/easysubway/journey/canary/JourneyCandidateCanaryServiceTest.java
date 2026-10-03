@@ -47,7 +47,7 @@ class JourneyCandidateCanaryServiceTest {
 		when(raptorPort.plan(any(), any(), any(), org.mockito.ArgumentMatchers.isNull(), any()))
 			.thenReturn(new JourneyRaptorPort.PlanResult(
 				JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN,
-				JourneyRaptorPort.RouteBoundaryReceipt.observed(0)));
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND, com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED)));
 
 		var result = service.execute(command(SHA_A, 1));
 
@@ -123,7 +123,7 @@ class JourneyCandidateCanaryServiceTest {
 			.thenReturn(
 				null,
 				new JourneyRaptorPort.PlanResult("other-query", List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN,
-					JourneyRaptorPort.RouteBoundaryReceipt.observed(0)),
+					JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND, com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED)),
 				new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(), OBSERVED_SCAN,
 					JourneyRaptorPort.RouteBoundaryReceipt.observed(0)));
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
@@ -144,7 +144,7 @@ class JourneyCandidateCanaryServiceTest {
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 		when(raptorPort.plan(any(), any(), any(), any(), any())).thenReturn(new JourneyRaptorPort.PlanResult(
 			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN,
-			JourneyRaptorPort.RouteBoundaryReceipt.observed(0)));
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND, com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED)));
 		when(registry.candidateSnapshot()).thenReturn(new RouteBundleActivationRegistry.CandidateSnapshot(
 			2, identity("b"), evidence("b".repeat(64)), CAPTURED_AT, CAPTURED_AT));
 
@@ -162,7 +162,7 @@ class JourneyCandidateCanaryServiceTest {
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 		when(raptorPort.plan(any(), any(), any(), any(), any())).thenReturn(new JourneyRaptorPort.PlanResult(
 			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN,
-			JourneyRaptorPort.RouteBoundaryReceipt.observed(0)));
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND, com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED)));
 		when(registry.candidateSnapshot()).thenThrow(stale);
 
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));

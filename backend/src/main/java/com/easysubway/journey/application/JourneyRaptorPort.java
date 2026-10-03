@@ -14,12 +14,16 @@ public interface JourneyRaptorPort {
 		JourneyRequestMeasurement measurement
 	);
 
+	/**
+	 * #469: {@code stairFreeAlternative}는 후보가 있을 때만 있다. 후보가 없는 결과(경로 없음)는 null이다.
+	 */
 	record PlanResult(
 		String queryId,
 		List<JourneyCandidate> candidates,
 		ScanMetrics scanMetrics,
 		RouteBoundaryReceipt boundaryReceipt,
-		RouteMeasurementReceipt measurementReceipt
+		RouteMeasurementReceipt measurementReceipt,
+		JourneyAlternatives.StairFreeAlternative stairFreeAlternative
 	) {
 		public PlanResult {
 			Objects.requireNonNull(queryId, "queryId");
@@ -28,11 +32,21 @@ public interface JourneyRaptorPort {
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
 			measurementReceipt = Objects.requireNonNull(measurementReceipt, "measurementReceipt");
+			if (candidates.isEmpty() != (stairFreeAlternative == null)) {
+				throw new IllegalArgumentException("stairFreeAlternative must be present exactly when candidates exist");
+			}
 		}
 
+		/** 후보가 없는 결과. */
+		public PlanResult(String queryId, List<JourneyCandidate> candidates, ScanMetrics scanMetrics,
+			RouteBoundaryReceipt boundaryReceipt, RouteMeasurementReceipt measurementReceipt) {
+			this(queryId, candidates, scanMetrics, boundaryReceipt, measurementReceipt, null);
+		}
+
+		/** 후보가 없는 결과. */
 		public PlanResult(String queryId, List<JourneyCandidate> candidates, ScanMetrics scanMetrics,
 			RouteBoundaryReceipt boundaryReceipt) {
-			this(queryId, candidates, scanMetrics, boundaryReceipt, RouteMeasurementReceipt.unobservable());
+			this(queryId, candidates, scanMetrics, boundaryReceipt, RouteMeasurementReceipt.unobservable(), null);
 		}
 	}
 

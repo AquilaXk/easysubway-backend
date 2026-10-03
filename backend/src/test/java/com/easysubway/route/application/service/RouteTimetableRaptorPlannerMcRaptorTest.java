@@ -518,26 +518,26 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		var direct = new RouteTimetableRaptorPlanner.Label("s", 1500, 900, 1, List.of(), null, 0, (byte) 0, 0);
 
 		// 1. 상한 안이면 도착 순으로만 정렬한다.
-		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(mid, fast), standardTwo))
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(mid, fast), standardTwo).items())
 			.containsExactly(fast, mid);
 		// 2. 표준: 빠른 → 환승 적은.
-		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, slowStairFree, direct), standardTwo))
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, slowStairFree, direct), standardTwo).items())
 			.containsExactly(fast, direct);
 		// 3. 무단차 선호: 빠른 → 계단 없는.
-		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, slowStairFree, direct), preferTwo))
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, slowStairFree, direct), preferTwo).items())
 			.containsExactly(fast, slowStairFree);
 		// 4. 세 묶음을 모두 담고 도착 순으로 낸다.
-		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(direct, mid, fast, slowStairFree), standardThree))
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(direct, mid, fast, slowStairFree), standardThree).items())
 			.containsExactly(fast, slowStairFree, direct);
 		// 5. 계단 없는 라벨이 없으면 그 묶음은 비우고 남은 자리를 도착 순으로 채운다.
 		var stairsDirect = new RouteTimetableRaptorPlanner.Label("s", 1500, 900, 1, List.of(), null, 0, stairs, 0);
-		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, stairsDirect), preferTwo))
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(fast, mid, stairsDirect), preferTwo).items())
 			.containsExactly(fast, stairsDirect);
 		// 6. 빠른 경로가 환승도 가장 적으면 둘째 자리는 계단 없는 경로다.
 		var fastFew = new RouteTimetableRaptorPlanner.Label("s", 1000, 900, 1, List.of(), null, 0, stairs, 0);
 		var lateStairFree = new RouteTimetableRaptorPlanner.Label("s", 1200, 900, 2, List.of(), null, 0, (byte) 0, 0);
 		var lateStairs = new RouteTimetableRaptorPlanner.Label("s", 1100, 900, 3, List.of(), null, 0, stairs, 0);
-		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(lateStairs, lateStairFree, fastFew), standardTwo))
+		assertThat(RouteTimetableRaptorPlanner.composeAlternatives(List.of(lateStairs, lateStairFree, fastFew), standardTwo).items())
 			.containsExactly(fastFew, lateStairFree);
 	}
 

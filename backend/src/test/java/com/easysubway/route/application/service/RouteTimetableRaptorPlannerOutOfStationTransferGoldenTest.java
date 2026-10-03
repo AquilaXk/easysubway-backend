@@ -210,7 +210,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 				JourneyRequest.ConstraintMode.NONE,
 				1, 2, () -> false);
 			// profile frontier는 환승 여유가 더 큰 대안도 남기므로 point 결과를 포함하는지 본다.
-			var pointItineraries = planner.journeyItineraries(pointQuery, compiled).itineraries();
+			var pointItineraries = projectionOnly(planner.journeyItineraries(pointQuery, compiled).itineraries());
 			assertThat(pointItineraries).isNotEmpty();
 			assertThat(point.itineraries()).containsAll(pointItineraries);
 		});
@@ -528,5 +528,14 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		nodes.add(new PathwayNode(exit.toNodeId(), station, null, "EXIT"));
 		evidence.add(new RouteEdgeEvidence(key + "-entry-evidence", station, line, entry.id(), "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 		evidence.add(new RouteEdgeEvidence(key + "-exit-evidence", station, line, exit.id(), "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
+	}
+
+	/** #469: point 결과 구성 정보(대표 묶음·근거 없는 계단 없는 동선 여부)를 빼고 여정 투영만 비교한다. */
+	private static List<RouteTimetableRaptorPlanner.JourneyItinerary> projectionOnly(
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries
+	) {
+		return itineraries.stream().map(it -> new RouteTimetableRaptorPlanner.JourneyItinerary(it.serviceDate(),
+			it.plannedDepartureTime(), it.plannedArrivalTime(), it.realtimeDepartureTime(), it.realtimeArrivalTime(),
+			it.metrics(), it.legs(), it.persona(), null, false)).toList();
 	}
 }

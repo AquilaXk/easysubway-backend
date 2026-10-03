@@ -31,7 +31,8 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		RequestPolicy requestPolicy,
 		List<JourneyCandidate> journeys,
 		SafetyBoundary safetyBoundary,
-		RequestMeasurement requestMeasurement
+		RequestMeasurement requestMeasurement,
+		JourneyAlternatives.StairFreeAlternative stairFreeAlternative
 	) implements JourneyExecutionResult {
 		private static final Pattern REQUEST_ID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 
@@ -50,6 +51,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			Objects.requireNonNull(safetyBoundary, "safetyBoundary");
 			Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 			validateJourneys(journeys, requestPolicy);
+			validateAlternatives(journeys, Objects.requireNonNull(stairFreeAlternative, "stairFreeAlternative"));
 			validateSourcePolicy(sourceIdentity, requestPolicy, safetyBoundary);
 			validateMeasurement(requestId, bundleGeneration, sourceIdentity, requestMeasurement);
 		}
@@ -88,6 +90,28 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			}
 		}
 
+		/**
+		 * #469: 여정마다 대표 묶음 목록이 있고(채움 여정은 빈 목록) 각 묶음은 한 여정에만 붙는다. 계단 없는 경로가
+		 * 결과에 있다(INCLUDED)는 것은 계단 없는 여정이 있다는 것과 같다.
+		 */
+		private static void validateAlternatives(
+			List<JourneyCandidate> journeys, JourneyAlternatives.StairFreeAlternative stairFreeAlternative
+		) {
+			var seen = java.util.EnumSet.noneOf(JourneyAlternatives.Category.class);
+			for (JourneyCandidate journey : journeys) {
+				if (journey.alternativeCategories() == null) {
+					throw new IllegalArgumentException("search journey requires alternativeCategories");
+				}
+				for (JourneyAlternatives.Category category : journey.alternativeCategories()) {
+					if (!seen.add(category)) throw new IllegalArgumentException("alternative category is duplicated");
+				}
+			}
+			boolean anyStairFree = journeys.stream().anyMatch(journey -> journey.accessibility().stairFree());
+			if (anyStairFree != (stairFreeAlternative.status() == JourneyAlternatives.StairFreeStatus.INCLUDED)) {
+				throw new IllegalArgumentException("stairFreeAlternative status does not match journeys");
+			}
+		}
+
 		private static void validateSourcePolicy(SourceIdentity sourceIdentity, RequestPolicy requestPolicy,
 			SafetyBoundary safetyBoundary) {
 			if ((requestPolicy.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)
@@ -120,10 +144,10 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			Instant effectiveDepartureTime, LocalDate serviceDate, long bundleGeneration,
 			JourneyRaptorPort.ScanMetrics scanMetrics, SourceIdentity sourceIdentity,
 			RequestPolicy requestPolicy, List<JourneyCandidate> journeys,
-			SafetyBoundary safetyBoundary) {
+			SafetyBoundary safetyBoundary, JourneyAlternatives.StairFreeAlternative stairFreeAlternative) {
 			this(requestId, queryId, calculatedAt, validUntil, effectiveDepartureTime, serviceDate,
 				bundleGeneration, scanMetrics, sourceIdentity, requestPolicy, journeys, safetyBoundary,
-				RequestMeasurement.unobservable());
+				RequestMeasurement.unobservable(), stairFreeAlternative);
 		}
 
 		public String contractVersion() {

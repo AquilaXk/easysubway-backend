@@ -3,6 +3,7 @@ package com.easysubway.route.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
@@ -155,6 +156,70 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 			.containsExactly(tuple("08:28", true));
 	}
 
+	@Test
+	@DisplayName("#469 여정마다 대표 묶음을 붙이고 계단 없는 여정이 있으면 INCLUDED다")
+	void tagsCategoriesAndReportsIncluded() {
+		var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 3), timetable(true, true));
+
+		assertThat(plan.itineraries())
+			.extracting(RouteTimetableRaptorPlannerAccessibleAlternativesTest::arrival, JourneyItinerary::alternativeCategories)
+			.containsExactly(
+				tuple("08:26", java.util.Set.of(JourneyAlternatives.Category.FASTEST)),
+				tuple("08:47", java.util.Set.of(JourneyAlternatives.Category.STAIR_FREE)),
+				tuple("09:10", java.util.Set.of(JourneyAlternatives.Category.FEWEST_TRANSFERS)));
+		assertThat(plan.stairFreeStatus()).isEqualTo(JourneyAlternatives.StairFreeStatus.INCLUDED);
+	}
+
+	@Test
+	@DisplayName("#469 계단 없는 여정을 찾았지만 대안 1개라 자리가 없으면 OMITTED다")
+	void reportsOmittedWhenStairFreeJourneyHasNoSlot() {
+		var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1), timetable(true, true));
+
+		assertThat(plan.itineraries()).extracting(JourneyItinerary::alternativeCategories)
+			.containsExactly(java.util.Set.of(JourneyAlternatives.Category.FASTEST));
+		assertThat(plan.stairFreeStatus()).isEqualTo(JourneyAlternatives.StairFreeStatus.OMITTED);
+	}
+
+	@Test
+	@DisplayName("#469 계단 동선만 있는 환승이면 NOT_FOUND다")
+	void reportsNotFoundWhenOnlyStairPathwayExists() {
+		var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 3),
+			timetable(false, StepFreePathway.NONE));
+
+		assertThat(plan.itineraries()).extracting(RouteTimetableRaptorPlannerAccessibleAlternativesTest::hasStairs)
+			.containsExactly(true);
+		assertThat(plan.stairFreeStatus()).isEqualTo(JourneyAlternatives.StairFreeStatus.NOT_FOUND);
+	}
+
+	@Test
+	@DisplayName("#469 계단 없는 동선의 근거가 검증되지 않았으면 쓰지 않고 UNDETERMINED로 드러낸다")
+	void reportsUndeterminedWhenStepFreePathwayIsUnverified() {
+		var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 3),
+			timetable(false, StepFreePathway.UNVERIFIED));
+
+		assertThat(plan.itineraries())
+			.extracting(RouteTimetableRaptorPlannerAccessibleAlternativesTest::arrival,
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest::hasStairs,
+				JourneyItinerary::unconfirmedStairFreeTransfer)
+			.containsExactly(tuple("08:28", true, true));
+		assertThat(plan.stairFreeStatus()).isEqualTo(JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+	}
+
+	@Test
+	@DisplayName("#469 엄격 무단차는 근거 미검증 계단 없는 동선을 쓰지 않아 경로가 없다")
+	void strictStepFreeDoesNotUseUnverifiedPathway() {
+		var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 1, 3),
+			timetable(false, StepFreePathway.UNVERIFIED));
+
+		assertThat(plan.itineraries()).isEmpty();
+		assertThat(plan.stairFreeStatus()).isNull();
+	}
+
 	private static List<JourneyItinerary> plan(
 		JourneyRequest.MobilityProfile profile,
 		JourneyRequest.ConstraintMode constraint,
@@ -195,6 +260,13 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 	 * {@code includeStepFreePathway}가 false면 h에 계단 동선만 둔다.
 	 */
 	static RouteTimetable timetable(boolean includeThreeRideAndDirect, boolean includeStepFreePathway) {
+		return timetable(includeThreeRideAndDirect, includeStepFreePathway ? StepFreePathway.VERIFIED : StepFreePathway.NONE);
+	}
+
+	/** h의 계단 없는 동선: 없음, 검증됨, 근거 미검증(동선 검증 상태가 VERIFIED가 아님). */
+	enum StepFreePathway { NONE, VERIFIED, UNVERIFIED }
+
+	static RouteTimetable timetable(boolean includeThreeRideAndDirect, StepFreePathway stepFreePathway) {
 		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
 		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
 		List<LoadRouteTimetablePort.TransferRule> rules = new ArrayList<>();
@@ -205,8 +277,10 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 		nodes.add(new LoadRouteTimetablePort.PathwayNode("p-h-L2", "h", "L2", "PLATFORM"));
 		evidence.add(evidence("ev-h-stairs", "h", "L2", hubStairs.id()));
 		String strictEdge = null;
-		if (includeStepFreePathway) {
-			var hubStepFree = edge("e-h-step-free", "p-h-L1", "p-h-L2", 600, false);
+		if (stepFreePathway != StepFreePathway.NONE) {
+			var hubStepFree = new LoadRouteTimetablePort.PathwayEdge("e-h-step-free", "p-h-L1", "p-h-L2", 60, 600, false,
+				false, 100, "AVAILABLE", "OFFICIAL_SOURCE",
+				stepFreePathway == StepFreePathway.VERIFIED ? "VERIFIED" : "UNVERIFIED");
 			edges.add(hubStepFree);
 			evidence.add(evidence("ev-h-step-free", "h", "L2", hubStepFree.id()));
 			strictEdge = hubStepFree.id();

@@ -301,9 +301,17 @@ class JourneyV3ContractTest {
 		Map<String, Object> document = openApi();
 		assertClosedSchema(document, "JourneySearchSuccess",
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"),
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys",
+				"stairFreeAlternative"),
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"));
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys",
+				"stairFreeAlternative"));
+		// #469: 계단 없는 경로 묶음 결과와 시설 가동 정보 적용 여부.
+		assertClosedSchema(document, "JourneyStairFreeAlternative",
+			Set.of("status", "facilityStatus"), Set.of("status", "facilityStatus"));
+		assertEnum(property(document, "JourneyStairFreeAlternative", "status"),
+			"INCLUDED", "OMITTED", "NOT_FOUND", "UNDETERMINED");
+		assertEnum(property(document, "JourneyStairFreeAlternative", "facilityStatus"), "APPLIED", "UNOBSERVED");
 		assertEnum(property(document, "JourneySearchSuccess", "contractVersion"), "JOURNEY_SEARCH_V3");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceTimezone"), "Asia/Seoul");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceDayCutoff"), "03:00");
@@ -320,7 +328,10 @@ class JourneyV3ContractTest {
 		Set<String> journeyFields = Set.of("journeyId", "status", "planSource", "plannedDepartureTime",
 			"plannedArrivalTime", "realtimeDepartureTime", "realtimeArrivalTime", "durationSeconds",
 			"transferCount", "walkingDistanceMeters", "timeSource", "accessibility", "fare", "legs");
-		assertClosedSchema(document, "Journey", journeyFields, journeyFields);
+		// #469: alternativeCategories는 검색 응답 여정에만 있어 필수가 아니다(프로필 응답 여정은 objectiveTags).
+		Set<String> journeyProperties = new java.util.HashSet<>(journeyFields);
+		journeyProperties.add("alternativeCategories");
+		assertClosedSchema(document, "Journey", journeyFields, journeyProperties);
 		assertEnum(property(document, "Journey", "status"), "FOUND");
 		assertEnum(property(document, "Journey", "planSource"), "SERVER_TIMETABLE_RAPTOR");
 		assertEnum(property(document, "Journey", "timeSource"), "TIMETABLE", "REALTIME");

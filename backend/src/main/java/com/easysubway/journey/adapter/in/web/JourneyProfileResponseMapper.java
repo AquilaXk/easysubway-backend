@@ -227,7 +227,7 @@ final class JourneyProfileResponseMapper {
 		return new JourneyCandidate(candidate.candidateId(), candidate.readyAt(), candidate.arrivalAtDestination(), null, null,
 			Duration.between(candidate.readyAt(), candidate.arrivalAtDestination()).toSeconds(), transfers, distance,
 			JourneyCandidate.TimeSource.TIMETABLE, new JourneyCandidate.Accessibility(!stairs, List.of("ACCESSIBILITY_VERIFIED")),
-			itinerary.fare(), legs);
+			itinerary.fare(), legs, null);
 	}
 
 	private sealed interface Projection permits Departure, ArriveBy, LastConnection {

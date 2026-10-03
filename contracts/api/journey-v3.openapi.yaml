@@ -969,6 +969,7 @@ components:
         - sourceIdentity
         - requestPolicy
         - journeys
+        - stairFreeAlternative
       properties:
         contractVersion:
           type: string
@@ -1014,9 +1015,36 @@ components:
             before the fewest-transfer journey). Duplicates are skipped, remaining slots are filled
             with the other Pareto journeys in arrival order, and no stair-free journey is reported when
             none exists. The array is ordered by arrival, then transfer count, so the first journey is
-            the fastest.
+            the fastest. Each journey names the groups it represents in alternativeCategories.
           items:
             $ref: "#/components/schemas/Journey"
+        stairFreeAlternative:
+          $ref: "#/components/schemas/JourneyStairFreeAlternative"
+    JourneyStairFreeAlternative:
+      type: object
+      additionalProperties: false
+      description: >-
+        Outcome of the stair-free group for this search. Stair facts come only from verified transfer
+        pathways; a pathway without verified evidence is never used and never reported as stair-free.
+      required: [status, facilityStatus]
+      properties:
+        status:
+          type: string
+          enum: [INCLUDED, OMITTED, NOT_FOUND, UNDETERMINED]
+          description: >-
+            INCLUDED: journeys contain a journey whose accessibility.stairFree is true.
+            OMITTED: a stair-free journey was found but alternativeCount slots went to the fastest and
+            fewest-transfer journeys. NOT_FOUND: no stair-free journey was found and no stairs transfer of the
+            returned journeys has an unverified stair-free pathway. UNDETERMINED: no stair-free journey was
+            found and at least one stairs transfer of the returned journeys has a stair-free pathway that was
+            not used because its evidence is not verified, so a stair-free trip cannot be confirmed.
+        facilityStatus:
+          type: string
+          enum: [APPLIED, UNOBSERVED]
+          description: >-
+            APPLIED: a fresh facility operating view was applied and out-of-service pathways were excluded.
+            UNOBSERVED: no fresh facility operating view was available, so the current operation of elevators on
+            stair-free journeys is not confirmed.
     JourneyProfileSuccess:
       oneOf:
         - $ref: "#/components/schemas/DepartureProfileSuccess"
@@ -1543,6 +1571,19 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/JourneyLeg"
+        alternativeCategories:
+          type: array
+          uniqueItems: true
+          maxItems: 3
+          description: >-
+            Search responses only (absent in profile responses, which use objectiveTags). Groups this journey
+            represents among the found Pareto journeys: FASTEST (earliest arrival), FEWEST_TRANSFERS (fewest
+            transfers, then earliest arrival), STAIR_FREE (earliest journey without a stairs transfer). Exactly one
+            journey carries FASTEST; each group appears on at most one journey; an empty array marks a journey that
+            fills a remaining slot.
+          items:
+            type: string
+            enum: [FASTEST, FEWEST_TRANSFERS, STAIR_FREE]
     JourneyFare:
       type: object
       additionalProperties: false
