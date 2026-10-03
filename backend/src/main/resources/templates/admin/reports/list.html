@@ -223,7 +223,7 @@
 				<tbody>
 				<tr th:if="${reports.isEmpty()}">
 					<td class="empty" colspan="11">
-						<div th:replace="~{admin/fragments/empty-state :: panel('확인할 신고가 없습니다.', null)}"></div>
+						<div th:replace="~{admin/fragments/empty-state :: panel('확인할 신고가 없습니다.', '검색어·상태·기간 필터를 조정해 보세요.')}"></div>
 					</td>
 				</tr>
 				<tr class="report-row" th:each="report : ${reports}">
