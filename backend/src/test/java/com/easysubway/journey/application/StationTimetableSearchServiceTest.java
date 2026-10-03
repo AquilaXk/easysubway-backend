@@ -732,14 +732,21 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
-	void sourceDirectionNameIsKeptOnlyWhenEveryDepartureOfTheGroupCarriesTheSameValue() {
+	void sourceDirectionNameIsKeptOnlyWhenEveryDepartureOfTheGroupCarriesTheSameValueAndMixedNamingFailsClosed() {
 		RouteTimetable named = timetable();
 		assertThat(service(snapshot(named, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
 			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement()
 			.satisfies(group -> assertThat(group.directionName()).isEqualTo("direction"));
 
+		// #476 F6: 같은 다음 정차역 그룹에 이름 있는 열차와 없는 열차가 섞이면 이름을 숨기지 않고 원천 불일치로 실패한다.
 		RouteTimetable partial = withSecondRoute(named, "");
-		assertThat(service(snapshot(partial, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+		assertFailure(service(snapshot(partial, NOW.plusSeconds(60))), request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
+
+		RouteTimetable unnamed = withSecondRoute(new RouteTimetable(named.serviceCalendars(), named.serviceCalendarDates(),
+			List.of(new TransitRoute("route", "line", "L", "line", "", "Asia/Seoul")), named.transitTrips(), named.transitStopTimes(),
+			named.transitFrequencies(), named.officialFares(), named.feedEndDate(), named.routeAccessData()), "");
+		assertThat(service(snapshot(unnamed, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
 			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement()
 			.satisfies(group -> assertThat(group.directionName()).isNull());
 

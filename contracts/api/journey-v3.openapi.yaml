@@ -890,7 +890,8 @@ components:
           nullable: true
           description: >-
             Official direction name from the timetable source. Non-null only when every departure in the group
-            carries the same source value; null otherwise. Never synthesized.
+            carries the same source value; null when none carries one. A group mixing named and unnamed or
+            differently named departures is rejected as TIMETABLE_IDENTITY_MISMATCH. Never synthesized.
         departures:
           type: array
           items:

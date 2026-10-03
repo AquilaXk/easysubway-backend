@@ -342,21 +342,23 @@ public final class StationTimetableSearchService {
 			.toList();
 	}
 
-	// 원천 방면 이름은 그룹의 모든 출발이 같은 이름을 가질 때만 싣는다. 일부만 있으면 싣지 않고(추정 금지),
-	// 같은 다음 정차역에 서로 다른 이름이 붙으면 원천 불일치다.
+	// #476 설계 근거(F6): 원천 방면 이름은 그룹의 모든 출발이 같은 이름을 가질 때만 싣고, 모두 없으면 null이다.
+	// 같은 다음 정차역 그룹에 이름 있는 열차와 없는 열차가 섞이거나 서로 다른 이름이 붙으면, 어느 쪽을 골라도 일부 열차의
+	// 원천 값을 숨기거나 덮게 되므로 고르지 않고 원천 불일치로 실패한다(일관성 우선, 추정 금지).
 	private static String groupDirectionName(List<Departure> departures) {
 		Set<String> names = new HashSet<>();
 		boolean missing = false;
 		for (Departure departure : departures) {
 			if (departure.directionName() == null) missing = true; else names.add(departure.directionName());
 		}
-		if (names.size() > 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-		// 그룹에는 출발이 하나 이상 있으므로 빠진 이름이 없으면 이름은 정확히 하나다.
-		return missing ? null : names.iterator().next();
+		if (names.size() > 1 || missing && !names.isEmpty()) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
+		return names.isEmpty() ? null : names.iterator().next();
 	}
 
-	// 같은 시각·다음 정차역·운행 유형·종착역의 출발이 둘이면 원천 중복이다. 종착역이 다르면 서로 다른 열차다
-	// (seq126 실측: 1호선 신도림에서 광명행과 인천행이 같은 초에 같은 다음 역으로 출발한다).
+	// #476 설계 근거(F6): 중복 출발 키는 (다음 정차역, 서비스일, 출발 초, 운행 유형, 운행 등급, 종착역)이다.
+	// seq126 실측에서 1호선 7개 역(신도림 등)은 광명행과 인천행처럼 서로 다른 열차가 같은 초에 같은 다음 역으로 출발한다.
+	// 종착역을 키에서 빼면 이 실제 열차들이 원천 중복으로 오판돼 역 전체가 503이 된다. 대가로 종착역만 다른 복제 행은
+	// 중복으로 잡지 못하지만, 종착역까지 같은 행은 계속 원천 중복으로 실패시킨다.
 	private static void validateDepartureOrderAndIdentity(List<Departure> departures) {
 		Set<String> unique = new HashSet<>();
 		for (Departure departure : departures) {
