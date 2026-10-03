@@ -55,6 +55,10 @@
     {
       "file": "V76__facility_operational_status.sql",
       "sha256": "421a6c2c2afac16e68833b8a9e5cc07bfa141b57bba812391fbb628496b9d9c8"
+    },
+    {
+      "file": "V77__datapack_release_channel_observations.sql",
+      "sha256": "b519d72d1b5c03ee43a345a9709e6a7aa5e2b6eead79080af71deab26b50bc81"
     }
   ],
   "allowlist": [
