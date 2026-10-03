@@ -1,436 +1,437 @@
 {
-  "schemaVersion" : 1,
-  "method" : {
-    "warmupRounds" : 2,
-    "measuredRounds" : 5,
-    "aggregation" : "median over measured rounds of per-round nearest-rank p50 and p99",
-    "profileLimits" : {
-      "maxEstimatedWork" : 5000000,
-      "maxProfileBreakpoints" : 64,
-      "maxDestinationProfileLabels" : 64,
-      "maxLabelsPerState" : 64
+  "schemaVersion": 1,
+  "method": {
+    "warmupRounds": 2,
+    "measuredRounds": 5,
+    "aggregation": "median over measured rounds of per-round nearest-rank p50 and p99",
+    "profileLimits": {
+      "maxEstimatedWork": 5000000,
+      "maxLabelsPerState": 64,
+      "maxDestinationProfileLabels": 64,
+      "maxProfileBreakpoints": 64
     },
-    "java" : "Eclipse Adoptium 21.0.8",
-    "arch" : "aarch64",
-    "processors" : 12
+    "java": "Eclipse Adoptium 21.0.11",
+    "arch": "amd64",
+    "processors": 4,
+    "baselineSource": "median of 3 Backend CI measurements (run 37089815789 attempts 1-3)"
   },
-  "calibrationNanos" : 100330000,
-  "workloads" : {
-    "metro-grid-v1" : {
-      "bundle" : {
-        "sha256" : "15e4d2e58402fad29ddda99a26d29e7a875c037efb6c731e5e634786780b7492",
-        "stations" : 192,
-        "trips" : 7298,
-        "stopTimes" : 110384,
-        "transferRules" : 128
+  "calibrationNanos": 97955913,
+  "workloads": {
+    "metro-grid-v1": {
+      "bundle": {
+        "sha256": "15e4d2e58402fad29ddda99a26d29e7a875c037efb6c731e5e634786780b7492",
+        "stations": 192,
+        "trips": 7298,
+        "stopTimes": 110384,
+        "transferRules": 128
       },
-      "querySet" : {
-        "id" : "metro-grid-queries-v1",
-        "count" : 160,
-        "sha256" : "f769c2a2ca17d48057d30d12c3b7b668b49f06813861c5d2e9ef519c860efeb3"
+      "querySet": {
+        "id": "metro-grid-queries-v1",
+        "count": 160,
+        "sha256": "f769c2a2ca17d48057d30d12c3b7b668b49f06813861c5d2e9ef519c860efeb3"
       },
-      "compile" : {
-        "nanos" : 50674792,
-        "allocatedBytes" : 27382448,
-        "retainedBytes" : 3232728
+      "compile": {
+        "nanos": 116218635,
+        "allocatedBytes": 27382624,
+        "retainedBytes": 3232728
       },
-      "modes" : {
-        "DEPART_AT" : {
-          "queries" : 160,
-          "p50Nanos" : 186250,
-          "p99Nanos" : 334959,
-          "samplesPerRound" : 160,
-          "allocatedBytesPerQuery" : 43091,
-          "work" : {
-            "expandedRoutes" : 12540,
-            "expandedTransfers" : 73280,
-            "expandedTrips" : 7157,
-            "itineraries" : 169
+      "modes": {
+        "DEPART_AT": {
+          "queries": 160,
+          "p50Nanos": 385719,
+          "p99Nanos": 967480,
+          "samplesPerRound": 160,
+          "allocatedBytesPerQuery": 44050,
+          "work": {
+            "expandedRoutes": 12540,
+            "expandedTransfers": 73280,
+            "expandedTrips": 7157,
+            "itineraries": 169
           }
         }
       },
-      "candidatePolicyReplay" : {
-        "source" : "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
-        "limits" : {
-          "maxEstimatedWork" : 1000,
-          "maxProfileBreakpoints" : 32,
-          "maxDestinationProfileLabels" : 16,
-          "maxLabelsPerState" : 8
+      "candidatePolicyReplay": {
+        "source": "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
+        "limits": {
+          "maxEstimatedWork": 1000,
+          "maxLabelsPerState": 8,
+          "maxDestinationProfileLabels": 16,
+          "maxProfileBreakpoints": 32
         },
-        "modes" : {
-          "ARRIVE_BY" : {
-            "failClosed" : 12,
-            "failClosed.MAX_ESTIMATED_WORK" : 12,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "queries" : 12,
-            "workConsumed" : 12012
+        "modes": {
+          "ARRIVE_BY": {
+            "failClosed": 12,
+            "failClosed.MAX_ESTIMATED_WORK": 12,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "queries": 12,
+            "workConsumed": 12012
           },
-          "DEPART_BETWEEN" : {
-            "failClosed" : 12,
-            "failClosed.MAX_ESTIMATED_WORK" : 12,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.FORWARD_STATE_DOMINANCE_V1" : 0,
-            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
-            "queries" : 12,
-            "workConsumed" : 12012
+          "DEPART_BETWEEN": {
+            "failClosed": 12,
+            "failClosed.MAX_ESTIMATED_WORK": 12,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.FORWARD_STATE_DOMINANCE_V1": 0,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 0,
+            "queries": 12,
+            "workConsumed": 12012
           },
-          "LAST_CONNECTION" : {
-            "failClosed" : 6,
-            "failClosed.MAX_ESTIMATED_WORK" : 6,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "queries" : 6,
-            "workConsumed" : 6006
-          }
-        }
-      }
-    },
-    "district-grid-v1" : {
-      "bundle" : {
-        "sha256" : "69d0b59fc4c05600d0080a82c0bd038fec4ee10edc80844f367df5efb3ff32f3",
-        "stations" : 48,
-        "trips" : 1634,
-        "stopTimes" : 12472,
-        "transferRules" : 32
-      },
-      "querySet" : {
-        "id" : "district-grid-queries-v1",
-        "count" : 130,
-        "sha256" : "8cf1d4028a6c5594db0ffd4e3ae5ea2b772cd6ddd59d5ff77201f8de0363f37a"
-      },
-      "compile" : {
-        "nanos" : 6328834,
-        "allocatedBytes" : 4449760,
-        "retainedBytes" : 545608
-      },
-      "modes" : {
-        "DEPART_AT" : {
-          "queries" : 100,
-          "p50Nanos" : 35875,
-          "p99Nanos" : 67750,
-          "samplesPerRound" : 100,
-          "allocatedBytesPerQuery" : 11346,
-          "work" : {
-            "expandedRoutes" : 3790,
-            "expandedTransfers" : 10891,
-            "expandedTrips" : 1766,
-            "itineraries" : 105
-          }
-        },
-        "ARRIVE_BY" : {
-          "queries" : 12,
-          "p50Nanos" : 39039500,
-          "p99Nanos" : 42314167,
-          "samplesPerRound" : 12,
-          "allocatedBytesPerQuery" : 12996468,
-          "work" : {
-            "failClosed" : 12,
-            "failClosed.MAX_ESTIMATED_WORK" : 12,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 813968,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "workConsumed" : 60000012
-          }
-        },
-        "DEPART_BETWEEN" : {
-          "queries" : 12,
-          "p50Nanos" : 4130750,
-          "p99Nanos" : 8238875,
-          "samplesPerRound" : 12,
-          "allocatedBytesPerQuery" : 6273487,
-          "work" : {
-            "failClosed" : 12,
-            "failClosed.MAX_LABELS_PER_STATE" : 12,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 1,
-            "peakStateLabels" : 65,
-            "profileBreakpoints" : 69,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 12,
-            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.FORWARD_STATE_DOMINANCE_V1" : 215498,
-            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 9016,
-            "workConsumed" : 853513
-          }
-        },
-        "LAST_CONNECTION" : {
-          "queries" : 6,
-          "p50Nanos" : 44110917,
-          "p99Nanos" : 48603250,
-          "samplesPerRound" : 6,
-          "allocatedBytesPerQuery" : 12476968,
-          "work" : {
-            "failClosed" : 6,
-            "failClosed.MAX_ESTIMATED_WORK" : 4,
-            "failClosed.MAX_LABELS_PER_STATE" : 2,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 65,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 2,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 266884,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "workConsumed" : 20145127
-          }
-        }
-      },
-      "candidatePolicyReplay" : {
-        "source" : "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
-        "limits" : {
-          "maxEstimatedWork" : 1000,
-          "maxProfileBreakpoints" : 32,
-          "maxDestinationProfileLabels" : 16,
-          "maxLabelsPerState" : 8
-        },
-        "modes" : {
-          "ARRIVE_BY" : {
-            "failClosed" : 12,
-            "failClosed.MAX_ESTIMATED_WORK" : 12,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "queries" : 12,
-            "workConsumed" : 12012
-          },
-          "DEPART_BETWEEN" : {
-            "failClosed" : 12,
-            "failClosed.MAX_ESTIMATED_WORK" : 12,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.FORWARD_STATE_DOMINANCE_V1" : 0,
-            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
-            "queries" : 12,
-            "workConsumed" : 12012
-          },
-          "LAST_CONNECTION" : {
-            "failClosed" : 6,
-            "failClosed.MAX_ESTIMATED_WORK" : 6,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 0,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "queries" : 6,
-            "workConsumed" : 6006
+          "LAST_CONNECTION": {
+            "failClosed": 6,
+            "failClosed.MAX_ESTIMATED_WORK": 6,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "queries": 6,
+            "workConsumed": 6006
           }
         }
       }
     },
-    "line4-corridor-slice" : {
-      "bundle" : {
-        "sha256" : "27c4cf3f27c6e9ce4960515e33a303c5b3e82114e9dd7ad9887b23d6aaed16fd",
-        "stations" : 48,
-        "trips" : 3,
-        "stopTimes" : 141,
-        "transferRules" : 0
+    "district-grid-v1": {
+      "bundle": {
+        "sha256": "69d0b59fc4c05600d0080a82c0bd038fec4ee10edc80844f367df5efb3ff32f3",
+        "stations": 48,
+        "trips": 1634,
+        "stopTimes": 12472,
+        "transferRules": 32
       },
-      "querySet" : {
-        "id" : "line4-corridor-queries-v1",
-        "count" : 400,
-        "sha256" : "5232afcee0d88293e8a4d0e1a899677dfd5ddd9bf9b7aeb8c0e70f9364cc813d"
+      "querySet": {
+        "id": "district-grid-queries-v1",
+        "count": 130,
+        "sha256": "8cf1d4028a6c5594db0ffd4e3ae5ea2b772cd6ddd59d5ff77201f8de0363f37a"
       },
-      "compile" : {
-        "nanos" : 314500,
-        "allocatedBytes" : 118056,
-        "retainedBytes" : 25048
+      "compile": {
+        "nanos": 17205806,
+        "allocatedBytes": 4433328,
+        "retainedBytes": 548616
       },
-      "modes" : {
-        "DEPART_AT" : {
-          "queries" : 100,
-          "p50Nanos" : 52000,
-          "p99Nanos" : 104667,
-          "samplesPerRound" : 100,
-          "allocatedBytesPerQuery" : 31542,
-          "work" : {
-            "expandedRoutes" : 400,
-            "expandedTransfers" : 0,
-            "expandedTrips" : 198,
-            "itineraries" : 100
+      "modes": {
+        "DEPART_AT": {
+          "queries": 100,
+          "p50Nanos": 70380,
+          "p99Nanos": 166583,
+          "samplesPerRound": 100,
+          "allocatedBytesPerQuery": 11370,
+          "work": {
+            "expandedRoutes": 3790,
+            "expandedTransfers": 10891,
+            "expandedTrips": 1766,
+            "itineraries": 105
           }
         },
-        "ARRIVE_BY" : {
-          "queries" : 100,
-          "p50Nanos" : 130375,
-          "p99Nanos" : 196042,
-          "samplesPerRound" : 100,
-          "allocatedBytesPerQuery" : 58747,
-          "work" : {
-            "failClosed" : 0,
-            "found" : 93,
-            "itineraries" : 245,
-            "peakDestinationLabels" : 3,
-            "peakStateLabels" : 1,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 23854,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 8,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "workConsumed" : 1196523
+        "ARRIVE_BY": {
+          "queries": 12,
+          "p50Nanos": 64001556,
+          "p99Nanos": 68937423,
+          "samplesPerRound": 12,
+          "allocatedBytesPerQuery": 12996468,
+          "work": {
+            "failClosed": 12,
+            "failClosed.MAX_ESTIMATED_WORK": 12,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 813968,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "workConsumed": 60000012
           }
         },
-        "DEPART_BETWEEN" : {
-          "queries" : 100,
-          "p50Nanos" : 25417,
-          "p99Nanos" : 103333,
-          "samplesPerRound" : 100,
-          "allocatedBytesPerQuery" : 107072,
-          "work" : {
-            "failClosed" : 0,
-            "found" : 100,
-            "itineraries" : 114,
-            "peakDestinationLabels" : 1,
-            "peakStateLabels" : 4,
-            "profileBreakpoints" : 121,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 19,
-            "pruning.FORWARD_STATE_DOMINANCE_V1" : 4207,
-            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 5086,
-            "workConsumed" : 20145
+        "DEPART_BETWEEN": {
+          "queries": 12,
+          "p50Nanos": 6683848,
+          "p99Nanos": 13195362,
+          "samplesPerRound": 12,
+          "allocatedBytesPerQuery": 6272621,
+          "work": {
+            "failClosed": 12,
+            "failClosed.MAX_LABELS_PER_STATE": 12,
+            "itineraries": 0,
+            "peakDestinationLabels": 1,
+            "peakStateLabels": 65,
+            "profileBreakpoints": 69,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 12,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.FORWARD_STATE_DOMINANCE_V1": 215498,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 9016,
+            "workConsumed": 853513
           }
         },
-        "LAST_CONNECTION" : {
-          "queries" : 100,
-          "p50Nanos" : 170375,
-          "p99Nanos" : 204708,
-          "samplesPerRound" : 100,
-          "allocatedBytesPerQuery" : 69998,
-          "work" : {
-            "failClosed" : 0,
-            "found" : 100,
-            "itineraries" : 290,
-            "peakDestinationLabels" : 3,
-            "peakStateLabels" : 1,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 30122,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 10,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "workConsumed" : 1516140
+        "LAST_CONNECTION": {
+          "queries": 6,
+          "p50Nanos": 80135952,
+          "p99Nanos": 87656851,
+          "samplesPerRound": 6,
+          "allocatedBytesPerQuery": 12549640,
+          "work": {
+            "failClosed": 6,
+            "failClosed.MAX_ESTIMATED_WORK": 4,
+            "failClosed.MAX_LABELS_PER_STATE": 2,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 65,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 2,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 266884,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "workConsumed": 20145127
           }
         }
       },
-      "candidatePolicyReplay" : {
-        "source" : "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
-        "limits" : {
-          "maxEstimatedWork" : 1000,
-          "maxProfileBreakpoints" : 32,
-          "maxDestinationProfileLabels" : 16,
-          "maxLabelsPerState" : 8
+      "candidatePolicyReplay": {
+        "source": "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
+        "limits": {
+          "maxEstimatedWork": 1000,
+          "maxLabelsPerState": 8,
+          "maxDestinationProfileLabels": 16,
+          "maxProfileBreakpoints": 32
         },
-        "modes" : {
-          "ARRIVE_BY" : {
-            "failClosed" : 11,
-            "failClosed.MAX_ESTIMATED_WORK" : 11,
-            "found" : 0,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 0,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 162,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "queries" : 12,
-            "workConsumed" : 11161
+        "modes": {
+          "ARRIVE_BY": {
+            "failClosed": 12,
+            "failClosed.MAX_ESTIMATED_WORK": 12,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "queries": 12,
+            "workConsumed": 12012
           },
-          "DEPART_BETWEEN" : {
-            "failClosed" : 0,
-            "found" : 12,
-            "itineraries" : 15,
-            "peakDestinationLabels" : 1,
-            "peakStateLabels" : 4,
-            "profileBreakpoints" : 16,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.FORWARD_DESTINATION_DOMINANCE_V1" : 2,
-            "pruning.FORWARD_STATE_DOMINANCE_V1" : 727,
-            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 660,
-            "queries" : 12,
-            "workConsumed" : 2971
+          "DEPART_BETWEEN": {
+            "failClosed": 12,
+            "failClosed.MAX_ESTIMATED_WORK": 12,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.FORWARD_STATE_DOMINANCE_V1": 0,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 0,
+            "queries": 12,
+            "workConsumed": 12012
           },
-          "LAST_CONNECTION" : {
-            "failClosed" : 6,
-            "failClosed.MAX_ESTIMATED_WORK" : 6,
-            "itineraries" : 0,
-            "peakDestinationLabels" : 0,
-            "peakStateLabels" : 1,
-            "profileBreakpoints" : 0,
-            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1" : 0,
-            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1" : 69,
-            "pruning.REVERSE_DESTINATION_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "pruning.REVERSE_STATE_DOMINANCE_V1" : 0,
-            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1" : 0,
-            "queries" : 6,
-            "workConsumed" : 6006
+          "LAST_CONNECTION": {
+            "failClosed": 6,
+            "failClosed.MAX_ESTIMATED_WORK": 6,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 0,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "queries": 6,
+            "workConsumed": 6006
+          }
+        }
+      }
+    },
+    "line4-corridor-slice": {
+      "bundle": {
+        "sha256": "27c4cf3f27c6e9ce4960515e33a303c5b3e82114e9dd7ad9887b23d6aaed16fd",
+        "stations": 48,
+        "trips": 3,
+        "stopTimes": 141,
+        "transferRules": 0
+      },
+      "querySet": {
+        "id": "line4-corridor-queries-v1",
+        "count": 400,
+        "sha256": "5232afcee0d88293e8a4d0e1a899677dfd5ddd9bf9b7aeb8c0e70f9364cc813d"
+      },
+      "compile": {
+        "nanos": 1295022,
+        "allocatedBytes": 118232,
+        "retainedBytes": 29256
+      },
+      "modes": {
+        "DEPART_AT": {
+          "queries": 100,
+          "p50Nanos": 108774,
+          "p99Nanos": 207455,
+          "samplesPerRound": 100,
+          "allocatedBytesPerQuery": 31566,
+          "work": {
+            "expandedRoutes": 400,
+            "expandedTransfers": 0,
+            "expandedTrips": 198,
+            "itineraries": 100
+          }
+        },
+        "ARRIVE_BY": {
+          "queries": 100,
+          "p50Nanos": 265832,
+          "p99Nanos": 668332,
+          "samplesPerRound": 100,
+          "allocatedBytesPerQuery": 62993,
+          "work": {
+            "failClosed": 0,
+            "found": 93,
+            "itineraries": 245,
+            "peakDestinationLabels": 3,
+            "peakStateLabels": 1,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 23854,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 8,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "workConsumed": 1196523
+          }
+        },
+        "DEPART_BETWEEN": {
+          "queries": 100,
+          "p50Nanos": 80566,
+          "p99Nanos": 308316,
+          "samplesPerRound": 100,
+          "allocatedBytesPerQuery": 106945,
+          "work": {
+            "failClosed": 0,
+            "found": 100,
+            "itineraries": 114,
+            "peakDestinationLabels": 1,
+            "peakStateLabels": 4,
+            "profileBreakpoints": 121,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1": 19,
+            "pruning.FORWARD_STATE_DOMINANCE_V1": 4207,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 5086,
+            "workConsumed": 20145
+          }
+        },
+        "LAST_CONNECTION": {
+          "queries": 100,
+          "p50Nanos": 308012,
+          "p99Nanos": 551861,
+          "samplesPerRound": 100,
+          "allocatedBytesPerQuery": 73336,
+          "work": {
+            "failClosed": 0,
+            "found": 100,
+            "itineraries": 290,
+            "peakDestinationLabels": 3,
+            "peakStateLabels": 1,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 30122,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 10,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "workConsumed": 1516140
+          }
+        }
+      },
+      "candidatePolicyReplay": {
+        "source": "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
+        "limits": {
+          "maxEstimatedWork": 1000,
+          "maxLabelsPerState": 8,
+          "maxDestinationProfileLabels": 16,
+          "maxProfileBreakpoints": 32
+        },
+        "modes": {
+          "ARRIVE_BY": {
+            "failClosed": 11,
+            "failClosed.MAX_ESTIMATED_WORK": 11,
+            "found": 0,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 0,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 162,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "queries": 12,
+            "workConsumed": 11161
+          },
+          "DEPART_BETWEEN": {
+            "failClosed": 0,
+            "found": 12,
+            "itineraries": 15,
+            "peakDestinationLabels": 1,
+            "peakStateLabels": 4,
+            "profileBreakpoints": 16,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.FORWARD_DESTINATION_DOMINANCE_V1": 2,
+            "pruning.FORWARD_STATE_DOMINANCE_V1": 727,
+            "pruning.FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 660,
+            "queries": 12,
+            "workConsumed": 2971
+          },
+          "LAST_CONNECTION": {
+            "failClosed": 6,
+            "failClosed.MAX_ESTIMATED_WORK": 6,
+            "itineraries": 0,
+            "peakDestinationLabels": 0,
+            "peakStateLabels": 1,
+            "profileBreakpoints": 0,
+            "pruning.FAIL_CLOSED_FRONTIER_CAPACITY_V1": 0,
+            "pruning.HARD_TRANSFER_ACCESS_ELIGIBILITY_V1": 69,
+            "pruning.REVERSE_DESTINATION_DOMINANCE_V1": 0,
+            "pruning.REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "pruning.REVERSE_STATE_DOMINANCE_V1": 0,
+            "pruning.REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1": 0,
+            "queries": 6,
+            "workConsumed": 6006
           }
         }
       }
     }
   },
-  "tolerances" : {
-    "workCounterRelative" : 0.02,
-    "allocatedBytesRegression" : 0.3,
-    "retainedBytesRegression" : 0.3,
-    "normalizedLatencyFactor" : 2.5,
-    "normalizedCompileFactor" : 2.5,
-    "stablePointP50Factor" : 1.5
+  "tolerances": {
+    "workCounterRelative": 0.02,
+    "allocatedBytesRegression": 0.3,
+    "retainedBytesRegression": 0.3,
+    "normalizedLatencyFactor": 2.5,
+    "normalizedCompileFactor": 2.5,
+    "stablePointP50Factor": 1.5
   }
 }

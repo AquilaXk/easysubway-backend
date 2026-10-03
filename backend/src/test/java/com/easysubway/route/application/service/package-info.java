@@ -114,33 +114,35 @@
  *   검사가 이미 거른 조건만 바꾸는 변이로, 결과가 같은 동치 변이다. 상세는 #460 PR에 남긴다.</li>
  * </ul>
  *
- * <h2>6. 측정 결과(기준선 = Backend CI 러너 ubuntu-latest amd64 4 vCPU, Adoptium 21.0.11, 새 JVM에서 예열 2회·측정 5회 중앙값)</h2>
- * <p>결정적 카운터와 할당량은 로컬(aarch64)과 CI가 같았다. 벽시계는 CI가 1.4~4.4배 느리다(아래 7절).</p>
+ * <h2>6. 측정 결과(기준선 = Backend CI 러너 ubuntu-latest amd64 4 vCPU, Adoptium 21.0.11, 같은 커밋 CI 3회 측정의 값별 중앙값,
+ * 각 측정은 새 JVM에서 예열 2회·측정 5회)</h2>
+ * <p>결정적 카운터와 운영 정책 재현 결과는 로컬(aarch64)과 CI 3회가 모두 같았고, 할당량은 0~12% 안에서 같았다.
+ * 벽시계는 CI가 1.4~4.4배 느리다(아래 7절).</p>
  * <table>
  *   <caption>번들과 컴파일</caption>
  *   <tr><th>번들</th><th>역</th><th>운행</th><th>정차</th><th>컴파일</th><th>컴파일 할당</th><th>보유 힙</th></tr>
- *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>113 ms</td><td>27.4 MB</td><td>3.2 MB</td></tr>
- *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>14.1 ms</td><td>4.4 MB</td><td>0.55 MB</td></tr>
- *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>1.8 ms</td><td>0.1 MB</td><td>0.03 MB</td></tr>
+ *   <tr><td>metro-grid-v1(합성, 16노선)</td><td>192</td><td>7,298</td><td>110,384</td><td>116 ms</td><td>27.4 MB</td><td>3.2 MB</td></tr>
+ *   <tr><td>district-grid-v1(합성, 8노선)</td><td>48</td><td>1,634</td><td>12,472</td><td>17.2 ms</td><td>4.4 MB</td><td>0.55 MB</td></tr>
+ *   <tr><td>line4-corridor-slice(KRIC 실 시각표)</td><td>48</td><td>3</td><td>141</td><td>1.3 ms</td><td>0.1 MB</td><td>0.03 MB</td></tr>
  * </table>
  * <table>
  *   <caption>탐색 지연과 결과(벤치마크 한도: 작업량 500만, 상태당 라벨 64, 도착 라벨 64, 시점 64)</caption>
- *   <tr><th>번들</th><th>모드</th><th>질의</th><th>p50</th><th>p99</th><th>질의당 할당</th><th>작업량 합</th>
+ *   <tr><th>번들</th><th>모드</th><th>회차당 질의</th><th>p50</th><th>p99</th><th>질의당 할당</th><th>작업량 합</th>
  *     <th>상태 라벨 최대</th><th>거절</th></tr>
- *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>478 µs</td><td>1.1 ms</td><td>44 KB</td>
+ *   <tr><td>metro</td><td>DepartAt</td><td>160</td><td>386 µs</td><td>967 µs</td><td>44 KB</td>
  *     <td>열차 7,157·환승 73,280 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>district</td><td>DepartAt</td><td>40</td><td>69 µs</td><td>156 µs</td><td>11 KB</td>
- *     <td>열차 712·환승 4,201 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>102.7 ms</td><td>104.5 ms</td><td>14.4 MB</td><td>60,000,012</td>
+ *   <tr><td>district</td><td>DepartAt</td><td>100</td><td>70 µs</td><td>167 µs</td><td>11 KB</td>
+ *     <td>열차 1,766·환승 10,891 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>district</td><td>ArriveBy</td><td>12</td><td>64.0 ms</td><td>68.9 ms</td><td>13.0 MB</td><td>60,000,012</td>
  *     <td>0</td><td>12/12(작업량)</td></tr>
- *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>6.0 ms</td><td>14.7 ms</td><td>6.3 MB</td><td>899,375</td>
+ *   <tr><td>district</td><td>DepartBetween</td><td>12</td><td>6.7 ms</td><td>13.2 ms</td><td>6.3 MB</td><td>853,513</td>
  *     <td>65</td><td>12/12(상태당 라벨)</td></tr>
- *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>4.5 ms</td><td>127.5 ms</td><td>10.4 MB</td><td>15,260,560</td>
- *     <td>65</td><td>6/6(작업량 3, 상태당 라벨 3)</td></tr>
- *   <tr><td>line4</td><td>DepartAt</td><td>40</td><td>184 µs</td><td>288 µs</td><td>33 KB</td><td>열차 79 확장</td><td>-</td><td>0</td></tr>
- *   <tr><td>line4</td><td>ArriveBy</td><td>24</td><td>554 µs</td><td>843 µs</td><td>63 KB</td><td>268,418</td><td>1</td><td>0</td></tr>
- *   <tr><td>line4</td><td>DepartBetween</td><td>24</td><td>142 µs</td><td>390 µs</td><td>120 KB</td><td>6,898</td><td>4</td><td>0</td></tr>
- *   <tr><td>line4</td><td>LastConnection</td><td>12</td><td>637 µs</td><td>860 µs</td><td>68 KB</td><td>180,744</td><td>1</td><td>0</td></tr>
+ *   <tr><td>district</td><td>LastConnection</td><td>6</td><td>80.1 ms</td><td>87.7 ms</td><td>12.5 MB</td><td>20,145,127</td>
+ *     <td>65</td><td>6/6(작업량 4, 상태당 라벨 2)</td></tr>
+ *   <tr><td>line4</td><td>DepartAt</td><td>100</td><td>109 µs</td><td>207 µs</td><td>32 KB</td><td>열차 198 확장</td><td>-</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>ArriveBy</td><td>100</td><td>266 µs</td><td>668 µs</td><td>63 KB</td><td>1,196,523</td><td>1</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>DepartBetween</td><td>100</td><td>81 µs</td><td>308 µs</td><td>107 KB</td><td>20,145</td><td>4</td><td>0</td></tr>
+ *   <tr><td>line4</td><td>LastConnection</td><td>100</td><td>308 µs</td><td>552 µs</td><td>73 KB</td><td>1,516,140</td><td>1</td><td>0</td></tr>
  * </table>
  * <table>
  *   <caption>운영 배포 후보 정책 한도로 재현한 프로필 질의(작업량 1000, 상태당 라벨 8, 도착 라벨 16, 시점 32)</caption>
@@ -152,7 +154,7 @@
  * <p>정책 값의 정의 위치는 easysubway-platform {@code tools/platform/render-journey-kubernetes-candidate.mjs}
  * 44~49행이다. 작업량으로 거절된 질의는 모두 한도 직후(1,001 단위)에 멈췄고, 그 시점까지 라벨은 거의 쌓이지 않았다
  * (상태 라벨 최대 0~1). 실데이터 슬라이스의 출발 시간대 12건은 작업량 합 2,971, 상태 라벨 최대 4, 도착 라벨 최대 1로
- * 한도 안에서 끝났다. 운행 3편짜리 실데이터 슬라이스에서도 도착 희망 질의 하나가 평균 약 1.1만 작업 단위를 쓰므로
+ * 한도 안에서 끝났다. 운행 3편짜리 실데이터 슬라이스에서도 도착 희망 질의 하나가 평균 약 1.2만 작업 단위를 쓰므로
  * 작업량 1000으로는 역방향 탐색이 끝나지 않는다. 프로필 모드의 확장성 개선은 별도 하위 이슈에서 다룬다.</p>
  *
  * <h2>7. 성능 회귀 게이트와 기준선 갱신 절차</h2>
