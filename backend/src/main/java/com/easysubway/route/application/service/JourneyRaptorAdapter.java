@@ -673,7 +673,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
 			fare,
 			legs,
-			null
+			List.of()
 		);
 	}
 

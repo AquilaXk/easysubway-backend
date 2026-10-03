@@ -45,13 +45,11 @@ public record JourneyCandidate(
 		fare = Objects.requireNonNull(fare, "fare");
 		legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 		if (legs.isEmpty()) throw new IllegalArgumentException("legs must not be empty");
-		// #469: 검색 결과 여정이 대표하는 묶음(정렬·중복 없음). 프로필 응답 여정처럼 결과 구성을 거치지 않은 여정은 null이다.
-		if (alternativeCategories != null) {
-			alternativeCategories = List.copyOf(alternativeCategories);
-			if (alternativeCategories.stream().distinct().count() != alternativeCategories.size()
-				|| !alternativeCategories.stream().sorted().toList().equals(alternativeCategories)) {
-				throw new IllegalArgumentException("alternativeCategories must be unique and ordered");
-			}
+		// #469: 검색 결과 여정이 대표하는 묶음(정렬·중복 없음). 채움 여정과 결과 구성을 거치지 않은 프로필 여정은 빈 목록이다.
+		alternativeCategories = List.copyOf(Objects.requireNonNull(alternativeCategories, "alternativeCategories"));
+		if (alternativeCategories.stream().distinct().count() != alternativeCategories.size()
+			|| !alternativeCategories.stream().sorted().toList().equals(alternativeCategories)) {
+			throw new IllegalArgumentException("alternativeCategories must be unique and ordered");
 		}
 		boolean candidateHasRealtime = realtimeDepartureTime != null;
 		for (Leg leg : legs) {

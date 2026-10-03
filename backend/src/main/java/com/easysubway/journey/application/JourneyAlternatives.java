@@ -79,8 +79,8 @@ public final class JourneyAlternatives {
 	public record Selection<T>(List<T> items, List<Set<Category>> categories, boolean stairFreeOmitted) {
 		public Selection {
 			items = List.copyOf(Objects.requireNonNull(items, "items"));
-			categories = Objects.requireNonNull(categories, "categories").stream()
-				.map(set -> set.isEmpty() ? Set.<Category>of() : Set.copyOf(EnumSet.copyOf(set))).toList();
+			categories = List.copyOf(Objects.requireNonNull(categories, "categories").stream()
+				.map(set -> set.isEmpty() ? Set.<Category>of() : Set.copyOf(EnumSet.copyOf(set))).toList());
 			if (items.size() != categories.size()) {
 				throw new IllegalArgumentException("categories must match items");
 			}

@@ -27,7 +27,7 @@ final class JourneySearchResponseMapper {
 			success.serviceDayIdentity().cutoffLocalTime(),
 			mapSourceIdentity(success.sourceIdentity()),
 			mapRequestPolicy(success.requestPolicy()),
-			success.journeys().stream().map(JourneySearchResponseMapper::mapJourney).toList(),
+			success.journeys().stream().map(journey -> mapJourney(journey, true)).toList(),
 			new StairFreeAlternativeResponse(
 				success.stairFreeAlternative().status().name(),
 				success.stairFreeAlternative().facilityStatus().name())
@@ -55,7 +55,12 @@ final class JourneySearchResponseMapper {
 		);
 	}
 
-	static JourneyResponse mapJourney(JourneyCandidate journey) {
+	/** #469: 프로필 응답 여정은 대표 묶음 대신 objectiveTags를 쓰므로 alternativeCategories 키를 내지 않는다. */
+	static JourneyResponse mapProfileJourney(JourneyCandidate journey) {
+		return mapJourney(journey, false);
+	}
+
+	static JourneyResponse mapJourney(JourneyCandidate journey, boolean searchJourney) {
 		return new JourneyResponse(
 			journey.journeyId(),
 			wire(journey.status()),
@@ -75,8 +80,7 @@ final class JourneySearchResponseMapper {
 			),
 			mapFare(journey.fare()),
 			journey.legs().stream().map(JourneySearchResponseMapper::mapLeg).toList(),
-			journey.alternativeCategories() == null ? null
-				: journey.alternativeCategories().stream().map(Enum::name).toList()
+			searchJourney ? journey.alternativeCategories().stream().map(Enum::name).toList() : null
 		);
 	}
 

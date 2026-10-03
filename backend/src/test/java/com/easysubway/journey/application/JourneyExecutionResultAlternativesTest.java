@@ -38,17 +38,13 @@ class JourneyExecutionResultAlternativesTest {
 	}
 
 	@Test
-	void rejectsMissingOrDuplicatedCategories() {
+	void rejectsDuplicatedOrUnorderedCategories() {
 		var first = candidate("journey-1", false, List.of(JourneyAlternatives.Category.FASTEST));
 		var duplicate = candidate("journey-2", false, List.of(JourneyAlternatives.Category.FASTEST));
-		var uncategorized = candidate("journey-3", false, null);
 
 		assertThatThrownBy(() -> success(List.of(first, duplicate), JourneyAlternatives.StairFreeStatus.NOT_FOUND))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("duplicated");
-		assertThatThrownBy(() -> success(List.of(first, uncategorized), JourneyAlternatives.StairFreeStatus.NOT_FOUND))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("requires alternativeCategories");
 		assertThatThrownBy(() -> candidate("journey-4", false,
 			List.of(JourneyAlternatives.Category.STAIR_FREE, JourneyAlternatives.Category.FASTEST)))
 			.isInstanceOf(IllegalArgumentException.class);
@@ -62,10 +58,7 @@ class JourneyExecutionResultAlternativesTest {
 			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
 			List.of(TestRides.candidateRide("line-1", "trip-" + journeyId, "station-b", "station-a", "station-b",
 				DEPARTURE, DEPARTURE.plusSeconds(300), null, null)));
-		return categories == null ? new JourneyCandidate(candidate.journeyId(), candidate.plannedDepartureTime(),
-			candidate.plannedArrivalTime(), null, null, candidate.durationSeconds(), candidate.transferCount(),
-			candidate.walkingDistanceMeters(), candidate.timeSource(), candidate.accessibility(), candidate.fare(),
-			candidate.legs(), null) : candidate.withAlternativeCategories(categories);
+		return candidate.withAlternativeCategories(categories);
 	}
 
 	private static JourneyExecutionResult.Success success(
