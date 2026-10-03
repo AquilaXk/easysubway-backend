@@ -801,7 +801,7 @@ public final class RouteTimetableRaptorPlanner {
 		for (int position = firstMarkedPosition; position < stops.length; position += 1) {
 			throwIfCancelled(input);
 			int station = stops[position];
-			int boardingLine = timetable.lineIndex(trips.getFirst().lineId(position));
+			int boardingLine = timetable.patternLine(pattern, position);
 			if (boardingLine < 0) {
 				continue;
 			}
@@ -885,7 +885,7 @@ public final class RouteTimetableRaptorPlanner {
 			for (int position = firstMarkedPosition; position < stops.length; position += 1) {
 				throwIfCancelled(input);
 				int station = stops[position];
-				int boardingLine = timetable.lineIndex(trip.lineId(position));
+				int boardingLine = timetable.patternLine(pattern, position);
 				if (boardingLine < 0) {
 					continue;
 				}
@@ -2517,6 +2517,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final OutOfStationFootpath[][] footpathsByToStationLine;
 		private final OutOfStationFootpath[][] footpathsByToStation;
 		private final int[][] minPatternRunningTimes;
+		private final int[][] lineByPatternPosition;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
@@ -2569,6 +2570,17 @@ public final class RouteTimetableRaptorPlanner {
 			stopsByPattern = routePatterns.stopsByPattern();
 			patternsByStop = invertPatterns(stopsByPattern, stationIndex.size());
 			tripsByPattern = routePatterns.tripsByPattern();
+			// 패턴 키에 노선 순서가 들어 있어 같은 패턴의 열차는 위치마다 노선이 같다. 탐색 내부 루프가 노선 ID 문자열로
+			// 색인을 찾지 않도록 (패턴, 위치)별 노선 색인을 미리 둔다(#462).
+			lineByPatternPosition = new int[stopsByPattern.length][];
+			for (int pattern = 0; pattern < stopsByPattern.length; pattern += 1) {
+				ScheduledTrip representative = tripsByPattern.get(pattern).getFirst();
+				int[] lines = new int[stopsByPattern[pattern].length];
+				for (int position = 0; position < lines.length; position += 1) {
+					lines[position] = lineIndex.getOrDefault(representative.lineId(position), -1);
+				}
+				lineByPatternPosition[pattern] = lines;
+			}
 			patternByScheduledTrip = new int[scheduledTrips.size()];
 			Arrays.fill(patternByScheduledTrip, -1);
 			for (int pattern = 0; pattern < tripsByPattern.size(); pattern += 1) {
@@ -2950,6 +2962,11 @@ public final class RouteTimetableRaptorPlanner {
 
 		int patternStopCount(int pattern) {
 			return stopsByPattern(pattern).length;
+		}
+
+		/** 패턴의 그 위치에서 타는 노선 색인. 같은 패턴의 모든 열차가 같은 값을 갖는다. */
+		int patternLine(int pattern, int position) {
+			return lineByPatternPosition[pattern][position];
 		}
 
 		int[] patternsByStop(int station) {
@@ -5022,7 +5039,7 @@ public final class RouteTimetableRaptorPlanner {
 					if (position < 0) continue;
 					ProfilePatternTrips patternTrips = trips.tripsByPattern(pattern);
 					if (patternTrips.trips().isEmpty()) continue;
-					int boardingLine = timetable.lineIndex(patternTrips.trips().getFirst().scheduledTrip().lineId(position));
+					int boardingLine = timetable.patternLine(pattern, position);
 					if (boardingLine < 0) continue;
 					int transition = labelBoardings == 0
 						? PLATFORM_BOUNDARY
@@ -5060,8 +5077,7 @@ public final class RouteTimetableRaptorPlanner {
 					int position = indexOf(timetable.stopsByPattern(pattern), footpath.toStation());
 					ProfilePatternTrips patternTrips = trips.tripsByPattern(pattern);
 					if (patternTrips.trips().isEmpty()
-						|| timetable.lineIndex(patternTrips.trips().getFirst().scheduledTrip().lineId(position))
-							!= footpath.toLine()) continue;
+						|| timetable.patternLine(pattern, position) != footpath.toLine()) continue;
 					expandedTransfers += 1;
 					boardPattern(label, pattern, position, footpath.toLine(), transition, patternTrips);
 				}
