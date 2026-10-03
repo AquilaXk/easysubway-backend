@@ -10,11 +10,12 @@
       "maxLabelsPerState" : 64,
       "maxEstimatedWork" : 5000000
     },
-    "java" : "Eclipse Adoptium 21.0.8",
-    "arch" : "aarch64",
-    "processors" : 12
+    "java" : "Eclipse Adoptium 21.0.11",
+    "arch" : "amd64",
+    "processors" : 4,
+    "baselineSource" : "median of 3 Backend CI measurements (run 37102993327 attempts 1-3)"
   },
-  "calibrationNanos" : 107179916,
+  "calibrationNanos" : 99295528,
   "workloads" : {
     "metro-grid-v1" : {
       "bundle" : {
@@ -30,17 +31,17 @@
         "sha256" : "f769c2a2ca17d48057d30d12c3b7b668b49f06813861c5d2e9ef519c860efeb3"
       },
       "compile" : {
-        "nanos" : 84595083,
-        "allocatedBytes" : 27382448,
+        "nanos" : 120849322,
+        "allocatedBytes" : 27382624,
         "retainedBytes" : 3232728
       },
       "modes" : {
         "DEPART_AT" : {
           "queries" : 160,
-          "p50Nanos" : 205833,
-          "p99Nanos" : 398583,
+          "p50Nanos" : 448282,
+          "p99Nanos" : 1139882,
           "samplesPerRound" : 160,
-          "allocatedBytesPerQuery" : 44531,
+          "allocatedBytesPerQuery" : 43092,
           "work" : {
             "expandedRoutes" : 12540,
             "expandedTransfers" : 73280,
@@ -128,15 +129,15 @@
         "sha256" : "8cf1d4028a6c5594db0ffd4e3ae5ea2b772cd6ddd59d5ff77201f8de0363f37a"
       },
       "compile" : {
-        "nanos" : 9243750,
-        "allocatedBytes" : 4604048,
-        "retainedBytes" : 543800
+        "nanos" : 20692148,
+        "allocatedBytes" : 4604448,
+        "retainedBytes" : 548616
       },
       "modes" : {
         "DEPART_AT" : {
           "queries" : 100,
-          "p50Nanos" : 36917,
-          "p99Nanos" : 73208,
+          "p50Nanos" : 135104,
+          "p99Nanos" : 234681,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 11418,
           "work" : {
@@ -148,8 +149,8 @@
         },
         "ARRIVE_BY" : {
           "queries" : 12,
-          "p50Nanos" : 221042,
-          "p99Nanos" : 706666,
+          "p50Nanos" : 887658,
+          "p99Nanos" : 3135763,
           "samplesPerRound" : 12,
           "allocatedBytesPerQuery" : 279363,
           "work" : {
@@ -172,8 +173,8 @@
         },
         "DEPART_BETWEEN" : {
           "queries" : 12,
-          "p50Nanos" : 352750,
-          "p99Nanos" : 1178459,
+          "p50Nanos" : 995050,
+          "p99Nanos" : 3071001,
           "samplesPerRound" : 12,
           "allocatedBytesPerQuery" : 322166,
           "work" : {
@@ -196,10 +197,10 @@
         },
         "LAST_CONNECTION" : {
           "queries" : 6,
-          "p50Nanos" : 155500,
-          "p99Nanos" : 227125,
+          "p50Nanos" : 575311,
+          "p99Nanos" : 970231,
           "samplesPerRound" : 6,
-          "allocatedBytesPerQuery" : 140140,
+          "allocatedBytesPerQuery" : 140134,
           "work" : {
             "failClosed" : 1,
             "failClosed.MAX_LABELS_PER_STATE" : 1,
@@ -299,15 +300,15 @@
         "sha256" : "5232afcee0d88293e8a4d0e1a899677dfd5ddd9bf9b7aeb8c0e70f9364cc813d"
       },
       "compile" : {
-        "nanos" : 357666,
-        "allocatedBytes" : 117880,
-        "retainedBytes" : 23464
+        "nanos" : 1095108,
+        "allocatedBytes" : 118328,
+        "retainedBytes" : 29256
       },
       "modes" : {
         "DEPART_AT" : {
           "queries" : 100,
-          "p50Nanos" : 62042,
-          "p99Nanos" : 117917,
+          "p50Nanos" : 131796,
+          "p99Nanos" : 285501,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 31614,
           "work" : {
@@ -319,8 +320,8 @@
         },
         "ARRIVE_BY" : {
           "queries" : 100,
-          "p50Nanos" : 69042,
-          "p99Nanos" : 126333,
+          "p50Nanos" : 196870,
+          "p99Nanos" : 451800,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 47353,
           "work" : {
@@ -343,10 +344,10 @@
         },
         "DEPART_BETWEEN" : {
           "queries" : 100,
-          "p50Nanos" : 137750,
-          "p99Nanos" : 252125,
+          "p50Nanos" : 343842,
+          "p99Nanos" : 624183,
           "samplesPerRound" : 100,
-          "allocatedBytesPerQuery" : 122577,
+          "allocatedBytesPerQuery" : 122513,
           "work" : {
             "failClosed" : 0,
             "found" : 100,
@@ -366,8 +367,8 @@
         },
         "LAST_CONNECTION" : {
           "queries" : 100,
-          "p50Nanos" : 60250,
-          "p99Nanos" : 124625,
+          "p50Nanos" : 205506,
+          "p99Nanos" : 450406,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 46484,
           "work" : {
