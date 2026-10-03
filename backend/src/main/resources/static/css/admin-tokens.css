@@ -107,8 +107,8 @@
 	--admin-radius-card: 8px;
 	--admin-radius-badge: 4px;
 
-	/* 그림자 — 사용 안 함(플랫) */
-	--admin-shadow-card: none;
+	/* 그림자 — 카드·플로팅 요소용 multi-layer 소프트 그림자 */
+	--admin-shadow-card: 0 1px 3px rgba(31, 35, 64, 0.04), 0 6px 16px rgba(31, 35, 64, 0.04);
 
 	/* 타이포 위계 — 관리자 productive UI의 역할 기반 고정 scale */
 	--admin-fs-page: 28px;
