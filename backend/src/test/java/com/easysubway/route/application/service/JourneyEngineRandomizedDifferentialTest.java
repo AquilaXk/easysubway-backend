@@ -291,9 +291,9 @@ class JourneyEngineRandomizedDifferentialTest {
 	 */
 	private static RouteTimetable truncationTimetable() {
 		var stairs = new LoadRouteTimetablePort.PathwayEdge("e-x-stairs", "p-x-L1", "p-x-L2", 60, 0, false, true, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY");
 		var stepFree = new LoadRouteTimetablePort.PathwayEdge("e-x-step-free", "p-x-L1", "p-x-L2", 300, 0, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(new LoadRouteTimetablePort.PathwayNode("p-x-L1", "x", "L1", "PLATFORM"),
 				new LoadRouteTimetablePort.PathwayNode("p-x-L2", "x", "L2", "PLATFORM")),
@@ -336,7 +336,7 @@ class JourneyEngineRandomizedDifferentialTest {
 	 */
 	private static RouteTimetable boundaryTimetable(Mobility mobility, JourneyRequest.WalkingPace pace, int delta) {
 		var edge = new LoadRouteTimetablePort.PathwayEdge("e-x-L1-L2", "p-x-L1", "p-x-L2", 150, 0, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(new LoadRouteTimetablePort.PathwayNode("p-x-L1", "x", "L1", "PLATFORM"),
 				new LoadRouteTimetablePort.PathwayNode("p-x-L2", "x", "L2", "PLATFORM")),

@@ -472,6 +472,30 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void unconfirmedStairStatePathwayCountsAsStairBurdenInProfiles() {
+		// #469 F1(#480): 프로필 응답의 stairFree와 계단 부담도 계단 없음이 확정된 동선만 계단 없음으로 본다.
+		var timetable = RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable("UNKNOWN");
+		var ready = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var query = new JourneyRaptorQuery(REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION,
+			new JourneyRaptorQuery.DepartBetween(ready, ready.plusSeconds(600)), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			1, 3, () -> false);
+
+		var result = adapter.planRuntime(query, RaptorRouteBundleRuntimeView.compile("c".repeat(64), 1, timetable), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+
+		var points = ((JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan()).points();
+		assertThat(points).isNotEmpty().allSatisfy(point -> assertThat(point.itineraries()).isNotEmpty()
+			.allSatisfy(itinerary -> {
+				assertThat(itinerary.metrics().accessibilityBurden()).isEqualTo(1);
+				assertThat(itinerary.legs()).filteredOn(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
+					.allSatisfy(leg -> assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).includesStairs()).isTrue());
+			}));
+	}
+
+	@Test
 	void preservesThreeIndependentDirectFactsAndEveryRequiredDepartureRepresentative() {
 		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001));
 		var result = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
@@ -1027,7 +1051,7 @@ class JourneyProfileRaptorAdapterTest {
 	private static LoadRouteTimetablePort.PathwayEdge edge(String id, String from, String to, int seconds) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, 50, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.PathwayEdge edge(
@@ -1035,7 +1059,7 @@ class JourneyProfileRaptorAdapterTest {
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, distance, false, stairs, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((stairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(

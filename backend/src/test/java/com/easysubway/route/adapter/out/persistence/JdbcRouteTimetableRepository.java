@@ -184,7 +184,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					resultSet.getString("accessibility_status"),
 					resultSet.getString("provenance_kind"),
 					resultSet.getString("verification_status"),
-					resultSet.getString("legacy_internal_route_edge_id")
+					resultSet.getString("legacy_internal_route_edge_id"), null
 				)
 			),
 			jdbcTemplate.query(

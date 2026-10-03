@@ -163,7 +163,9 @@ final class CapitalRealDerivedFixture {
 		for (JsonNode row : access.path("pathwayEdges")) {
 			edges.add(new LoadRouteTimetablePort.PathwayEdge(row.get(0).asText(), row.get(1).asText(), row.get(2).asText(),
 				row.get(3).asInt(), row.get(4).asInt(), row.get(5).asBoolean(), row.get(6).asBoolean(), row.get(7).asInt(),
-				row.get(8).asText(), row.get(9).asText(), row.get(10).asText(), text(row.get(11))));
+				// #469 F1: fixture는 계단 상태 열이 없다. 원본 번들(release 125)의 network_edges.stair_access_state는 모든
+				// 환승 동선이 UNKNOWN이었다(seq126도 309개 전부 UNKNOWN).
+				row.get(8).asText(), row.get(9).asText(), row.get(10).asText(), text(row.get(11)), "UNKNOWN"));
 		}
 		List<LoadRouteTimetablePort.TransferRule> rules = new ArrayList<>();
 		for (JsonNode row : access.path("transferRules")) {

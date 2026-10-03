@@ -252,7 +252,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
 			SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters, edge_type,
 			 service_pattern, service_class, includes_stairs, accessibility_status, reliability_score,
-			 provenance_kind, verification_status
+			 provenance_kind, verification_status, stair_access_state
 			FROM network_edges ORDER BY id COLLATE BINARY
 			""")) {
 			while (rows.next()) {
@@ -264,7 +264,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 					rows.getString(7), requireText(rows.getString(8), "network edge service class"),
 					rows.getBoolean(9), requireText(rows.getString(10), "network edge accessibility status"),
 					rows.getInt(11), requireText(rows.getString(12), "network edge provenance"),
-					requireText(rows.getString(13), "network edge verification"));
+					requireText(rows.getString(13), "network edge verification"),
+					requireText(rows.getString(14), "network edge stair access state"));
 				if (edge.durationSeconds() < 0 || edge.distanceMeters() < 0
 					|| edge.reliabilityScore() < 0 || edge.reliabilityScore() > 100
 					|| edges.put(edge.id(), edge) != null) {
@@ -578,7 +579,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			edges.add(new PathwayEdge(
 				edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(), edge.distanceMeters(), false,
 				edge.includesStairs(), edge.reliabilityScore(), accessibilityStatus, provenanceKind,
-				verificationStatus, edge.id()));
+				verificationStatus, edge.id(), edge.stairAccessState()));
 			String evidenceType;
 			String stationId;
 			String lineId;
@@ -594,7 +595,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				evidenceType = "TRANSFER";
 				stationId = to.stationId();
 				lineId = to.lineId();
-				String strictEdge = (edge.includesStairs() || !pass) ? null : edge.id();
+				// #469 F1(#480): 엄격 무단차 동선은 계단 없음이 확정(STEP_FREE)된 동선만이다. UNKNOWN은 계단 없음이 아니다.
+				String strictEdge = (edge.includesStairs() || !"STEP_FREE".equals(edge.stairAccessState()) || !pass)
+					? null : edge.id();
 				String transferType = OUT_OF_STATION_TRANSFER.equals(edge.type()) ? "OUT_OF_STATION" : "IN_STATION";
 				rules.add(new TransferRule(
 					edge.id(), from.stationId(), from.lineId(), to.stationId(), to.lineId(), transferType,
@@ -863,7 +866,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		String accessibilityStatus,
 		int reliabilityScore,
 		String provenanceKind,
-		String verificationStatus) {
+		String verificationStatus,
+		String stairAccessState) {
 
 		private String rawSha256() {
 			ObjectNode raw = JSON.createObjectNode();

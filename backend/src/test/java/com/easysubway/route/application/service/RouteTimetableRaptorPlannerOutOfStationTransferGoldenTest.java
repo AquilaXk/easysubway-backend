@@ -268,7 +268,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 			SERVICE_DATE.plusYears(1), SERVICE_DATE.plusYears(1).plusDays(7), "Asia/Seoul");
 		var otherLineEdge = new PathwayEdge(
 			"b3-c-out-transfer-edge", MID_OUT + ":l3", MID_IN + ":l2", 60, 40, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		List<TransferRule> rules = new ArrayList<>(access.transferRules());
 		rules.add(new TransferRule(
 			"b3-c-transfer-rule", MID_OUT, "l3", MID_IN, "l2", "OUT_OF_STATION",
@@ -370,7 +370,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 			.map(edge -> edge.id().equals("b-c-out-transfer-edge")
 				? new PathwayEdge(edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(),
 					edge.distanceMeters(), edge.bidirectional(), includesStairs, edge.reliabilityScore(),
-					edge.accessibilityStatus(), edge.provenanceKind(), edge.verificationStatus())
+					edge.accessibilityStatus(), edge.provenanceKind(), edge.verificationStatus()).withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE")
 				: edge)
 			.toList();
 		return new RouteTimetable(
@@ -472,8 +472,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		String transferEdgeId = "b-c-out-transfer-edge";
 		var transferEdge = new PathwayEdge(
 			transferEdgeId, MID_OUT + ":l1", MID_IN + ":l2", 600, 400, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-		);
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		edges.add(transferEdge);
 		evidence.add(new RouteEdgeEvidence(
 			"b-c-transfer-evidence", MID_IN, "l2", transferEdgeId, "TRANSFER",
@@ -517,10 +516,10 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		String key = station + "-" + line;
 		var entry = new PathwayEdge(
 			key + "-entry", key + "-entry-from", station + ":" + line, 180, 120, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		var exit = new PathwayEdge(
 			key + "-exit", station + ":" + line, key + "-exit-to", 180, 120, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		edges.add(entry);
 		edges.add(exit);
 		nodes.add(new PathwayNode(entry.fromNodeId(), station, null, "ENTRANCE"));

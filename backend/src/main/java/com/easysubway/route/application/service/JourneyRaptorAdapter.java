@@ -335,9 +335,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			verified = timetable.transitionVerified(transition);
 			status = timetable.transitionVerificationStatus(transition);
 			if (includesStairs) {
-				// #469: 경유역 접속 환승에 근거 없는 계단 없는 동선이 있으면 이 여정의 계단 없는 경로는 확정할 수 없다.
-				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.hasUnconfirmedStairFreeAlternative(
-					timetable, timetable.transitionGroup(transition), transition, profileBit, facilityOverlay);
+				// #469 F1: 경유역 접속 환승의 계단 상태가 미확정이거나 근거 없는 계단 없는 동선이 있으면 확정할 수 없다.
+				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.unconfirmedStairFreeTransfer(
+					timetable, transition, profileBit, facilityOverlay);
 			}
 
 			if (timetable.isOutOfStationTransition(transition)) {

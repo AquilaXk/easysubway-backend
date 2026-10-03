@@ -604,8 +604,8 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		nodes.add(new LoadRouteTimetablePort.PathwayNode(entStepFree, ORIGIN, null, "ENTRANCE"));
 		nodes.add(new LoadRouteTimetablePort.PathwayNode(platOrigin, ORIGIN, "l1", "PLATFORM"));
 
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-stairs", entStairs, platOrigin, 240, 180, false, true, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-stepfree", entStepFree, platOrigin, 600, 400, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-stairs", entStairs, platOrigin, 240, 180, false, true, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY"));
+		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-stepfree", entStepFree, platOrigin, 600, 400, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-stairs", ORIGIN, "l1", "e-stairs", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-stepfree", ORIGIN, "l1", "e-stepfree", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 
@@ -614,7 +614,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		String platDest = "plat-dest";
 		nodes.add(new LoadRouteTimetablePort.PathwayNode(exitDest, DESTINATION, null, "EXIT"));
 		nodes.add(new LoadRouteTimetablePort.PathwayNode(platDest, DESTINATION, "l1", "PLATFORM"));
-		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-exit", platDest, exitDest, 180, 120, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		edges.add(new LoadRouteTimetablePort.PathwayEdge("e-exit", platDest, exitDest, 180, 120, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-exit", DESTINATION, "l1", "e-exit", "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 
 		// 1 Route (r1 on l1), 2 Trips (t1 earlier with stairs, t2 later step-free)
@@ -656,7 +656,7 @@ class RouteTimetableRaptorPlannerMcRaptorTest {
 		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
 		for (TransferEdge transfer : transfers) {
 			edges.add(new LoadRouteTimetablePort.PathwayEdge(transfer.id(), "x-l0", "x-l1", transfer.seconds(),
-				transfer.distanceMeters(), false, transfer.includesStairs(), 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				transfer.distanceMeters(), false, transfer.includesStairs(), 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((transfer.includesStairs()) ? "STAIR_ONLY" : "STEP_FREE"));
 			rules.add(new LoadRouteTimetablePort.TransferRule(transfer.id() + "-rule", "x", "l0", "x", "l1", "IN_STATION",
 				transfer.seconds(), transfer.id(), transfer.includesStairs() ? null : transfer.id(), "VERIFIED"));
 			evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(transfer.id() + "-evidence", "x", "l1", transfer.id(),

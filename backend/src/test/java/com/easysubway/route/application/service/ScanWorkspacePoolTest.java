@@ -245,13 +245,13 @@ class ScanWorkspacePoolTest {
 		var edges = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"entry", "entrance", "platform-sta1", 120, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"transfer", "platform-transfer-l1", "platform-transfer-l2", 60, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-sta3", "outside", 60, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
 				"entry-evidence", "sta-1", "line-1", "entry", "ENTRY",

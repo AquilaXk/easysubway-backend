@@ -144,9 +144,9 @@ final class JourneyEngineBenchmarkBundle {
 		int stairsMeters = 60 + random.nextInt(140);
 		int stepFreeMeters = stairsMeters + 40 + random.nextInt(160);
 		edges.add(new PathwayEdge(key + "-stairs", from, to, 60 + random.nextInt(120), stairsMeters, false, true, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY"));
 		edges.add(new PathwayEdge(key + "-step-free", from, to, 120 + random.nextInt(180), stepFreeMeters, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		for (String edge : List.of(key + "-stairs", key + "-step-free")) {
 			evidence.add(new RouteEdgeEvidence("ev-" + edge, station, toLine, edge, "TRANSFER",
 				"OFFICIAL_SOURCE", "VERIFIED", true, null));

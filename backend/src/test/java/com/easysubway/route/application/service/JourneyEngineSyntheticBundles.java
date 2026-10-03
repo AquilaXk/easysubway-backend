@@ -282,7 +282,7 @@ final class JourneyEngineSyntheticBundles {
 		// 그대로 쓰므로 30초 격자 시각과 맞물려 여유 0초 연결이 자주 생긴다.
 		int meters = random.nextInt(3) == 0 ? 0 : distance;
 		String status = random.nextInt(12) == 0 ? "UNAVAILABLE" : "AVAILABLE";
-		return new PathwayEdge(id, from, to, duration, meters, false, stairs, 100, status, "OFFICIAL_SOURCE", "VERIFIED");
+		return new PathwayEdge(id, from, to, duration, meters, false, stairs, 100, status, "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((stairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	/** 승차·환승 건수를 줄여 최소 반례를 찾는 데 쓰는 번들 사본. */

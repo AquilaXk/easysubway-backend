@@ -1345,7 +1345,7 @@ class ReverseTimetableRaptorPlannerTest {
 		String id, String from, String to, int seconds, int distanceMeters, boolean includesStairs, String verificationStatus
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(id, from, to, seconds, distanceMeters, false, includesStairs, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", verificationStatus);
+			"AVAILABLE", "OFFICIAL_SOURCE", verificationStatus).withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(

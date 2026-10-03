@@ -408,6 +408,26 @@ class JourneyRaptorAdapterTest {
 			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.INCLUDED);
 	}
 
+	@Test
+	void unconfirmedStairStatePathwayIsReportedUndeterminedAndNeverStairFree() {
+		// #469 F1(#480): seq126처럼 계단 상태가 UNKNOWN이거나 없는 동선은 계단 없음으로 응답하지 않는다.
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable(state));
+
+			var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+				snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+			assertThat(result.candidates()).as("stair state %s", state).isNotEmpty().allSatisfy(candidate -> {
+				assertThat(candidate.accessibility().stairFree()).isFalse();
+				assertThat(candidate.alternativeCategories())
+					.doesNotContain(com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE);
+			});
+			assertThat(result.stairFreeAlternative().status()).as("stair state %s", state)
+				.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+		}
+	}
+
 	private static JourneyRequest viaRequest(JourneyRequest.MobilityProfile profile) {
 		return new JourneyRequest(
 			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
@@ -929,7 +949,7 @@ class JourneyRaptorAdapterTest {
 			List.of(new PathwayNode("t-a", "station-t", "line-a", "PLATFORM"),
 				new PathwayNode("t-b", "station-t", "line-b", "PLATFORM")),
 			List.of(new PathwayEdge("t-transfer", "t-a", "t-b", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")),
 			List.of(new TransferRule("t-rule", "station-t", "line-a", "station-t", "line-b", "IN_STATION",
 				120, "t-transfer", "t-transfer", "VERIFIED")),
 			List.of(new RouteEdgeEvidence("t-evidence", "station-t", "line-b", "t-transfer", "TRANSFER",
@@ -1069,19 +1089,19 @@ class JourneyRaptorAdapterTest {
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", 120, 100, false, true, 100, // includes stairs!
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"entry-transfer", "entrance-transfer", "platform-transfer-b", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit-transfer", "platform-transfer-a", "outside-transfer", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(
 				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
@@ -1733,7 +1753,7 @@ class JourneyRaptorAdapterTest {
 		String id, int durationSeconds, int distanceMeters, boolean includesStairs, String provenanceKind
 	) {
 		return new PathwayEdge(id, "platform-transfer-a", "platform-transfer-b", durationSeconds, distanceMeters,
-			false, includesStairs, 100, "AVAILABLE", provenanceKind, "VERIFIED");
+			false, includesStairs, 100, "AVAILABLE", provenanceKind, "VERIFIED").withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	/** station-transfer의 line-a→line-b 환승 후보만 바꾸는 픽스처(#454: 진입·하차 간선 없음). */
@@ -1799,19 +1819,19 @@ class JourneyRaptorAdapterTest {
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"entry-transfer", "entrance-transfer", "platform-transfer-b", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit-transfer", "platform-transfer-a", "outside-transfer", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(
 				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
@@ -1865,16 +1885,16 @@ class JourneyRaptorAdapterTest {
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"entry-via", "entrance-via", "platform-via", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit-via", "platform-via", "outside-via", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(
 				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
@@ -1933,13 +1953,13 @@ class JourneyRaptorAdapterTest {
 		var edges = java.util.stream.Stream.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			verifiedTransfer ? new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", 120, transferDistanceMeters, false, false, 100,
-				"AVAILABLE", transferProvenanceKind, transferPathwayVerificationStatus) : null,
+				"AVAILABLE", transferProvenanceKind, transferPathwayVerificationStatus).withStairAccessState("STEP_FREE") : null,
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"))
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"))
 			.filter(java.util.Objects::nonNull).toList();
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(
@@ -1977,10 +1997,10 @@ class JourneyRaptorAdapterTest {
 		var edges = List.of(
 			new LoadRouteTimetablePort.PathwayEdge(
 				"entry", "entrance", "platform-a", 120, entryDistanceMeters, false, includesStairs, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE"),
 			new LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-b", "outside", 60, exitDistanceMeters, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new LoadRouteTimetablePort.RouteEdgeEvidence(
 				"entry-evidence", "station-a", "line", "entry", "ENTRY",

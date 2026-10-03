@@ -77,6 +77,14 @@ public final class RouteTimetableRaptorPlanner {
 	private static final byte WARNING_LOW_CONFIDENCE = 1;
 	private static final byte WARNING_STAIRS = 1 << 1;
 	private static final byte WARNING_STALE = 1 << 2;
+	/**
+	 * #469 F1(#480): 환승 동선의 계단 접근 상태 3가지. 원천 {@code stair_access_state}가 STEP_FREE이고 계단 플래그가 없을
+	 * 때만 계단 없음이 확정이다. 계단 플래그가 있거나 STAIR_ONLY면 계단 확정, 그 밖(UNKNOWN·필드 없음·다른 값)은 미확정이다.
+	 * 엔진은 확정되지 않은 동선을 계단 쪽으로 다룬다(계단 경고, 계단 부담, 엄격 무단차 제외).
+	 */
+	static final byte STAIR_ACCESS_STEP_FREE = 0;
+	static final byte STAIR_ACCESS_STAIRS = 1;
+	static final byte STAIR_ACCESS_UNCONFIRMED = 2;
 	private static final int WARNING_STATE_COUNT = 1 << 3;
 	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
@@ -1662,13 +1670,26 @@ public final class RouteTimetableRaptorPlanner {
 	) {
 		List<RideLeg> path = label.path();
 		for (int index = 1; index < path.size(); index += 1) {
-			int transition = label.accessTransitions()[index];
-			if (timetable.transitionIncludesStairs(transition) && hasUnconfirmedStairFreeAlternative(timetable,
-				timetable.transitionGroup(transition), transition, profileBit, realtimeOverlay)) {
+			if (unconfirmedStairFreeTransfer(timetable, label.accessTransitions()[index], profileBit, realtimeOverlay)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * #469 F1(#480): 이 환승에서 계단 없이 갈 수 있는지 확정할 수 없는지. 쓴 동선의 계단 상태가 미확정이거나, 계단 확정
+	 * 동선을 썼지만 같은 환승의 다른 동선 중 계단 없음이 확정되지 않았거나 근거가 없어 쓰지 못한 동선이 있으면 true다.
+	 */
+	static boolean unconfirmedStairFreeTransfer(
+		CompiledTimetable timetable, int transition, int profileBit, RealtimeOverlay realtimeOverlay
+	) {
+		byte access = timetable.transitionStairAccess(transition);
+		if (access == STAIR_ACCESS_UNCONFIRMED) {
+			return true;
+		}
+		return access == STAIR_ACCESS_STAIRS && hasUnconfirmedStairFreeAlternative(
+			timetable, timetable.transitionGroup(transition), transition, profileBit, realtimeOverlay);
 	}
 
 	/** {@code group} 안에 {@code transition} 말고 근거가 없어 쓰지 못한 계단 없는 동선이 있는지. */
@@ -1684,14 +1705,19 @@ public final class RouteTimetableRaptorPlanner {
 		return false;
 	}
 
-	/** 계단이 없고 이 프로필·시설 차단으로 막히지 않았지만 검증 근거가 없어 여정에 쓸 수 없는 동선인지. */
+	/**
+	 * 계단이 확정되지 않았고 이 프로필·시설 차단으로 막히지 않았지만, 계단 없음이 확정되지 않았거나 검증 근거가 없어 계단
+	 * 없는 동선으로 쓸 수 없는 동선인지(#469 F1).
+	 */
 	private static boolean unconfirmedStairFreeCandidate(
 		CompiledTimetable timetable, int candidate, int profileBit, RealtimeOverlay realtimeOverlay
 	) {
-		return !timetable.transitionIncludesStairs(candidate)
+		byte access = timetable.transitionStairAccess(candidate);
+		return access != STAIR_ACCESS_STAIRS
 			&& !realtimeOverlay.isTransitionBlocked(candidate)
 			&& timetable.isTransitionEligible(candidate, profileBit, false, false, false)
-			&& !timetable.isTransitionEligible(candidate, profileBit, false, true, true);
+			&& !(access == STAIR_ACCESS_STEP_FREE
+				&& timetable.isTransitionEligible(candidate, profileBit, false, true, true));
 	}
 
 	static boolean hasStairWarning(Label label) {
@@ -2850,6 +2876,11 @@ public final class RouteTimetableRaptorPlanner {
 		byte transitionWarningCodes(int transition, int profileBit, boolean ignoreBlocked) {
 			return accessTransitions.warningCodes(transition, profileBit, ignoreBlocked);
 		}
+		/** #469 F1: 전환의 계단 접근 상태({@code STAIR_ACCESS_*}). */
+		byte transitionStairAccess(int transition) {
+			return accessTransitions.stairAccess(transition);
+		}
+		/** 계단 없음이 확정되지 않았으면(계단 확정 또는 미확정) true다(#469 F1). */
 		boolean transitionIncludesStairs(int transition) {
 			return accessTransitions.includesStairs(transition);
 		}
@@ -3231,7 +3262,9 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[] blockedProfiles;
 		private final int[] warningProfiles;
 		private final byte[] warningCodes;
+		/** 계단 없음이 확정되지 않았으면 true다(계단 확정·미확정). */
 		private final boolean[] includesStairs;
+		private final byte[] stairAccess;
 		private final String[] edgeIds;
 		private final Map<String, int[]> edgeTransitions;
 		private final String[] verificationStatuses;
@@ -3270,6 +3303,7 @@ public final class RouteTimetableRaptorPlanner {
 			warningProfiles = new int[candidates.size()];
 			warningCodes = new byte[candidates.size()];
 			includesStairs = new boolean[candidates.size()];
+			stairAccess = new byte[candidates.size()];
 			edgeIds = new String[candidates.size()];
 			verificationStatuses = new String[candidates.size()];
 			Map<String, List<Integer>> edgeMap = new HashMap<>();
@@ -3281,6 +3315,7 @@ public final class RouteTimetableRaptorPlanner {
 				warningProfiles[index] = candidate.warningProfiles();
 				warningCodes[index] = candidate.warningCodes();
 				includesStairs[index] = candidate.includesStairs();
+				stairAccess[index] = candidate.stairAccess();
 				edgeIds[index] = candidate.edgeId();
 				verificationStatuses[index] = candidate.verificationStatus();
 				String edgeId = candidate.edgeId();
@@ -3366,9 +3401,10 @@ public final class RouteTimetableRaptorPlanner {
 				PathwayEdge normalEdge = ownedByRule(edges.get(rule.pathwayEdgeId()), rule, nodes);
 				PathwayEdge strictEdge = ownedByRule(edges.get(rule.strictStepFreePathwayEdgeId()), rule, nodes);
 				if (normalEdge == null && strictEdge == null && rule.minTransferSeconds() > 0) {
+					// #469 F1: 동선이 없는 규칙은 계단 여부도 미확정이다.
 					candidates.add(new Candidate(rule.minTransferSeconds(), TRANSFER_DISTANCE_METERS,
-						STRICT_PROFILE_MASK, NON_STRICT_PROFILE_MASK, WARNING_LOW_CONFIDENCE,
-						false, null, "MISSING"));
+						STRICT_PROFILE_MASK, NON_STRICT_PROFILE_MASK, (byte) (WARNING_LOW_CONFIDENCE | WARNING_STAIRS),
+						true, STAIR_ACCESS_UNCONFIRMED, null, "MISSING"));
 				}
 				if (normalEdge != null) {
 					boolean strictCandidate = normalEdge.id().equals(rule.strictStepFreePathwayEdgeId());
@@ -3418,7 +3454,7 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			List<Candidate> flattened = new ArrayList<>();
 			// 출발·도착 승강장 경계(PLATFORM_BOUNDARY): 이동 없음, 경고·차단 없음, 간선 없음.
-			flattened.add(new Candidate(0, 0, 0, 0, (byte) 0, false, null, PLATFORM_BOUNDARY_STATUS));
+			flattened.add(new Candidate(0, 0, 0, 0, (byte) 0, false, STAIR_ACCESS_STEP_FREE, null, PLATFORM_BOUNDARY_STATUS));
 
 			long[] transferKeys = transfers.keySet().stream().mapToLong(Long::longValue).sorted().toArray();
 			int[][] transferIds = new int[transferKeys.length][];
@@ -3496,19 +3532,21 @@ public final class RouteTimetableRaptorPlanner {
 			boolean available = "AVAILABLE".equals(edge.accessibilityStatus());
 			boolean unavailable = "UNAVAILABLE".equals(edge.accessibilityStatus())
 				|| "UNDER_MAINTENANCE".equals(edge.accessibilityStatus());
+			byte stairAccess = stairAccess(edge);
+			boolean mayIncludeStairs = stairAccess != STAIR_ACCESS_STEP_FREE;
 			boolean strictAllowed = strictCandidate
 				&& verified
 				&& trusted
 				&& available
 				&& edge.reliabilityScore() >= 80
 				&& evidence.strictRouteEligible()
-				&& !edge.includesStairs();
+				&& !mayIncludeStairs;
 			byte warnings = 0;
 			if (!verified || !trusted || !available || edge.reliabilityScore() < 80
 				|| evidence != null && !evidence.strictRouteEligible()) {
 				warnings |= WARNING_LOW_CONFIDENCE;
 			}
-			if (edge.includesStairs()) {
+			if (mayIncludeStairs) {
 				warnings |= WARNING_STAIRS;
 			}
 			if ("STALE".equals(edge.verificationStatus())
@@ -3524,10 +3562,20 @@ public final class RouteTimetableRaptorPlanner {
 					: (strictAllowed ? 0 : STRICT_PROFILE_MASK),
 				warnings == 0 ? 0 : NON_STRICT_PROFILE_MASK,
 				warnings,
-				edge.includesStairs(),
+				mayIncludeStairs,
+				stairAccess,
 				edge.id(),
 				verificationStatus
 			);
+		}
+
+		/** #469 F1(#480): 원천 사실로 정한 계단 접근 상태. 추정으로 계단 없음을 만들지 않는다. */
+		static byte stairAccess(PathwayEdge edge) {
+			String state = edge.stairAccessState();
+			if (edge.includesStairs() || "STAIR_ONLY".equals(state)) {
+				return STAIR_ACCESS_STAIRS;
+			}
+			return "STEP_FREE".equals(state) ? STAIR_ACCESS_STEP_FREE : STAIR_ACCESS_UNCONFIRMED;
 		}
 		private static boolean trustedProvenance(String provenance) {
 			return "OFFICIAL_SOURCE".equals(provenance)
@@ -3575,8 +3623,10 @@ public final class RouteTimetableRaptorPlanner {
 					distanceMeters,
 					STRICT_PROFILE_MASK,
 					NON_STRICT_PROFILE_MASK,
-					WARNING_LOW_CONFIDENCE,
-					false,
+					(byte) (WARNING_LOW_CONFIDENCE | WARNING_STAIRS),
+					// #469 F1: 동선 근거가 없으면 계단 여부도 미확정이다.
+					true,
+					STAIR_ACCESS_UNCONFIRMED,
 					null,
 					"MISSING"
 				));
@@ -3664,6 +3714,9 @@ public final class RouteTimetableRaptorPlanner {
 		private boolean includesStairs(int transition) {
 			return includesStairs[transition];
 		}
+		private byte stairAccess(int transition) {
+			return stairAccess[transition];
+		}
 		private boolean verified(int transition) {
 			return "VERIFIED".equals(verificationStatuses[transition])
 				&& (warningCodes[transition] & (WARNING_LOW_CONFIDENCE | WARNING_STALE)) == 0;
@@ -3725,6 +3778,7 @@ public final class RouteTimetableRaptorPlanner {
 			int warningProfiles,
 			byte warningCodes,
 			boolean includesStairs,
+			byte stairAccess,
 			String edgeId,
 			String verificationStatus
 		) {

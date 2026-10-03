@@ -220,6 +220,60 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 		assertThat(plan.stairFreeStatus()).isNull();
 	}
 
+	@Test
+	@DisplayName("#469 F1 계단 상태가 UNKNOWN인 환승 동선을 지나는 여정은 계단 없음·STAIR_FREE·INCLUDED가 아니다")
+	void unknownStairStatePathwayIsNeverStairFree() {
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+				query(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 3),
+				unconfirmedStairStateTimetable(state));
+
+			assertThat(plan.itineraries()).as("stair state %s", state).isNotEmpty().allSatisfy(itinerary -> {
+				assertThat(itinerary.stairFree()).isFalse();
+				assertThat(itinerary.alternativeCategories()).doesNotContain(JourneyAlternatives.Category.STAIR_FREE);
+				assertThat(itinerary.metrics().accessibilityBurden()).isEqualTo(1);
+			});
+			assertThat(plan.stairFreeStatus()).as("stair state %s", state)
+				.isEqualTo(JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+		}
+	}
+
+	@Test
+	@DisplayName("#469 F1 엄격 무단차는 계단 상태가 확정되지 않은 동선을 쓰지 않는다")
+	void strictStepFreeDoesNotUseUnconfirmedStairState() {
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var plan = new RouteTimetableRaptorPlanner().journeyItineraries(
+				query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 1, 3),
+				unconfirmedStairStateTimetable(state));
+
+			assertThat(plan.itineraries()).as("stair state %s", state).isEmpty();
+		}
+	}
+
+	/**
+	 * #469 F1: seq126 번들과 같은 환승 동선. h의 L1→L2는 동선 하나뿐이고 {@code includesStairs=false}, 계단 상태는
+	 * {@code stairAccessState}(UNKNOWN 또는 필드 없음)다. 검증 상태는 VERIFIED이고 번들 컴파일러처럼 엄격 무단차 동선으로도
+	 * 지정한다. 08:28 도착 여정 하나가 있다.
+	 */
+	static RouteTimetable unconfirmedStairStateTimetable(String stairAccessState) {
+		var edge = new LoadRouteTimetablePort.PathwayEdge("e-h-transfer", "p-h-L1", "p-h-L2", 60, 30, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(stairAccessState);
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(new LoadRouteTimetablePort.PathwayNode("p-h-L1", "h", "L1", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("p-h-L2", "h", "L2", "PLATFORM")),
+			List.of(edge),
+			List.of(new LoadRouteTimetablePort.TransferRule("rule-h", "h", "L1", "h", "L2", "IN_STATION", 60,
+				edge.id(), edge.id(), "VERIFIED")),
+			List.of(evidence("ev-h-transfer", "h", "L2", edge.id())));
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar("daily", true, true, true, true, true, true, true,
+			SERVICE_DATE.minusDays(2), SERVICE_DATE.plusDays(2), "Asia/Seoul");
+		return new RouteTimetable(List.of(calendar), List.of(), List.of(route("L1"), route("L2")),
+			List.of(trip("feeder", "L1"), trip("l2-fast", "L2")),
+			List.of(stop("feeder", 1, ORIGIN, "L1", 29_400), stop("feeder", 2, "h", "L1", 29_700),
+				stop("l2-fast", 1, "h", "L2", 30_060), stop("l2-fast", 2, DESTINATION, "L2", 30_480)),
+			List.of(), List.of(), null, access);
+	}
+
 	private static List<JourneyItinerary> plan(
 		JourneyRequest.MobilityProfile profile,
 		JourneyRequest.ConstraintMode constraint,
@@ -280,7 +334,7 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 		if (stepFreePathway != StepFreePathway.NONE) {
 			var hubStepFree = new LoadRouteTimetablePort.PathwayEdge("e-h-step-free", "p-h-L1", "p-h-L2", 60, 600, false,
 				false, 100, "AVAILABLE", "OFFICIAL_SOURCE",
-				stepFreePathway == StepFreePathway.VERIFIED ? "VERIFIED" : "UNVERIFIED");
+				stepFreePathway == StepFreePathway.VERIFIED ? "VERIFIED" : "UNVERIFIED").withStairAccessState("STEP_FREE");
 			edges.add(hubStepFree);
 			evidence.add(evidence("ev-h-step-free", "h", "L2", hubStepFree.id()));
 			strictEdge = hubStepFree.id();
@@ -345,7 +399,7 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 			var stairs = edge("e-v-" + fromLine + "-stairs", "p-v-" + fromLine, "p-v-L2", 30, true);
 			var stepFree = new LoadRouteTimetablePort.PathwayEdge("e-v-" + fromLine + "-step-free", "p-v-" + fromLine,
 				"p-v-L2", 60, 600, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE",
-				junctionStepFree == StepFreePathway.VERIFIED ? "VERIFIED" : "UNVERIFIED");
+				junctionStepFree == StepFreePathway.VERIFIED ? "VERIFIED" : "UNVERIFIED").withStairAccessState("STEP_FREE");
 			edges.add(stairs);
 			edges.add(stepFree);
 			evidence.add(evidence("ev-v-" + fromLine + "-stairs", "v", "L2", stairs.id()));
@@ -370,7 +424,7 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 		String id, String from, String to, int distanceMeters, boolean includesStairs
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(id, from, to, 60, distanceMeters, false, includesStairs, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(includesStairs ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(

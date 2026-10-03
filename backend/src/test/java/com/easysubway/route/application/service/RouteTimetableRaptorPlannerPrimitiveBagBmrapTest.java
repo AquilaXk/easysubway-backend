@@ -388,13 +388,13 @@ class RouteTimetableRaptorPlannerPrimitiveBagBmrapTest {
 	private static RouteAccessData multiStationAccessData() {
 		var edges = List.of(
 			new PathwayEdge("entry-origin", "node-origin-e", "node-origin-p", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge("transfer-2", "node-2-p2", "node-2-p1", 60, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge("entry-branch", "node-branch-e", "node-branch-p", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge("exit-dest", "node-dest-p", "node-dest-e", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")
 		);
 
 		var nodes = List.of(
@@ -443,11 +443,11 @@ class RouteTimetableRaptorPlannerPrimitiveBagBmrapTest {
 
 		var edges = List.of(
 			new PathwayEdge("fp-edge", "node-branch-p", "node-dest-p", 300, 250, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge("entry-origin", "node-origin-e", "node-origin-p", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge("exit-dest", "node-dest-p", "node-dest-e", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")
 		);
 		var nodes = List.of(
 			new PathwayNode("node-origin-e", ORIGIN, null, "ENTRANCE"),

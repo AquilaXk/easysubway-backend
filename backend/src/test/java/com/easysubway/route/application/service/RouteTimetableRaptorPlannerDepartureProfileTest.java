@@ -675,7 +675,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, distanceMeters, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.TransferRule transfer(
@@ -705,7 +705,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	private static LoadRouteTimetablePort.PathwayEdge edge(String id, String from, String to, int seconds) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, 50, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
