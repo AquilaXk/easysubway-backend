@@ -31,6 +31,7 @@
 		         aria-label="신고 급증 알림">
 			<div>
 				<h2 th:text="${reportSurgeAlert.title}">신고 급증</h2>
+				<p th:text="${reportSurgeAlert.description}">최근 24시간 신고 0건입니다. 접수량은 정상 범위입니다.</p>
 			</div>
 			<strong class="status-label" th:text="${reportSurgeAlert.label}">정상</strong>
 		</section>
@@ -40,6 +41,7 @@
 		         aria-label="신고 처리 시간 지표">
 			<div>
 				<h2 th:text="${processingTime.title}">신고 처리 시간</h2>
+				<p th:text="${processingTime.description}">처리 완료 후 평균 시간을 표시합니다.</p>
 			</div>
 			<strong class="metric-label" th:text="${processingTime.label}">처리 완료 신고 없음</strong>
 		</section>
