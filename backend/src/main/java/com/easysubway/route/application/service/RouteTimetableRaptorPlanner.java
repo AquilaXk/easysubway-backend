@@ -337,30 +337,30 @@ public final class RouteTimetableRaptorPlanner {
 	 * 고친다(decrease-key). 꺼낸 역의 거리가 다시 줄면 다시 넣는다. 원시 배열만 쓰므로 완화마다 객체를 만들지 않고,
 	 * 큐 크기는 역 수를 넘지 않는다. 최단 거리는 꺼내는 순서(동률 순서)와 무관하게 같다.
 	 */
-	private static final class StationHeap {
+	static final class StationHeap {
 		private final int[] distance;
 		private final int[] heap;
 		private final int[] position;
 		private int size;
 
-		private StationHeap(int[] distance) {
+		StationHeap(int[] distance) {
 			this.distance = distance;
 			this.heap = new int[distance.length];
 			this.position = new int[distance.length];
 			Arrays.fill(position, -1);
 		}
 
-		private boolean isEmpty() {
+		boolean isEmpty() {
 			return size == 0;
 		}
 
 		/** {@code distance[station]}이 줄었을 때 부른다. 큐에 없으면 넣는다. */
-		private void decreased(int station) {
+		void decreased(int station) {
 			int index = position[station];
 			siftUp(index < 0 ? size++ : index, station);
 		}
 
-		private int poll() {
+		int poll() {
 			int top = heap[0];
 			position[top] = -1;
 			size -= 1;
