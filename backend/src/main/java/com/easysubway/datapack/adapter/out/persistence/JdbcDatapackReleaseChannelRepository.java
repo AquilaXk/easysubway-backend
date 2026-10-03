@@ -185,6 +185,51 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 	}
 
 	@Override
+	public ChannelObservationOutcome observeRelease(ChannelObservation observation) {
+		var current = jdbcTemplate.query("""
+			SELECT release_sequence, manifest_sha256
+			FROM datapack_release_channel_observations
+			WHERE channel = ?
+			FOR UPDATE
+			""", (resultSet, rowNumber) -> new ObservedRelease(
+				resultSet.getLong("release_sequence"), resultSet.getString("manifest_sha256")),
+			observation.channel()).stream().findFirst();
+		if (current.isEmpty()) {
+			jdbcTemplate.update("""
+				INSERT INTO datapack_release_channel_observations (
+					channel, release_sequence, manifest_sha256, release_request_id,
+					binding_signature_sha256, delivery_idempotency_key, workflow_run_url, observed_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				""", observation.channel(), observation.releaseSequence(), observation.manifestSha256(),
+				observation.releaseRequestId(), observation.bindingSignatureSha256(),
+				observation.deliveryIdempotencyKey(), observation.workflowRunUrl(), observation.observedAt());
+			return ChannelObservationOutcome.APPLIED;
+		}
+		var observed = current.get();
+		if (observation.releaseSequence() > observed.releaseSequence()) {
+			jdbcTemplate.update("""
+				UPDATE datapack_release_channel_observations
+				SET release_sequence = ?, manifest_sha256 = ?, release_request_id = ?,
+					binding_signature_sha256 = ?, delivery_idempotency_key = ?, workflow_run_url = ?,
+					observed_at = ?
+				WHERE channel = ?
+				""", observation.releaseSequence(), observation.manifestSha256(),
+				observation.releaseRequestId(), observation.bindingSignatureSha256(),
+				observation.deliveryIdempotencyKey(), observation.workflowRunUrl(), observation.observedAt(),
+				observation.channel());
+			return ChannelObservationOutcome.APPLIED;
+		}
+		if (observation.releaseSequence() == observed.releaseSequence()
+			&& observation.manifestSha256().equals(observed.manifestSha256())) {
+			return ChannelObservationOutcome.UNCHANGED;
+		}
+		return ChannelObservationOutcome.REJECTED;
+	}
+
+	private record ObservedRelease(long releaseSequence, String manifestSha256) {
+	}
+
+	@Override
 	public void insertEvent(
 		String id,
 		String channel,

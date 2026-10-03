@@ -1,5 +1,6 @@
 package com.easysubway.datapack.adapter.in.web;
 
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.easysubway.datapack.application.service.DatapackReleaseCallbackService;
 import com.easysubway.datapack.application.service.DatapackReleaseCallbackService.CallbackCommand;
 import java.util.Map;
@@ -57,6 +58,14 @@ public class DatapackReleaseCallbackApiController {
             "status", result.status(),
             "idempotentReplay", result.idempotentReplay()
         ));
+    }
+
+    // catalog(current.json·서명 binding·release manifest)를 읽지 못하면 수용하지 않는다. 송신기가
+    // 재시도하도록 5XX로 고정하고, 본문은 이 API의 status 응답 형식을 따른다.
+    @ExceptionHandler(DatapackReleaseCatalogPort.Unavailable.class)
+    ResponseEntity<Map<String, Object>> handleCatalogUnavailable(DatapackReleaseCatalogPort.Unavailable e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+            "status", "CATALOG_UNAVAILABLE", "idempotentReplay", false));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
