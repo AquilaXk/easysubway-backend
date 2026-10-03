@@ -80,7 +80,7 @@ public final class StationTimetableSearchService {
 
 		Set<String> servingServiceIds = new HashSet<>();
 		for (DepartureCandidate candidate : candidates) servingServiceIds.add(candidate.trip().serviceId());
-		DayType resolvedDayType = resolveDayType(timetable, request.selector(), servingServiceIds);
+		DayType resolvedDayType = resolveDayType(timetable, selectorServiceDate(request.selector()), servingServiceIds);
 		if (request.selector() instanceof Selector.DayTypeSelector dayType
 			&& dayType.dayType() != resolvedDayType) {
 			throw failure(Failure.INVALID_JOURNEY_REQUEST);
@@ -273,43 +273,48 @@ public final class StationTimetableSearchService {
 		return active;
 	}
 
-	// 전국 번들에는 여러 기관의 달력이 함께 있으므로, 요청 역·노선을 지나는 열차의 달력과 그 예외만으로 요일을 판정한다.
-	private static DayType resolveDayType(RouteTimetable timetable, Selector selector, Set<String> servingServiceIds) {
-		LocalDate serviceDate = switch (selector) {
+	private static LocalDate selectorServiceDate(Selector selector) {
+		return switch (selector) {
 			case Selector.ServiceDateSelector value -> value.serviceDate();
 			case Selector.DayTypeSelector value -> value.referenceDate();
 			case Selector.NextDeparturesSelector value -> value.asOf().atZone(SERVICE_ZONE).toLocalDate();
 		};
+	}
+
+	// #476 F1: 서비스일 라벨은 그 날 요청 역·노선에서 실제로 쓰는 달력의 종류다. 전국 번들에는 여러 기관의 달력이 함께
+	// 있으므로 이 역·노선을 지나는 열차의 달력만 본다. 토요일 시간표가 없는 기관(토·일 운행 휴일 달력)은 토요일에도
+	// SUNDAY_HOLIDAY다(시간표 요일 정책). 평일·주말을 함께 도는 달력은 날짜 자체의 요일을 쓴다. 서로 다른 종류의 달력이
+	// 같은 날 함께 돌거나, 운행 중인 서비스의 달력이 없거나 종류를 정할 수 없으면 원천 불일치로 실패한다.
+	private static DayType resolveDayType(RouteTimetable timetable, LocalDate serviceDate, Set<String> servingServiceIds) {
 		DayType civil = DayType.from(serviceDate);
-		if (selector instanceof Selector.NextDeparturesSelector) return civil;
 		Map<String, List<ServiceCalendar>> calendars = new HashMap<>();
 		for (ServiceCalendar calendar : timetable.serviceCalendars()) {
 			if (!SERVICE_ZONE.getId().equals(calendar.timezone())) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			if (!servingServiceIds.contains(calendar.serviceId())) continue;
 			calendars.computeIfAbsent(calendar.serviceId(), ignored -> new ArrayList<>()).add(calendar);
 		}
-		boolean civilClassRemoved = false;
-		for (ServiceCalendarDate exception : timetable.serviceCalendarDates()) {
-			if (!serviceDate.equals(exception.date()) || exception.exceptionType() != 2) continue;
-			List<ServiceCalendar> matches = calendars.get(exception.serviceId());
-			if (matches != null && matches.size() == 1 && calendarSignature(matches.getFirst()) == civil) {
-				civilClassRemoved = true;
+		Set<String> active = new HashSet<>(activeServices(timetable, serviceDate));
+		active.retainAll(servingServiceIds);
+		if (active.isEmpty()) {
+			// 이 역·노선의 서비스가 그 날 빠지기만 하고 대신 도는 서비스가 없으면 날짜 종류를 정할 수 없다.
+			for (ServiceCalendarDate exception : timetable.serviceCalendarDates()) {
+				if (serviceDate.equals(exception.date()) && exception.exceptionType() == 2
+					&& servingServiceIds.contains(exception.serviceId())) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			}
+			return civil;
 		}
-		if (!civilClassRemoved) return civil;
-
-		Set<DayType> overrides = new HashSet<>();
-		for (ServiceCalendarDate exception : timetable.serviceCalendarDates()) {
-			if (!serviceDate.equals(exception.date()) || exception.exceptionType() != 1) continue;
-			if (!servingServiceIds.contains(exception.serviceId())) continue;
-			List<ServiceCalendar> matches = calendars.get(exception.serviceId());
+		Set<DayType> classes = new HashSet<>();
+		for (String serviceId : active) {
+			List<ServiceCalendar> matches = calendars.get(serviceId);
 			if (matches == null || matches.size() != 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-			DayType signature = calendarSignature(matches.getFirst());
+			ServiceCalendar calendar = matches.getFirst();
+			DayType signature = calendarSignature(calendar);
+			if (signature == null && runsOn(calendar, serviceDate.getDayOfWeek())) signature = civil;
 			if (signature == null) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-			overrides.add(signature);
+			classes.add(signature);
 		}
-		if (overrides.size() != 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-		return overrides.iterator().next();
+		if (classes.size() != 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
+		return classes.iterator().next();
 	}
 
 	private static DayType calendarSignature(ServiceCalendar calendar) {
