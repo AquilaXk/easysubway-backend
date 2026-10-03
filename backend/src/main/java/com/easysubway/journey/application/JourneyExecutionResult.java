@@ -99,9 +99,6 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		) {
 			var seen = java.util.EnumSet.noneOf(JourneyAlternatives.Category.class);
 			for (JourneyCandidate journey : journeys) {
-				if (journey.alternativeCategories() == null) {
-					throw new IllegalArgumentException("search journey requires alternativeCategories");
-				}
 				for (JourneyAlternatives.Category category : journey.alternativeCategories()) {
 					if (!seen.add(category)) throw new IllegalArgumentException("alternative category is duplicated");
 				}
