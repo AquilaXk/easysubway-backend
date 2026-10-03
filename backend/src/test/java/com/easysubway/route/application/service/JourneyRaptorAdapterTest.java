@@ -287,6 +287,50 @@ class JourneyRaptorAdapterTest {
 		assertThat(defaultWired.candidates()).isEqualTo(explicitNoProvider.candidates());
 	}
 
+	@Test
+	void standardRequestReturnsStepFreePathwayAlternativeAsStairFreeCandidate() {
+		// #469 R1: 같은 환승역에 짧은 계단 동선과 긴 계단 없는 동선이 있으면 표준 요청도 계단 없는 여정을 함께 낸다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false, true));
+		var request = accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3);
+
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates())
+			.extracting(JourneyCandidate::transferCount, candidate -> candidate.accessibility().stairFree())
+			.containsExactly(org.assertj.core.groups.Tuple.tuple(1, false), org.assertj.core.groups.Tuple.tuple(1, true));
+	}
+
+	@Test
+	void directPlanNeverReturnsMoreCandidatesThanAlternativeCount() {
+		// #469 R2: 무단차 선호·환승 3·대안 3에서 파레토 여정이 4개여도 후보는 3개 이하다.
+		// JourneyExecutionResult.Success는 alternativeCount를 넘는 후보를 거절하므로(검색 실패) 어댑터가 지켜야 한다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(true, true));
+		var request = accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STEP_FREE, 3, 3);
+
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).hasSizeLessThanOrEqualTo(request.alternativeCount());
+		assertThat(result.candidates())
+			.extracting(JourneyCandidate::transferCount, candidate -> candidate.accessibility().stairFree())
+			.containsExactly(org.assertj.core.groups.Tuple.tuple(2, false), org.assertj.core.groups.Tuple.tuple(1, true),
+				org.assertj.core.groups.Tuple.tuple(0, true));
+	}
+
+	private static JourneyRequest accessibleAlternativesRequest(
+		JourneyRequest.MobilityProfile profile, int maxTransfers, int alternativeCount
+	) {
+		return new JourneyRequest(
+			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION,
+			new JourneyRequest.Departure.Scheduled(RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD, profile,
+			JourneyRequest.ConstraintMode.NONE, maxTransfers, alternativeCount, () -> false);
+	}
+
 	// 대체 환승 픽스처: 기본 선택은 최단 검증 거리 "transfer"(100m, STANDARD 80초), 차단 시 "transfer-alt"(200m, 160초).
 	private static final Clock FACILITY_CLOCK = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
 

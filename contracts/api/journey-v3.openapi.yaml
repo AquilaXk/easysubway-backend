@@ -983,6 +983,16 @@ components:
           type: array
           minItems: 1
           maxItems: 3
+          description: >-
+            At most requestPolicy.alternativeCount journeys chosen from the Pareto set over
+            destination arrival, transfer count, and (unless constraintMode is REQUIRE_STEP_FREE)
+            whether any transfer uses a verified pathway with stairs. Selection order is the fastest
+            journey, then the journey with the fewest transfers, then the earliest journey whose
+            accessibility.stairFree is true (for mobilityProfile STEP_FREE the stair-free journey comes
+            before the fewest-transfer journey). Duplicates are skipped, remaining slots are filled
+            with the other Pareto journeys in arrival order, and no stair-free journey is reported when
+            none exists. The array is ordered by arrival, then transfer count, so the first journey is
+            the fastest.
           items:
             $ref: "#/components/schemas/Journey"
     JourneyProfileSuccess:
@@ -1292,6 +1302,11 @@ components:
           type: array
           minItems: 1
           uniqueItems: true
+          description: >-
+            Representative roles of this candidate. Since frontier policy 1.1.0, SAFEST_CONNECTION
+            ranks a direct journey first and otherwise credits the minimum transfer slack only up to
+            600 seconds, breaking ties by earlier destination arrival; the last-connection safer
+            alternative uses the same capped comparison.
           items:
             type: string
             enum: [FASTEST_ARRIVAL, LATEST_DEPARTURE, FEWEST_TRANSFERS, LOWEST_WALKING_BURDEN, BEST_ACCESSIBILITY, SAFEST_CONNECTION]

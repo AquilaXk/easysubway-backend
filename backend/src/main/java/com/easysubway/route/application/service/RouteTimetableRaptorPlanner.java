@@ -77,13 +77,11 @@ public final class RouteTimetableRaptorPlanner {
 	private static final byte WARNING_STAIRS = 1 << 1;
 	private static final byte WARNING_STALE = 1 << 2;
 	private static final int WARNING_STATE_COUNT = 1 << 3;
-	// #2534: PREFER_STEP_FREE의 선호 순서 — 계단 경고 부재가 1순위다(그 모드의 목적). 경고 0개
-	// 후보가 없어도 유일한 무단차 후보가 뽑히도록 경고 수·시간은 그다음 키로 둔다. 표시 정렬과 별개다.
-	private static final Comparator<Label> PREFERRED_WARNING_ORDER = Comparator
-		.comparingInt((Label label) -> (label.warningBits() & WARNING_STAIRS) != 0 ? 1 : 0)
-		.thenComparingInt(label -> warningCount(label.warningBits()))
+	// #469: 결과 구성의 환승 적은 경로 순서 — 승차 수, 다음 도착(가상 비용), 다음 계단 경고 유무.
+	private static final Comparator<Label> FEWEST_BOARDINGS_ORDER = Comparator
+		.comparingInt(Label::boardings)
 		.thenComparingInt(Label::virtualCostSeconds)
-		.thenComparingInt(Label::boardings);
+		.thenComparingInt(label -> hasStairWarning(label) ? 1 : 0);
 	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
 	static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
@@ -162,9 +160,8 @@ public final class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay,
 		ScanResult scanResult
 	) {
+		// #469: 도착역 라벨은 이미 결과 구성 규칙(composeAlternatives)으로 alternativeCount개 이하로 골라 정렬돼 있다.
 		List<JourneyItinerary> raw = scanResult.labels().stream()
-			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(input.candidateLimit())
 			.map(label -> toJourneyItinerary(input, timetable, label))
 			.toList();
 		return assignPersonas(raw);
@@ -733,7 +730,7 @@ public final class RouteTimetableRaptorPlanner {
 		int destination,
 		RealtimeOverlay realtimeOverlay
 	) {
-		List<Label> destinationLabels = limitDestinationLabels(
+		List<Label> destinationLabels = composeAlternatives(
 			destinationLabels(
 				input.destinationStationId(), timetable, workspace, destination, input.readyAtSeconds(),
 				input, realtimeOverlay),
@@ -1158,7 +1155,8 @@ public final class RouteTimetableRaptorPlanner {
 				timetable, workspace, station, incomingLine, canonicalTransition, round, slackSeconds,
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
 
-			if (round > 0 && input.prefersStepFree()) {
+			// #469: 엄격 무단차가 아니면 계단 여부가 다른 대안 동선도 본다(표준·느린 걸음의 "느리지만 계단 없는" 경로).
+			if (round > 0 && input.preservesStairAlternatives()) {
 				int[] candidates = timetable.transferTransitions(station, incomingLine, boardingLine);
 				byte canonicalWarnings = timetable.transitionWarningCodes(
 					canonicalTransition, accessProfileBit, ignoreAccessBlocks);
@@ -1515,12 +1513,11 @@ public final class RouteTimetableRaptorPlanner {
 		ScanInput input,
 		RealtimeOverlay realtimeOverlay
 	) {
-		// #2534: 스캔은 경고를 Pareto 차원으로 유지하는데(ScanWorkspace.relax의 경고 부분집합 지배),
-		// 추출이 환승 수마다 라벨 1개만 남기면 그 차원이 버려져 PREFER_* 프로파일에서
-		// "느리지만 무단차"인 대안이 소실된다. PREFER_*에서는 경고 상태별 최선 후보를 함께 담고
-		// 지배 판정은 paretoFront가 일괄 처리한다.
-		// 표시 정렬은 compareLabels(시간 우선)로 그대로 두고 여기서는 보존 집합만 넓힌다.
-		boolean preserveWarningAlternatives = input.prefersStepFree();
+		// #2534·#469: 스캔은 경고를 Pareto 차원으로 유지하는데(ScanWorkspace.relax의 경고 부분집합 지배),
+		// 추출이 환승 수마다 라벨 1개만 남기면 그 차원이 버려져 "느리지만 무단차"인 대안이 소실된다.
+		// 엄격 무단차가 아니면(무단차 선호·표준·느린 걸음) 경고 상태별 최선 후보를 함께 담고
+		// 지배 판정은 paretoFront가 일괄 처리한다. 결과 수와 순서는 composeAlternatives가 정한다.
+		boolean preserveWarningAlternatives = input.preservesStairAlternatives();
 		List<Label> labels = new ArrayList<>(PARETO_LIMIT * timetable.lineCount());
 		Label[] bestByWarningState = preserveWarningAlternatives
 			? new Label[WARNING_STATE_COUNT]
@@ -1635,58 +1632,60 @@ public final class RouteTimetableRaptorPlanner {
 			|| earlier;
 	}
 
-	// #2534: 후보가 상한을 넘으면 자리 하나를 선호 후보(PREFERRED_WARNING_ORDER)에 내준다.
-	// 상한(candidateLimit) 자체는 그대로지만 PREFER_STEP_FREE에서는 실제 후보 수가 상한까지
-	// 채워지는 빈도가 높아지므로, 후보당 하류 비용(toRouteSearchResult 재구성·실시간 재계산·
-	// 직렬화)은 최악 상한배까지 늘 수 있다.
-	static List<Label> limitDestinationLabels(List<Label> labels, ScanInput input) {
-		List<Label> ordered = labels.stream()
+	/**
+	 * #469: point 결과 구성. 도착역 파레토 집합에서 최대 {@code alternativeCount}개를 고른다.
+	 * <ol>
+	 *   <li>묶음 대표: 빠른 경로 = (도착, 승차 수) 최소, 환승 적은 경로 = (승차 수, 도착, 계단 경고) 최소,
+	 *   계단 없는 경로 = 계단 경고가 없는 라벨 중 (도착, 승차 수) 최소. 계단 없는 라벨이 없으면 그 묶음은 비운다.</li>
+	 *   <li>순서: 빠른 → 환승 적은 → 계단 없는. 무단차 선호는 빠른 → 계단 없는 → 환승 적은. 이미 고른 라벨은 건너뛴다.</li>
+	 *   <li>남는 자리는 나머지 라벨을 도착·승차 수 순으로 채운다. 파레토 집합 밖의 라벨로 채우지 않는다.</li>
+	 * </ol>
+	 * <p>결과는 도착·승차 수 순이라 첫 여정이 가장 빠르다. 도착은 역 밖 환승 운임 시간 초과를 더한 가상 비용이다.
+	 * 계단 경고는 검증 동선 사실(계단 포함 여부)에서만 나온다. 차분 검증 하네스가 같은 규칙을 따로 구현해 비교한다.</p>
+	 */
+	static List<Label> composeAlternatives(List<Label> front, ScanInput input) {
+		List<Label> byArrival = front.stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.toList();
-		int limit = input.candidateLimit();
-		if (ordered.size() <= limit) {
-			return ordered;
+		int limit = input.alternativeCount();
+		if (byArrival.size() <= limit) {
+			return byArrival;
 		}
-		List<Label> limited = new ArrayList<>(ordered.subList(0, limit));
-		if (!input.prefersStepFree()) {
-			return List.copyOf(limited);
-		}
-		Label preferred = ordered.stream().min(PREFERRED_WARNING_ORDER).orElseThrow();
-		if (limited.stream().anyMatch(label -> label == preferred)) {
-			return List.copyOf(limited);
-		}
-		int victim = evictableIndex(limited);
-		if (victim < 0) {
-			return List.copyOf(limited);
-		}
-		limited.set(victim, preferred);
-		limited.sort(RouteTimetableRaptorPlanner::compareLabels);
-		return List.copyOf(limited);
-	}
-
-	// 축출 대상에서 두 가지를 뺀다. 인덱스 0(최속 라벨)은 표시 선두 계약이라 어떤 상한에서도
-	// 지키고(상한이 1이면 후보가 없어 교체 자체가 일어나지 않는다), 환승 수가 그 안에서 유일한
-	// 라벨은 해당 환승 수의 유일한 대안이라 건드리지 않는다. 남는 자리가 없으면 -1이다.
-	private static int evictableIndex(List<Label> limited) {
-		for (int index = limited.size() - 1; index >= 1; index -= 1) {
-			if (hasDuplicateBoardings(limited, limited.get(index).boardings())) {
-				return index;
+		Label fastest = byArrival.getFirst();
+		Label fewestBoardings = byArrival.stream().min(FEWEST_BOARDINGS_ORDER).orElseThrow();
+		Label stairFree = byArrival.stream().filter(label -> !hasStairWarning(label)).findFirst().orElse(null);
+		List<Label> categories = input.prefersStepFree()
+			? java.util.Arrays.asList(fastest, stairFree, fewestBoardings)
+			: java.util.Arrays.asList(fastest, fewestBoardings, stairFree);
+		List<Label> kept = new ArrayList<>(limit);
+		for (Label category : categories) {
+			if (category != null && kept.size() < limit && !containsSame(kept, category)) {
+				kept.add(category);
 			}
 		}
-		return -1;
+		for (Label label : byArrival) {
+			if (kept.size() >= limit) {
+				break;
+			}
+			if (!containsSame(kept, label)) {
+				kept.add(label);
+			}
+		}
+		kept.sort(RouteTimetableRaptorPlanner::compareLabels);
+		return List.copyOf(kept);
 	}
 
-	private static boolean hasDuplicateBoardings(List<Label> labels, int boardings) {
-		int count = 0;
+	private static boolean containsSame(List<Label> labels, Label candidate) {
 		for (Label label : labels) {
-			if (label.boardings() == boardings) {
-				count += 1;
-				if (count > 1) {
-					return true;
-				}
+			if (label == candidate) {
+				return true;
 			}
 		}
 		return false;
+	}
+
+	static boolean hasStairWarning(Label label) {
+		return (label.warningBits() & WARNING_STAIRS) != 0;
 	}
 
 	static Map<RoutePersona, JourneyItinerary> classifyPersonas(List<JourneyItinerary> itineraries) {
@@ -1897,7 +1896,7 @@ public final class RouteTimetableRaptorPlanner {
 			requiredQuery.timePolicy()
 				== com.easysubway.journey.application.JourneyRequest.TimePolicy.REALTIME_REQUIRED,
 			requiredQuery.maxTransfers(),
-			Math.max(requiredQuery.alternativeCount(), requiredQuery.maxTransfers() + 1),
+			requiredQuery.alternativeCount(),
 			requiredQuery.cancellationSignal()
 		);
 	}
@@ -4356,7 +4355,7 @@ public final class RouteTimetableRaptorPlanner {
 		boolean requiresVerifiedJourneyDistance,
 		boolean realtimeRequired,
 		int maxTransfers,
-		int candidateLimit,
+		int alternativeCount,
 		BooleanSupplier cancellationSignal
 	) {
 		ScanInput {
@@ -4370,6 +4369,11 @@ public final class RouteTimetableRaptorPlanner {
 
 		private boolean prefersStepFree() {
 			return constraintMode == ConstraintMode.PREFER_STEP_FREE;
+		}
+
+		/** #469: 엄격 무단차가 아니면 계단 경고를 결과를 가르는 차원으로 보존한다. */
+		boolean preservesStairAlternatives() {
+			return constraintMode != ConstraintMode.STRICT_STEP_FREE;
 		}
 	}
 
