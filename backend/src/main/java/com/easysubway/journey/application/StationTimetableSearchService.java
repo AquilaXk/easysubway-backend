@@ -141,9 +141,9 @@ public final class StationTimetableSearchService {
 				result.add(new DepartureCandidate(direction, trip, stop.departureSeconds()));
 				continue;
 			}
-			int firstDeparture = stopsByTrip.getOrDefault(stop.tripId(), List.of()).stream()
-				.min(Comparator.comparingInt(TransitStopTime::stopSequence)).map(TransitStopTime::departureSeconds)
-				.orElseThrow(() -> failure(Failure.TIMETABLE_IDENTITY_MISMATCH));
+			// tripStops는 이 정차를 포함하므로 비어 있지 않다.
+			int firstDeparture = java.util.Collections.min(tripStops, Comparator.comparingInt(TransitStopTime::stopSequence))
+				.departureSeconds();
 			for (TransitFrequency frequency : frequencies) {
 				if (!frequency.exactTimes()) continue;
 				for (int base = frequency.startTimeSeconds(); base < frequency.endTimeSeconds();) {
@@ -351,7 +351,8 @@ public final class StationTimetableSearchService {
 			if (departure.directionName() == null) missing = true; else names.add(departure.directionName());
 		}
 		if (names.size() > 1) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
-		return missing || names.isEmpty() ? null : names.iterator().next();
+		// 그룹에는 출발이 하나 이상 있으므로 빠진 이름이 없으면 이름은 정확히 하나다.
+		return missing ? null : names.iterator().next();
 	}
 
 	// 같은 시각·다음 정차역·운행 유형·종착역의 출발이 둘이면 원천 중복이다. 종착역이 다르면 서로 다른 열차다

@@ -672,6 +672,41 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
+	void nextStoppingStationIsTheClosestLaterSequenceEvenWhenRowsAreUnordered() {
+		RouteTimetable template = timetable();
+		RouteTimetable unordered = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(), template.transitRoutes(),
+			template.transitTrips(),
+			List.of(new TransitStopTime("trip", 3, "far", "line", 33_600, 33_600, 0, 0),
+				new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0),
+				new TransitStopTime("trip", 2, "near", "line", 33_000, 33_000, 0, 0)),
+			List.of(), List.of(), null, RouteAccessData.empty());
+		assertThat(service(snapshot(unordered, NOW.plusSeconds(60))).search(request(new Selector.ServiceDateSelector(
+			LocalDate.parse("2026-08-24")))).directionGroups()).singleElement().satisfies(group -> {
+				assertThat(group.nextStationId()).isEqualTo("near");
+				assertThat(group.departures().getFirst().terminalStationId()).isEqualTo("far");
+			});
+	}
+
+	@Test
+	void removedCivilServiceWithServingReplacementWithoutUsableCalendarFailsClosed() {
+		// 요청 역을 지나는 열차의 대체 달력이 없거나(행 없음·중복) 요일 서명이 없으면 요일을 판정할 수 없다.
+		ServiceCalendar weekday = new ServiceCalendar("weekday", true, true, true, true, true, false, false,
+			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul");
+		ServiceCalendar neutral = new ServiceCalendar("replacement", false, false, false, false, false, false, false,
+			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul");
+		ServiceCalendar sunday = new ServiceCalendar("replacement", false, false, false, false, false, false, true,
+			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul");
+		List<ServiceCalendarDate> dates = List.of(new ServiceCalendarDate("weekday", LocalDate.parse("2026-08-25"), 2),
+			new ServiceCalendarDate("replacement", LocalDate.parse("2026-08-25"), 1));
+		List<TransitTrip> replacementTrip = List.of(
+			new TransitTrip("replacement-trip", "route", "replacement", "headsign", "0", "SUBWAY", "EXPRESS", null, 0));
+		for (List<ServiceCalendar> calendars : List.of(List.of(weekday), List.of(weekday, neutral), List.of(weekday, sunday, sunday))) {
+			assertFailure(service(snapshot(timetable(calendars, dates, List.of(), replacementTrip), NOW.plusSeconds(60))),
+				request(new Selector.ServiceDateSelector(LocalDate.parse("2026-08-25"))), Failure.TIMETABLE_IDENTITY_MISMATCH);
+		}
+	}
+
+	@Test
 	void departuresEndingAtTheRequestedStationAreNotListedAndAnArrivalOnlyStationIsNotCovered() {
 		RouteTimetable template = timetable();
 		RouteTimetable mixed = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(), template.transitRoutes(),
