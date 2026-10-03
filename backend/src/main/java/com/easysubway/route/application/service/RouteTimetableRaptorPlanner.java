@@ -424,20 +424,18 @@ public final class RouteTimetableRaptorPlanner {
 	private static void propagatePatternLowerBounds(
 		CompiledTimetable timetable, int u, int dist, int[] lb, StationHeap pq
 	) {
-		for (int pattern : timetable.patternsByStop(u)) {
+		int[] occurrences = timetable.stopOccurrences(u);
+		for (int index = 0; index < occurrences.length; index += 2) {
+			int pattern = occurrences[index];
+			int pos = occurrences[index + 1];
 			int[] stops = timetable.stopsByPattern(pattern);
-			for (int pos = 1; pos < stops.length; pos += 1) {
-				if (stops[pos] != u) {
-					continue;
-				}
-				for (int prevPos = 0; prevPos < pos; prevPos += 1) {
-					int v = stops[prevPos];
-					int runTime = timetable.minPatternRunningTime(pattern, prevPos, pos);
-					long nextDist = (long) dist + runTime;
-					if (nextDist < lb[v]) {
-						lb[v] = (int) nextDist;
-						pq.decreased(v);
-					}
+			int[] hops = timetable.minPatternRunningTimes(pattern);
+			for (int prevPos = 0; prevPos < pos; prevPos += 1) {
+				int v = stops[prevPos];
+				long nextDist = (long) dist + hops[prevPos * stops.length + pos];
+				if (nextDist < lb[v]) {
+					lb[v] = (int) nextDist;
+					pq.decreased(v);
 				}
 			}
 		}
@@ -2518,6 +2516,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final OutOfStationFootpath[][] footpathsByToStation;
 		private final int[][] minPatternRunningTimes;
 		private final int[][] lineByPatternPosition;
+		private final int[][] stopOccurrences;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
@@ -2580,6 +2579,23 @@ public final class RouteTimetableRaptorPlanner {
 					lines[position] = lineIndex.getOrDefault(representative.lineId(position), -1);
 				}
 				lineByPatternPosition[pattern] = lines;
+			}
+			// 역마다 (패턴, 위치) 쌍을 패턴 번호·위치 순으로 미리 둔다. 하한 Dijkstra가 역을 꺼낼 때마다 그 역을 지나는
+			// 패턴의 정차 배열을 처음부터 훑어 위치를 찾지 않게 한다(#462).
+			stopOccurrences = new int[stationIndex.size()][];
+			for (int station = 0; station < stopOccurrences.length; station += 1) {
+				int[] occurrences = new int[0];
+				for (int pattern : patternsByStop[station]) {
+					int[] stops = stopsByPattern[pattern];
+					for (int position = 0; position < stops.length; position += 1) {
+						if (stops[position] == station) {
+							occurrences = Arrays.copyOf(occurrences, occurrences.length + 2);
+							occurrences[occurrences.length - 2] = pattern;
+							occurrences[occurrences.length - 1] = position;
+						}
+					}
+				}
+				stopOccurrences[station] = occurrences;
 			}
 			patternByScheduledTrip = new int[scheduledTrips.size()];
 			Arrays.fill(patternByScheduledTrip, -1);
@@ -2962,6 +2978,16 @@ public final class RouteTimetableRaptorPlanner {
 
 		int patternStopCount(int pattern) {
 			return stopsByPattern(pattern).length;
+		}
+
+		/** 역이 나오는 (패턴, 위치) 쌍을 이어 붙인 배열. 패턴 번호, 같은 패턴 안에서는 위치 순이다. */
+		int[] stopOccurrences(int station) {
+			return stopOccurrences[station];
+		}
+
+		/** 패턴의 위치 쌍별 최소 주행 시간({@code from * 정차 수 + to}). */
+		int[] minPatternRunningTimes(int pattern) {
+			return minPatternRunningTimes[pattern];
 		}
 
 		/** 패턴의 그 위치에서 타는 노선 색인. 같은 패턴의 모든 열차가 같은 값을 갖는다. */
