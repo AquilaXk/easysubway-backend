@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,9 +33,9 @@ import java.util.TreeSet;
  *   나오면 안 된다.</li>
  *   <li>출발 시각 고정(DepartAt): point 탐색은 계약상 (도착 시각, 환승 수) 파레토만 보존하고, 무단차 선호 프로필에서는
  *   계단 경고 유무를 차원으로 더한다. 그래서 기준 해 파레토 집합을 그 키로 사영한 파레토 집합과 엔진 결과 키 집합이
- *   같아야 한다. 결과 상한(alternativeCount)에 걸리면 엔진 결과는 그 집합의 부분집합이고, 크기가 상한과 같고,
- *   가장 이른 도착을 포함해야 한다. 엔진의 각 여정은 원시 승차·환승 사실로 실행 가능해야 하고 지표가 다시 계산한
- *   값과 같아야 한다.</li>
+ *   같아야 한다. 결과 상한({@code max(alternativeCount, maxTransfers + 1)})을 넘으면 문서화된 절단 순서
+ *   ({@link #truncate})로 고른 키 집합과 정확히 같아야 한다. 엔진의 각 여정은 원시 승차·환승 사실로 실행 가능해야
+ *   하고 지표가 다시 계산한 값과 같아야 한다.</li>
  * </ul>
  *
  * <h2>기준 해 입력은 엔진을 거치지 않는다</h2>
@@ -113,13 +114,19 @@ final class JourneyEngineDifferentialHarness {
 	 * 한 질의의 판정. {@code expectedLabels}는 기준 해가 요구한 비교 단위 수(DepartBetween은 모든 시점의 합),
 	 * {@code maxTransfersUsed}는 기준 해 결과의 최대 환승 수, {@code serviceDayCrossing}은 기준 해 결과에
 	 * 서비스일 날짜와 실제 달력 날짜가 다른(자정 이후) 승차가 있는지, {@code zeroSlack}은 기준 해 결과에 환승 여유가
-	 * 정확히 0초인 경계 연결이 있는지다.
+	 * 정확히 0초인 경계 연결이 있는지, {@code truncatedPointFront}는 point 파레토 집합이 결과 상한을 넘어 절단 순서를
+	 * 비교했는지다.
 	 */
 	record Verdict(
 		Case testCase, String mismatch, int expectedLabels, int actualLabels, int maxTransfersUsed,
-		boolean serviceDayCrossing, int extraEnginePoints, boolean zeroSlack
+		boolean serviceDayCrossing, int extraEnginePoints, boolean zeroSlack, boolean truncatedPointFront
 	) {
 		boolean matched() { return mismatch == null; }
+
+		Verdict withTruncatedPointFront() {
+			return new Verdict(testCase, mismatch, expectedLabels, actualLabels, maxTransfersUsed, serviceDayCrossing,
+				extraEnginePoints, zeroSlack, true);
+		}
 	}
 
 	/**
@@ -138,7 +145,7 @@ final class JourneyEngineDifferentialHarness {
 		} catch (EngineFailure failure) {
 			Throwable cause = failure.getCause();
 			return new Verdict(testCase, "engine threw " + cause.getClass().getSimpleName() + ": " + cause.getMessage(),
-				0, 0, -1, false, 0, false);
+				0, 0, -1, false, 0, false, false);
 		}
 	}
 
@@ -183,30 +190,27 @@ final class JourneyEngineDifferentialHarness {
 			if (unsound != null) problems.add("infeasible engine itinerary: " + unsound + " " + vector(itinerary));
 		}
 		boolean warningDimension = mobility.prefersStepFree();
-		TreeSet<String> front = pointFront(expected, warningDimension);
+		List<long[]> front = pointFront(expected, warningDimension);
 		List<String> actualKeys = actual.stream().map(itinerary -> pointKey(itinerary, warningDimension)).toList();
 		int limit = Math.max(query.alternativeCount(), query.maxTransfers() + 1);
 		if (new TreeSet<>(actualKeys).size() != actualKeys.size()) problems.add("duplicate engine key " + actualKeys);
-		if (front.size() <= limit) {
-			if (!front.equals(new TreeSet<>(actualKeys))) {
-				problems.add("point front differs: expected " + front + " actual " + new TreeSet<>(actualKeys));
-			}
-		} else if (!front.containsAll(actualKeys) || actualKeys.size() != limit
-			|| !actualKeys.contains(front.first())) {
-			problems.add("truncated point front differs: expected subset of " + front + " size " + limit
-				+ " with " + front.first() + ", actual " + actualKeys);
+		TreeSet<String> selected = keys(truncate(front, limit, warningDimension));
+		if (!selected.equals(new TreeSet<>(actualKeys))) {
+			problems.add((front.size() > limit ? "truncated point front differs: full front " + keys(front) + ", " : "point front differs: ")
+				+ "expected " + selected + " actual " + new TreeSet<>(actualKeys));
 		}
-		return verdict(testCase, problems, front.size(), actual.size(), expected);
+		Verdict verdict = verdict(testCase, problems, front.size(), actual.size(), expected);
+		return front.size() > limit ? verdict.withTruncatedPointFront() : verdict;
 	}
 
-	/** point 결과 비교 키. 도착 시각을 먼저 두어 사전순이 곧 도착 순서가 되게 한다. */
-	private static TreeSet<String> pointFront(List<JourneyProfileExactOracle.Candidate> expected, boolean warnings) {
+	/** point 결과의 (도착, 승차 수[, 계단 경고]) 파레토 키. 같은 키는 하나만 남긴다. */
+	private static List<long[]> pointFront(List<JourneyProfileExactOracle.Candidate> expected, boolean warnings) {
 		List<long[]> keys = new ArrayList<>();
 		for (JourneyProfileExactOracle.Candidate candidate : expected) {
 			keys.add(new long[] {candidate.arrivalAtDestination().getEpochSecond(), candidate.transfersUsed(),
 				warnings && candidate.accessibilityBurden() > 0 ? 1 : 0});
 		}
-		TreeSet<String> front = new TreeSet<>();
+		List<long[]> front = new ArrayList<>();
 		for (long[] key : keys) {
 			boolean dominated = false;
 			for (long[] other : keys) {
@@ -216,9 +220,41 @@ final class JourneyEngineDifferentialHarness {
 					break;
 				}
 			}
-			if (!dominated) front.add(pointKey(key[0], (int) key[1], key[2] == 1));
+			if (!dominated && front.stream().noneMatch(existing -> Arrays.equals(existing, key))) front.add(key);
 		}
 		return front;
+	}
+
+	/**
+	 * 제품 계약: point 결과 상한({@code max(alternativeCount, maxTransfers + 1)}) 절단 순서.
+	 * (1) 도착 시각, 다음 승차 수 순으로 앞에서 상한만큼 남긴다. (2) 무단차 선호면 (계단 경고 없음, 도착, 승차 수)
+	 * 순으로 가장 앞선 라벨이 남지 않았을 때, 맨 앞(가장 이른 도착)을 뺀 자리 중 승차 수가 겹치는 가장 뒤 자리를
+	 * 그 라벨로 바꾼다. 바꿀 자리가 없으면 그대로 둔다. 파레토 집합 안에서는 (도착, 승차 수)가 같은 두 키가
+	 * 없으므로(계단 경고만 다르면 경고 없는 쪽이 지배) 이 순서는 결정적이다.
+	 */
+	static List<long[]> truncate(List<long[]> front, int limit, boolean prefersStepFree) {
+		List<long[]> ordered = new ArrayList<>(front);
+		ordered.sort(Comparator.<long[]>comparingLong(key -> key[0]).thenComparingLong(key -> key[1]));
+		if (ordered.size() <= limit) return ordered;
+		List<long[]> kept = new ArrayList<>(ordered.subList(0, limit));
+		if (!prefersStepFree) return kept;
+		long[] preferred = ordered.stream().min(Comparator.<long[]>comparingLong(key -> key[2])
+			.thenComparingLong(key -> key[0]).thenComparingLong(key -> key[1])).orElseThrow();
+		if (kept.contains(preferred)) return kept;
+		for (int index = kept.size() - 1; index >= 1; index -= 1) {
+			long boardings = kept.get(index)[1];
+			if (kept.stream().filter(key -> key[1] == boardings).count() > 1) {
+				kept.set(index, preferred);
+				break;
+			}
+		}
+		return kept;
+	}
+
+	private static TreeSet<String> keys(List<long[]> keys) {
+		TreeSet<String> result = new TreeSet<>();
+		for (long[] key : keys) result.add(pointKey(key[0], (int) key[1], key[2] == 1));
+		return result;
 	}
 
 	private static String pointKey(JourneyProfileRaptorPort.Itinerary itinerary, boolean warnings) {
@@ -356,7 +392,7 @@ final class JourneyEngineDifferentialHarness {
 		List<JourneyProfileExactOracle.Candidate> all = expectedByPoint.values().stream().flatMap(List::stream).toList();
 		Verdict verdict = verdict(testCase, problems, expectedLabels, actualLabels, all);
 		return new Verdict(testCase, verdict.mismatch(), verdict.expectedLabels(), verdict.actualLabels(),
-			verdict.maxTransfersUsed(), verdict.serviceDayCrossing(), extra, verdict.zeroSlack());
+			verdict.maxTransfersUsed(), verdict.serviceDayCrossing(), extra, verdict.zeroSlack(), false);
 	}
 
 	private static List<JourneyProfileExactOracle.Candidate> solvePointOrEmpty(
@@ -410,7 +446,7 @@ final class JourneyEngineDifferentialHarness {
 		boolean zeroSlack = expected.stream().anyMatch(candidate -> candidate.minimumConnectionSlack()
 			instanceof JourneyProfileExactOracle.ConnectionSlack.MinimumTransferSeconds seconds && seconds.seconds() == 0);
 		return new Verdict(testCase, problems.isEmpty() ? null : String.join("\n    ", problems),
-			expectedLabels, actualLabels, maxTransfers, crossing, 0, zeroSlack);
+			expectedLabels, actualLabels, maxTransfers, crossing, 0, zeroSlack, false);
 	}
 
 	private static Verdict failClosed(Case testCase, List<JourneyProfileExactOracle.Candidate> expected) {

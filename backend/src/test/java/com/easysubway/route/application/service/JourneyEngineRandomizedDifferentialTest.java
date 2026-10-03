@@ -127,6 +127,73 @@ class JourneyEngineRandomizedDifferentialTest {
 		assertThat(tally.zeroSlack).as("여유 0초 연결이 기준 해 결과에 실제로 나타난 질의").isGreaterThanOrEqualTo(50);
 	}
 
+	@Test
+	@DisplayName("무단차 선호 point 결과가 상한을 넘으면 문서화된 절단 순서로 고른 집합과 같다")
+	void truncatedPointFrontFollowsTheDocumentedOrder() {
+		RouteTimetable timetable = truncationTimetable();
+		var runtime = compile(timetable);
+		Instant readyAt = BOUNDARY_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant().plusSeconds(7 * 3_600 + 50 * 60);
+		int truncated = 0;
+		for (int alternatives = 1; alternatives <= 3; alternatives += 1) {
+			var temporal = new JourneyRaptorQuery.DepartAt(readyAt);
+			var query = new JourneyRaptorQuery(
+				JourneyProfileFullCorpusRunner.requestId("truncation-" + alternatives, "o", "d", temporal), "o", "d", temporal,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.FAST,
+				JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, alternatives, () -> false);
+			Case testCase = new Case("truncation", alternatives, alternatives, Mode.DEPART_AT, query);
+			Verdict verdict = JourneyEngineDifferentialHarness.check(testCase, timetable, runtime);
+			assertThat(verdict.mismatch()).as(testCase.describe()).isNull();
+			// 파레토 키는 (08:30 환승1 계단), (08:36 환승1 무단차), (09:00 직행) 3개이고 상한은 max(대안 수, 2)다.
+			assertThat(verdict.expectedLabels()).isEqualTo(3);
+			assertThat(verdict.truncatedPointFront()).isEqualTo(alternatives < 3);
+			if (verdict.truncatedPointFront()) truncated += 1;
+		}
+		assertThat(truncated).isEqualTo(2);
+	}
+
+	/**
+	 * o에서 L1로 x에 08:10 도착. x의 L1→L2 환승은 계단 동선(실측 60초)과 무단차 동선(실측 300초)이 함께 있다.
+	 * 무단차 프로필·빠른 걸음이면 시설 대기 60초와 승차 여유 180초를 더해 계단은 08:15, 무단차는 08:19부터 탈 수 있다.
+	 * L2 08:16 열차는 계단으로만, 08:22 열차는 무단차로도 탄다. L3는 o에서 d로 가는 09:00 도착 직행이다.
+	 */
+	private static RouteTimetable truncationTimetable() {
+		var stairs = new LoadRouteTimetablePort.PathwayEdge("e-x-stairs", "p-x-L1", "p-x-L2", 60, 0, false, true, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+		var stepFree = new LoadRouteTimetablePort.PathwayEdge("e-x-step-free", "p-x-L1", "p-x-L2", 300, 0, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(new LoadRouteTimetablePort.PathwayNode("p-x-L1", "x", "L1", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("p-x-L2", "x", "L2", "PLATFORM")),
+			List.of(stairs, stepFree),
+			List.of(new LoadRouteTimetablePort.TransferRule("rule-x", "x", "L1", "x", "L2", "IN_STATION", 60,
+				stairs.id(), stepFree.id(), "VERIFIED")),
+			List.of(new LoadRouteTimetablePort.RouteEdgeEvidence("ev-stairs", "x", "L2", stairs.id(), "TRANSFER",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new LoadRouteTimetablePort.RouteEdgeEvidence("ev-step-free", "x", "L2", stepFree.id(), "TRANSFER",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar("daily", true, true, true, true, true, true, true,
+			BOUNDARY_DATE.minusDays(2), BOUNDARY_DATE.plusDays(2), "Asia/Seoul");
+		return new RouteTimetable(List.of(calendar), List.of(),
+			List.of(new LoadRouteTimetablePort.TransitRoute("r1", "L1", "1", "1", "up", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("r2", "L2", "2", "2", "up", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("r3", "L3", "3", "3", "up", "Asia/Seoul")),
+			List.of(new LoadRouteTimetablePort.TransitTrip("feeder", "r1", "daily", "x", "up", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("fast", "r2", "daily", "d", "up", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("slow", "r2", "daily", "d", "up", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("direct", "r3", "daily", "d", "up", "LOCAL", 0)),
+			List.of(stopAt("feeder", 1, "o", "L1", 28_800), stopAt("feeder", 2, "x", "L1", 29_400),
+				stopAt("fast", 1, "x", "L2", 29_760), stopAt("fast", 2, "d", "L2", 30_600),
+				stopAt("slow", 1, "x", "L2", 30_120), stopAt("slow", 2, "d", "L2", 30_960),
+				stopAt("direct", 1, "o", "L3", 29_100), stopAt("direct", 2, "d", "L3", 32_400)),
+			List.of(), List.of(), null, access);
+	}
+
+	private static LoadRouteTimetablePort.TransitStopTime stopAt(
+		String trip, int sequence, String station, String line, int seconds
+	) {
+		return new LoadRouteTimetablePort.TransitStopTime(trip, sequence, station, line, seconds, seconds, 0, 0);
+	}
+
 	private static final java.time.LocalDate BOUNDARY_DATE = JourneyEngineSyntheticBundles.WEDNESDAY;
 	private static final int BOUNDARY_ARRIVAL = 8 * 3_600 + 600;
 
@@ -378,6 +445,7 @@ class JourneyEngineRandomizedDifferentialTest {
 		int withTwoTransfers;
 		int serviceDayCrossing;
 		int zeroSlack;
+		int truncatedPointFront;
 		final Map<Mode, Integer> queriesByMode = new EnumMap<>(Mode.class);
 		final Map<Mode, Integer> nonEmptyByMode = new EnumMap<>(Mode.class);
 		final Map<Mobility, Integer> nonEmptyByMobility = new java.util.LinkedHashMap<>();
@@ -408,6 +476,7 @@ class JourneyEngineRandomizedDifferentialTest {
 			if (verdict.maxTransfersUsed() >= 2) withTwoTransfers += 1;
 			if (verdict.serviceDayCrossing()) serviceDayCrossing += 1;
 			if (verdict.zeroSlack()) zeroSlack += 1;
+			if (verdict.truncatedPointFront()) truncatedPointFront += 1;
 		}
 
 		/** 검증이 공허하지 않도록 비교가 실제로 일어난 범위를 강제한다. */
@@ -431,6 +500,7 @@ class JourneyEngineRandomizedDifferentialTest {
 				+ " comparedLabels=" + expectedLabels + " byMode=" + queriesByMode + " nonEmptyByMode=" + nonEmptyByMode
 				+ " withTransfer=" + withTransfer + " withTwoTransfers=" + withTwoTransfers
 				+ " serviceDayCrossing=" + serviceDayCrossing + " zeroSlack=" + zeroSlack
+				+ " truncatedPointFront=" + truncatedPointFront
 				+ " extraEnginePoints=" + extraEnginePoints
 				+ " nonEmptyByMobility=" + nonEmptyByMobility + " millisByMode=" + nanosByMode.entrySet().stream()
 					.map(entry -> entry.getKey() + "=" + entry.getValue() / 1_000_000).toList()
