@@ -284,7 +284,10 @@ class JourneyEnginePerformanceGateTest {
 		Map<Mode, List<Long>> pooledNanos = new EnumMap<>(Mode.class);
 		Map<Mode, List<Long>> bytesByRound = new EnumMap<>(Mode.class);
 		Map<Mode, Map<String, Long>> work = null;
+		MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
 		for (int round = 0; round < MEASURED_ROUNDS; round += 1) {
+			// 회차마다 GC를 먼저 돌린다. 짧은 회차(수 MB 할당)에 GC 정지가 끼면 모은 표본의 p99가 정지 시간이 된다.
+			memory.gc();
 			Map<Mode, List<Long>> nanos = new EnumMap<>(Mode.class);
 			Map<Mode, List<Long>> bytes = new EnumMap<>(Mode.class);
 			Map<Mode, Map<String, Long>> roundWork = new EnumMap<>(Mode.class);
