@@ -322,6 +322,50 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 			new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence));
 	}
 
+	/**
+	 * #469 경유 검색 시간표. o→v는 L1 직행(08:10 도착)과 o→x(L3)→v(L4) 두 번 승차(08:08 도착, x 계단 환승) 두 가지이고,
+	 * v→d는 L2(08:20 출발, 08:30 도착)다. v의 L1→L2·L4→L2 환승에는 계단 동선(30 m)과 {@code junctionStepFree} 상태의
+	 * 계단 없는 동선(600 m)이 있다.
+	 */
+	static RouteTimetable viaTimetable(StepFreePathway junctionStepFree) {
+		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
+		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
+		List<LoadRouteTimetablePort.TransferRule> rules = new ArrayList<>();
+		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
+		var xStairs = edge("e-x-stairs", "p-x-L3", "p-x-L4", 30, true);
+		edges.add(xStairs);
+		nodes.add(new LoadRouteTimetablePort.PathwayNode("p-x-L3", "x", "L3", "PLATFORM"));
+		nodes.add(new LoadRouteTimetablePort.PathwayNode("p-x-L4", "x", "L4", "PLATFORM"));
+		evidence.add(evidence("ev-x-stairs", "x", "L4", xStairs.id()));
+		rules.add(new LoadRouteTimetablePort.TransferRule("rule-x", "x", "L3", "x", "L4", "IN_STATION", 60,
+			xStairs.id(), null, "VERIFIED"));
+		nodes.add(new LoadRouteTimetablePort.PathwayNode("p-v-L2", "v", "L2", "PLATFORM"));
+		for (String fromLine : List.of("L1", "L4")) {
+			nodes.add(new LoadRouteTimetablePort.PathwayNode("p-v-" + fromLine, "v", fromLine, "PLATFORM"));
+			var stairs = edge("e-v-" + fromLine + "-stairs", "p-v-" + fromLine, "p-v-L2", 30, true);
+			var stepFree = new LoadRouteTimetablePort.PathwayEdge("e-v-" + fromLine + "-step-free", "p-v-" + fromLine,
+				"p-v-L2", 60, 600, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE",
+				junctionStepFree == StepFreePathway.VERIFIED ? "VERIFIED" : "UNVERIFIED");
+			edges.add(stairs);
+			edges.add(stepFree);
+			evidence.add(evidence("ev-v-" + fromLine + "-stairs", "v", "L2", stairs.id()));
+			evidence.add(evidence("ev-v-" + fromLine + "-step-free", "v", "L2", stepFree.id()));
+			rules.add(new LoadRouteTimetablePort.TransferRule("rule-v-" + fromLine, "v", fromLine, "v", "L2", "IN_STATION",
+				60, stairs.id(), stepFree.id(), "VERIFIED"));
+		}
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar("daily", true, true, true, true, true, true, true,
+			SERVICE_DATE.minusDays(2), SERVICE_DATE.plusDays(2), "Asia/Seoul");
+		return new RouteTimetable(List.of(calendar), List.of(),
+			List.of(route("L1"), route("L2"), route("L3"), route("L4")),
+			List.of(trip("v1", "L1"), trip("x1", "L3"), trip("x2", "L4"), trip("w1", "L2")),
+			List.of(
+				stop("v1", 1, ORIGIN, "L1", 29_400), stop("v1", 2, "v", "L1", 30_000),
+				stop("x1", 1, ORIGIN, "L3", 29_400), stop("x1", 2, "x", "L3", 29_500),
+				stop("x2", 1, "x", "L4", 29_800), stop("x2", 2, "v", "L4", 29_880),
+				stop("w1", 1, "v", "L2", 30_600), stop("w1", 2, DESTINATION, "L2", 31_200)),
+			List.of(), List.of(), null, new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence));
+	}
+
 	private static LoadRouteTimetablePort.PathwayEdge edge(
 		String id, String from, String to, int distanceMeters, boolean includesStairs
 	) {

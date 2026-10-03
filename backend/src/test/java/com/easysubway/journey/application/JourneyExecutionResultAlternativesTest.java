@@ -48,6 +48,27 @@ class JourneyExecutionResultAlternativesTest {
 		assertThatThrownBy(() -> candidate("journey-4", false,
 			List.of(JourneyAlternatives.Category.STAIR_FREE, JourneyAlternatives.Category.FASTEST)))
 			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> candidate("journey-5", false,
+			List.of(JourneyAlternatives.Category.FASTEST, JourneyAlternatives.Category.FASTEST)))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void planResultCarriesStairFreeAlternativeExactlyWhenCandidatesExist() {
+		var candidate = candidate("journey-1", true, List.of(JourneyAlternatives.Category.FASTEST));
+		var alternative = new JourneyAlternatives.StairFreeAlternative(JourneyAlternatives.StairFreeStatus.INCLUDED,
+			JourneyAlternatives.FacilityStatus.APPLIED);
+		var scan = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
+		var boundary = JourneyRaptorPort.RouteBoundaryReceipt.observed(0);
+		var measurement = JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
+
+		assertThat(new JourneyRaptorPort.PlanResult("query-1", List.of(candidate), scan, boundary, measurement, alternative)
+			.stairFreeAlternative()).isEqualTo(alternative);
+		assertThat(new JourneyRaptorPort.PlanResult("query-1", List.of(), scan, boundary).stairFreeAlternative()).isNull();
+		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult("query-1", List.of(candidate), scan, boundary))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult("query-1", List.of(), scan, boundary, measurement,
+			alternative)).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	private static JourneyCandidate candidate(

@@ -371,6 +371,52 @@ class JourneyRaptorAdapterTest {
 			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.UNDETERMINED);
 	}
 
+	@Test
+	void viaSearchComposesCategoriesAndReportsUnverifiedJunctionAsUndetermined() {
+		// #469: 경유 검색도 같은 결과 구성 규칙을 쓰고, 경유역 접속 환승의 근거 없는 계단 없는 동선도 판정에 넣는다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetable(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.StepFreePathway.UNVERIFIED));
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates())
+			.extracting(JourneyCandidate::transferCount, JourneyCandidate::alternativeCategories)
+			.containsExactly(
+				org.assertj.core.groups.Tuple.tuple(1, List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST,
+					com.easysubway.journey.application.JourneyAlternatives.Category.FEWEST_TRANSFERS)),
+				org.assertj.core.groups.Tuple.tuple(2, List.of()));
+		assertThat(result.stairFreeAlternative().status())
+			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.UNDETERMINED);
+	}
+
+	@Test
+	void viaSearchWithVerifiedStepFreeJunctionIncludesStairFreeJourneyForStepFreePreference() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetable(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.StepFreePathway.VERIFIED));
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STEP_FREE), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).isNotEmpty();
+		assertThat(result.candidates()).anyMatch(candidate -> candidate.accessibility().stairFree()
+			&& candidate.alternativeCategories().contains(
+				com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE));
+		assertThat(result.stairFreeAlternative().status())
+			.isEqualTo(com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.INCLUDED);
+	}
+
+	private static JourneyRequest viaRequest(JourneyRequest.MobilityProfile profile) {
+		return new JourneyRequest(
+			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION, "v",
+			new JourneyRequest.Departure.Scheduled(RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD, profile,
+			JourneyRequest.ConstraintMode.NONE, 3, 3, () -> false);
+	}
+
 	private static JourneyRequest accessibleAlternativesRequest(
 		JourneyRequest.MobilityProfile profile, int maxTransfers, int alternativeCount
 	) {

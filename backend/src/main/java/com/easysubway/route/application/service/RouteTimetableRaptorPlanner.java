@@ -1664,8 +1664,7 @@ public final class RouteTimetableRaptorPlanner {
 		for (int index = 1; index < path.size(); index += 1) {
 			int transition = label.accessTransitions()[index];
 			if (timetable.transitionIncludesStairs(transition) && hasUnconfirmedStairFreeAlternative(timetable,
-				transferGroup(timetable, path.get(index - 1), path.get(index), transition), transition, profileBit,
-				realtimeOverlay)) {
+				timetable.transitionGroup(transition), transition, profileBit, realtimeOverlay)) {
 				return true;
 			}
 		}
@@ -1683,28 +1682,6 @@ public final class RouteTimetableRaptorPlanner {
 			}
 		}
 		return false;
-	}
-
-	/** 같은 (역, 출발 노선, 도착 노선) 환승 또는 같은 역 밖 보행의 동선 후보 묶음. */
-	private static int[] transferGroup(CompiledTimetable timetable, RideLeg previous, RideLeg next, int transition) {
-		int fromStation = timetable.stationIndex(previous.to().stationId());
-		int toStation = timetable.stationIndex(next.from().stationId());
-		int fromLine = timetable.lineIndex(previous.to().lineId());
-		int toLine = timetable.lineIndex(next.from().lineId());
-		if (fromStation == toStation) {
-			return timetable.transferTransitions(fromStation, fromLine, toLine);
-		}
-		OutOfStationFootpath[] footpaths = timetable.footpathsFromStation(fromStation);
-		if (footpaths != null) {
-			for (OutOfStationFootpath footpath : footpaths) {
-				int[] group = footpath.candidateTransitions();
-				if (footpath.fromLine() == fromLine && footpath.toStation() == toStation && footpath.toLine() == toLine
-					&& Arrays.stream(group).anyMatch(candidate -> candidate == transition)) {
-					return group;
-				}
-			}
-		}
-		return NO_TRANSITIONS;
 	}
 
 	/** 계단이 없고 이 프로필·시설 차단으로 막히지 않았지만 검증 근거가 없어 여정에 쓸 수 없는 동선인지. */
@@ -2909,6 +2886,10 @@ public final class RouteTimetableRaptorPlanner {
 		int[] transferTransitions(int station, int fromLine, int toLine) {
 			return accessTransitions.transferCandidates(station, fromLine, toLine);
 		}
+		/** #469: 이 전환과 같은 환승(또는 같은 역 밖 보행)의 동선 후보 묶음(자신 포함). */
+		int[] transitionGroup(int transition) {
+			return accessTransitions.transitionGroup(transition);
+		}
 		int allocatedTransferSlotCount() {
 			return accessTransitions.allocatedTransferSlotCount();
 		}
@@ -3256,6 +3237,8 @@ public final class RouteTimetableRaptorPlanner {
 		private final String[] verificationStatuses;
 		private final boolean[] outOfStation;
 		private final List<OutOfStationFootpath> outOfStationFootpaths;
+		/** #469: 전환마다 같은 환승(또는 같은 역 밖 보행)의 동선 후보 묶음. 컴파일 때 한 번 만든다. */
+		private final int[][] transitionGroups;
 		private final int unsupportedTransferCount;
 		private AccessTransitions(
 			int stationCount,
@@ -3310,6 +3293,23 @@ public final class RouteTimetableRaptorPlanner {
 				compiledEdgeTransitions.put(entry.getKey(), entry.getValue().stream().mapToInt(Integer::intValue).toArray());
 			}
 			this.edgeTransitions = Map.copyOf(compiledEdgeTransitions);
+			this.transitionGroups = new int[candidates.size()][];
+			Arrays.fill(transitionGroups, NO_TRANSITIONS);
+			for (int[] group : transferTransitions) {
+				for (int transition : group) {
+					transitionGroups[transition] = group;
+				}
+			}
+			for (OutOfStationFootpath footpath : outOfStationFootpaths) {
+				int[] group = footpath.candidateTransitions();
+				for (int transition : group) {
+					transitionGroups[transition] = group;
+				}
+			}
+		}
+
+		private int[] transitionGroup(int transition) {
+			return transitionGroups[transition];
 		}
 
 		private static AccessTransitions compile(
