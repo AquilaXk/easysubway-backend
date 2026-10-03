@@ -255,9 +255,9 @@
  *   같은 작업 안에서 (1) 두 상수를 새 값과 새 커밋 sha로 바꾸고 (2) 위 절차로 기준선을 다시
  *   만들고 (3) 6절의 재현 표를 고친다. 상수를 바꾸지 않으면 게이트는 옛 정책을 재현하므로, platform 쪽 정책 변경
  *   리뷰에서 이 동기화를 확인한다. #461에서 platform#218 값으로 이 절차를 처음 밟았다. 출처 커밋은 platform PR의 head
- *   커밋(PR ref로 계속 열람 가능)으로 고정한다. squash 병합된 main 커밋은 같은 파일 내용을 담은 다른 sha이므로 두 sha가
- *   같은 정책 값에 대응하며, 정책 JSON의 sha256(렌더 결과 {@code EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256})으로
- *   대응을 확인한다.</li>
+ *   커밋(PR ref로 계속 열람 가능)으로 고정한다. 이후 PR 커밋과 squash 병합된 main 커밋은 다른 sha지만 같은 행에 같은 정책
+ *   값을 담으므로 두 sha가 같은 정책에 대응하며, 정책 JSON의 sha256(렌더 결과
+ *   {@code EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256})으로 대응을 확인한다.</li>
  *   <li>차분 검증 확장 실행: {@code EASYSUBWAY_DIFFERENTIAL_BUNDLES}(기본 150)와 {@code EASYSUBWAY_DIFFERENTIAL_BASE_SEED}로
  *   번들 수와 시작 시드를 바꾼다. 반례에 찍힌 seed가 번들 시드다.</li>
  * </ul>

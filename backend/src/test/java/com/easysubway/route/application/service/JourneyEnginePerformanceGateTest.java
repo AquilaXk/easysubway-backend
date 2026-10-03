@@ -92,8 +92,8 @@ class JourneyEnginePerformanceGateTest {
 		new JourneyProfileResourcePolicy.ProfilePlanningLimits(10_000_000L, 2_048, 128, 128);
 	/**
 	 * 위 한도를 옮겨 온 정확한 출처(레포@커밋:경로#행). 기준선에 함께 기록되어 바뀌면 게이트가 실패한다. 커밋은
-	 * platform#218의 PR head이며 PR ref로 계속 열람할 수 있다. squash 병합된 main 커밋은 이 head와 같은 파일 내용을
-	 * 담은 다른 sha이므로, 병합 후에도 두 sha가 같은 정책 값에 대응한다(정책 JSON sha256 6fdecdfb…로 확인).
+	 * platform#218의 첫 정책 커밋이며 PR ref로 계속 열람할 수 있다. 이후 PR 커밋과 squash 병합된 main 커밋은 다른
+	 * sha지만 같은 행(44~49)에 같은 정책 값을 담으므로 두 sha가 같은 정책에 대응한다(정책 JSON sha256 6fdecdfb…로 확인).
 	 */
 	static final String CANDIDATE_POLICY_SOURCE = "AquilaXk/easysubway-platform@1cb1a5f9012dc0710fb2f4b3f6e968ccb187f6d9"
 		+ ":tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49";
