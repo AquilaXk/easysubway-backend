@@ -377,6 +377,38 @@ class DatapackReleaseCallbackServiceTest {
 	}
 
 	@Test
+	@DisplayName("#456 F1 git 원본: 종결된 delivery와 channel만 다른 서명 callback은 재생으로 답하지 않고 거부한다")
+	void gitOriginTerminalReplayOnDifferentChannelIsRejected() {
+		assertThat(service.receive(command("PASS", computeSignature("PASS"))).status()).isEqualTo("OBSERVED");
+
+		CallbackResult conflicting = service.receive(commandOnChannel("staging"));
+
+		assertThat(conflicting.status()).isEqualTo("DEAD_LETTER");
+		assertThat(conflicting.idempotentReplay()).isFalse();
+		assertThat(deliveryRow()).containsEntry("STATE", "DELIVERED")
+			.containsEntry("CHANNEL", CHANNEL);
+		verify(releaseCatalog, never()).fetchCurrent("staging");
+		assertThat(observationRow()).containsEntry("RELEASE_SEQUENCE", RELEASE_SEQUENCE);
+	}
+
+	@Test
+	@DisplayName("#456 F1 git 원본: 미종결 delivery와 channel만 다른 서명 callback은 CHANNEL_MISMATCH로 종결한다")
+	void gitOriginPendingDeliveryOnDifferentChannelIsDeadLettered() {
+		when(releaseCatalog.findByRequest(CHANNEL, APPROVAL_ID)).thenReturn(Optional.empty());
+		service.receive(command("PASS", computeSignature("PASS")));
+		deliveryRepository.scheduleManualRepair(idempotencyKey(SHA), T0);
+
+		CallbackResult conflicting = service.receive(commandOnChannel("staging"));
+
+		assertThat(conflicting.status()).isEqualTo("DEAD_LETTER");
+		assertThat(deliveryRow()).containsEntry("STATE", "DEAD_LETTER")
+			.containsEntry("HTTP_CLASS", "CONFLICT")
+			.containsEntry("SANITIZED_DETAIL", "CHANNEL_MISMATCH");
+		verify(releaseCatalog, never()).fetchCurrent("staging");
+		assertThat(observationCount()).isZero();
+	}
+
+	@Test
 	@DisplayName("#456 git 원본: 서명 binding 결속이 하나라도 다르면 DEAD_LETTER로 거부하고 관측하지 않는다")
 	void gitOriginBindingMismatchIsRejected() {
 		var mismatches = Map.of(
@@ -563,6 +595,16 @@ class DatapackReleaseCallbackServiceTest {
 		assertThat(service.reconcile(delivery, binding).status()).isEqualTo("DEAD_LETTER");
 		assertThat(deliveryRow()).containsEntry("SANITIZED_DETAIL", "REQUEST_CATALOG_MISMATCH");
 		assertThat(observationCount()).isZero();
+	}
+
+	private CallbackCommand commandOnChannel(String channel) {
+		var fields = new CanonicalFields(2, "datapack-release-callback", APPROVAL_ID,
+			RELEASE_SEQUENCE, channel, idempotencyKey(SHA), WORKFLOW_URL, SHA, SHA, SHA, SHA,
+			"PASS", "PASS", "PASS");
+		return new CallbackCommand(2, "datapack-release-callback", APPROVAL_ID,
+			RELEASE_SEQUENCE, channel, idempotencyKey(SHA), WORKFLOW_URL,
+			SHA, SHA, SHA, SHA, "PASS", "PASS", "PASS",
+			"payload-signature", callbackSignature.sign(fields));
 	}
 
 	private Map<String, Object> deliveryRow() {

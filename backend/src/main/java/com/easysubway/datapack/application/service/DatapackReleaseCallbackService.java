@@ -122,6 +122,15 @@ public class DatapackReleaseCallbackService {
 		if (request == null) {
 			if (existingSequence.isEmpty()) return null;
 			var state = existingSequence.get().state();
+			if (!existingSequence.get().channel().equals(cmd.channel())) {
+				// git 원본은 request 행이 없으므로 저장된 delivery channel이 유일한 대조 기준이다.
+				if (state != State.DELIVERED) {
+					deliveryRepository.mark(existingSequence.get().idempotencyKey(), State.DEAD_LETTER,
+						existingSequence.get().attempts(), null, "CONFLICT", "CHANNEL_MISMATCH",
+						LocalDateTime.now(clock));
+				}
+				return new CallbackResult("DEAD_LETTER", false);
+			}
 			if (state == State.DELIVERED) return new CallbackResult(OBSERVED, true);
 			return state == State.DEAD_LETTER ? new CallbackResult("DEAD_LETTER", true) : null;
 		}
