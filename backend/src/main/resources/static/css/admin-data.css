@@ -77,20 +77,27 @@
 
 .dashboard-current-overview {
 	display: grid;
-	grid-template-columns: minmax(140px, 0.72fr) minmax(270px, 1.28fr);
-	align-items: center;
-	gap: 28px;
+	grid-template-columns: minmax(130px, 0.72fr) minmax(270px, 1.28fr);
+	align-items: stretch;
+	gap: 14px;
 	margin-top: 18px;
 }
 
 .dashboard-current-service {
-	display: block;
-	margin: 0;
-	padding: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	padding: 12px 16px;
+	background: var(--admin-bg);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
 }
 
 .dashboard-service-copy {
-	display: block;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	justify-content: space-between;
 }
 
 .dashboard-service-copy span {
@@ -103,11 +110,17 @@
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	margin-top: 11px;
+	margin-top: 6px;
 	color: var(--admin-ink);
-	font-size: var(--admin-fs-page);
-	line-height: 1;
+	font-size: var(--admin-fs-section);
+	line-height: 1.2;
 	font-weight: var(--admin-w-title);
+}
+
+.dashboard-service-hint {
+	margin-top: 4px;
+	font-size: 11px;
+	color: var(--admin-ink-3);
 }
 
 .dashboard-service-copy strong > span:last-child {
@@ -133,22 +146,21 @@
 }
 
 .admin-v3 .dashboard-current-metrics {
-	display: flex;
-	justify-content: flex-end;
-	align-items: stretch;
-	gap: 12px;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10px;
 	margin: 0;
 }
 
 .dashboard-current-metrics > div {
 	display: flex;
 	flex-direction: column;
-	justify-content: space-between;
-	min-width: 104px;
-	padding: 10px 14px;
+	justify-content: center;
+	gap: 6px;
+	padding: 12px 14px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
-	background: var(--admin-surface);
+	background: var(--admin-bg);
 	text-align: left;
 	transition: border-color 0.15s ease;
 }
@@ -280,52 +292,61 @@
 .dashboard-week-days {
 	display: grid;
 	grid-template-columns: repeat(7, minmax(0, 1fr));
-	gap: 5px;
+	gap: 6px;
 	list-style: none;
 	margin: 14px 0 0;
-	padding: 0;
+	padding: 12px 10px;
+	background: var(--admin-bg);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
 }
 
 .dashboard-week-day {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 6px;
+	justify-content: center;
+	gap: 8px;
 	min-width: 0;
-	padding: 8px 3px 7px;
-	border: 1px solid var(--admin-border);
+	padding: 10px 4px;
+	border: 1px solid transparent;
 	border-radius: var(--admin-radius-control);
-	background: var(--admin-bg);
+	background: transparent;
 	transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .dashboard-week-day:hover {
 	background: var(--admin-surface);
-	border-color: var(--admin-border-strong);
+	border-color: var(--admin-border);
 }
 
 .dashboard-week-day span {
 	color: var(--admin-ink-3);
 	font-size: var(--admin-fs-meta);
 	font-weight: var(--admin-w-medium);
+	letter-spacing: -0.01em;
 }
 
 .dashboard-week-day strong {
 	color: var(--admin-ink);
-	font-size: var(--admin-fs-body);
-	font-weight: var(--admin-w-strong);
+	font-size: var(--admin-fs-control);
+	font-weight: var(--admin-w-title);
 	font-variant-numeric: tabular-nums;
 }
 
 .dashboard-week-day.is-today {
 	border-color: var(--admin-border-strong);
-	background: var(--admin-accent-soft);
+	background: var(--admin-surface);
 	box-shadow: var(--admin-shadow-card);
 }
 
 .dashboard-week-day.is-today span {
 	color: var(--admin-accent);
 	font-weight: var(--admin-w-title);
+}
+
+.dashboard-week-day.is-today strong {
+	color: var(--admin-accent-ink);
 }
 
 .dashboard-weekly-total {
@@ -337,21 +358,40 @@
 .dashboard-reference-lower {
 	display: block;
 	margin-top: 16px;
+	max-width: 860px;
 }
 
 .dashboard-operations-details {
-	margin-top: 16px;
+	margin-top: 20px;
 }
 
 .dashboard-operations-details > summary {
-	cursor: pointer;
-	color: var(--admin-ink-2);
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 16px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
 	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-strong);
+	cursor: pointer;
+	box-shadow: var(--admin-shadow-card);
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	user-select: none;
+}
+
+.dashboard-operations-details > summary:hover {
+	background: var(--admin-bg);
+	border-color: var(--admin-border-strong);
 }
 
 .dashboard-operations-details[open] > summary {
-	margin-bottom: 16px;
+	margin-bottom: 20px;
+	background: var(--admin-accent-soft);
+	color: var(--admin-accent-ink);
+	border-color: var(--admin-border-strong);
 }
 
 .dashboard-reference-lower > section + section {
@@ -1297,6 +1337,36 @@
 	gap: 8px;
 	align-items: center;
 	margin: 0;
+}
+
+.admin-toolbar-form select {
+	height: 38px;
+	min-height: 38px;
+	padding: 0 32px 0 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background-color: var(--admin-surface);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 10px center;
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-control);
+	font-family: inherit;
+	appearance: none;
+	-webkit-appearance: none;
+	cursor: pointer;
+	box-shadow: none;
+	transition: border-color 0.15s ease;
+}
+
+.admin-toolbar-form select:hover {
+	border-color: var(--admin-border-strong);
+}
+
+.admin-toolbar-form select:focus {
+	border-color: var(--admin-primary);
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 1px;
 }
 
 /* 마지막 확인/갱신일 셀(V6-07 #2279): 상대 시간을 위, 정확한 날짜를 아래(meta)로 병기한다.

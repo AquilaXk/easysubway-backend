@@ -253,11 +253,24 @@
 	align-items: baseline;
 	gap: 3px;
 	padding: 2px 7px;
-	background: var(--admin-surface);
+	background: var(--admin-bg);
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-badge);
 	font-size: var(--admin-fs-meta);
 	white-space: nowrap;
+}
+
+.admin-split-item.is-positive {
+	background: var(--admin-surface);
+	border-color: var(--admin-border-strong);
+}
+
+.admin-split-item.is-positive strong {
+	color: var(--admin-accent-ink);
+}
+
+.admin-split-item.is-zero {
+	opacity: 0.6;
 }
 
 .admin-split-label {
@@ -269,6 +282,41 @@
 	color: var(--admin-ink);
 	font-weight: var(--admin-w-strong);
 	font-variant-numeric: tabular-nums;
+}
+
+.station-line-pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-accent-ink);
+	background: var(--admin-accent-soft);
+	border: 1px solid color-mix(in srgb, var(--admin-accent) 24%, transparent);
+	white-space: nowrap;
+}
+
+.station-region-pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 7px;
+	border-radius: 999px;
+	font-size: 11px;
+	color: var(--admin-ink-2);
+	background: var(--admin-bg);
+	border: 1px solid var(--admin-border);
+	white-space: nowrap;
+}
+
+.report-metrics-panel {
+	margin-bottom: 16px;
+	padding: 0;
+	overflow: hidden;
+}
+
+.report-metrics-panel > section {
+	padding: 10px 18px;
 }
 
 .admin-table-scroll th:first-child,
@@ -1071,8 +1119,8 @@
 /* 토스트(#1737) — 우상단, htmx HX-Trigger로 표시. no-JS는 서버 flash가 대체 */
 .toast-region {
 	position: fixed;
-	top: 16px;
-	right: 16px;
+	top: 72px;
+	right: 24px;
 	z-index: 60;
 	display: flex;
 	flex-direction: column;
@@ -1433,13 +1481,14 @@ label.admin-radio input[type="radio"] {
 	display: grid;
 	place-items: center;
 	min-height: 100vh;
+	min-height: 100dvh;
 	padding: 32px 18px;
-	background: radial-gradient(ellipse at 50% 20%, var(--es-brand-50) 0%, var(--es-brand-100) 100%);
+	background: var(--admin-bg);
 }
 
 .login-card {
 	width: min(100%, 420px);
-	padding: 36px 32px;
+	padding: 38px 34px 34px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
@@ -1469,43 +1518,14 @@ label.admin-radio input[type="radio"] {
 	color: var(--admin-ink);
 }
 
-.login-console-badge {
-	display: inline-flex;
-	align-items: center;
-	padding: 2px 8px;
-	border-radius: 999px;
-	font-size: 11px;
-	font-weight: var(--admin-w-strong);
-	color: var(--admin-accent-ink);
-	background: var(--admin-accent-soft);
-	border: 1px solid var(--admin-border);
-	letter-spacing: 0.02em;
-}
-
 .login-card h1 {
-	margin: 16px 0 6px;
-	font-size: 26px;
+	margin: 12px 0 20px;
+	font-size: 20px;
 	font-weight: var(--admin-w-title);
 	line-height: 1.25;
-	letter-spacing: -0.03em;
+	letter-spacing: -0.02em;
 	text-align: center;
 	color: var(--admin-ink);
-}
-
-.login-subtitle {
-	margin: 0 0 20px;
-	color: var(--admin-ink-2);
-	font-size: 13px;
-	font-weight: var(--admin-w-body);
-	line-height: 1.5;
-	text-align: center;
-}
-
-.login-card p,
-.login-note {
-	color: var(--admin-ink-2);
-	font-weight: var(--admin-w-body);
-	line-height: 1.5;
 }
 
 .login-field {
@@ -1520,6 +1540,21 @@ label.admin-radio input[type="radio"] {
 	color: var(--admin-ink);
 }
 
+.login-input-wrap {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.login-field-icon {
+	position: absolute;
+	left: 14px;
+	display: flex;
+	align-items: center;
+	color: var(--admin-ink-3);
+	pointer-events: none;
+}
+
 .login-field input,
 .login-submit {
 	width: 100%;
@@ -1527,7 +1562,7 @@ label.admin-radio input[type="radio"] {
 }
 
 .login-field input {
-	padding: 0 14px;
+	padding: 0 14px 0 40px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-surface);
@@ -1542,14 +1577,19 @@ label.admin-radio input[type="radio"] {
 	outline-offset: 1px;
 }
 
+.login-meta-row {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	margin-top: 18px;
+}
+
 .login-remember {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
-	margin-top: 18px;
 	color: var(--admin-ink-2);
 	font-size: 13px;
-	font-weight: var(--admin-w-body);
 	cursor: pointer;
 	user-select: none;
 }
@@ -1564,7 +1604,13 @@ label.admin-radio input[type="radio"] {
 }
 
 .login-submit {
-	margin-top: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	min-height: 48px;
+	margin-top: 22px;
 	font-size: 15px;
 	font-weight: var(--admin-w-strong);
 	letter-spacing: -0.01em;
@@ -1580,7 +1626,6 @@ label.admin-radio input[type="radio"] {
 	transform: scale(0.99);
 }
 
-/* retry warning(#2349 PR⑨): 로그인 재시도 안내 */
 .login-note {
 	margin-top: 18px;
 	padding: 12px 14px;
@@ -1591,13 +1636,6 @@ label.admin-radio input[type="radio"] {
 	font-size: 13px;
 	font-weight: var(--admin-w-strong);
 	line-height: 1.4;
-	text-align: center;
-}
-
-.login-footer {
-	margin-top: 24px;
-	padding-top: 16px;
-	border-top: 1px solid var(--admin-border);
 	text-align: center;
 }
 
@@ -1615,17 +1653,25 @@ label.admin-radio input[type="radio"] {
 	display: inline-block;
 	width: 6px;
 	height: 6px;
-	border-radius: 50%;
+	border-radius: 999px;
 	background: var(--admin-good);
+}
+
+.login-audit-note {
+	margin: 6px 0 0;
+	font-size: 11px;
+	color: var(--admin-ink-3);
+	line-height: 1.4;
+	opacity: 0.85;
 }
 
 @media (max-width: 520px) {
 	.login-card {
-		padding: 28px 20px;
+		padding: 28px 20px 24px;
 	}
 
 	.login-card h1 {
-		font-size: 24px;
+		font-size: 22px;
 	}
 }
 
@@ -1863,8 +1909,8 @@ label.admin-radio input[type="radio"] {
 	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 12px;
 	align-items: center;
-	margin-bottom: 18px;
-	padding: 16px 18px;
+	margin-bottom: 0;
+	padding: 10px 18px;
 	border: 0;
 	border-radius: 0;
 	background: transparent;
@@ -1877,11 +1923,11 @@ label.admin-radio input[type="radio"] {
 
 .admin-v3 .surge-alert h2,
 .admin-v3 .processing-time h2 {
-	margin: 0 0 4px;
+	margin: 0;
 	padding: 0;
 	border: 0;
 	background: transparent;
-	font-size: 17px;
+	font-size: 14px;
 	font-weight: var(--admin-w-strong);
 }
 

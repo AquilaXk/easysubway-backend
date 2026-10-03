@@ -17,7 +17,6 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>역 목록</h1>
-			<p>역을 검색·필터하고 미확인 제보와 데이터 품질을 비교합니다.</p>
 		</div>
 	</header>
 
@@ -93,7 +92,7 @@
 			<th:block th:fragment="stationTableRows">
 				<tr th:if="${stations.isEmpty()}">
 					<td colspan="9">
-						<div th:replace="~{admin/fragments/empty-state :: panel('검색된 역이 없습니다.', '검색어·지역·노선 필터를 조정해 보세요.')}"></div>
+						<div th:replace="~{admin/fragments/empty-state :: panel('검색된 역이 없습니다.', null)}"></div>
 					</td>
 				</tr>
 				<tr th:each="station : ${stations}">
@@ -124,20 +123,26 @@
 						<span th:replace="~{admin/fragments/shell :: status(${station.qualityLabel},
 						         ${station.qualityLabel == '고장·공사 반영' ? 'good' : 'info'})}">정보 확인 중</span>
 					</td>
-					<td th:text="${station.lineNames}">4호선</td>
-					<td th:text="${station.region}">수도권</td>
-					<td class="cell-num">
-						<span class="admin-metric-split">
-							<span class="admin-split-item" title="출구 수"><span class="admin-split-label">출구</span><strong th:text="${station.exitCount}">0</strong></span>
-							<span class="admin-split-item" title="시설 수"><span class="admin-split-label">시설</span><strong th:text="${station.facilityCount}">0</strong></span>
-							<span class="admin-split-item" title="자료 수"><span class="admin-split-label">자료</span><strong th:text="${station.layoutSourceCount}">0</strong></span>
-						</span>
+					<td>
+						<span class="station-line-pill" th:text="${station.lineNames}">4호선</span>
+					</td>
+					<td>
+						<span class="station-region-pill" th:text="${station.region}">수도권</span>
 					</td>
 					<td class="cell-num">
-						<span class="admin-metric-split">
-							<span class="admin-split-item" title="노드 수"><span class="admin-split-label">노드</span><strong th:text="${station.routeNodeCount}">0</strong></span>
-							<span class="admin-split-item" title="간선 수"><span class="admin-split-label">간선</span><strong th:text="${station.routeEdgeCount}">0</strong></span>
+						<span class="admin-metric-split" th:if="${station.exitCount > 0 or station.facilityCount > 0 or station.layoutSourceCount > 0}">
+							<span class="admin-split-item" th:classappend="${station.exitCount > 0 ? ' is-positive' : ' is-zero'}" title="출구 수"><span class="admin-split-label">출구</span><strong th:text="${station.exitCount}">0</strong></span>
+							<span class="admin-split-item" th:classappend="${station.facilityCount > 0 ? ' is-positive' : ' is-zero'}" title="시설 수"><span class="admin-split-label">시설</span><strong th:text="${station.facilityCount}">0</strong></span>
+							<span class="admin-split-item" th:classappend="${station.layoutSourceCount > 0 ? ' is-positive' : ' is-zero'}" title="자료 수"><span class="admin-split-label">자료</span><strong th:text="${station.layoutSourceCount}">0</strong></span>
 						</span>
+						<span th:unless="${station.exitCount > 0 or station.facilityCount > 0 or station.layoutSourceCount > 0}" class="meta">—</span>
+					</td>
+					<td class="cell-num">
+						<span class="admin-metric-split" th:if="${station.routeNodeCount > 0 or station.routeEdgeCount > 0}">
+							<span class="admin-split-item" th:classappend="${station.routeNodeCount > 0 ? ' is-positive' : ' is-zero'}" title="노드 수"><span class="admin-split-label">노드</span><strong th:text="${station.routeNodeCount}">0</strong></span>
+							<span class="admin-split-item" th:classappend="${station.routeEdgeCount > 0 ? ' is-positive' : ' is-zero'}" title="간선 수"><span class="admin-split-label">간선</span><strong th:text="${station.routeEdgeCount}">0</strong></span>
+						</span>
+						<span th:unless="${station.routeNodeCount > 0 or station.routeEdgeCount > 0}" class="meta">—</span>
 					</td>
 					<td>
 						<!-- 마지막 확인: 상대 시간 + 정확한 날짜 병기(색 단독 금지 아님, 시간 정보). lastVerifiedAt은 뷰모델에서
