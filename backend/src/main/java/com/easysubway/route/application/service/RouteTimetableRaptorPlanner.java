@@ -48,7 +48,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.function.BooleanSupplier;
@@ -333,10 +332,72 @@ public final class RouteTimetableRaptorPlanner {
 		return serviceDay.date().atStartOfDay(SERVICE_ZONE).plusSeconds(seconds).toInstant();
 	}
 
-	private record StationDistance(int station, int distance) implements Comparable<StationDistance> {
-		@Override
-		public int compareTo(StationDistance other) {
-			return Integer.compare(this.distance, other.distance);
+	/**
+	 * #462: 하한 Dijkstra의 역 우선순위 큐. 키는 거리 배열 값이고 역마다 한 칸만 두며, 거리가 줄면 그 칸의 위치를
+	 * 고친다(decrease-key). 꺼낸 역의 거리가 다시 줄면 다시 넣는다. 원시 배열만 쓰므로 완화마다 객체를 만들지 않고,
+	 * 큐 크기는 역 수를 넘지 않는다. 최단 거리는 꺼내는 순서(동률 순서)와 무관하게 같다.
+	 */
+	private static final class StationHeap {
+		private final int[] distance;
+		private final int[] heap;
+		private final int[] position;
+		private int size;
+
+		private StationHeap(int[] distance) {
+			this.distance = distance;
+			this.heap = new int[distance.length];
+			this.position = new int[distance.length];
+			Arrays.fill(position, -1);
+		}
+
+		private boolean isEmpty() {
+			return size == 0;
+		}
+
+		/** {@code distance[station]}이 줄었을 때 부른다. 큐에 없으면 넣는다. */
+		private void decreased(int station) {
+			int index = position[station];
+			siftUp(index < 0 ? size++ : index, station);
+		}
+
+		private int poll() {
+			int top = heap[0];
+			position[top] = -1;
+			size -= 1;
+			if (size > 0) siftDown(heap[size]);
+			return top;
+		}
+
+		private void siftUp(int start, int station) {
+			int key = distance[station];
+			int index = start;
+			while (index > 0) {
+				int parent = (index - 1) >>> 1;
+				int other = heap[parent];
+				if (distance[other] <= key) break;
+				heap[index] = other;
+				position[other] = index;
+				index = parent;
+			}
+			heap[index] = station;
+			position[station] = index;
+		}
+
+		private void siftDown(int station) {
+			int key = distance[station];
+			int index = 0;
+			int half = size >>> 1;
+			while (index < half) {
+				int child = 2 * index + 1;
+				if (child + 1 < size && distance[heap[child + 1]] < distance[heap[child]]) child += 1;
+				int other = heap[child];
+				if (key <= distance[other]) break;
+				heap[index] = other;
+				position[other] = index;
+				index = child;
+			}
+			heap[index] = station;
+			position[station] = index;
 		}
 	}
 
@@ -348,16 +409,12 @@ public final class RouteTimetableRaptorPlanner {
 			return lb;
 		}
 		lb[destinationStation] = 0;
-		PriorityQueue<StationDistance> pq = new PriorityQueue<>();
-		pq.add(new StationDistance(destinationStation, 0));
+		StationHeap pq = new StationHeap(lb);
+		pq.decreased(destinationStation);
 
 		while (!pq.isEmpty()) {
-			StationDistance curr = pq.poll();
-			int u = curr.station();
-			int dist = curr.distance();
-			if (dist > lb[u]) {
-				continue;
-			}
+			int u = pq.poll();
+			int dist = lb[u];
 			propagatePatternLowerBounds(timetable, u, dist, lb, pq);
 			propagateFootpathLowerBounds(timetable, u, dist, lb, pq);
 		}
@@ -365,7 +422,7 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	private static void propagatePatternLowerBounds(
-		CompiledTimetable timetable, int u, int dist, int[] lb, PriorityQueue<StationDistance> pq
+		CompiledTimetable timetable, int u, int dist, int[] lb, StationHeap pq
 	) {
 		for (int pattern : timetable.patternsByStop(u)) {
 			int[] stops = timetable.stopsByPattern(pattern);
@@ -379,7 +436,7 @@ public final class RouteTimetableRaptorPlanner {
 					long nextDist = (long) dist + runTime;
 					if (nextDist < lb[v]) {
 						lb[v] = (int) nextDist;
-						pq.add(new StationDistance(v, lb[v]));
+						pq.decreased(v);
 					}
 				}
 			}
@@ -387,7 +444,7 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	private static void propagateFootpathLowerBounds(
-		CompiledTimetable timetable, int u, int dist, int[] lb, PriorityQueue<StationDistance> pq
+		CompiledTimetable timetable, int u, int dist, int[] lb, StationHeap pq
 	) {
 		OutOfStationFootpath[] incoming = timetable.footpathsToStation(u);
 		if (incoming != null) {
@@ -398,7 +455,7 @@ public final class RouteTimetableRaptorPlanner {
 				long nextDist = (long) dist + footTime;
 				if (nextDist < lb[v]) {
 					lb[v] = (int) nextDist;
-					pq.add(new StationDistance(v, lb[v]));
+					pq.decreased(v);
 				}
 			}
 		}
@@ -438,13 +495,11 @@ public final class RouteTimetableRaptorPlanner {
 		if (anchorStation < 0 || anchorStation >= stationCount) return lb;
 		Map<Integer, int[]> realtimeHops = realtimeMinimumHops(timetable, overlays);
 		lb[anchorStation] = 0;
-		PriorityQueue<StationDistance> pq = new PriorityQueue<>();
-		pq.add(new StationDistance(anchorStation, 0));
+		StationHeap pq = new StationHeap(lb);
+		pq.decreased(anchorStation);
 		while (!pq.isEmpty()) {
-			StationDistance curr = pq.poll();
-			int u = curr.station();
-			int dist = curr.distance();
-			if (dist > lb[u]) continue;
+			int u = pq.poll();
+			int dist = lb[u];
 			for (int pattern : timetable.patternsByStop(u)) {
 				int[] stops = timetable.stopsByPattern(pattern);
 				int[] adjusted = realtimeHops.get(pattern);
@@ -461,7 +516,7 @@ public final class RouteTimetableRaptorPlanner {
 						int v = stops[other];
 						if (nextDist < lb[v]) {
 							lb[v] = (int) nextDist;
-							pq.add(new StationDistance(v, lb[v]));
+							pq.decreased(v);
 						}
 					}
 				}
@@ -473,7 +528,7 @@ public final class RouteTimetableRaptorPlanner {
 					int v = towardAnchor ? fp.fromStation() : fp.toStation();
 					if (dist < lb[v]) {
 						lb[v] = dist;
-						pq.add(new StationDistance(v, dist));
+						pq.decreased(v);
 					}
 				}
 			}
