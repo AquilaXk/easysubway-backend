@@ -705,14 +705,17 @@
 	gap: 6px;
 	padding: 2px 10px;
 	border: 1px solid var(--admin-border);
-	border-radius: var(--admin-radius-badge);
+	border-radius: 999px;
+	background: var(--admin-surface);
 	font-size: 12px;
 	color: var(--admin-ink-2);
 	text-decoration: none;
+	transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .admin-v3 .filter-chip:hover {
 	border-color: var(--admin-border-strong);
+	color: var(--admin-ink);
 }
 
 /* 저장된 뷰(#1737) */
@@ -1431,7 +1434,7 @@ label.admin-radio input[type="radio"] {
 	place-items: center;
 	min-height: 100vh;
 	padding: 32px 18px;
-	background: radial-gradient(ellipse at 50% 25%, var(--es-surface-brand-chrome) 0%, var(--admin-bg) 75%);
+	background: radial-gradient(ellipse at 50% 20%, var(--es-brand-50) 0%, var(--es-brand-100) 100%);
 }
 
 .login-card {
@@ -1530,11 +1533,13 @@ label.admin-radio input[type="radio"] {
 	background: var(--admin-surface);
 	color: var(--admin-ink);
 	font-size: 14px;
-	transition: border-color 0.15s ease;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .login-field input:focus {
-	border-color: var(--admin-border-strong);
+	border-color: var(--admin-primary);
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 1px;
 }
 
 .login-remember {
@@ -1555,6 +1560,7 @@ label.admin-radio input[type="radio"] {
 	margin: 0;
 	accent-color: var(--admin-primary);
 	border-radius: 4px;
+	cursor: pointer;
 }
 
 .login-submit {
@@ -1563,7 +1569,15 @@ label.admin-radio input[type="radio"] {
 	font-weight: var(--admin-w-strong);
 	letter-spacing: -0.01em;
 	border-radius: var(--admin-radius-control);
-	transition: background-color 0.15s ease;
+	transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.login-submit:hover {
+	background-color: var(--admin-primary-hover);
+}
+
+.login-submit:active {
+	transform: scale(0.99);
 }
 
 /* retry warning(#2349 PR⑨): 로그인 재시도 안내 */
@@ -1594,6 +1608,15 @@ label.admin-radio input[type="radio"] {
 	font-size: 11px;
 	color: var(--admin-ink-3);
 	letter-spacing: -0.01em;
+}
+
+.login-security-notice::before {
+	content: "";
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--admin-good);
 }
 
 @media (max-width: 520px) {
@@ -2218,16 +2241,22 @@ label.admin-radio input[type="radio"] {
 	color: var(--admin-ink-2);
 	text-decoration: none;
 	font-size: 16px;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-alert-bell:hover {
+	background: var(--admin-bg);
+	color: var(--admin-ink);
 }
 
 .admin-alert-center .admin-alert-badge {
 	position: absolute;
-	top: -6px;
-	right: -6px;
+	top: -4px;
+	right: -4px;
 	min-width: 18px;
 	height: 18px;
 	padding: 0 5px;
-	border-radius: var(--admin-radius-control);
+	border-radius: 999px;
 	background: var(--admin-danger);
 	color: var(--admin-on-primary);
 	font-size: 11px;
@@ -2333,6 +2362,7 @@ label.admin-radio input[type="radio"] {
 	background: transparent;
 	color: var(--admin-ink);
 	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .admin-v3 .admin-user-menu-trigger:hover {

@@ -250,6 +250,8 @@
 	margin-bottom: 20px;
 	padding-bottom: 14px;
 	border-bottom: 1px solid var(--admin-border);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
 }
 
 .admin-dashboard-page .admin-topbar {

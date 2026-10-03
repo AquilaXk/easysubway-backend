@@ -520,10 +520,15 @@
 .dashboard-card {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	padding: 4px 18px;
+	gap: 8px;
+	padding: 14px 18px;
 	text-decoration: none;
 	color: var(--admin-ink);
+	transition: background-color 0.15s ease;
+}
+
+.dashboard-card:hover {
+	background: var(--admin-header-bg);
 }
 
 /* 셀 좌측 구분선 base(#1983): 명시도를 .admin-v3(0,3,0)로 올려 utility 구분선
@@ -572,6 +577,7 @@
 	font-size: 28px;
 	font-weight: var(--admin-w-title);
 	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
 }
 
 .dashboard-spark {
@@ -1201,16 +1207,6 @@
 	box-shadow: var(--admin-shadow-card);
 }
 
-.table-toolbar-unified .date-presets a:hover {
-	color: var(--admin-accent);
-}
-
-.table-toolbar-unified .date-presets a[aria-current="true"] {
-	font-weight: var(--admin-w-strong);
-	color: var(--admin-ink);
-	background: var(--admin-surface);
-	border: 1px solid var(--admin-border);
-}
 
 .table-toolbar-unified .admin-toolbar-filter-trigger {
 	order: 4;
