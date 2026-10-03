@@ -23,6 +23,7 @@ import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessServiceTokenFilter;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import com.easysubway.journey.bundle.RouteBundleActiveJourneySnapshotAdapter;
+import com.easysubway.journey.bundle.RouteBundleStationTimetableAdapter;
 import com.easysubway.journey.canary.JourneyCandidateCanaryCommandParser;
 import com.easysubway.journey.canary.JourneyCandidateCanaryService;
 import com.easysubway.journey.readiness.JourneyReadinessProperties;
@@ -32,7 +33,6 @@ import com.easysubway.route.application.service.JourneyProfileRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.security.SecureRandom;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -218,8 +218,8 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	StationTimetableSearchService stationTimetableSearchService(LoadRouteTimetablePort timetablePort) {
-		return new StationTimetableSearchService(timetablePort, CLOCK);
+	StationTimetableSearchService stationTimetableSearchService(RouteBundleActivationRegistry registry) {
+		return new StationTimetableSearchService(new RouteBundleStationTimetableAdapter(registry), CLOCK);
 	}
 
 	@Bean(destroyMethod = "close")

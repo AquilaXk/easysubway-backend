@@ -90,9 +90,5 @@ easysubway:
   notifications:
     push:
       external-enabled: ${EASYSUBWAY_PUSH_EXTERNAL_ENABLED:false}
-  timetable:
-    seed:
-      enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}
-      includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}
   play-integrity:
     credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}

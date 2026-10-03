@@ -97,6 +97,21 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
+	void exposesTheCompiledTimetableAndCanonicalStationLinesForStationTimetables() throws Exception {
+		// #476: 역 시간표는 같은 번들 세대의 시간표와 번들 station_lines(정본 역·노선)만 읽는다.
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime.stationTimetableIndex().timetable().transitStopTimes()).extracting(stop -> stop.stationId())
+			.containsExactly("station-a", "station-b");
+		// #476 F3: 역 시간표 색인은 이 세대에 한 번만 만들어 재사용한다.
+		assertThat(runtime.stationTimetableIndex()).isSameAs(runtime.stationTimetableIndex());
+		assertThat(runtime.canonicalStationLines()).containsExactlyInAnyOrder(
+			new com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine("station-a", "line-1"),
+			new com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine("station-b", "line-1"),
+			new com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine("station-b", "line-2"));
+	}
+
+	@Test
 	void readsStationCarDoorHintsFromAccessibilityBundleWhenPresent() throws Exception {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-with-hints", connection -> {

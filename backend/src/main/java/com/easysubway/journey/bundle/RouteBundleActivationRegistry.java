@@ -4,6 +4,7 @@ import com.easysubway.journey.application.JourneyRequestMeasurement;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -111,6 +112,14 @@ public final class RouteBundleActivationRegistry {
 		}
 		requireIdentityIsCurrent(active.identity(), clock.instant());
 		return active;
+	}
+
+	/**
+	 * 신선도 관측 전용: 만료 여부와 무관하게 활성 번들의 identity만 돌려준다. 서빙은 반드시 {@link #activeSnapshot()}을 쓴다.
+	 */
+	Optional<RouteBundleIdentity> activeIdentityForFreshnessObservation() {
+		var active = state.get().active;
+		return active == null ? Optional.empty() : Optional.of(active.identity());
 	}
 
 	public ActiveRouteBundleSnapshot activeSnapshot(

@@ -26,12 +26,10 @@ import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionService.AuthorizedSession;
 import com.easysubway.journey.application.StationTimetableSearchService;
-import com.easysubway.route.application.model.PlannerIdentity;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationTimetableSnapshot;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetableSnapshot;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
@@ -79,7 +77,10 @@ class StationTimetableSearchControllerTest {
 		mockMvc.perform(post(StationTimetableSearchController.PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 			.contentType(MediaType.APPLICATION_JSON).content(request()))
 			.andExpect(status().isOk()).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
-			.andExpect(jsonPath("$.directionGroups[0].departures[0].departureAt").value("2026-08-24T09:00:00+09:00"));
+			.andExpect(jsonPath("$.directionGroups[0].departures[0].departureAt").value("2026-08-24T09:00:00+09:00"))
+			.andExpect(jsonPath("$.directionGroups[0].nextStationId").value("next"))
+			.andExpect(jsonPath("$.directionGroups[0].directionName").value("direction"))
+			.andExpect(jsonPath("$.directionGroups[0].departures[0].terminalStationId").value("next"));
 		verify(sessions, times(1)).authorize("session-token");
 	}
 
@@ -108,6 +109,22 @@ class StationTimetableSearchControllerTest {
 		mockMvc.perform(post(StationTimetableSearchController.PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 			.contentType(MediaType.TEXT_PLAIN).content(request()))
 			.andExpect(status().isUnsupportedMediaType());
+	}
+
+	@Test
+	void holidayCalendarGapKeepsThePublicNotCoveredCodeAndExistingErrorShape() throws Exception {
+		// #476 F2: 원인 구분(공휴일 예외 누락)은 서버 로그로만 남기고 응답은 기존 JourneyError 형식·코드 그대로다.
+		StationTimetableSearchService failing = mock(StationTimetableSearchService.class);
+		when(failing.search(any())).thenThrow(new StationTimetableSearchService.FailureException(
+			StationTimetableSearchService.Failure.TIMETABLE_NOT_COVERED,
+			StationTimetableSearchService.FailureDetail.HOLIDAY_CALENDAR_EXCEPTION_MISSING));
+		mockMvc = mvc(failing);
+		when(sessions.authorize("session-token")).thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
+		mockMvc.perform(post(StationTimetableSearchController.PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+			.contentType(MediaType.APPLICATION_JSON).content(request()))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("TIMETABLE_NOT_COVERED"))
+			.andExpect(jsonPath("$.detail").doesNotExist());
 	}
 
 	@Test
@@ -386,14 +403,12 @@ class StationTimetableSearchControllerTest {
 			LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")), List.of(),
 			List.of(new TransitRoute("route", "line", "L", "line", "direction", "Asia/Seoul")),
 			List.of(new TransitTrip("trip", "route", "weekday", "headsign", "0", "SUBWAY", "LOCAL", null, 0)),
-			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0)), List.of(), List.of(), null,
-			new RouteAccessData(List.of(new PathwayNode("platform", "station", "line", "PLATFORM")), List.of(), List.of(), List.of()));
-		var snapshot = new RouteTimetableSnapshot("cache", "artifact", new PlannerIdentity("a".repeat(64), "b".repeat(64), "c".repeat(64),
-			"sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64), "f".repeat(64)), NOW.plusSeconds(60), timetable);
-		LoadRouteTimetablePort port = new LoadRouteTimetablePort() {
-			@Override public RouteTimetable loadRouteTimetable() { return timetable; }
-			@Override public RouteTimetableSnapshot loadStationTimetableSnapshot() { return snapshot; }
-		};
-		return new StationTimetableSearchService(port, Clock.fixed(NOW, ZoneOffset.UTC));
+			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 0, 0),
+				new TransitStopTime("trip", 2, "next", "line", 33_000, 33_000, 0, 0)), List.of(), List.of(), null,
+			RouteAccessData.empty());
+		var snapshot = new StationTimetableSnapshot(new StationTimetableSearchService.SourceIdentity("artifact", "a".repeat(64),
+			"sha256:" + "d".repeat(64), "d".repeat(64), "e".repeat(64), "f".repeat(64), NOW.plusSeconds(60)), timetable,
+			Set.of(new StationLine("station", "line")));
+		return new StationTimetableSearchService(() -> snapshot, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 }

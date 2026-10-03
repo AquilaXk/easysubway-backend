@@ -1,5 +1,6 @@
 package com.easysubway.journey.bundle;
 
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -91,7 +93,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		CompiledPayloads compiled = read(input);
 		return RaptorRouteBundleRuntimeView.compile(
 			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities(),
-			compiled.fareQuotes());
+			compiled.fareQuotes(), compiled.canonicalStationLines());
 	}
 
 	RouteTimetable readTimetable(Input input) {
@@ -137,7 +139,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
 			return new CompiledPayloads(loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
-				smrtElevatorFacilities, fareQuotes);
+				smrtElevatorFacilities, fareQuotes, canonicalStationLines(components.getFirst().references()));
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -227,6 +229,16 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			|| components.stream().anyMatch(component -> !expected.equals(component.references()))) {
 			throw new IllegalArgumentException("route-bundle component reference rows mismatch");
 		}
+	}
+
+	// #476: 네 구성요소가 같다고 확인한 station_lines가 역 시간표의 정본 역·노선이다.
+	private static Set<StationLine> canonicalStationLines(References references) {
+		var stationLines = new HashSet<StationLine>();
+		for (String row : references.stationLines()) {
+			String[] columns = row.split("\u0000", -1);
+			stationLines.add(new StationLine(columns[0], columns[1]));
+		}
+		return Set.copyOf(stationLines);
 	}
 
 	private static Map<String, TopologyEdge> loadTopology(Connection connection) throws SQLException {
@@ -874,6 +886,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	private record CompiledPayloads(
 		RouteTimetable timetable,
 		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities,
-		Map<String, OfficialFareQuote> fareQuotes) {
+		Map<String, OfficialFareQuote> fareQuotes,
+		Set<StationLine> canonicalStationLines) {
 	}
 }
