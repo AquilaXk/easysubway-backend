@@ -464,9 +464,13 @@ class JourneyV3RuntimeParityTest {
 		Instant departure = Instant.parse("2026-08-24T00:00:00Z");
 		return new StationTimetableSearchService.SearchResult("station-origin", "line-1",
 			new Selector.ServiceDateSelector(LocalDate.of(2026, 8, 24)), DayType.WEEKDAY,
-			List.of(new StationTimetableSearchService.DirectionGroup("direction", List.of(
-				new StationTimetableSearchService.Departure("direction", LocalDate.of(2026, 8, 24), 32_400,
-					departure, "LOCAL", "SUBWAY")))),
+			// #476: 원천 방면 이름이 없는 그룹(필드 생략)과 있는 그룹을 모두 스키마에 대조한다.
+			List.of(new StationTimetableSearchService.DirectionGroup("station-next", null, List.of(
+				new StationTimetableSearchService.Departure("station-next", null, LocalDate.of(2026, 8, 24), 32_400,
+					departure, "LOCAL", "SUBWAY", "station-terminal"))),
+				new StationTimetableSearchService.DirectionGroup("station-previous", "송도달빛축제공원 방면", List.of(
+					new StationTimetableSearchService.Departure("station-previous", "송도달빛축제공원 방면", LocalDate.of(2026, 8, 24),
+						32_700, departure.plusSeconds(300), "EXPRESS", "SUBWAY", "station-other-terminal")))),
 			new StationTimetableSearchService.SourceIdentity("artifact", "a".repeat(64), "sha256:" + "b".repeat(64),
 				"b".repeat(64), "c".repeat(64), "d".repeat(64), NOW.plusSeconds(600)));
 	}

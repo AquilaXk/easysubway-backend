@@ -455,7 +455,7 @@ paths:
               $ref: "#/components/schemas/StationTimetableSearchRequest"
       responses:
         "200":
-          description: Ordered departures from the active timetable snapshot
+          description: Ordered departures from the active server route bundle timetable
           content:
             application/json:
               schema:
@@ -863,6 +863,12 @@ components:
         resolvedDayType:
           type: string
           enum: [WEEKDAY, SATURDAY, SUNDAY_HOLIDAY]
+          description: >-
+            Kind of calendar the requested station-line actually runs on the (reference) service date. Agencies
+            without a Saturday timetable run their holiday calendar on Saturdays, so their Saturdays report
+            SUNDAY_HOLIDAY. When other agencies' calendars mark the date as a holiday but this station-line's
+            calendars carry no exception for it, the search fails as TIMETABLE_NOT_COVERED instead of serving a
+            weekday or Saturday timetable.
         serviceTimezone:
           type: string
           enum: [Asia/Seoul]
@@ -875,11 +881,23 @@ components:
     StationTimetableDirectionGroup:
       type: object
       additionalProperties: false
-      required: [directionName, departures]
+      description: >-
+        Departures grouped by the next stopping station after the requested station on the requested line.
+        Clients label the group with the next station name ("<name> 방면"). Departures whose trip ends at the
+        requested station are not listed.
+      required: [nextStationId, directionName, departures]
       properties:
+        nextStationId:
+          type: string
+          minLength: 1
         directionName:
           type: string
           minLength: 1
+          nullable: true
+          description: >-
+            Official direction name from the timetable source. Non-null only when every departure in the group
+            carries the same source value; null when none carries one. A group mixing named and unnamed or
+            differently named departures is rejected as TIMETABLE_IDENTITY_MISMATCH. Never synthesized.
         departures:
           type: array
           items:
@@ -887,7 +905,7 @@ components:
     StationTimetableDeparture:
       type: object
       additionalProperties: false
-      required: [serviceDate, secondsFromServiceDayStart, departureAt, servicePattern, serviceClass]
+      required: [serviceDate, secondsFromServiceDayStart, departureAt, servicePattern, serviceClass, terminalStationId]
       properties:
         serviceDate:
           type: string
@@ -905,6 +923,10 @@ components:
         serviceClass:
           type: string
           enum: [SUBWAY, ITX_CHEONGCHUN]
+        terminalStationId:
+          type: string
+          minLength: 1
+          description: Station where this trip ends (its last stop).
     StationTimetableSourceIdentity:
       type: object
       additionalProperties: false
