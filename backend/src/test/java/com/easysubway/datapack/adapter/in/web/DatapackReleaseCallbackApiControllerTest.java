@@ -278,6 +278,26 @@ class DatapackReleaseCallbackApiControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	@DisplayName("#456 F3 binding·manifest를 읽지 못하면 503 CATALOG_UNAVAILABLE로 거부하고 delivery를 남기지 않는다")
+	void unreadableBindingReturns503() throws Exception {
+		String gitRequestId = "release-request-git-ctrl-4";
+		jdbcTemplate.update("DELETE FROM datapack_release_deliveries WHERE release_request_id = ?", gitRequestId);
+		when(releaseCatalog.findByRequest(CHANNEL, gitRequestId))
+			.thenThrow(new DatapackReleaseCatalogPort.Unavailable());
+
+		mockMvc.perform(post("/admin/api/datapack/release-callbacks")
+				.header("Authorization", "Bearer test-workflow-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(buildPayload(gitRequestId, "PASS", signPayload(gitRequestId, "PASS"))))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.status").value("CATALOG_UNAVAILABLE"))
+			.andExpect(jsonPath("$.idempotentReplay").value(false));
+		org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM datapack_release_deliveries WHERE release_request_id = ?",
+			Integer.class, gitRequestId)).isZero();
+	}
+
     @Test
     @DisplayName("(e) 미존재 releaseRequestId에 'verifier' 부분문자열 포함 + 유효 HMAC → 404(403 아님)")
     void nonExistentIdContainingVerifierSubstringReturns404() throws Exception {
