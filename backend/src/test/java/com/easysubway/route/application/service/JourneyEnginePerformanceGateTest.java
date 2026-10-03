@@ -50,8 +50,8 @@ import org.junit.jupiter.api.Test;
  *   결과 수, 한도 초과 수)는 결정적이라 잡음이 없다. 기준선과 양방향 2% 안이어야 한다. 크게 좋아져도 실패해
  *   기준선을 새로 고치게 한다(ratchet).</li>
  *   <li>질의별 할당량과 컴파일 보유 힙은 JIT 판단에 따라 조금 흔들린다. 30% 넘게 늘면 실패한다.</li>
- *   <li>벽시계 지연과 컴파일 시간은 같은 JVM에서 잰 고정 보정 작업 시간으로 나눈 값을 쓴다. p50은 측정 5회 각각의
- *   p50의 중앙값, p99는 5회 표본을 모두 모은 최근순위 p99다. 출발 시각 고정(DepartAt) p50은 잡음이 작아 1.5배,
+ *   <li>벽시계 지연과 컴파일 시간은 같은 JVM에서 잰 고정 보정 작업 시간으로 나눈 값을 쓴다. p50과 p99는 측정 5회
+ *   각각의 최근순위 백분위의 중앙값이고, 성공 경로 계열은 회차당 질의가 100건 이상이다. 출발 시각 고정(DepartAt) p50은 잡음이 작아 1.5배,
  *   나머지(p99, 프로필 모드, 컴파일)는 2.5배를 넘으면 실패한다. 이 한도보다 작은 상수배 둔화(작업량 카운터가 그대로인
  *   내부 루프 비용 증가 등)는 설계상 통과시킨다. 보정 작업과 엔진의 속도 비율은 CPU 아키텍처마다 달라서 벽시계
  *   기준선은 Backend CI 러너 측정값을 쓴다.</li>
@@ -109,11 +109,11 @@ class JourneyEnginePerformanceGateTest {
 		static final List<Workload> ALL = List.of(
 			grid(JourneyEngineBenchmarkBundle.METRO, "metro-grid-queries-v1", 4_600_460L, Map.of(Mode.DEPART_AT, 160)),
 			grid(JourneyEngineBenchmarkBundle.DISTRICT, "district-grid-queries-v1", 4_600_461L,
-				Map.of(Mode.DEPART_AT, 40, Mode.ARRIVE_BY, 12, Mode.DEPART_BETWEEN, 12, Mode.LAST_CONNECTION, 6)),
+				Map.of(Mode.DEPART_AT, 100, Mode.ARRIVE_BY, 12, Mode.DEPART_BETWEEN, 12, Mode.LAST_CONNECTION, 6)),
 			// 실데이터(KRIC 4호선 실 시각표 코리도 슬라이스). 하행 3편이 06:42~07:08에 출발한다.
 			new Workload("line4-corridor-slice", JourneyEngineRandomizedDifferentialTest::line4CorridorSlice,
 				JourneyEnginePerformanceGateTest::downstreamPair, "line4-corridor-queries-v1", 4_600_462L,
-				Map.of(Mode.DEPART_AT, 40, Mode.ARRIVE_BY, 24, Mode.DEPART_BETWEEN, 24, Mode.LAST_CONNECTION, 12),
+				Map.of(Mode.DEPART_AT, 100, Mode.ARRIVE_BY, 100, Mode.DEPART_BETWEEN, 100, Mode.LAST_CONNECTION, 100),
 				java.time.LocalDate.of(2026, 7, 6), 22_800, 2_400));
 
 		static Workload grid(Grid grid, String querySetId, long seed, Map<Mode, Integer> counts) {
@@ -246,7 +246,7 @@ class JourneyEnginePerformanceGateTest {
 		Map<String, Object> method = new LinkedHashMap<>();
 		method.put("warmupRounds", WARMUP_ROUNDS);
 		method.put("measuredRounds", MEASURED_ROUNDS);
-		method.put("aggregation", "p50: median of per-round nearest-rank p50; p99: nearest-rank p99 of pooled measured-round samples");
+		method.put("aggregation", "median over measured rounds of per-round nearest-rank p50 and p99");
 		method.put("profileLimits", Map.of("maxEstimatedWork", BENCHMARK_LIMITS.maxEstimatedWork(),
 			"maxLabelsPerState", BENCHMARK_LIMITS.maxLabelsPerState(),
 			"maxDestinationProfileLabels", BENCHMARK_LIMITS.maxDestinationProfileLabels(),
@@ -281,7 +281,6 @@ class JourneyEnginePerformanceGateTest {
 			for (Query query : queries) run(query, runtime, planner, adapter, BENCHMARK_LIMITS);
 		}
 		Map<Mode, List<long[]>> nanosByRound = new EnumMap<>(Mode.class);
-		Map<Mode, List<Long>> pooledNanos = new EnumMap<>(Mode.class);
 		Map<Mode, List<Long>> bytesByRound = new EnumMap<>(Mode.class);
 		Map<Mode, Map<String, Long>> work = null;
 		MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
@@ -310,7 +309,6 @@ class JourneyEnginePerformanceGateTest {
 				long[] sorted = nanos.get(mode).stream().mapToLong(Long::longValue).sorted().toArray();
 				nanosByRound.computeIfAbsent(mode, ignored -> new ArrayList<>())
 					.add(new long[] {percentile(sorted, 50), percentile(sorted, 99)});
-				pooledNanos.computeIfAbsent(mode, ignored -> new ArrayList<>()).addAll(nanos.get(mode));
 				bytesByRound.computeIfAbsent(mode, ignored -> new ArrayList<>())
 					.add(bytes.get(mode).stream().mapToLong(Long::longValue).sum() / bytes.get(mode).size());
 			}
@@ -322,9 +320,10 @@ class JourneyEnginePerformanceGateTest {
 			Map<String, Object> value = new LinkedHashMap<>();
 			value.put("queries", queries.stream().filter(query -> query.mode() == mode).count());
 			value.put("p50Nanos", median(nanosByRound.get(mode).stream().mapToLong(pair -> pair[0]).toArray()));
-			// p99는 측정 5회 표본을 모두 모아 계산한다(질의 수가 적은 모드도 표본이 5배라 최댓값 하나에 끌려가지 않는다).
-			value.put("p99Nanos", percentile(pooledNanos.get(mode).stream().mapToLong(Long::longValue).sorted().toArray(), 99));
-			value.put("latencySamples", pooledNanos.get(mode).size());
+			// 회차 p99는 질의가 100건 이상이면 두 번째로 큰 값이다. 회차 5개의 중앙값이라 일시적 정지가 한두 회차에만
+			// 끼면 결과를 바꾸지 못한다. 모든 회차 표본을 모으면 CI 러너의 1~3% 일시 정지가 p99를 차지했다.
+			value.put("p99Nanos", median(nanosByRound.get(mode).stream().mapToLong(pair -> pair[1]).toArray()));
+			value.put("samplesPerRound", queries.stream().filter(query -> query.mode() == mode).count());
 			value.put("allocatedBytesPerQuery", median(bytesByRound.get(mode).stream().mapToLong(Long::longValue).toArray()));
 			value.put("work", work.get(mode));
 			modes.put(mode.name(), value);
@@ -492,9 +491,9 @@ class JourneyEnginePerformanceGateTest {
 	// ---------------------------------------------------------------- 판정
 
 	/**
-	 * 허용폭. {@code stablePointP50Factor}는 출발 시각 고정 탐색 p50에만 쓴다. 이 계열은 질의가 많고(40~160건) 결과가
-	 * 성공 경로라 CI 실행 간 정규화 편차가 1.1~1.2배였다. 나머지 지연은 p99 꼬리(GC·JIT), 질의 수가 적은 프로필 모드,
-	 * 한도 직후 거절 비용처럼 편차가 커서 2.5배로 둔다.
+	 * 허용폭. {@code stablePointP50Factor}는 출발 시각 고정 탐색 p50에만 쓴다. 이 계열은 회차당 질의가 100건 이상이고
+	 * 결과가 성공 경로라, CI 4회 실행의 정규화 값이 중앙값 대비 0.7~1.16배 안에 있었다. 나머지 지연은 p99 꼬리(CI 러너의
+	 * 일시 정지), 질의 수가 적은 거절 비용 계열처럼 편차가 커서 2.5배로 둔다.
 	 */
 	record Tolerances(double workCounterRelative, double allocatedBytesRegression, double retainedBytesRegression,
 		double normalizedLatencyFactor, double normalizedCompileFactor, double stablePointP50Factor) {
