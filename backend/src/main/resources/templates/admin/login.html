@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>관리자 로그인</title>
+	<title>관리자 로그인 - 쉬운 지하철</title>
 	<link rel="icon" type="image/png" th:href="@{/images/admin-app-icon.png}" href="/images/admin-app-icon.png">
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
@@ -11,32 +11,43 @@
 <main class="login-screen">
 	<form class="login-card" method="post" th:action="@{/admin/login}">
 		<div class="login-brand">
-			<img th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="">
+			<img th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="쉬운 지하철 로고">
 			<strong>쉬운 지하철 관리자</strong>
-			<span class="login-console-badge">관리자 콘솔</span>
 		</div>
 		<h1>관리자 로그인</h1>
-		<p class="login-subtitle">안전한 운영을 위해 관리자 계정으로 로그인해 주세요</p>
 		<input th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 		<div class="login-field">
 			<label for="username">아이디</label>
-			<input id="username" name="username" autocomplete="username" required placeholder="관리자 아이디 입력">
+			<div class="login-input-wrap">
+				<span class="login-field-icon" aria-hidden="true">
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+					</svg>
+				</span>
+				<input id="username" name="username" autocomplete="username" required placeholder="아이디">
+			</div>
 		</div>
 		<div class="login-field">
 			<label for="password">비밀번호</label>
-			<input id="password" name="password" type="password" autocomplete="current-password" required placeholder="비밀번호 입력">
+			<div class="login-input-wrap">
+				<span class="login-field-icon" aria-hidden="true">
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+						<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+					</svg>
+				</span>
+				<input id="password" name="password" type="password" autocomplete="current-password" required placeholder="비밀번호">
+			</div>
 		</div>
-		<label class="login-remember" for="remember-me">
-			<input id="remember-me" name="remember-me" type="checkbox">
-			<span>로그인 유지</span>
-		</label>
+		<div class="login-meta-row">
+			<label class="login-remember" for="remember-me">
+				<input id="remember-me" name="remember-me" type="checkbox">
+				<span>로그인 유지</span>
+			</label>
+		</div>
 		<button class="login-submit primary" type="submit">로그인</button>
 		<div class="login-note"
 		     role="alert"
 		     th:if="${loginNotice == T(com.easysubway.common.security.LoginNotice).RETRY_WARNING}">아이디 또는 비밀번호를 확인하고 다시 시도해 주세요.</div>
-		<div class="login-footer">
-			<span class="login-security-notice">EasySubway Platform · 종단간 암호화 세션</span>
-		</div>
 	</form>
 </main>
 </body>
