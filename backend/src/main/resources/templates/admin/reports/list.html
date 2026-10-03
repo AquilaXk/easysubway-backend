@@ -62,54 +62,81 @@
 		<!-- 검색 form의 필터·정렬 보존용 hidden(search.hidden): list-toolbar.html이 ${search.get('hidden')}
 		     메서드 호출로 null-safe하게 읽고 hiddenParam으로 반복하므로, 유형·사진·상태·역·정렬·기간을 그대로
 		     전달해 키워드 검색이 활성 필터를 덮어쓰지 않게 한다. -->
-		<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
-		         '/admin/reports/page', 'report-results',
-		         ${ {'name':'keyword','value':searchKeyword,'placeholder':'신고 내용 검색','label':'신고 내용 검색',
-		            'hidden': {'type':selectedType,'hasPhoto':selectedHasPhoto,'status':selectedStatus,
-		                       'station':selectedStation,'sort':sortParam,'from':createdFrom,'to':createdTo}} },
-		         ~{}, ~{::reportFilters}, ~{::reportView})}">
-			<!-- 유형·사진 필터(필터 시트): 키워드·상태·역·정렬·기간을 hidden으로 보존한다. change/submit에
-			     htmx 부분 갱신, no-JS는 form GET 제출로 동일 동작. -->
-			<form th:fragment="reportFilters" class="admin-toolbar-form" method="get"
-			      th:action="@{/admin/reports/page}" role="group" aria-label="유형·사진 필터"
-			      th:attr="hx-get=@{/admin/reports/page}" hx-target="#report-results"
-			      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
-				<input type="hidden" name="keyword" th:value="${searchKeyword}">
-				<input type="hidden" name="status" th:value="${selectedStatus}">
-				<input type="hidden" name="station" th:value="${selectedStation}">
-				<input type="hidden" name="sort" th:value="${sortParam}">
-				<input type="hidden" name="from" th:value="${createdFrom}">
-				<input type="hidden" name="to" th:value="${createdTo}">
-				<select name="type" aria-label="신고 유형 필터">
-					<option th:each="opt : ${typeFilters}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">전체 유형</option>
-				</select>
-				<select name="hasPhoto" aria-label="사진 유무 필터">
-					<option th:each="opt : ${photoFilters}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">사진 전체</option>
-				</select>
-				<button type="submit" class="outline admin-filter-apply">필터 적용</button>
-			</form>
-			<!-- 보기 설정(보기 설정 시트): 밀도 3단·열 표시 토글·단축키 도움말. reportTable(#report-results
-			     조상 스코프)의 메서드에 바인딩된다. 순수 표시 설정이라 폼 밖에 두어 제출되지 않는다. no-JS는
-			     x-cloak 트리거가 숨고 시트 내용이 인라인으로 남는다(JS 전용 토글은 no-JS에서 무동작). -->
-			<div th:fragment="reportView" class="table-viewbar" role="group" aria-label="표 보기 설정">
-				<fieldset class="density-control">
-					<legend>밀도</legend>
-					<label><input type="radio" name="_density" value="compact" x-on:change="setDensity"> 좁게</label>
-					<label><input type="radio" name="_density" value="default" checked x-on:change="setDensity"> 기본</label>
-					<label><input type="radio" name="_density" value="comfortable" x-on:change="setDensity"> 넓게</label>
-				</fieldset>
-				<fieldset class="column-control">
-					<legend>열 표시</legend>
-					<label><input type="checkbox" x-on:change="toggleCoordinate"> 좌표 숨김</label>
-					<label><input type="checkbox" x-on:change="togglePhoto"> 사진 숨김</label>
-				</fieldset>
-				<!-- 단축키 도움말(#1740): 버튼으로도 여닫아 스크린리더·마우스 사용자도 접근한다. no-JS는 x-cloak로 숨김. -->
-				<button type="button" class="shortcut-help-trigger" x-cloak
-				        x-on:click="toggleHelp" x-bind:aria-expanded="helpExpanded"
-				        aria-label="키보드 단축키 도움말 열기">단축키 <kbd>?</kbd></button>
+		<div class="table-toolbar-unified">
+			<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
+			         '/admin/reports/page', 'report-results',
+			         ${ {'name':'keyword','value':searchKeyword,'placeholder':'신고 내용 검색','label':'신고 내용 검색',
+			            'hidden': {'type':selectedType,'hasPhoto':selectedHasPhoto,'status':selectedStatus,
+			                       'station':selectedStation,'sort':sortParam,'from':createdFrom,'to':createdTo}} },
+			         ~{}, ~{::reportFilters}, ~{::reportView})}">
+				<!-- 유형·사진 필터(필터 시트): 키워드·상태·역·정렬·기간을 hidden으로 보존한다. change/submit에
+				     htmx 부분 갱신, no-JS는 form GET 제출로 동일 동작. -->
+				<form th:fragment="reportFilters" class="admin-toolbar-form" method="get"
+				      th:action="@{/admin/reports/page}" role="group" aria-label="유형·사진 필터"
+				      th:attr="hx-get=@{/admin/reports/page}" hx-target="#report-results"
+				      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+					<input type="hidden" name="keyword" th:value="${searchKeyword}">
+					<input type="hidden" name="status" th:value="${selectedStatus}">
+					<input type="hidden" name="station" th:value="${selectedStation}">
+					<input type="hidden" name="sort" th:value="${sortParam}">
+					<input type="hidden" name="from" th:value="${createdFrom}">
+					<input type="hidden" name="to" th:value="${createdTo}">
+					<select name="type" aria-label="신고 유형 필터">
+						<option th:each="opt : ${typeFilters}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">전체 유형</option>
+					</select>
+					<select name="hasPhoto" aria-label="사진 유무 필터">
+						<option th:each="opt : ${photoFilters}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">사진 전체</option>
+					</select>
+					<button type="submit" class="outline admin-filter-apply">필터 적용</button>
+				</form>
+				<!-- 보기 설정(보기 설정 시트): 밀도 3단·열 표시 토글·단축키 도움말. reportTable(#report-results
+				     조상 스코프)의 메서드에 바인딩된다. 순수 표시 설정이라 폼 밖에 두어 제출되지 않는다. no-JS는
+				     x-cloak 트리거가 숨고 시트 내용이 인라인으로 남는다(JS 전용 토글은 no-JS에서 무동작). -->
+				<div th:fragment="reportView" class="table-viewbar" role="group" aria-label="표 보기 설정">
+					<fieldset class="density-control">
+						<legend>밀도</legend>
+						<label><input type="radio" name="_density" value="compact" x-on:change="setDensity"> 좁게</label>
+						<label><input type="radio" name="_density" value="default" checked x-on:change="setDensity"> 기본</label>
+						<label><input type="radio" name="_density" value="comfortable" x-on:change="setDensity"> 넓게</label>
+					</fieldset>
+					<fieldset class="column-control">
+						<legend>열 표시</legend>
+						<label><input type="checkbox" x-on:change="toggleCoordinate"> 좌표 숨김</label>
+						<label><input type="checkbox" x-on:change="togglePhoto"> 사진 숨김</label>
+					</fieldset>
+					<!-- 단축키 도움말(#1740): 버튼으로도 여닫아 스크린리더·마우스 사용자도 접근한다. no-JS는 x-cloak로 숨김. -->
+					<button type="button" class="shortcut-help-trigger" x-cloak
+					        x-on:click="toggleHelp" x-bind:aria-expanded="helpExpanded"
+					        aria-label="키보드 단축키 도움말 열기">단축키 <kbd>?</kbd></button>
+				</div>
 			</div>
+
+			<nav class="status-filter" aria-label="신고 상태 필터">
+				<a th:href="${allFilter.href}"
+				   th:attr="hx-get=${allFilter.href},aria-current=${allFilter.current ? 'page' : null}">전체</a>
+				<a th:each="filter : ${statusFilters}"
+				   th:href="${filter.href}"
+				   th:attr="hx-get=${filter.href},aria-current=${filter.current ? 'page' : null}"
+				   th:text="${filter.label}">접수됨</a>
+			</nav>
+
+			<nav class="date-presets" aria-label="접수 기간">
+				<a th:each="preset : ${datePresets}"
+				   th:href="${preset.href}"
+				   th:attr="hx-get=${preset.href},aria-current=${preset.active ? 'true' : null}"
+				   th:text="${preset.label}">오늘</a>
+			</nav>
+		</div>
+
+		<div class="filter-chips" th:if="${!filterChips.isEmpty()}" aria-label="적용된 필터">
+			<a th:each="chip : ${filterChips}" class="filter-chip"
+			   th:href="${chip.removeHref}" th:attr="hx-get=${chip.removeHref}"
+			   th:title="|${chip.label} 제거|">
+				<span th:text="${chip.label}">검색: 키워드</span>
+				<span aria-hidden="true">✕</span>
+			</a>
 		</div>
 
 		<!--
@@ -155,32 +182,6 @@
 				<button type="submit" class="outline">저장</button>
 			</form>
 		</div>
-
-		<div class="table-filters">
-			<nav class="date-presets" aria-label="접수 기간">
-				<a th:each="preset : ${datePresets}"
-				   th:href="${preset.href}"
-				   th:attr="hx-get=${preset.href},aria-current=${preset.active ? 'true' : null}"
-				   th:text="${preset.label}">오늘</a>
-			</nav>
-			<div class="filter-chips" th:if="${!filterChips.isEmpty()}" aria-label="적용된 필터">
-				<a th:each="chip : ${filterChips}" class="filter-chip"
-				   th:href="${chip.removeHref}" th:attr="hx-get=${chip.removeHref}"
-				   th:title="|${chip.label} 제거|">
-					<span th:text="${chip.label}">검색: 키워드</span>
-					<span aria-hidden="true">✕</span>
-				</a>
-			</div>
-		</div>
-
-		<nav class="status-filter" aria-label="신고 상태 필터">
-			<a th:href="${allFilter.href}"
-			   th:attr="hx-get=${allFilter.href},aria-current=${allFilter.current ? 'page' : null}">전체</a>
-			<a th:each="filter : ${statusFilters}"
-			   th:href="${filter.href}"
-			   th:attr="hx-get=${filter.href},aria-current=${filter.current ? 'page' : null}"
-			   th:text="${filter.label}">접수됨</a>
-		</nav>
 
 		<!--
 		  일괄 검수(#1737): 체크박스로 선택한 신고를 한 번에 승인/반려한다. command token + CSRF POST.

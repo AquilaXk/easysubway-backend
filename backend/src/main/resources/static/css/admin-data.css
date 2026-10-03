@@ -135,63 +135,98 @@
 .admin-v3 .dashboard-current-metrics {
 	display: flex;
 	justify-content: flex-end;
-	gap: 22px;
+	align-items: stretch;
+	gap: 12px;
 	margin: 0;
 }
 
 .dashboard-current-metrics > div {
 	display: flex;
 	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	min-height: 0;
-	border: 0;
-	border-radius: 0;
-	background: transparent;
-	text-align: center;
+	justify-content: space-between;
+	min-width: 104px;
+	padding: 10px 14px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	text-align: left;
+	transition: border-color 0.15s ease;
+}
+
+.dashboard-current-metrics > div:hover {
+	border-color: var(--admin-border-strong);
 }
 
 .dashboard-current-metrics dt {
-	order: 2;
-	margin-top: 7px;
+	order: 1;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 0 6px;
 	padding: 0;
 	border: 0;
-	color: var(--admin-ink-3);
+	color: var(--admin-ink-2);
 	font-size: var(--admin-fs-meta);
-	font-weight: var(--admin-w-strong);
+	font-weight: var(--admin-w-medium);
 }
 
-.dashboard-current-metrics dd {
-	order: 1;
-	display: grid;
-	place-items: center;
-	width: 54px;
-	height: 54px;
-	margin: 0;
-	padding: 0;
-	border: 0;
+.dashboard-current-metrics dt::before {
+	content: "";
+	display: inline-block;
+	width: 6px;
+	height: 6px;
 	border-radius: 50%;
 	background: var(--admin-accent);
-	color: var(--admin-on-primary);
-	font-size: var(--admin-fs-control);
-	font-weight: var(--admin-w-title);
-	font-variant-numeric: tabular-nums;
+	flex: none;
 }
 
-.dashboard-current-metrics .is-warn dd {
-	background: var(--admin-warn);
-}
-
-.dashboard-current-metrics .is-good dd {
+.dashboard-current-metrics .is-good dt::before {
 	background: var(--admin-good);
 }
 
-.dashboard-current-metrics .is-waiting dd {
+.dashboard-current-metrics .is-waiting dt::before {
 	background: var(--admin-warn);
 }
 
-.dashboard-current-metrics .is-bad dd {
+.dashboard-current-metrics .is-bad dt::before {
 	background: var(--admin-danger);
+}
+
+.dashboard-current-metrics dd {
+	order: 2;
+	display: block;
+	width: auto;
+	height: auto;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-section);
+	font-weight: var(--admin-w-title);
+	font-variant-numeric: tabular-nums;
+	line-height: 1.2;
+}
+
+.dashboard-current-metrics .is-warn dd {
+	color: var(--admin-warn);
+	background: transparent;
+}
+
+.dashboard-current-metrics .is-good dd {
+	color: var(--admin-good);
+	background: transparent;
+}
+
+.dashboard-current-metrics .is-waiting dd {
+	color: var(--admin-warn);
+	background: transparent;
+}
+
+.dashboard-current-metrics .is-bad dd {
+	color: var(--admin-danger);
+	background: transparent;
 }
 
 .dashboard-api-health {
@@ -473,6 +508,25 @@
 	border-left: 0;
 }
 
+.dashboard-card-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.dashboard-card-indicator {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--admin-accent);
+	flex: none;
+}
+
+.dashboard-card[data-metric-key="reports.pending"] .dashboard-card-indicator {
+	background: var(--admin-warn);
+}
+
 .dashboard-card:hover .dashboard-card-title {
 	color: var(--admin-accent);
 }
@@ -496,16 +550,26 @@
 }
 
 .dashboard-card-delta {
-	font-size: 12px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	width: fit-content;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
 	color: var(--admin-ink-2);
+	background: var(--admin-bg);
 }
 
 .dashboard-card-delta.is-up {
 	color: var(--admin-danger);
+	background: var(--admin-danger-soft);
 }
 
 .dashboard-card-delta.is-down {
 	color: var(--admin-good);
+	background: var(--admin-good-soft);
 }
 
 .dashboard-details {
@@ -868,18 +932,20 @@
 	}
 
 	.admin-v3 .dashboard-current-metrics {
-		justify-content: space-around;
+		justify-content: flex-start;
 		gap: 8px;
 	}
 
 	.dashboard-current-metrics > div {
-		min-height: 0;
+		min-width: 0;
+		flex: 1;
+		padding: 8px 10px;
 	}
 
 	.dashboard-current-metrics dd {
-		width: 48px;
-		height: 48px;
-		font-size: 11px;
+		width: auto;
+		height: auto;
+		font-size: 16px;
 	}
 
 	.dashboard-service-copy strong {
@@ -985,6 +1051,157 @@
    wide에서는 트리거가 원래 설계대로 숨겨지고 compact에서만 노출되는 단일 위계로 정리한다. */
 .admin-v3 .admin-toolbar-sheet-trigger {
 	display: none;
+}
+
+/* 통합 툴바: 검색·상태 세그먼트·기간 드롭다운/프리셋·보기 설정을 1개 통합 행으로 압축 */
+.table-toolbar-unified {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	margin-bottom: 16px;
+}
+
+.table-toolbar-unified .admin-list-toolbar {
+	display: contents;
+}
+
+.table-toolbar-unified .admin-list-toolbar-search {
+	order: 1;
+	flex: 0 0 auto;
+}
+
+.table-toolbar-unified .admin-list-toolbar-search input[type="search"] {
+	min-width: 180px;
+	height: 34px;
+}
+
+.table-toolbar-unified .status-filter {
+	order: 2;
+	flex: 0 0 auto;
+	margin-bottom: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	background: var(--admin-bg);
+	border-radius: var(--admin-radius-control);
+	border: 1px solid var(--admin-border);
+}
+
+.table-toolbar-unified .status-filter a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: calc(var(--admin-radius-control) - 2px);
+	background: transparent;
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+}
+
+.table-toolbar-unified .status-filter a[aria-current="page"] {
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	border: 1px solid var(--admin-border);
+}
+
+.table-toolbar-unified .date-presets {
+	order: 3;
+	flex: 0 0 auto;
+	display: inline-flex;
+	gap: 2px;
+	align-items: center;
+	padding: 2px;
+	background: var(--admin-bg);
+	border-radius: var(--admin-radius-control);
+	border: 1px solid var(--admin-border);
+}
+
+.table-toolbar-unified .date-presets a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 28px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: calc(var(--admin-radius-control) - 2px);
+	font-size: var(--admin-fs-meta);
+	color: var(--admin-ink-2);
+	text-decoration: none;
+}
+
+.table-toolbar-unified .date-presets a:hover {
+	color: var(--admin-accent);
+}
+
+.table-toolbar-unified .date-presets a[aria-current="true"] {
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+}
+
+.table-toolbar-unified .admin-toolbar-filter-trigger {
+	order: 4;
+	margin-left: auto;
+}
+
+.table-toolbar-unified .admin-toolbar-filter-sheet {
+	order: 5;
+}
+
+.table-toolbar-unified .admin-toolbar-view-trigger {
+	order: 6;
+}
+
+.table-toolbar-unified .admin-toolbar-view-sheet {
+	order: 7;
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet-trigger {
+	display: inline-flex;
+	min-height: 32px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet-trigger:hover {
+	border-color: var(--admin-border-strong);
+	color: var(--admin-ink);
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet-trigger[aria-expanded="true"] {
+	border-color: var(--admin-primary);
+	color: var(--admin-primary);
+	background: var(--admin-accent-soft);
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet {
+	display: none;
+	flex-basis: 100%;
+	padding-top: 10px;
+	margin-top: 6px;
+	border-top: 1px solid var(--admin-border);
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet.is-open {
+	display: flex;
 }
 
 /* 첫 식별자 열 외에 "필요한 action 열"만 우측 sticky로 고정하는 유틸리티(#2278 §7).

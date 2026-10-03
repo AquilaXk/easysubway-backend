@@ -119,10 +119,20 @@
 			</span>
 			<span class="admin-topbar-sep" aria-hidden="true">/</span>
 			<span class="admin-topbar-scope">통합 관리자</span>
+			<div class="admin-topbar-location">
+				<span class="admin-topbar-crumb-parent">쉬운 지하철</span>
+				<span class="admin-topbar-crumb-sep" aria-hidden="true">/</span>
+				<span class="admin-topbar-crumb-current" th:text="${adminPageTitle != null ? adminPageTitle : (pageTitle != null ? pageTitle : '운영 현황')}">운영 현황</span>
+			</div>
+			<span class="admin-env-badge"
+			      th:classappend="${' is-' + (adminShell != null ? adminShell.environmentTone : 'development')}"
+			      title="현재 관리자 콘솔이 실행 중인 배포 환경"
+			      th:text="${adminShell != null ? adminShell.environmentLabel : 'DEV'}">DEV</span>
 		</div>
 		<form class="admin-topbar-search" role="search" method="get" th:action="@{/admin/search}">
 			<svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
 			<input type="search" name="q" placeholder="메뉴·역 검색" aria-label="메뉴·역 검색" autocomplete="off">
+			<kbd class="admin-search-kbd">⌘K</kbd>
 			<button type="submit" class="sr-only" tabindex="-1">검색</button>
 		</form>
 		<a class="admin-mobile-search" th:href="@{/admin/search}" aria-label="검색">
@@ -164,6 +174,16 @@
 						<dt>권한</dt>
 						<dd th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</dd>
 					</dl>
+					<div class="admin-user-menu-meta">
+						<span class="admin-status-item">
+							<span class="admin-status-label">리비전</span>
+							<strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong>
+						</span>
+						<span class="admin-status-item">
+							<span class="admin-status-label">마스터데이터</span>
+							<strong th:insert="~{admin/fragments/missing-value :: value(${adminShell != null and adminShell.masterDataVersion != null and adminShell.masterDataVersion != 'unknown' ? adminShell.masterDataVersion : null}, '미상')}">—</strong>
+						</span>
+					</div>
 					<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
 					      class="admin-topbar-logout-form"
 					      th:action="@{/admin/logout}"
@@ -180,22 +200,15 @@
 		</div>
 	</div>
 	<!--
-	  상태 스트립(#2047): 환경 배지 + 라벨드 항목. 정적·무채색·비인터랙티브 시각(버튼 아님).
-	  각 항목은 title 툴팁으로 의미를 설명한다. 사용자 신원(계정·역할)은 상단 사용자 메뉴가 전담하므로
-	  이 스트립에는 권한 개수 등 내부 RBAC 표기를 두지 않는다(#2047 후속 오너 지시).
+	  상태 스트립: 데스크톱 1행 통합 후 시각적으로는 상단 pill badge 및 사용자 메뉴로 이전되었으며,
+	  기존 테스트/스크린리더 호환성을 위해 유지된다.
 	-->
-	<div class="admin-status-strip" aria-label="실행 환경 상태">
-		<span class="admin-env-badge"
-		      th:classappend="${' is-' + (adminShell != null ? adminShell.environmentTone : 'development')}"
-		      title="현재 관리자 콘솔이 실행 중인 배포 환경"
-		      th:text="${adminShell != null ? adminShell.environmentLabel : 'DEV'}">DEV</span>
+	<div class="admin-status-strip sr-only" aria-label="실행 환경 상태">
 		<span class="admin-status-item"
 		      title="관리자 콘솔 빌드 리비전(배포 식별자)">
 			<span class="admin-status-label">리비전</span>
 			<strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong>
 		</span>
-		<!-- 마스터데이터 raw 값 정리(#2349 PR⑨): 미상 값(env 미설정 시 서버 기본값 "unknown")을
-		     그대로 노출하지 않고 "—"로 표시한다. 실제 값 판정 로직(AdminNavigationAdvice)은 불변, 표시만 바꾼다. -->
 		<span class="admin-status-item"
 		      title="현재 적재된 마스터데이터(역·시설 참조 팩) 버전">
 			<span class="admin-status-label">마스터데이터</span>

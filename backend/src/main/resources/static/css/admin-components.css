@@ -226,6 +226,51 @@
 	font-weight: var(--admin-w-body);
 }
 
+.admin-v3 td a:not(.btn):not(.admin-btn):not(.count-badge) {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	text-decoration: none;
+}
+
+.admin-v3 td a:not(.btn):not(.admin-btn):not(.count-badge):hover {
+	color: var(--admin-accent);
+	text-decoration: underline;
+}
+
+.admin-v3 tbody tr:hover td {
+	background-color: var(--admin-header-bg);
+}
+
+.admin-metric-split {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.admin-split-item {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	padding: 2px 7px;
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-badge);
+	font-size: var(--admin-fs-meta);
+	white-space: nowrap;
+}
+
+.admin-split-label {
+	color: var(--admin-ink-3);
+	font-size: 11px;
+}
+
+.admin-split-item strong {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	font-variant-numeric: tabular-nums;
+}
+
 .admin-table-scroll th:first-child,
 .admin-table-scroll td:first-child:not([colspan]) {
 	position: sticky;
@@ -1091,30 +1136,156 @@
 }
 
 .admin-status {
-	font-size: 13px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 8px;
+	border-radius: var(--admin-radius-badge);
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
 	/* 표 셀 안에서 상태·SLA 경과 뱃지(shell::status/statusAuto 공용)가 세로로 꺾이지 않게 한다(#2349 PR⑩a). */
 	white-space: nowrap;
+	line-height: 1.4;
+	background: var(--admin-bg);
+	color: var(--admin-ink-2);
+	border: 1px solid var(--admin-border);
 }
 
 .admin-status::before {
-	width: 7px;
-	height: 7px;
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentcolor;
+	flex: none;
 }
 
 .admin-status.good {
+	background: var(--admin-good-soft);
+	border-color: color-mix(in srgb, var(--admin-good) 28%, transparent);
 	color: var(--admin-good);
 }
 
 .admin-status.warn {
+	background: var(--admin-warn-soft);
+	border-color: color-mix(in srgb, var(--admin-warn) 32%, transparent);
 	color: var(--admin-warn);
 }
 
 .admin-status.bad {
+	background: var(--admin-danger-soft);
+	border-color: color-mix(in srgb, var(--admin-danger) 28%, transparent);
 	color: var(--admin-danger);
 }
 
 .admin-status.info {
+	background: var(--admin-info-soft);
+	border-color: color-mix(in srgb, var(--admin-info) 28%, transparent);
+	color: var(--admin-info);
+}
+
+.admin-grid-12 {
+	display: grid;
+	grid-template-columns: repeat(12, minmax(0, 1fr));
+	gap: 16px;
+	margin-bottom: 20px;
+}
+
+.admin-col-12 { grid-column: span 12; }
+.admin-col-8 { grid-column: span 8; }
+.admin-col-6 { grid-column: span 6; }
+.admin-col-4 { grid-column: span 4; }
+.admin-col-3 { grid-column: span 3; }
+
+@media (max-width: 1024px) {
+	.admin-col-3 { grid-column: span 6; }
+	.admin-col-4 { grid-column: span 6; }
+	.admin-col-6 { grid-column: span 12; }
+	.admin-col-8 { grid-column: span 12; }
+}
+
+@media (max-width: 640px) {
+	.admin-col-3 { grid-column: span 12; }
+	.admin-col-4 { grid-column: span 12; }
+}
+
+.quality-kpi-card {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	height: 100%;
+	padding: 16px 18px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	transition: border-color 0.15s ease;
+}
+
+.quality-kpi-card:hover {
+	border-color: var(--admin-border-strong);
+}
+
+.quality-kpi-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.quality-kpi-title {
+	font-size: var(--admin-fs-control);
+	font-weight: var(--admin-w-strong);
 	color: var(--admin-ink-2);
+}
+
+.quality-kpi-indicator {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--admin-accent);
+	flex: none;
+}
+
+.quality-kpi-indicator.is-good {
+	background: var(--admin-good);
+}
+
+.quality-kpi-indicator.is-warn {
+	background: var(--admin-warn);
+}
+
+.quality-kpi-indicator.is-bad {
+	background: var(--admin-danger);
+}
+
+.quality-kpi-value {
+	display: block;
+	font-size: var(--admin-fs-page);
+	font-weight: var(--admin-w-title);
+	color: var(--admin-ink);
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+	margin-bottom: 10px;
+}
+
+.quality-kpi-sub {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--admin-fs-meta);
+	color: var(--admin-ink-3);
+}
+
+.quality-kpi-sub strong {
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-strong);
+	font-variant-numeric: tabular-nums;
+}
+
+.quality-kpi-sub .meta-dot {
+	color: var(--admin-border-strong);
 }
 
 .admin-grid-2 {
@@ -1515,7 +1686,8 @@ label.admin-radio input[type="radio"] {
 }
 
 .admin-v3 .status-filter a[aria-current="page"],
-.admin-v3 .pagination a[aria-current="page"] {
+.admin-v3 .pagination a[aria-current="page"],
+.admin-v3 .pagination a.is-active {
 	border-color: var(--admin-primary);
 	background: var(--admin-primary);
 	color: var(--admin-on-primary);
@@ -1525,9 +1697,49 @@ label.admin-radio input[type="radio"] {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	justify-content: flex-end;
-	gap: 8px;
+	justify-content: space-between;
+	gap: 12px;
 	margin-top: 18px;
+}
+
+.admin-v3 .pagination-total {
+	font-size: var(--admin-fs-meta);
+	color: var(--admin-ink-3);
+}
+
+.admin-v3 .pagination-total strong {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	font-variant-numeric: tabular-nums;
+}
+
+.admin-v3 .pagination-pages-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.admin-v3 .pagination-numbers {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.admin-v3 .pagination span.is-disabled {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 38px;
+	padding: 0 14px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-bg);
+	color: var(--admin-ink-3);
+	font-size: 14px;
+	font-weight: var(--admin-w-medium);
+	cursor: not-allowed;
+	opacity: 0.6;
 }
 
 .admin-v3 dl {
@@ -1751,6 +1963,7 @@ label.admin-radio input[type="radio"] {
 
 	/* 오프캔버스 터치 타깃(#2416): ≤1024px에서 페이지네이션·표 액션·일반 버튼이 44×44px 이상. */
 	.admin-v3 .pagination a,
+	.admin-v3 .pagination span.is-disabled,
 	.admin-v3 .status-filter a {
 		min-height: 44px;
 	}
