@@ -211,13 +211,21 @@ class ReverseTimetableRaptorPlannerTest {
 		var result = planner.arriveBy(crossDateQuery(35_000, 124_000), compiled,
 			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
 
+		// #461: 두 날짜의 같은 열차는 별개 사건이다. 대안 창(가장 늦은 준비 - 30분) 때문에 하루 앞 열차는 빠진다.
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
-		assertThat(result.itineraries()).hasSize(2);
-		assertThat(result.itineraries()).extracting(itinerary -> itinerary.legs().stream()
+		assertThat(result.itineraries()).extracting(ReverseTimetableRaptorPlannerTest::firstDeparture)
+			.containsExactly(Instant.parse("2026-07-02T01:00:00Z"));
+		var earlierDay = planner.arriveBy(crossDateQuery(35_000, 122_000), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+		assertThat(earlierDay.itineraries()).extracting(ReverseTimetableRaptorPlannerTest::firstDeparture)
+			.containsExactly(Instant.parse("2026-07-01T01:00:00Z"));
+	}
+
+	private static Instant firstDeparture(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		return itinerary.legs().stream()
 			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
 			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
-			.findFirst().orElseThrow().plannedDepartureTime())
-			.containsExactlyInAnyOrder(Instant.parse("2026-07-01T01:00:00Z"), Instant.parse("2026-07-02T01:00:00Z"));
+			.findFirst().orElseThrow().plannedDepartureTime();
 	}
 
 	@Test
@@ -551,7 +559,7 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
-	@DisplayName("unverified out-of-station transfer fails search and records eligibility count")
+	@DisplayName("unverified out-of-station transfer fails search and records the eligibility-based budget count")
 	void unverifiedOutOfStationTransferCountsEligibility() {
 		var compiled = forward.compile(unverifiedOutOfStationTransferTimetable());
 		var observations = new JourneyProfilePruningObservationAccumulator(
@@ -563,7 +571,8 @@ class ReverseTimetableRaptorPlannerTest {
 			limits(), observations);
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
-		assertThat(observations.snapshot().countsByRuleId().get("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1"))
+		// #461: 환승 예산 하한이 같은 적격성 규칙(evaluateTransfer)으로 먼저 도달 불가를 판정하므로 탐색 전에 버려진다.
+		assertThat(observations.snapshot().countsByRuleId().get("PROFILE_TRANSFER_BUDGET_V1"))
 			.isNotNull().isGreaterThanOrEqualTo(1L);
 	}
 
@@ -994,7 +1003,7 @@ class ReverseTimetableRaptorPlannerTest {
 	private static List<JourneyProfileExactOracle.Candidate> scheduledOracle(
 		RouteTimetable source, Instant earliestReadyAt, Instant arrivalDeadline
 	) {
-		return new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+		return new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
 			"station-a", "station-b", earliestReadyAt, arrivalDeadline, 1, SLACK_SECONDS, 100_000L, () -> false),
 			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 32),
 			JourneyProfileOracleAccessInputs.normalize(source.routeAccessData(), JourneyRequest.MobilityProfile.SLOW,

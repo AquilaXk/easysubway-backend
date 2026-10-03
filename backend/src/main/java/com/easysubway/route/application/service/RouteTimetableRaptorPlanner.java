@@ -404,6 +404,181 @@ public final class RouteTimetableRaptorPlanner {
 		}
 	}
 
+	/**
+	 * #461 프로필 대안 창의 가지치기 하한(각 역에서 도착역까지). 노선 최소 주행 시간만 더하고 역 밖 환승 보행은 0으로
+	 * 둔다(걸음 속도에 따라 줄 수 있음). 실시간 변경이 닿은 패턴은 변경 시각으로 최소 주행 시간을 다시 잡아 하한이
+	 * 실제보다 커지지 않게 한다.
+	 */
+	static int[] computeProfileLowerBounds(
+		CompiledTimetable timetable,
+		int destinationStation,
+		List<RealtimeOverlay> overlays
+	) {
+		return profileLowerBounds(timetable, destinationStation, overlays, true);
+	}
+
+	/** {@link #computeProfileLowerBounds}의 방향을 뒤집은 하한(출발역에서 각 역까지). 도착 희망·막차 탐색이 쓴다. */
+	static int[] computeProfileLowerBoundsFrom(
+		CompiledTimetable timetable,
+		int originStation,
+		List<RealtimeOverlay> overlays
+	) {
+		return profileLowerBounds(timetable, originStation, overlays, false);
+	}
+
+	private static int[] profileLowerBounds(
+		CompiledTimetable timetable,
+		int anchorStation,
+		List<RealtimeOverlay> overlays,
+		boolean towardAnchor
+	) {
+		int stationCount = timetable.stationCount();
+		int[] lb = new int[stationCount];
+		Arrays.fill(lb, Integer.MAX_VALUE / 2);
+		if (anchorStation < 0 || anchorStation >= stationCount) return lb;
+		Map<Integer, int[]> realtimeHops = realtimeMinimumHops(timetable, overlays);
+		lb[anchorStation] = 0;
+		PriorityQueue<StationDistance> pq = new PriorityQueue<>();
+		pq.add(new StationDistance(anchorStation, 0));
+		while (!pq.isEmpty()) {
+			StationDistance curr = pq.poll();
+			int u = curr.station();
+			int dist = curr.distance();
+			if (dist > lb[u]) continue;
+			for (int pattern : timetable.patternsByStop(u)) {
+				int[] stops = timetable.stopsByPattern(pattern);
+				int[] adjusted = realtimeHops.get(pattern);
+				for (int pos = 0; pos < stops.length; pos += 1) {
+					if (stops[pos] != u) continue;
+					int from = towardAnchor ? 0 : pos + 1;
+					int to = towardAnchor ? pos : stops.length;
+					for (int other = from; other < to; other += 1) {
+						int earlier = towardAnchor ? other : pos;
+						int later = towardAnchor ? pos : other;
+						int runTime = adjusted != null ? adjusted[earlier * stops.length + later]
+							: timetable.minPatternRunningTime(pattern, earlier, later);
+						long nextDist = (long) dist + Math.max(0, runTime);
+						int v = stops[other];
+						if (nextDist < lb[v]) {
+							lb[v] = (int) nextDist;
+							pq.add(new StationDistance(v, lb[v]));
+						}
+					}
+				}
+			}
+			OutOfStationFootpath[] footpaths = towardAnchor
+				? timetable.footpathsToStation(u) : timetable.footpathsFromStation(u);
+			if (footpaths != null) {
+				for (OutOfStationFootpath fp : footpaths) {
+					int v = towardAnchor ? fp.fromStation() : fp.toStation();
+					if (dist < lb[v]) {
+						lb[v] = dist;
+						pq.add(new StationDistance(v, dist));
+					}
+				}
+			}
+		}
+		return lb;
+	}
+
+	private static Map<Integer, int[]> realtimeMinimumHops(CompiledTimetable timetable, List<RealtimeOverlay> overlays) {
+		Map<Integer, int[]> adjusted = new HashMap<>();
+		for (RealtimeOverlay overlay : overlays) {
+			for (int entry = 0; entry < overlay.tripIndexes.length; entry += 1) {
+				if (overlay.cancelled[entry]) continue;
+				ScheduledTrip trip = timetable.scheduledTrip(overlay.tripIndexes[entry]);
+				int pattern = timetable.patternOfScheduledTrip(trip.index());
+				if (pattern < 0) continue;
+				int numStops = timetable.stopsByPattern(pattern).length;
+				int[] hops = adjusted.computeIfAbsent(pattern, key -> {
+					int[] base = new int[numStops * numStops];
+					for (int i = 0; i < numStops; i += 1) {
+						for (int j = i + 1; j < numStops; j += 1) base[i * numStops + j] = timetable.minPatternRunningTime(key, i, j);
+					}
+					return base;
+				});
+				for (int i = 0; i < numStops; i += 1) {
+					for (int j = i + 1; j < numStops; j += 1) {
+						int duration = overlay.arrivalSeconds(trip, j) - overlay.departureSeconds(trip, i);
+						if (duration < hops[i * numStops + j]) hops[i * numStops + j] = duration;
+					}
+				}
+			}
+		}
+		return adjusted;
+	}
+
+	/** 도착(출발)역에 닿을 수 없음을 뜻하는 남은 승차 수. */
+	static final int UNREACHABLE_BOARDINGS = Integer.MAX_VALUE / 4;
+
+	/**
+	 * #461: (역, 들어온 노선)에서 도착역까지 필요한 최소 승차 수. 시각을 보지 않는 완화이고 환승 적격성은 출발 범위
+	 * 탐색과 같은 규칙(역 안 환승 {@link CompiledTimetable#transferTransition}, 역 밖 보행 {@code selectTransition})을
+	 * 쓴다. 결과는 {@code station * lineCount + line} 색인이며 {@code maxBoardings}를 넘으면
+	 * {@link #UNREACHABLE_BOARDINGS}다.
+	 */
+	static int[] forwardRemainingBoardings(
+		CompiledTimetable timetable,
+		ScanInput input,
+		RealtimeOverlay accessOverlay,
+		int destination,
+		int maxBoardings
+	) {
+		int lines = timetable.lineCount();
+		int stations = timetable.stationCount();
+		int[] remaining = new int[stations * lines];
+		Arrays.fill(remaining, UNREACHABLE_BOARDINGS);
+		if (destination < 0) return remaining;
+		for (int line = 0; line < lines; line += 1) remaining[destination * lines + line] = 0;
+		for (int boardings = 1; boardings <= maxBoardings; boardings += 1) {
+			boolean[] boardable = new boolean[stations * lines];
+			for (int pattern = 0; pattern < timetable.routePatternCount(); pattern += 1) {
+				int[] stops = timetable.stopsByPattern(pattern);
+				ScheduledTrip representative = timetable.patternRepresentative(pattern);
+				for (int board = 0; board < stops.length; board += 1) {
+					if (!representative.allowsPickup(board)) continue;
+					int line = timetable.lineIndex(representative.lineId(board));
+					if (line < 0) continue;
+					for (int alight = board + 1; alight < stops.length; alight += 1) {
+						if (representative.allowsDropOff(alight)
+							&& remaining[stops[alight] * lines + line] <= boardings - 1) {
+							boardable[stops[board] * lines + line] = true;
+							break;
+						}
+					}
+				}
+			}
+			int[] next = remaining.clone();
+			for (int station = 0; station < stations; station += 1) {
+				OutOfStationFootpath[] footpaths = timetable.footpathsFromStation(station);
+				for (int incoming = 0; incoming < lines; incoming += 1) {
+					int index = station * lines + incoming;
+					if (remaining[index] <= boardings) continue;
+					boolean reachable = false;
+					for (int local = 0; local < timetable.stationLineCount(station) && !reachable; local += 1) {
+						int boardingLine = timetable.stationLine(station, local);
+						reachable = boardable[station * lines + boardingLine]
+							&& timetable.transferTransition(station, incoming, boardingLine, input.accessProfileBit(), false,
+								input.requiresVerifiedJourneyDistance(), accessOverlay) >= 0;
+					}
+					if (!reachable && footpaths != null) {
+						for (OutOfStationFootpath footpath : footpaths) {
+							if (footpath.fromLine() == incoming && boardable[footpath.toStation() * lines + footpath.toLine()]
+								&& timetable.selectTransition(footpath.candidateTransitions(), input.accessProfileBit(), false,
+									input.requiresVerifiedJourneyDistance(), accessOverlay) >= 0) {
+								reachable = true;
+								break;
+							}
+						}
+					}
+					if (reachable) next[index] = boardings;
+				}
+			}
+			remaining = next;
+		}
+		return remaining;
+	}
+
 	private ScanResult scanDestinationLabels(
 		ScanInput input,
 		CompiledTimetable timetable,
@@ -1897,29 +2072,20 @@ public final class RouteTimetableRaptorPlanner {
 			.minusSeconds(LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE)
 			.atZone(SERVICE_ZONE).toLocalDate().plusDays(1);
 		LocalDate lastNativeServiceDate = latestReadyAt.atZone(SERVICE_ZONE).toLocalDate();
-		Map<Integer, List<ProfileDatedTripOccurrence>> tripsByPattern = new HashMap<>();
+		// #461: 날짜별 운행 집합만 고르고 패턴별 열차는 탐색이 그 패턴을 처음 볼 때 만든다(전 열차 사전 복사 없음).
+		List<ProfileServiceDateBlock> blocks = new ArrayList<>();
 		for (LocalDate nativeServiceDate = firstNativeServiceDate;; nativeServiceDate = nativeServiceDate.plusDays(1)) {
 			ScanInput cancellationInput = scanInput(query, new ServiceDay(nativeServiceDate, 0));
 			throwIfCancelled(cancellationInput);
 			limits.consumeWork();
 			ActiveServiceDay activeServiceDay = timetable.activeServiceDay(nativeServiceDate);
 			if (!activeServiceDay.trips().isEmpty()) {
-				RealtimeOverlay overlay = Objects.requireNonNull(overlays.apply(nativeServiceDate),
-					"realtime overlay must not be null");
-				for (int pattern = 0; pattern < timetable.routePatternCount(); pattern += 1) {
-					throwIfCancelled(cancellationInput);
-					limits.consumeWork();
-					for (ScheduledTrip trip : activeServiceDay.tripsByPattern(pattern)) {
-						throwIfCancelled(cancellationInput);
-						limits.consumeWork();
-						tripsByPattern.computeIfAbsent(pattern, ignored -> new ArrayList<>())
-							.add(new ProfileDatedTripOccurrence(nativeServiceDate, trip, overlay));
-					}
-				}
+				blocks.add(new ProfileServiceDateBlock(nativeServiceDate, activeServiceDay,
+					Objects.requireNonNull(overlays.apply(nativeServiceDate), "realtime overlay must not be null")));
 			}
 			if (nativeServiceDate.equals(lastNativeServiceDate)) break;
 		}
-		return new ProfileDatedTripOccurrences(tripsByPattern);
+		return new ProfileDatedTripOccurrences(List.copyOf(blocks));
 	}
 
 	private List<JourneyDepartureProfilePoint> departureProfileSlice(
@@ -1938,7 +2104,7 @@ public final class RouteTimetableRaptorPlanner {
 		ServiceDay serviceDay = new ServiceDay(serviceDate, latestReadyAtSeconds);
 		ScanInput profileInput = scanInput(query, serviceDay);
 		throwIfCancelled(profileInput);
-		ProfileDatedTripView trips = datedTrips.forReadinessAnchor(serviceDay.date());
+		ProfileDatedTripView trips = datedTrips.forReadinessAnchor(serviceDay.date(), limits);
 		if (trips.isEmpty()) return List.of();
 		int origin = timetable.stationIndex(profileInput.originStationId());
 		int destination = timetable.stationIndex(profileInput.destinationStationId());
@@ -1951,10 +2117,7 @@ public final class RouteTimetableRaptorPlanner {
 		// 시간대 이후 첫 열차를 기다릴 수 있으므로 마지막 준비시각에서도 탐색을 시작한다.
 		List<Integer> breakpoints = java.util.stream.Stream.concat(
 			java.util.stream.Stream.of(latestReadyAtSeconds), trips.departureEvents(
-			profileInput.originStationId(),
-			0,
-			Integer.MAX_VALUE
-		).stream().map(event -> readyAtBreakpoint(timetable, slackSeconds, event))
+			timetable, profileInput.originStationId()).stream().map(event -> readyAtBreakpoint(timetable, slackSeconds, event))
 			.filter(OptionalIntValue::present)
 			.mapToInt(OptionalIntValue::value)
 			.filter(readyAt -> readyAt >= earliestReadyAtSeconds
@@ -1966,7 +2129,8 @@ public final class RouteTimetableRaptorPlanner {
 
 		limits.reserveBreakpoints(breakpoints.size());
 		ProfileMultiLabelForwardScan scan = new ProfileMultiLabelForwardScan(
-			profileInput, timetable, trips, accessOverlay, limits);
+			profileInput, timetable, trips, accessOverlay, limits, destination,
+			JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW_SECONDS);
 		List<JourneyDepartureProfilePoint> profile = new ArrayList<>(breakpoints.size());
 		for (int readyAtSeconds : breakpoints) {
 			ScanInput input = scanInput(query, new ServiceDay(serviceDay.date(), readyAtSeconds));
@@ -2477,6 +2641,11 @@ public final class RouteTimetableRaptorPlanner {
 
 		int[] stationSlotOffsets() {
 			return stationSlotOffsets.clone();
+		}
+
+		/** 패턴의 대표 열차. 같은 패턴은 정차역·노선·승하차 허용이 같다(패턴 키). */
+		ScheduledTrip patternRepresentative(int pattern) {
+			return tripsByPattern.get(pattern).getFirst();
 		}
 
 		int stationLineCount(int station) {
@@ -4204,34 +4373,16 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	/** 원본 운행일·실시간 관측을 보존하고 준비시각 기준 좌표로만 탐색한다. */
-	private record ProfileDatedTripOccurrences(
-		Map<Integer, List<ProfileDatedTripOccurrence>> tripsByPattern
-	) {
-		private ProfileDatedTripOccurrences {
-			Map<Integer, List<ProfileDatedTripOccurrence>> copied = new HashMap<>();
-			tripsByPattern.forEach((pattern, trips) -> copied.put(pattern, List.copyOf(trips)));
-			tripsByPattern = Map.copyOf(copied);
-		}
-
-		private ProfileDatedTripView forReadinessAnchor(LocalDate anchorDate) {
-			Map<Integer, List<ProfileDatedTrip>> datedTrips = new HashMap<>();
-			tripsByPattern.forEach((pattern, occurrences) -> {
-				List<ProfileDatedTrip> relativeTrips = occurrences.stream()
-					.map(occurrence -> new ProfileDatedTrip(
-						occurrence.nativeServiceDate(), occurrence.scheduledTrip(), occurrence.realtimeOverlay(),
-						Math.toIntExact(Duration.between(
-							anchorDate.atStartOfDay(SERVICE_ZONE),
-							occurrence.nativeServiceDate().atStartOfDay(SERVICE_ZONE)).toSeconds())))
-					.toList();
-				datedTrips.put(pattern, relativeTrips);
-			});
-			return new ProfileDatedTripView(datedTrips);
+	private record ProfileDatedTripOccurrences(List<ProfileServiceDateBlock> blocks) {
+		private ProfileDatedTripView forReadinessAnchor(LocalDate anchorDate, ProfileLimitTracker limits) {
+			return new ProfileDatedTripView(blocks, anchorDate, limits);
 		}
 	}
 
-	private record ProfileDatedTripOccurrence(
+	/** 한 원본 운행일의 활성 운행. 패턴 안에서는 정류장마다 출발·도착이 줄지 않는다(비추월 묶음). */
+	private record ProfileServiceDateBlock(
 		LocalDate nativeServiceDate,
-		ScheduledTrip scheduledTrip,
+		ActiveServiceDay activeServiceDay,
 		RealtimeOverlay realtimeOverlay
 	) {
 	}
@@ -4269,37 +4420,96 @@ public final class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	private record ProfileDatedTripView(Map<Integer, List<ProfileDatedTrip>> tripsByPattern) {
-		private ProfileDatedTripView {
-			Map<Integer, List<ProfileDatedTrip>> copied = new HashMap<>();
-			tripsByPattern.forEach((pattern, trips) -> copied.put(pattern, List.copyOf(trips)));
-			tripsByPattern = Map.copyOf(copied);
+	/**
+	 * 한 패턴의 날짜별 열차 묶음. {@code blockStarts[i]}부터 다음 묶음 시작 전까지가 i번째 운행일이다.
+	 * {@code ordered[i]}가 참이면 그 묶음은 시각 순서가 보장되어(실시간 변경 없음) 이분 탐색과 조기 종료를 쓸 수 있다.
+	 */
+	private static final class ProfilePatternTrips {
+		private final List<ProfileDatedTrip> trips;
+		private final int[] blockStarts;
+		private final boolean[] ordered;
+
+		private ProfilePatternTrips(List<ProfileDatedTrip> trips, int[] blockStarts, boolean[] ordered) {
+			this.trips = trips;
+			this.blockStarts = blockStarts;
+			this.ordered = ordered;
+		}
+
+		private List<ProfileDatedTrip> trips() {
+			return trips;
+		}
+
+		private int blockCount() {
+			return blockStarts.length;
+		}
+
+		private int blockStart(int block) {
+			return blockStarts[block];
+		}
+
+		private int blockEnd(int block) {
+			return block + 1 < blockStarts.length ? blockStarts[block + 1] : trips.size();
+		}
+
+		private boolean ordered(int block) {
+			return ordered[block];
+		}
+	}
+
+	private static final class ProfileDatedTripView {
+		private final List<ProfileServiceDateBlock> blocks;
+		private final LocalDate anchorDate;
+		private final ProfileLimitTracker limits;
+		private final Map<Integer, ProfilePatternTrips> byPattern = new HashMap<>();
+
+		private ProfileDatedTripView(List<ProfileServiceDateBlock> blocks, LocalDate anchorDate, ProfileLimitTracker limits) {
+			this.blocks = blocks;
+			this.anchorDate = anchorDate;
+			this.limits = limits;
 		}
 
 		private boolean isEmpty() {
-			return tripsByPattern.isEmpty();
+			return blocks.isEmpty();
 		}
 
-		private List<ProfileDatedTrip> tripsByPattern(int pattern) {
-			return tripsByPattern.getOrDefault(pattern, List.of());
+		private List<RealtimeOverlay> overlays() {
+			return blocks.stream().map(ProfileServiceDateBlock::realtimeOverlay).toList();
 		}
 
-		private List<ProfileDepartureEvent> departureEvents(
-			String originStationId,
-			int earliestDepartureSeconds,
-			int latestDepartureSeconds
-		) {
+		/** 탐색이 처음 보는 패턴만 날짜별 열차로 펼친다. 펼친 열차마다 작업량 1이다. */
+		private ProfilePatternTrips tripsByPattern(int pattern) {
+			ProfilePatternTrips cached = byPattern.get(pattern);
+			if (cached != null) return cached;
+			List<ProfileDatedTrip> trips = new ArrayList<>();
+			int[] starts = new int[blocks.size()];
+			boolean[] ordered = new boolean[blocks.size()];
+			for (int index = 0; index < blocks.size(); index += 1) {
+				ProfileServiceDateBlock block = blocks.get(index);
+				starts[index] = trips.size();
+				ordered[index] = !block.realtimeOverlay().affectsPattern(pattern);
+				int offset = Math.toIntExact(Duration.between(anchorDate.atStartOfDay(SERVICE_ZONE),
+					block.nativeServiceDate().atStartOfDay(SERVICE_ZONE)).toSeconds());
+				for (ScheduledTrip trip : block.activeServiceDay().tripsByPattern(pattern)) {
+					limits.consumeWork();
+					trips.add(new ProfileDatedTrip(block.nativeServiceDate(), trip, block.realtimeOverlay(), offset));
+				}
+			}
+			ProfilePatternTrips value = new ProfilePatternTrips(List.copyOf(trips), starts, ordered);
+			byPattern.put(pattern, value);
+			return value;
+		}
+
+		private List<ProfileDepartureEvent> departureEvents(CompiledTimetable timetable, String originStationId) {
 			List<ProfileDepartureEvent> events = new ArrayList<>();
-			for (List<ProfileDatedTrip> patternTrips : tripsByPattern.values()) {
-				for (ProfileDatedTrip trip : patternTrips) {
+			int origin = timetable.stationIndex(originStationId);
+			if (origin < 0) return List.of();
+			for (int pattern : timetable.patternsByStop(origin)) {
+				for (ProfileDatedTrip trip : tripsByPattern(pattern).trips()) {
 					if (trip.cancelled()) continue;
 					for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
 						if (!originStationId.equals(trip.stopTimes().get(stopIndex).stationId())
 							|| !trip.allowsPickup(stopIndex)) continue;
-						int departure = trip.departureSeconds(stopIndex);
-						if (departure >= earliestDepartureSeconds && departure <= latestDepartureSeconds) {
-							events.add(new ProfileDepartureEvent(trip, stopIndex, departure));
-						}
+						events.add(new ProfileDepartureEvent(trip, stopIndex, trip.departureSeconds(stopIndex)));
 					}
 				}
 			}
@@ -4362,7 +4572,6 @@ public final class RouteTimetableRaptorPlanner {
 		int[] transition;
 		LocalDate[] serviceDate;
 		ProfileDatedTrip[] trip;
-		JourneyProfileRaptorPort.ConnectionSlack[] connectionSlack;
 		String[] traceKeys;
 
 		PrimitiveProfileLabelPool(int initialCapacity) {
@@ -4389,7 +4598,6 @@ public final class RouteTimetableRaptorPlanner {
 			transition = new int[cap];
 			serviceDate = new LocalDate[cap];
 			trip = new ProfileDatedTrip[cap];
-			connectionSlack = new JourneyProfileRaptorPort.ConnectionSlack[cap];
 			traceKeys = new String[cap];
 		}
 
@@ -4415,7 +4623,6 @@ public final class RouteTimetableRaptorPlanner {
 			transition = Arrays.copyOf(transition, newCap);
 			serviceDate = Arrays.copyOf(serviceDate, newCap);
 			trip = Arrays.copyOf(trip, newCap);
-			connectionSlack = Arrays.copyOf(connectionSlack, newCap);
 			traceKeys = Arrays.copyOf(traceKeys, newCap);
 			capacity = newCap;
 		}
@@ -4459,7 +4666,6 @@ public final class RouteTimetableRaptorPlanner {
 			transition[idx] = trans;
 			serviceDate[idx] = datedTrip != null && datedTrip.nativeServiceDate() != null ? datedTrip.nativeServiceDate() : date;
 			trip[idx] = datedTrip;
-			connectionSlack[idx] = slackObj != null ? slackObj : decodeSlack(slackSeconds[idx]);
 			traceKeys[idx] = null;
 			return idx;
 		}
@@ -4487,12 +4693,23 @@ public final class RouteTimetableRaptorPlanner {
 				accessSec, accessMeters, stairs, slack, parent, tripIdx, fromStop, toStop, trans, date, datedTrip, null);
 		}
 
+		/** 방금 만든 마지막 라벨이 상태에 들어가지 못했으면 자리를 되돌린다(참조가 없음). */
+		void discardLast(int index) {
+			if (index != size - 1) throw new IllegalStateException("only the last allocated label can be discarded");
+			trip[index] = null;
+			serviceDate[index] = null;
+			traceKeys[index] = null;
+			size -= 1;
+		}
+
+		/**
+		 * 상태 지배. 출발 범위 탐색은 늦은 준비 시각부터 처리하므로 상태에 있는 모든 라벨의 시작은 지금과 이후 모든
+		 * 시점의 준비 시각 이상이다. 그래서 시작 시각은 어떤 시점의 결과도 가르지 않으며(#461) 지배 차원에서 뺀다.
+		 */
 		static boolean dominates(PrimitiveProfileLabelPool pool, int left, int right) {
 			if (left == right) {
 				return false;
 			}
-			int lStart = pool.startSeconds[left];
-			int rStart = pool.startSeconds[right];
 			int lArrival = pool.arrivalSeconds[left];
 			int rArrival = pool.arrivalSeconds[right];
 			int lAccessSec = pool.accessSeconds[left];
@@ -4508,8 +4725,7 @@ public final class RouteTimetableRaptorPlanner {
 			int lBoardings = pool.boardings[left];
 			int rBoardings = pool.boardings[right];
 
-			boolean noWorse = lStart >= rStart
-				&& lArrival <= rArrival
+			boolean noWorse = lArrival <= rArrival
 				&& lAccessSec <= rAccessSec
 				&& lAccessMeters <= rAccessMeters
 				&& lStairs <= rStairs
@@ -4521,8 +4737,7 @@ public final class RouteTimetableRaptorPlanner {
 				return false;
 			}
 
-			return lStart > rStart
-				|| lArrival < rArrival
+			return lArrival < rArrival
 				|| lAccessSec < rAccessSec
 				|| lAccessMeters < rAccessMeters
 				|| lStairs < rStairs
@@ -4535,8 +4750,7 @@ public final class RouteTimetableRaptorPlanner {
 			if (left == right) {
 				return true;
 			}
-			return pool.startSeconds[left] == pool.startSeconds[right]
-				&& pool.arrivalSeconds[left] == pool.arrivalSeconds[right]
+			return pool.arrivalSeconds[left] == pool.arrivalSeconds[right]
 				&& pool.boardings[left] == pool.boardings[right]
 				&& pool.accessSeconds[left] == pool.accessSeconds[right]
 				&& pool.accessDistanceMeters[left] == pool.accessDistanceMeters[right]
@@ -4570,51 +4784,46 @@ public final class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	private static final class IntArrayDeque {
-		private int[] elements;
-		private int head;
-		private int tail;
+	/** long 값 최소 힙. 프로필 탐색은 상위 32비트에 우선순위, 하위 32비트에 라벨 번호를 넣는다. */
+	private static final class LongMinHeap {
+		private long[] heap;
+		private int size;
 
-		IntArrayDeque(int initialCapacity) {
-			int cap = 16;
-			while (cap < initialCapacity) {
-				cap <<= 1;
-			}
-			elements = new int[cap];
+		LongMinHeap(int initialCapacity) {
+			heap = new long[Math.max(16, initialCapacity)];
 		}
 
 		boolean isEmpty() {
-			return head == tail;
+			return size == 0;
 		}
 
-		void addLast(int val) {
-			elements[tail] = val;
-			tail = (tail + 1) & (elements.length - 1);
-			if (tail == head) {
-				doubleCapacity();
+		void add(long value) {
+			if (size == heap.length) heap = Arrays.copyOf(heap, size << 1);
+			int index = size++;
+			while (index > 0) {
+				int parent = (index - 1) >>> 1;
+				if (heap[parent] <= value) break;
+				heap[index] = heap[parent];
+				index = parent;
 			}
+			heap[index] = value;
 		}
 
-		int removeFirst() {
-			if (head == tail) {
-				throw new IllegalStateException("Empty queue");
+		long poll() {
+			if (size == 0) throw new IllegalStateException("Empty heap");
+			long result = heap[0];
+			long last = heap[--size];
+			int index = 0;
+			int half = size >>> 1;
+			while (index < half) {
+				int child = 2 * index + 1;
+				if (child + 1 < size && heap[child + 1] < heap[child]) child += 1;
+				if (last <= heap[child]) break;
+				heap[index] = heap[child];
+				index = child;
 			}
-			int val = elements[head];
-			head = (head + 1) & (elements.length - 1);
-			return val;
-		}
-
-		private void doubleCapacity() {
-			int p = head;
-			int n = elements.length;
-			int r = n - p;
-			int newCap = n << 1;
-			int[] a = new int[newCap];
-			System.arraycopy(elements, p, a, 0, r);
-			System.arraycopy(elements, 0, a, r, p);
-			elements = a;
-			head = 0;
-			tail = n;
+			if (size > 0) heap[index] = last;
+			return result;
 		}
 	}
 
@@ -4658,23 +4867,6 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			return false;
 		}
-
-		void sort(IntComparator comp) {
-			for (int i = 1; i < size; i++) {
-				int key = data[i];
-				int j = i - 1;
-				while (j >= 0 && comp.compare(data[j], key) > 0) {
-					data[j + 1] = data[j];
-					j--;
-				}
-				data[j + 1] = key;
-			}
-		}
-	}
-
-	@FunctionalInterface
-	private interface IntComparator {
-		int compare(int a, int b);
 	}
 
 	/**
@@ -4690,7 +4882,20 @@ public final class RouteTimetableRaptorPlanner {
 		private final ProfileLimitTracker limits;
 		private final PrimitiveProfileLabelPool pool = new PrimitiveProfileLabelPool(1024);
 		private final Map<ProfileStateKey, IntArrayList> labelsByState = new HashMap<>();
-		private final IntArrayDeque pending = new IntArrayDeque(256);
+		/** 도착 + 하한이 작은 라벨부터 꺼낸다. 대안 창 상한이 빨리 좁혀져 같은 결과를 더 적은 확장으로 얻는다. */
+		private final LongMinHeap pending = new LongMinHeap(256);
+		/** 도착역까지 노선 최소 주행 시간 하한. 환승 시간을 빼므로 실제보다 크지 않다. */
+		private final int[] lowerBounds;
+		private final int destination;
+		private final int windowSeconds;
+		/** 지금까지 도착역에 닿은 가장 이른 도착. 처리 중인 시점보다 늦게 출발한 라벨도 그 시점에서 탈 수 있다. */
+		private int bestDestinationArrival = UNREACHED;
+		/** 이 시각보다 늦게 도착하는 여정은 어떤 남은 시점에서도 대안 창 밖이다. */
+		private int arrivalBound = UNREACHED;
+		/** 도착역까지 남은 최소 승차 수({@link #forwardRemainingBoardings}). */
+		private final int[] remainingBoardings;
+		/** 패턴·승차 위치마다 그 뒤 하차로 도착역까지 남는 최소 승차 수(그 노선으로 내린 상태 기준). */
+		private final Map<Integer, int[]> remainingAfterBoarding = new HashMap<>();
 		private int expandedRoutes;
 		private int expandedTrips;
 		private int expandedTransfers;
@@ -4700,13 +4905,45 @@ public final class RouteTimetableRaptorPlanner {
 			CompiledTimetable timetable,
 			ProfileDatedTripView trips,
 			RealtimeOverlay accessOverlay,
-			ProfileLimitTracker limits
+			ProfileLimitTracker limits,
+			int destination,
+			int windowSeconds
 		) {
 			this.input = Objects.requireNonNull(input, "input");
 			this.timetable = Objects.requireNonNull(timetable, "timetable");
 			this.trips = Objects.requireNonNull(trips, "trips");
 			this.accessOverlay = Objects.requireNonNull(accessOverlay, "accessOverlay");
 			this.limits = Objects.requireNonNull(limits, "limits");
+			this.destination = destination;
+			this.lowerBounds = computeProfileLowerBounds(timetable, destination, trips.overlays());
+			this.windowSeconds = windowSeconds;
+			this.remainingBoardings = forwardRemainingBoardings(
+				timetable, input, accessOverlay, destination, input.maxTransfers() + 1);
+		}
+
+		/** 지금 승차 수에서 이 상태로 내린 뒤 도착역까지 가면 승차 예산을 넘는가. */
+		private boolean overBudget(int boardings, int station, int incomingLine) {
+			return incomingLine < 0 || (long) boardings
+				+ remainingBoardings[station * timetable.lineCount() + incomingLine] > input.maxTransfers() + 1L;
+		}
+
+		private int remainingAfterBoarding(int pattern, int position) {
+			int[] values = remainingAfterBoarding.computeIfAbsent(pattern, key -> {
+				int[] stops = timetable.stopsByPattern(key);
+				ScheduledTrip representative = timetable.patternRepresentative(key);
+				int[] result = new int[stops.length];
+				for (int board = 0; board < stops.length; board += 1) {
+					int line = timetable.lineIndex(representative.lineId(board));
+					int best = UNREACHABLE_BOARDINGS;
+					for (int alight = board + 1; alight < stops.length && line >= 0; alight += 1) {
+						if (!representative.allowsDropOff(alight)) continue;
+						best = Math.min(best, remainingBoardings[stops[alight] * timetable.lineCount() + line]);
+					}
+					result[board] = best;
+				}
+				return result;
+			});
+			return values[position];
 		}
 
 		private boolean improveOrigin(int origin, int readyAtSeconds) {
@@ -4717,14 +4954,25 @@ public final class RouteTimetableRaptorPlanner {
 			return admit(label);
 		}
 
+		/** 하한을 더해도 대안 창 끝을 넘으면 도착역에서 창 안으로 들어올 수 없다. */
+		private boolean outsideWindow(int arrivalSeconds, int station) {
+			return arrivalBound != UNREACHED && (long) arrivalSeconds + lowerBounds[station] > arrivalBound;
+		}
+
 		private void propagate() {
 			while (!pending.isEmpty()) {
 				throwIfCancelled(input);
-				int label = pending.removeFirst();
+				int label = (int) pending.poll();
 				if (!isCurrent(label)) continue;
 				int labelBoardings = pool.boardings[label];
 				if (labelBoardings > input.maxTransfers()) continue;
 				int labelStation = pool.station[label];
+				// 도착역에서 더 타고 나가 다시 오는 여정은 앞부분 여정에 지배된다(도착·환승·보행·계단·여유 모두 같거나 나쁨).
+				if (labelBoardings > 0 && labelStation == destination) continue;
+				if (outsideWindow(pool.arrivalSeconds[label], labelStation)) {
+					limits.count(JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW);
+					continue;
+				}
 				int labelIncomingLine = pool.incomingLine[label];
 
 				for (int pattern : timetable.patternsByStop(labelStation)) {
@@ -4732,9 +4980,9 @@ public final class RouteTimetableRaptorPlanner {
 					expandedRoutes += 1;
 					int position = indexOf(timetable.stopsByPattern(pattern), labelStation);
 					if (position < 0) continue;
-					List<ProfileDatedTrip> patternTrips = trips.tripsByPattern(pattern);
-					if (patternTrips.isEmpty()) continue;
-					int boardingLine = timetable.lineIndex(patternTrips.getFirst().scheduledTrip().lineId(position));
+					ProfilePatternTrips patternTrips = trips.tripsByPattern(pattern);
+					if (patternTrips.trips().isEmpty()) continue;
+					int boardingLine = timetable.lineIndex(patternTrips.trips().getFirst().scheduledTrip().lineId(position));
 					if (boardingLine < 0) continue;
 					int transition = labelBoardings == 0
 						? PLATFORM_BOUNDARY
@@ -4770,9 +5018,9 @@ public final class RouteTimetableRaptorPlanner {
 					expandedRoutes += 1;
 					// patternsByStop은 stopsByPattern의 역색인이라 도착역은 항상 패턴 안에 있다.
 					int position = indexOf(timetable.stopsByPattern(pattern), footpath.toStation());
-					List<ProfileDatedTrip> patternTrips = trips.tripsByPattern(pattern);
-					if (patternTrips.isEmpty()
-						|| timetable.lineIndex(patternTrips.getFirst().scheduledTrip().lineId(position))
+					ProfilePatternTrips patternTrips = trips.tripsByPattern(pattern);
+					if (patternTrips.trips().isEmpty()
+						|| timetable.lineIndex(patternTrips.trips().getFirst().scheduledTrip().lineId(position))
 							!= footpath.toLine()) continue;
 					expandedTransfers += 1;
 					boardPattern(label, pattern, position, footpath.toLine(), transition, patternTrips);
@@ -4786,7 +5034,7 @@ public final class RouteTimetableRaptorPlanner {
 			int position,
 			int boardingLine,
 			int transition,
-			List<ProfileDatedTrip> patternTrips
+			ProfilePatternTrips patternTrips
 		) {
 			int labelBoardings = pool.boardings[label];
 			int labelArrivalSeconds = pool.arrivalSeconds[label];
@@ -4799,43 +5047,86 @@ public final class RouteTimetableRaptorPlanner {
 				timetable.transitionDurationSeconds(transition), timetable.transitionDistanceMeters(transition));
 			int earliestDeparture = Math.addExact(Math.addExact(labelArrivalSeconds, accessSeconds),
 				input.boardingSlackSeconds());
-			for (ProfileDatedTrip trip : patternTrips) {
-				limits.consumeWork();
-				if (!trip.allowsPickup(position) || trip.cancelled()
-					|| trip.departureSeconds(position) < earliestDeparture) continue;
-				expandedTrips += 1;
-				long transferSlack = (long) trip.departureSeconds(position)
-					- labelArrivalSeconds - accessSeconds - input.boardingSlackSeconds();
-				if (transferSlack < 0) continue;
-				int childSlack = labelBoardings == 0
-					? PrimitiveProfileLabelPool.NO_TRANSFER_SLACK
-					: Math.min(labelSlack, (int) Math.min(transferSlack, Integer.MAX_VALUE - 1L));
-				byte warnings = (byte) (labelWarnings
-					| timetable.transitionWarningCodes(transition, input.accessProfileBit(), false));
-				for (int alight = position + 1; alight < trip.stopTimes().size(); alight += 1) {
+			int[] stops = timetable.stopsByPattern(pattern);
+			if ((long) labelBoardings + 1 + remainingAfterBoarding(pattern, position) > input.maxTransfers() + 1L) {
+				limits.count(JourneyRaptorPruningInventoryV1.PROFILE_TRANSFER_BUDGET);
+				return;
+			}
+			List<ProfileDatedTrip> datedTrips = patternTrips.trips();
+			for (int block = 0; block < patternTrips.blockCount(); block += 1) {
+				int end = patternTrips.blockEnd(block);
+				boolean ordered = patternTrips.ordered(block);
+				int from = ordered
+					? firstDepartingAtOrAfter(datedTrips, patternTrips.blockStart(block), end, position, earliestDeparture)
+					: patternTrips.blockStart(block);
+				for (int index = from; index < end; index += 1) {
+					ProfileDatedTrip trip = datedTrips.get(index);
 					limits.consumeWork();
-					if (!trip.allowsDropOff(alight)) continue;
-					int child = pool.allocate(
-						pool.startSeconds[label],
-						trip.arrivalSeconds(alight),
-						labelBoardings + 1,
-						timetable.stopsByPattern(pattern)[alight],
-						boardingLine,
-						warnings,
-						Math.addExact(labelAccessSeconds, accessSeconds),
-						Math.addExact(labelAccessMeters, timetable.transitionDistanceMeters(transition)),
-						Math.addExact(labelStairs, timetable.transitionIncludesStairs(transition) ? 1 : 0),
-						childSlack,
-						label,
-						trip.scheduledTrip().index(),
-						position,
-						alight,
-						transition,
-						trip.nativeServiceDate(),
-						trip);
-					admit(child);
+					int departure = trip.departureSeconds(position);
+					if (departure < earliestDeparture) continue;
+					if (outsideWindow(departure, stops[position])) {
+						limits.count(JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW);
+						// 시각 순서가 보장된 묶음에서는 뒤 열차도 모두 창 밖이다.
+						if (ordered) break;
+						continue;
+					}
+					if (!trip.allowsPickup(position) || trip.cancelled()) continue;
+					expandedTrips += 1;
+					long transferSlack = (long) departure - labelArrivalSeconds - accessSeconds - input.boardingSlackSeconds();
+					if (transferSlack < 0) continue;
+					int childSlack = labelBoardings == 0
+						? PrimitiveProfileLabelPool.NO_TRANSFER_SLACK
+						: Math.min(labelSlack, (int) Math.min(transferSlack, Integer.MAX_VALUE - 1L));
+					byte warnings = (byte) (labelWarnings
+						| timetable.transitionWarningCodes(transition, input.accessProfileBit(), false));
+					for (int alight = position + 1; alight < trip.stopTimes().size(); alight += 1) {
+						limits.consumeWork();
+						if (!trip.allowsDropOff(alight)) continue;
+						if (overBudget(labelBoardings + 1, stops[alight], boardingLine)) {
+							limits.count(JourneyRaptorPruningInventoryV1.PROFILE_TRANSFER_BUDGET);
+							continue;
+						}
+						int arrival = trip.arrivalSeconds(alight);
+						if (outsideWindow(arrival, stops[alight])) {
+							limits.count(JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW);
+							continue;
+						}
+						int child = pool.allocate(
+							pool.startSeconds[label],
+							arrival,
+							labelBoardings + 1,
+							stops[alight],
+							boardingLine,
+							warnings,
+							Math.addExact(labelAccessSeconds, accessSeconds),
+							Math.addExact(labelAccessMeters, timetable.transitionDistanceMeters(transition)),
+							Math.addExact(labelStairs, timetable.transitionIncludesStairs(transition) ? 1 : 0),
+							childSlack,
+							label,
+							trip.scheduledTrip().index(),
+							position,
+							alight,
+							transition,
+							trip.nativeServiceDate(),
+							trip);
+						if (!admit(child)) pool.discardLast(child);
+					}
 				}
 			}
+		}
+
+		/** 시각 순서가 보장된 [start, end) 구간에서 position 출발이 earliest 이상인 첫 열차. */
+		private static int firstDepartingAtOrAfter(
+			List<ProfileDatedTrip> trips, int start, int end, int position, int earliest
+		) {
+			int low = start;
+			int high = end;
+			while (low < high) {
+				int middle = (low + high) >>> 1;
+				if (trips.get(middle).departureSeconds(position) < earliest) low = middle + 1;
+				else high = middle;
+			}
+			return low;
 		}
 
 		private boolean isCurrent(int label) {
@@ -4851,6 +5142,7 @@ public final class RouteTimetableRaptorPlanner {
 			int accessProfileBit
 		) {
 			List<ProfileDestinationLabel> candidates = new ArrayList<>();
+			int earliestArrival = UNREACHED;
 			for (Map.Entry<ProfileStateKey, IntArrayList> entry : labelsByState.entrySet()) {
 				ProfileStateKey state = entry.getKey();
 				// #454: 도착역의 어느 승강장(역-노선)에 내려도 도착이다. 하차 시간·거리를 더하지 않는다.
@@ -4860,6 +5152,7 @@ public final class RouteTimetableRaptorPlanner {
 				for (int i = 0; i < count; i++) {
 					int label = list.get(i);
 					limits.consumeWork();
+					earliestArrival = Math.min(earliestArrival, pool.arrivalSeconds[label]);
 					candidates.add(new ProfileDestinationLabel(label,
 						pool.arrivalSeconds[label],
 						pool.accessSeconds[label],
@@ -4868,7 +5161,14 @@ public final class RouteTimetableRaptorPlanner {
 						pool.warningBits[label]));
 				}
 			}
-			List<ProfileDestinationLabel> frontier = destinationFrontier(candidates);
+			// #461: 이 시점의 가장 이른 도착 + 대안 창 안의 여정만 파레토 집합에 넣는다.
+			long windowEnd = (long) earliestArrival + windowSeconds;
+			List<ProfileDestinationLabel> windowed = new ArrayList<>(candidates.size());
+			for (ProfileDestinationLabel candidate : candidates) {
+				if (candidate.arrivalSeconds() <= windowEnd) windowed.add(candidate);
+				else limits.count(JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW);
+			}
+			List<ProfileDestinationLabel> frontier = destinationFrontier(windowed);
 			limits.observeDestinationLabels(frontier.size());
 			if (frontier.size() > limits.maxDestinationProfileLabels()) {
 				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
@@ -4889,49 +5189,59 @@ public final class RouteTimetableRaptorPlanner {
 
 		private boolean admit(int candidate) {
 			limits.consumeWork();
+			if (outsideWindow(pool.arrivalSeconds[candidate], pool.station[candidate])) {
+				limits.count(JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW);
+				return false;
+			}
+			if (pool.boardings[candidate] > 0 && pool.station[candidate] == destination
+				&& pool.arrivalSeconds[candidate] < bestDestinationArrival) {
+				bestDestinationArrival = pool.arrivalSeconds[candidate];
+				long bound = (long) bestDestinationArrival + windowSeconds;
+				if (arrivalBound == UNREACHED || bound < arrivalBound) arrivalBound = (int) Math.min(bound, UNREACHED - 1L);
+			}
 			ProfileStateKey state = new ProfileStateKey(
 				pool.boardings[candidate], pool.station[candidate], pool.incomingLine[candidate]);
 			IntArrayList labels = labelsByState.computeIfAbsent(state, ignored -> new IntArrayList(4));
-			int size = labels.size();
-			for (int i = 0; i < size; i++) {
-				int existing = labels.get(i);
-				if (PrimitiveProfileLabelPool.dominates(pool, existing, candidate)) {
-					limits.count("FORWARD_STATE_DOMINANCE_V1");
-					return false;
+			// 한 번 훑으며 (1) 상한이 좁혀져 창 밖이 된 라벨을 비우고(창 안 라벨을 지배할 수 없음: 도착이 더 늦음)
+			// (2) 후보를 지배하는 라벨이 있으면 거절하고 (3) 후보가 지배하는 라벨을 뺀다. 파레토 집합 안에서는 후보를
+			// 지배하는 라벨과 후보가 지배하는 라벨이 함께 있을 수 없으므로(추이성) 거절될 후보는 아무것도 빼지 않는다.
+			int kept = 0;
+			boolean rejected = false;
+			for (int read = 0; read < labels.size(); read++) {
+				int existing = labels.get(read);
+				if (outsideWindow(pool.arrivalSeconds[existing], pool.station[existing])) {
+					limits.count(JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW);
+					continue;
 				}
-				if (PrimitiveProfileLabelPool.sameVector(pool, existing, candidate)
-					&& PrimitiveProfileLabelPool.compareTrace(pool, existing, candidate) <= 0) {
-					limits.count("FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
-					return false;
+				if (!rejected) {
+					if (PrimitiveProfileLabelPool.dominates(pool, existing, candidate)) {
+						limits.count("FORWARD_STATE_DOMINANCE_V1");
+						rejected = true;
+					} else if (PrimitiveProfileLabelPool.sameVector(pool, existing, candidate)) {
+						limits.count("FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+						if (PrimitiveProfileLabelPool.compareTrace(pool, existing, candidate) <= 0) {
+							rejected = true;
+						} else {
+							continue;
+						}
+					} else if (PrimitiveProfileLabelPool.dominates(pool, candidate, existing)) {
+						limits.count("FORWARD_STATE_DOMINANCE_V1");
+						continue;
+					}
 				}
+				labels.set(kept++, existing);
 			}
-			int writeIdx = 0;
-			int originalSize = labels.size();
-			for (int readIdx = 0; readIdx < originalSize; readIdx++) {
-				int existing = labels.get(readIdx);
-				boolean remove = false;
-				if (PrimitiveProfileLabelPool.dominates(pool, candidate, existing)) {
-					limits.count("FORWARD_STATE_DOMINANCE_V1");
-					remove = true;
-				} else if (PrimitiveProfileLabelPool.sameVector(pool, existing, candidate)
-					&& PrimitiveProfileLabelPool.compareTrace(pool, candidate, existing) < 0) {
-					limits.count("FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
-					remove = true;
-				}
-				if (!remove) {
-					labels.set(writeIdx++, existing);
-				}
-			}
-			labels.truncate(writeIdx);
+			labels.truncate(kept);
+			if (rejected) return false;
 			labels.add(candidate);
-			labels.sort((a, b) -> PrimitiveProfileLabelPool.compareTrace(pool, a, b));
 			limits.observeStateLabels(labels.size());
 			if (labels.size() > limits.maxLabelsPerState()) {
 				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_LABELS_PER_STATE,
 					labels.size(), limits.maxLabelsPerState());
 			}
-			pending.addLast(candidate);
+			long priority = (long) pool.arrivalSeconds[candidate] + lowerBounds[pool.station[candidate]];
+			pending.add((priority << 32) | candidate);
 			return true;
 		}
 

@@ -47,6 +47,9 @@ import java.util.TreeSet;
  *   <li>환승 동선 선택: (역, 출발 노선, 도착 노선)마다 이용 가능한 동선 하나를 쓴다. 무단차 선호는 계단 없는 동선을
  *   먼저, 그다음 짧은 거리를 고르고, 거리가 같으면 실측 시간이 짧은 동선, 그다음 계단 없는 동선이다.
  *   point 탐색의 무단차 선호만 경고가 다른 대안 동선을 함께 본다.</li>
+ *   <li>대안 창({@link JourneyProfileExactOracle#ALTERNATIVE_WINDOW_SECONDS}, 30분, #461): 출발 시간대의 각 시점은
+ *   가장 이른 도착 + 창 안, 도착 희망·막차는 가장 늦은 준비 시각 - 창 안의 여정만 파레토 집합에 넣는다.
+ *   DepartAt은 창이 없다.</li>
  *   <li>탐색 대상 서비스일: point는 03:00 경계로 정한 하루, 도착 희망은 준비 시각 30시간 전부터 마감일까지,
  *   출발 시간대는 시작 30시간 이후부터 끝 날짜까지, 막차는 그 서비스일 하루</li>
  * </ul>
@@ -277,7 +280,7 @@ final class JourneyEngineDifferentialHarness {
 		List<JourneyProfileExactOracle.Ride> rides = rides(source, first.datesUntil(last.plusDays(1)).toList());
 		List<JourneyProfileExactOracle.Access> accesses = canonical(usable(accesses(source, query)),
 			Mobility.of(query).prefersStepFree());
-		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solve(
+		List<JourneyProfileExactOracle.Candidate> expected = new JourneyProfileExactOracle().solveLatestReadyWindow(
 			oracleQuery(query, arriveBy.earliestReadyAt(), arriveBy.arrivalDeadline()),
 			window(rides, arriveBy.earliestReadyAt(), arriveBy.arrivalDeadline()), accesses);
 		var planned = plan(query, runtime);
@@ -301,7 +304,7 @@ final class JourneyEngineDifferentialHarness {
 		Instant earliest = serviceDate.atStartOfDay(ServiceDayResolver.ZONE).toInstant();
 		Instant terminal = terminal(query.destinationStationId(), rides);
 		List<JourneyProfileExactOracle.Candidate> expected = terminal == null || !terminal.isAfter(earliest) ? List.of()
-			: new JourneyProfileExactOracle().solve(oracleQuery(query, earliest, terminal),
+			: new JourneyProfileExactOracle().solveLatestReadyWindow(oracleQuery(query, earliest, terminal),
 				window(rides, earliest, terminal), accesses);
 		var planned = plan(query, runtime);
 		if (planned == null) return failClosed(testCase, expected);
@@ -400,7 +403,7 @@ final class JourneyEngineDifferentialHarness {
 		List<JourneyProfileExactOracle.Ride> rides, List<JourneyProfileExactOracle.Access> accesses
 	) {
 		if (deadline == null || !deadline.isAfter(readyAt)) return List.of();
-		return oracle.solvePoint(oracleQuery(query, readyAt, deadline), window(rides, readyAt, deadline), accesses);
+		return oracle.solvePointArrivalWindow(oracleQuery(query, readyAt, deadline), window(rides, readyAt, deadline), accesses);
 	}
 
 	// ---------------------------------------------------------------- 비교

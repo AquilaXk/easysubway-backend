@@ -42,7 +42,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JourneyEngineRandomizedDifferentialTest {
 
 	static final long DEFAULT_BASE_SEED = 4_600_000L;
-	static final int SYNTHETIC_BUNDLES = 80;
+	static final int SYNTHETIC_BUNDLES = 150;
 	static final int QUERIES_PER_BUNDLE = 20;
 	static final int LINE4_QUERIES = 240;
 	private static final int REPORTED_COUNTEREXAMPLES = 3;

@@ -57,34 +57,39 @@ class JourneyProfileExactOracleTest {
 	}
 
 	@Test
-	void capsDepartureWindowReadinessBeforeApplyingParetoWithoutDroppingLaterTrains() {
-		var earlier = ride("earlier", DAY, "origin", "a", "destination", "a", at(100), at(200));
-		var later = ride("later", DAY, "origin", "a", "destination", "a", at(200), at(300));
-		var query = query(at(0), at(400), 0, 0, 10_000, () -> false);
+	void keepsOnlyArrivalsWithinTheAlternativeWindowOfTheEarliestArrivalBeforePareto() {
+		// 환승 1회로 200초에 도착하는 여정과, 환승 없이 늦게 도착하는 직행 두 개. 창이 없으면 셋 다 파레토다.
+		var feeder = ride("feeder", DAY, "origin", "a", "hub", "a", at(100), at(150));
+		var fast = ride("fast", DAY, "hub", "b", "destination", "b", at(160), at(200));
+		var edge = ride("edge", DAY, "origin", "c", "destination", "c", at(100), at(2_000));
+		var outside = ride("outside", DAY, "origin", "d", "destination", "d", at(50), at(2_001));
+		var rides = List.of(feeder, fast, edge, outside);
+		var accesses = List.of(transfer("hub", "a", "b", 0));
+		var query = query(at(0), at(3_000), 1, 0, 10_000, () -> false);
 
-		assertThat(oracle.solve(query, List.of(earlier, later), List.of())).hasSize(2);
-		var window = oracle.solveDepartureWindow(query, at(50), List.of(earlier, later), List.of());
-		assertThat(window).singleElement().satisfies(candidate -> {
-			assertThat(candidate.readyAt()).isEqualTo(at(50));
-			assertThat(candidate.rides()).containsExactly(earlier);
-			assertThat(candidate.rides().getFirst().departureAt()).isEqualTo(at(100));
-			assertThat(candidate.rides().getFirst().arrivalAt()).isEqualTo(at(200));
-		});
+		assertThat(JourneyProfileExactOracle.ALTERNATIVE_WINDOW_SECONDS)
+			.isEqualTo(com.easysubway.journey.application.JourneyRaptorPruningInventoryV1.PROFILE_ALTERNATIVE_WINDOW_SECONDS);
+		assertThat(oracle.solvePoint(query, rides, accesses)).hasSize(2)
+			.extracting(candidate -> candidate.rides().getFirst()).containsExactlyInAnyOrder(feeder, edge);
+		// 가장 이른 도착 200초 + 30분 = 2000초까지만 대안이다. 2001초 도착은 창 밖이다.
+		assertThat(oracle.solvePointArrivalWindow(query, rides, accesses))
+			.extracting(candidate -> candidate.rides().getFirst()).containsExactlyInAnyOrder(feeder, edge);
+		assertThat(oracle.solvePointArrivalWindow(query, List.of(feeder, fast, outside), accesses)).singleElement()
+			.extracting(candidate -> candidate.rides().getFirst()).isEqualTo(feeder);
+		assertThat(oracle.solvePoint(query, List.of(feeder, fast, outside), accesses)).hasSize(2);
 	}
 
 	@Test
-	void retainsExactEarliestFeasibilityAndRejectsInvalidDepartureWindows() {
-		var exact = ride("exact", DAY, "origin", "a", "destination", "a", at(100), at(200));
-		var late = ride("late", DAY, "origin", "a", "destination", "a", at(99), at(199));
-		var query = query(at(95), at(300), 0, 5, 10_000, () -> false);
+	void keepsOnlyReadinessWithinTheAlternativeWindowOfTheLatestReadinessBeforePareto() {
+		var latest = ride("latest", DAY, "origin", "a", "destination", "a", at(4_000), at(4_100));
+		var edge = ride("edge", DAY, "origin", "a", "destination", "a", at(2_200), at(2_250));
+		var outside = ride("outside", DAY, "origin", "a", "destination", "a", at(2_199), at(2_210));
+		var query = query(at(0), at(5_000), 0, 0, 10_000, () -> false);
 
-		assertThat(oracle.solveDepartureWindow(query, at(100), List.of(exact), List.of())).singleElement()
-			.extracting(JourneyProfileExactOracle.Candidate::readyAt).isEqualTo(at(95));
-		assertThat(oracle.solveDepartureWindow(query, at(100), List.of(late), List.of())).isEmpty();
-		assertThatThrownBy(() -> oracle.solveDepartureWindow(query, at(95), List.of(exact), List.of()))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> oracle.solveDepartureWindow(query, at(301), List.of(exact), List.of()))
-			.isInstanceOf(IllegalArgumentException.class);
+		assertThat(oracle.solve(query, List.of(latest, edge, outside), List.of())).hasSize(3);
+		// 가장 늦은 준비 4000초 - 30분 = 2200초부터가 대안이다.
+		assertThat(oracle.solveLatestReadyWindow(query, List.of(latest, edge, outside), List.of()))
+			.extracting(candidate -> candidate.rides().getFirst()).containsExactlyInAnyOrder(latest, edge);
 	}
 
 	@Test
