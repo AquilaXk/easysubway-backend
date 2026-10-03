@@ -49,6 +49,7 @@
         }
       },
       "candidatePolicyReplay": {
+        "source": "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
         "limits": {
           "maxLabelsPerState": 8,
           "maxEstimatedWork": 1000,
@@ -202,6 +203,7 @@
         }
       },
       "candidatePolicyReplay": {
+        "source": "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
         "limits": {
           "maxLabelsPerState": 8,
           "maxEstimatedWork": 1000,
@@ -354,6 +356,7 @@
         }
       },
       "candidatePolicyReplay": {
+        "source": "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72:tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49",
         "limits": {
           "maxLabelsPerState": 8,
           "maxEstimatedWork": 1000,

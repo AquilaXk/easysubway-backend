@@ -177,6 +177,13 @@
  *   벽시계 값은 CI 값으로 바꿔야 한다. (3) 환경 변수 없이 같은 테스트를 로컬과 CI에서 다시 돌려 통과하는지 확인한다.
  *   (4) 바뀐 카운터와 지연을 PR 본문에 전후 표로 남기고 이 문서 6절 표를 함께 고친다. 이 문서를 고치면 문서 파편
  *   refresh와 {@code --check}도 같은 PR에서 실행한다.</li>
+ *   <li>운영 정책 동기화 지점: 운영 후보 정책 한도는 다른 레포(easysubway-platform)에 있고 CI에서 읽지 않는다. 그래서
+ *   {@code JourneyEnginePerformanceGateTest.CANDIDATE_POLICY_LIMITS} 옆에 출처 파일의 값을,
+ *   {@code CANDIDATE_POLICY_SOURCE}에 레포·커밋 sha·경로·행을 고정하고, 기준선의 {@code candidatePolicyReplay}에 출처와
+ *   한도와 결정적 재현 결과를 함께 기록한다. 출처나 한도가 기준선과 다르면 게이트가 실패한다. platform 정책이 바뀌면
+ *   (현재 #461에서 다룬다) 같은 작업 안에서 (1) 두 상수를 새 값과 새 커밋 sha로 바꾸고 (2) 위 절차로 기준선을 다시
+ *   만들고 (3) 6절의 재현 표를 고친다. 상수를 바꾸지 않으면 게이트는 옛 정책을 재현하므로, platform 쪽 정책 변경
+ *   리뷰에서 이 동기화를 확인한다.</li>
  *   <li>차분 검증 확장 실행: {@code EASYSUBWAY_DIFFERENTIAL_BUNDLES}(기본 80)와 {@code EASYSUBWAY_DIFFERENTIAL_BASE_SEED}로
  *   번들 수와 시작 시드를 바꾼다. 반례에 찍힌 seed가 번들 시드다.</li>
  * </ul>

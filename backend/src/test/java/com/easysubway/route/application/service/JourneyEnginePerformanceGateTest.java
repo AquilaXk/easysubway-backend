@@ -73,12 +73,24 @@ class JourneyEnginePerformanceGateTest {
 	static final JourneyProfileResourcePolicy.ProfilePlanningLimits BENCHMARK_LIMITS =
 		new JourneyProfileResourcePolicy.ProfilePlanningLimits(5_000_000L, 64, 64, 64);
 	/**
-	 * 운영 배포 후보 정책의 프로필 한도(easysubway-platform {@code tools/platform/render-journey-kubernetes-candidate.mjs}
-	 * 44~49행 RAPTOR_RESOURCE_POLICY_V1: maxEstimatedWork 1000, maxLabelsPerState 8, maxDestinationProfileLabels 16,
-	 * maxProfileBreakpoints 32). 같은 프로필 질의를 이 한도로 다시 돌려 운영에서 거절되는 비율을 결정적으로 기록한다.
+	 * 운영 배포 후보 정책의 프로필 한도. 같은 프로필 질의를 이 한도로 다시 돌려 운영에서 거절되는 비율을 결정적으로
+	 * 기록한다. 다른 레포를 CI에서 읽지 않으므로 출처를 아래 {@link #CANDIDATE_POLICY_SOURCE}에 고정해 손으로 맞추는
+	 * 동기화 지점이다. 출처 파일의 값(RAPTOR_RESOURCE_POLICY_V1 1.0.0):
+	 * <pre>
+	 *   44  maxTemporalWindowSeconds: 3600,
+	 *   45  maxServiceDayCount: 2,
+	 *   46  maxEstimatedWork: 1000,
+	 *   47  maxLabelsPerState: 8,
+	 *   48  maxDestinationProfileLabels: 16,
+	 *   49  maxProfileBreakpoints: 32,
+	 * </pre>
+	 * 정책이 바뀌면 이 상수와 출처 sha를 함께 바꾸고 기준선의 재현 결과를 다시 만든다(설계 문서 7절, #461).
 	 */
 	static final JourneyProfileResourcePolicy.ProfilePlanningLimits CANDIDATE_POLICY_LIMITS =
 		new JourneyProfileResourcePolicy.ProfilePlanningLimits(1_000L, 8, 16, 32);
+	/** 위 한도를 옮겨 온 정확한 출처(레포@커밋:경로#행). 기준선에 함께 기록되어 바뀌면 게이트가 실패한다. */
+	static final String CANDIDATE_POLICY_SOURCE = "AquilaXk/easysubway-platform@42df0ff7f4a9e7d6b6649c29a84f7027ad60fa72"
+		+ ":tools/platform/render-journey-kubernetes-candidate.mjs#L44-L49";
 	private static final Map<Mode, Integer> POLICY_REPLAY_COUNTS =
 		Map.of(Mode.ARRIVE_BY, 12, Mode.DEPART_BETWEEN, 12, Mode.LAST_CONNECTION, 6);
 
@@ -164,12 +176,21 @@ class JourneyEnginePerformanceGateTest {
 		@SuppressWarnings("unchecked")
 		Map<String, Object> workload = new LinkedHashMap<>((Map<String, Object>) ((Map<String, Object>) fewerRejections
 			.get("workloads")).get("sample-grid"));
-		workload.put("candidatePolicyReplay", Map.of("limits", Map.of("maxEstimatedWork", 1_000L, "maxLabelsPerState", 8,
+		workload.put("candidatePolicyReplay", Map.of("source", CANDIDATE_POLICY_SOURCE,
+			"limits", Map.of("maxEstimatedWork", 1_000L, "maxLabelsPerState", 8,
 			"maxDestinationProfileLabels", 16, "maxProfileBreakpoints", 32),
 			"modes", Map.of("ARRIVE_BY", Map.of("queries", 12, "failClosed", 6L))));
 		fewerRejections.put("workloads", Map.of("sample-grid", workload));
 		assertThat(regressions(baseline, tree(fewerRejections))).singleElement().asString()
 			.contains("policyReplay ARRIVE_BY.failClosed", "stale");
+		// 정책 출처(커밋)가 바뀌면 값이 같아도 재현 결과를 다시 확인하고 기준선을 새로 만들어야 한다.
+		workload.put("candidatePolicyReplay", Map.of("source", "AquilaXk/easysubway-platform@other:path#L1",
+			"limits", Map.of("maxEstimatedWork", 1_000L, "maxLabelsPerState", 8,
+			"maxDestinationProfileLabels", 16, "maxProfileBreakpoints", 32),
+			"modes", Map.of("ARRIVE_BY", Map.of("queries", 12, "failClosed", 12L))));
+		fewerRejections.put("workloads", Map.of("sample-grid", workload));
+		assertThat(regressions(baseline, tree(fewerRejections))).singleElement().asString()
+			.contains("candidate policy source or limits changed");
 		Map<String, Object> missingWorkload = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
 		missingWorkload.put("workloads", Map.of());
 		assertThat(regressions(baseline, tree(missingWorkload))).singleElement().asString().contains("workload");
@@ -334,6 +355,7 @@ class JourneyEnginePerformanceGateTest {
 				.forEach((key, value) -> total.merge(key, value, key.startsWith("peak") ? Math::max : Long::sum));
 		}
 		Map<String, Object> result = new LinkedHashMap<>();
+		result.put("source", CANDIDATE_POLICY_SOURCE);
 		result.put("limits", Map.of("maxEstimatedWork", CANDIDATE_POLICY_LIMITS.maxEstimatedWork(),
 			"maxLabelsPerState", CANDIDATE_POLICY_LIMITS.maxLabelsPerState(),
 			"maxDestinationProfileLabels", CANDIDATE_POLICY_LIMITS.maxDestinationProfileLabels(),
@@ -528,8 +550,10 @@ class JourneyEnginePerformanceGateTest {
 			}
 			JsonNode replayBefore = before.path("candidatePolicyReplay").path("modes");
 			JsonNode replayAfter = after.path("candidatePolicyReplay").path("modes");
-			if (!sameNumbers(before.path("candidatePolicyReplay").path("limits"), after.path("candidatePolicyReplay").path("limits"))) {
-				problems.add(id + " candidate policy limits changed; regenerate the baseline with the documented procedure");
+			if (!sameNumbers(before.path("candidatePolicyReplay").path("limits"), after.path("candidatePolicyReplay").path("limits"))
+				|| !before.path("candidatePolicyReplay").path("source").isTextual()
+				|| !before.path("candidatePolicyReplay").path("source").equals(after.path("candidatePolicyReplay").path("source"))) {
+				problems.add(id + " candidate policy source or limits changed; regenerate the baseline with the documented procedure");
 				continue;
 			}
 			for (String mode : names(replayBefore, replayAfter)) {
@@ -606,7 +630,7 @@ class JourneyEnginePerformanceGateTest {
 		workload.put("querySet", Map.of("sha256", "queries"));
 		workload.put("compile", Map.of("nanos", 50_000_000L * calibration / 100_000_000, "retainedBytes", 1_000_000));
 		workload.put("modes", modes);
-		workload.put("candidatePolicyReplay", Map.of(
+		workload.put("candidatePolicyReplay", Map.of("source", CANDIDATE_POLICY_SOURCE,
 			"limits", Map.of("maxEstimatedWork", 1_000, "maxLabelsPerState", 8, "maxDestinationProfileLabels", 16,
 				"maxProfileBreakpoints", 32),
 			"modes", Map.of("ARRIVE_BY", Map.of("queries", 12, "failClosed", 12L))));
