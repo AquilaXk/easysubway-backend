@@ -111,9 +111,9 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	void ignoresLegacyEntryAndExitEvidence() {
 		var edges = List.of(
 			new LoadRouteTimetablePort.PathwayEdge("entry-edge", "entry", "platform", 90, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new LoadRouteTimetablePort.PathwayEdge("exit-edge", "platform", "exit", 90, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var compiled = planner.compile(withAccess(everyDayTimetable(), new LoadRouteTimetablePort.RouteAccessData(
 			List.of(new LoadRouteTimetablePort.PathwayNode("entry", "station-a", null, "ENTRANCE"),
 				new LoadRouteTimetablePort.PathwayNode("platform", "station-a", "line", "PLATFORM"),
@@ -152,9 +152,9 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 			),
 			List.of(new LoadRouteTimetablePort.PathwayEdge(
 				"canonical-entry", "entry", "platform", 360, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED", "verified-entry"), new LoadRouteTimetablePort.PathwayEdge(
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED", "verified-entry", null), new LoadRouteTimetablePort.PathwayEdge(
 				"fast-stairs", "entry", "platform", 62, 20, false, true, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY")),
 			List.of(new LoadRouteTimetablePort.TransferRule(
 				"outside", "station-a", "line", "station-b", "line", "OUT_OF_STATION",
 				120, "verified-entry", null, "VERIFIED"
@@ -903,8 +903,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		var edges = List.of(new LoadRouteTimetablePort.PathwayEdge(
 			"transfer-edge", "platform-from", "platform-to", 90, 60, false, includesStairs, reliabilityScore,
 			accessibilityStatus, provenanceKind == null ? "UNKNOWN" : provenanceKind,
-			verificationStatus == null ? "UNKNOWN" : verificationStatus
-		));
+			verificationStatus == null ? "UNKNOWN" : verificationStatus).withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE"));
 		var evidence = verificationStatus == null ? List.<LoadRouteTimetablePort.RouteEdgeEvidence>of() : List.of(
 			new LoadRouteTimetablePort.RouteEdgeEvidence(
 				"transfer-evidence", "station-a", "line", "transfer-edge", "TRANSFER",
@@ -920,7 +919,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	) {
 		var edge = new LoadRouteTimetablePort.PathwayEdge(
 			"transfer-edge", "platform-from", "platform-to", 90, 60, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", edgeVerificationStatus);
+			"AVAILABLE", "OFFICIAL_SOURCE", edgeVerificationStatus).withStairAccessState("STEP_FREE");
 		var evidence = new LoadRouteTimetablePort.RouteEdgeEvidence(
 			"transfer-evidence", "station-a", "line", "transfer-edge", "TRANSFER",
 			"OFFICIAL_SOURCE", evidenceVerificationStatus, false, "UNVERIFIED");
@@ -941,13 +940,13 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		var edges = List.of(
 			new LoadRouteTimetablePort.PathwayEdge(
 				"entry-generated", "entrance", "platform-a", 30, 20, false, false, 50,
-				"UNKNOWN", "GENERATED", "GENERATED"),
+				"UNKNOWN", "GENERATED", "GENERATED").withStairAccessState("STEP_FREE"),
 			new LoadRouteTimetablePort.PathwayEdge(
 				"entry-verified", "entrance", "platform-a", 120, 70, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new LoadRouteTimetablePort.PathwayEdge(
 				"exit-verified", "platform-b", "exit", 75, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")
 		);
 		var evidence = List.of(
 			new LoadRouteTimetablePort.RouteEdgeEvidence(
@@ -971,13 +970,13 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		var edges = List.of(
 			new LoadRouteTimetablePort.PathwayEdge(
 				"entry-a-edge", "entrance-a", "platform-a", 60, 25, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new LoadRouteTimetablePort.PathwayEdge(
 				"transfer-edge", "platform-1", "platform-2", 60, 25, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new LoadRouteTimetablePort.PathwayEdge(
 				"exit-b-edge", "platform-b", "exit-b", 60, 25, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")
 		);
 		var rule = new LoadRouteTimetablePort.TransferRule(
 			"transfer-rule", "station-x", "line-1", "station-x", "line-2", "IN_STATION",
@@ -1007,7 +1006,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	private static LoadRouteTimetablePort.RouteAccessData ambiguousTransferEvidenceAccess() {
 		var edge = new LoadRouteTimetablePort.PathwayEdge(
 			"shared-edge", "platform-1", "platform-2", 60, 25, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		var rule = new LoadRouteTimetablePort.TransferRule(
 			"transfer-rule", "station-x", "line-1", "station-x", "line-2", "IN_STATION",
 			60, "shared-edge", "shared-edge", "VERIFIED");
@@ -1052,7 +1051,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	private static LoadRouteTimetablePort.PathwayEdge accessEdge(String id) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, id + "-from", id + "-to", 60, 25, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 	private static LoadRouteTimetablePort.RouteEdgeEvidence accessEvidence(
 		String id,
@@ -1474,8 +1473,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				var entryEdgeId = "entry-" + stationId + "-" + lineId;
 				edges.add(new LoadRouteTimetablePort.PathwayEdge(
 					entryEdgeId, entranceNodeId, platformNodeId, 60, 25, false, false, 100,
-					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-				));
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
 					"ev-" + entryEdgeId, stationId, lineId, entryEdgeId, "ENTRY",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null
@@ -1484,8 +1482,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				var exitEdgeId = "exit-" + stationId + "-" + lineId;
 				edges.add(new LoadRouteTimetablePort.PathwayEdge(
 					exitEdgeId, platformNodeId, exitNodeId, 60, 25, false, false, 100,
-					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-				));
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
 					"ev-" + exitEdgeId, stationId, lineId, exitEdgeId, "EXIT",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null
@@ -1503,8 +1500,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 					var toPlatform = "platform-" + stationId + "-" + toLine;
 					edges.add(new LoadRouteTimetablePort.PathwayEdge(
 						transferEdgeId, fromPlatform, toPlatform, 60, 25, false, false, 100,
-						"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-					));
+						"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 					var ruleId = "rule-" + transferEdgeId;
 					rules.add(new LoadRouteTimetablePort.TransferRule(
 						ruleId, stationId, fromLine, stationId, toLine, "IN_STATION",

@@ -14,6 +14,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
@@ -76,14 +77,15 @@ public final class RouteTimetableRaptorPlanner {
 	private static final byte WARNING_LOW_CONFIDENCE = 1;
 	private static final byte WARNING_STAIRS = 1 << 1;
 	private static final byte WARNING_STALE = 1 << 2;
+	/**
+	 * #469 F1(#480): 환승 동선의 계단 접근 상태 3가지. 원천 {@code stair_access_state}가 STEP_FREE이고 계단 플래그가 없을
+	 * 때만 계단 없음이 확정이다. 계단 플래그가 있거나 STAIR_ONLY면 계단 확정, 그 밖(UNKNOWN·필드 없음·다른 값)은 미확정이다.
+	 * 엔진은 확정되지 않은 동선을 계단 쪽으로 다룬다(계단 경고, 계단 부담, 엄격 무단차 제외).
+	 */
+	static final byte STAIR_ACCESS_STEP_FREE = 0;
+	static final byte STAIR_ACCESS_STAIRS = 1;
+	static final byte STAIR_ACCESS_UNCONFIRMED = 2;
 	private static final int WARNING_STATE_COUNT = 1 << 3;
-	// #2534: PREFER_STEP_FREE의 선호 순서 — 계단 경고 부재가 1순위다(그 모드의 목적). 경고 0개
-	// 후보가 없어도 유일한 무단차 후보가 뽑히도록 경고 수·시간은 그다음 키로 둔다. 표시 정렬과 별개다.
-	private static final Comparator<Label> PREFERRED_WARNING_ORDER = Comparator
-		.comparingInt((Label label) -> (label.warningBits() & WARNING_STAIRS) != 0 ? 1 : 0)
-		.thenComparingInt(label -> warningCount(label.warningBits()))
-		.thenComparingInt(Label::virtualCostSeconds)
-		.thenComparingInt(Label::boardings);
 	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
 	static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
@@ -153,7 +155,12 @@ public final class RouteTimetableRaptorPlanner {
 			input, timetable, realtimeOverlay, scanResult);
 		var measurementObservation = requestMeasurement.observeDirectRaptor(
 			requestId, routeBundleSha256, generation);
-		return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation);
+		JourneyAlternatives.StairFreeStatus stairFreeStatus = itineraries.isEmpty() ? null
+			: JourneyAlternatives.stairFreeStatus(
+				itineraries.stream().anyMatch(JourneyItinerary::stairFree),
+				scanResult.selection().stairFreeOmitted(),
+				itineraries.stream().anyMatch(JourneyItinerary::unconfirmedStairFreeTransfer));
+		return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation, stairFreeStatus);
 	}
 
 	private static List<JourneyItinerary> journeyItineraries(
@@ -162,11 +169,14 @@ public final class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay,
 		ScanResult scanResult
 	) {
-		List<JourneyItinerary> raw = scanResult.labels().stream()
-			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(input.candidateLimit())
-			.map(label -> toJourneyItinerary(input, timetable, label))
-			.toList();
+		// #469: 도착역 라벨은 이미 결과 구성 규칙(composeAlternatives)으로 alternativeCount개 이하로 골라 정렬돼 있다.
+		JourneyAlternatives.Selection<Label> selection = scanResult.selection();
+		List<JourneyItinerary> raw = new ArrayList<>(selection.items().size());
+		for (int index = 0; index < selection.items().size(); index += 1) {
+			Label label = selection.items().get(index);
+			raw.add(toJourneyItinerary(input, timetable, label).withComposition(selection.categories().get(index),
+				hasUnconfirmedStairFreeTransfer(timetable, label, input.accessProfileBit(), realtimeOverlay)));
+		}
 		return assignPersonas(raw);
 	}
 
@@ -643,12 +653,12 @@ public final class RouteTimetableRaptorPlanner {
 		try {
 			workspace.prepare(timetable);
 			if (activeServiceDay.trips().isEmpty()) {
-				return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
+				return new ScanResult(input.serviceDay(), JourneyAlternatives.Selection.empty(), scanMetrics(workspace));
 			}
 			int origin = timetable.stationIndex(input.originStationId());
 			int destination = timetable.stationIndex(input.destinationStationId());
 			if (origin < 0 || destination < 0) {
-				return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
+				return new ScanResult(input.serviceDay(), JourneyAlternatives.Selection.empty(), scanMetrics(workspace));
 			}
 			int[] lowerBounds = computeStationLowerBounds(timetable, destination);
 			workspace.setTargetStation(destination, lowerBounds);
@@ -733,7 +743,7 @@ public final class RouteTimetableRaptorPlanner {
 		int destination,
 		RealtimeOverlay realtimeOverlay
 	) {
-		List<Label> destinationLabels = limitDestinationLabels(
+		JourneyAlternatives.Selection<Label> destinationLabels = composeAlternatives(
 			destinationLabels(
 				input.destinationStationId(), timetable, workspace, destination, input.readyAtSeconds(),
 				input, realtimeOverlay),
@@ -1158,30 +1168,13 @@ public final class RouteTimetableRaptorPlanner {
 				timetable, workspace, station, incomingLine, canonicalTransition, round, slackSeconds,
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
 
-			if (round > 0 && input.prefersStepFree()) {
-				int[] candidates = timetable.transferTransitions(station, incomingLine, boardingLine);
-				byte canonicalWarnings = timetable.transitionWarningCodes(
-					canonicalTransition, accessProfileBit, ignoreAccessBlocks);
-				int bestAlternative = -1;
-				for (int alt : candidates) {
-					if (alt == canonicalTransition
-						|| (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(alt))
-						|| !timetable.isTransitionEligible(alt, accessProfileBit, ignoreAccessBlocks,
-							input.requiresVerifiedJourneyDistance(), true)) {
-						continue;
-					}
-					byte altWarnings = timetable.transitionWarningCodes(alt, accessProfileBit, ignoreAccessBlocks);
-					if (altWarnings != canonicalWarnings
-						&& (bestAlternative < 0
-							|| timetable.transitionDurationSeconds(alt) < timetable.transitionDurationSeconds(bestAlternative))) {
-						bestAlternative = alt;
-					}
-				}
-				if (bestAlternative >= 0) {
-					evaluateTransitionIntoReady(
-						timetable, workspace, station, incomingLine, bestAlternative, round, slackSeconds,
-						accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
-				}
+			// #469: 엄격 무단차가 아니면 경고 상태(계단 없음 확정 여부)마다 환승 시간이 가장 짧은 동선도 본다. 표준·느린
+			// 걸음의 "느리지만 계단 없는" 경로와, 기본 동선과 같은 경고 상태지만 더 빠른 동선(예: 계단 상태 미확정 기본
+			// 동선 옆의 계단 확정 동선, #469 F1)을 함께 찾는다.
+			if (round > 0 && input.preservesStairAlternatives()) {
+				evaluateWarningStateAlternatives(timetable, workspace, station, incomingLine, boardingLine,
+					canonicalTransition, round, slackSeconds, accessProfileBit, input, ignoreAccessBlocks,
+					boardingDeadlineSeconds, realtimeOverlay);
 			}
 		}
 		if (round > 0) {
@@ -1190,6 +1183,54 @@ public final class RouteTimetableRaptorPlanner {
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds, realtimeOverlay);
 		}
 		enforceReadyCapacity(workspace, PARETO_LIMIT);
+	}
+
+	@SuppressWarnings("java:S107")
+	private static void evaluateWarningStateAlternatives(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		int station,
+		int incomingLine,
+		int boardingLine,
+		int canonicalTransition,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		ScanInput input,
+		boolean ignoreAccessBlocks,
+		int boardingDeadlineSeconds,
+		RealtimeOverlay realtimeOverlay
+	) {
+		int[] candidates = timetable.transferTransitions(station, incomingLine, boardingLine);
+		if (candidates.length < 2) {
+			return;
+		}
+		// 질의마다 할당하지 않도록 작업 공간의 칸을 다시 쓴다.
+		int[] bestByWarningState = workspace.alternativeTransitions;
+		int[] bestSeconds = workspace.alternativeSeconds;
+		Arrays.fill(bestByWarningState, -1);
+		for (int candidate : candidates) {
+			if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(candidate))
+				|| !timetable.isTransitionEligible(candidate, accessProfileBit, ignoreAccessBlocks,
+					input.requiresVerifiedJourneyDistance(), true)) {
+				continue;
+			}
+			int state = Byte.toUnsignedInt(timetable.transitionWarningCodes(candidate, accessProfileBit, ignoreAccessBlocks));
+			int seconds = journeyTransferSeconds(input, timetable.transitionDurationSeconds(candidate),
+				timetable.transitionDistanceMeters(candidate));
+			if (bestByWarningState[state] < 0 || seconds < bestSeconds[state]) {
+				bestByWarningState[state] = candidate;
+				bestSeconds[state] = seconds;
+			}
+		}
+		for (int state = 0; state < WARNING_STATE_COUNT; state += 1) {
+			int alternative = bestByWarningState[state];
+			if (alternative >= 0 && alternative != canonicalTransition) {
+				evaluateTransitionIntoReady(
+					timetable, workspace, station, incomingLine, alternative, round, slackSeconds,
+					accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
+			}
+		}
 	}
 
 	@SuppressWarnings("java:S107")
@@ -1515,12 +1556,11 @@ public final class RouteTimetableRaptorPlanner {
 		ScanInput input,
 		RealtimeOverlay realtimeOverlay
 	) {
-		// #2534: 스캔은 경고를 Pareto 차원으로 유지하는데(ScanWorkspace.relax의 경고 부분집합 지배),
-		// 추출이 환승 수마다 라벨 1개만 남기면 그 차원이 버려져 PREFER_* 프로파일에서
-		// "느리지만 무단차"인 대안이 소실된다. PREFER_*에서는 경고 상태별 최선 후보를 함께 담고
-		// 지배 판정은 paretoFront가 일괄 처리한다.
-		// 표시 정렬은 compareLabels(시간 우선)로 그대로 두고 여기서는 보존 집합만 넓힌다.
-		boolean preserveWarningAlternatives = input.prefersStepFree();
+		// #2534·#469: 스캔은 경고를 Pareto 차원으로 유지하는데(ScanWorkspace.relax의 경고 부분집합 지배),
+		// 추출이 환승 수마다 라벨 1개만 남기면 그 차원이 버려져 "느리지만 무단차"인 대안이 소실된다.
+		// 엄격 무단차가 아니면(무단차 선호·표준·느린 걸음) 경고 상태별 최선 후보를 함께 담고
+		// 지배 판정은 paretoFront가 일괄 처리한다. 결과 수와 순서는 composeAlternatives가 정한다.
+		boolean preserveWarningAlternatives = input.preservesStairAlternatives();
 		List<Label> labels = new ArrayList<>(PARETO_LIMIT * timetable.lineCount());
 		Label[] bestByWarningState = preserveWarningAlternatives
 			? new Label[WARNING_STATE_COUNT]
@@ -1635,58 +1675,83 @@ public final class RouteTimetableRaptorPlanner {
 			|| earlier;
 	}
 
-	// #2534: 후보가 상한을 넘으면 자리 하나를 선호 후보(PREFERRED_WARNING_ORDER)에 내준다.
-	// 상한(candidateLimit) 자체는 그대로지만 PREFER_STEP_FREE에서는 실제 후보 수가 상한까지
-	// 채워지는 빈도가 높아지므로, 후보당 하류 비용(toRouteSearchResult 재구성·실시간 재계산·
-	// 직렬화)은 최악 상한배까지 늘 수 있다.
-	static List<Label> limitDestinationLabels(List<Label> labels, ScanInput input) {
-		List<Label> ordered = labels.stream()
-			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.toList();
-		int limit = input.candidateLimit();
-		if (ordered.size() <= limit) {
-			return ordered;
-		}
-		List<Label> limited = new ArrayList<>(ordered.subList(0, limit));
-		if (!input.prefersStepFree()) {
-			return List.copyOf(limited);
-		}
-		Label preferred = ordered.stream().min(PREFERRED_WARNING_ORDER).orElseThrow();
-		if (limited.stream().anyMatch(label -> label == preferred)) {
-			return List.copyOf(limited);
-		}
-		int victim = evictableIndex(limited);
-		if (victim < 0) {
-			return List.copyOf(limited);
-		}
-		limited.set(victim, preferred);
-		limited.sort(RouteTimetableRaptorPlanner::compareLabels);
-		return List.copyOf(limited);
+	/**
+	 * #469: point 결과 구성. 도착역 파레토 집합에서 최대 {@code alternativeCount}개를 고른다.
+	 * <ol>
+	 *   <li>묶음 대표: 빠른 경로 = (도착, 승차 수) 최소, 환승 적은 경로 = (승차 수, 도착, 계단 경고) 최소,
+	 *   계단 없는 경로 = 계단 경고가 없는 라벨 중 (도착, 승차 수) 최소. 계단 없는 라벨이 없으면 그 묶음은 비운다.</li>
+	 *   <li>순서: 빠른 → 환승 적은 → 계단 없는. 무단차 선호는 빠른 → 계단 없는 → 환승 적은. 이미 고른 라벨은 건너뛴다.</li>
+	 *   <li>남는 자리는 나머지 라벨을 도착·승차 수 순으로 채운다. 파레토 집합 밖의 라벨로 채우지 않는다.</li>
+	 * </ol>
+	 * <p>결과는 도착·승차 수 순이라 첫 여정이 가장 빠르다. 도착은 역 밖 환승 운임 시간 초과를 더한 가상 비용이다.
+	 * 계단 경고는 검증 동선 사실(계단 포함 여부)에서만 나온다. 차분 검증 하네스가 같은 규칙을 따로 구현해 비교한다.</p>
+	 */
+	static JourneyAlternatives.Selection<Label> composeAlternatives(List<Label> front, ScanInput input) {
+		return JourneyAlternatives.compose(front, input.alternativeCount(), input.prefersStepFree(),
+			RouteTimetableRaptorPlanner::compareLabels, Label::boardings, label -> !hasStairWarning(label));
 	}
 
-	// 축출 대상에서 두 가지를 뺀다. 인덱스 0(최속 라벨)은 표시 선두 계약이라 어떤 상한에서도
-	// 지키고(상한이 1이면 후보가 없어 교체 자체가 일어나지 않는다), 환승 수가 그 안에서 유일한
-	// 라벨은 해당 환승 수의 유일한 대안이라 건드리지 않는다. 남는 자리가 없으면 -1이다.
-	private static int evictableIndex(List<Label> limited) {
-		for (int index = limited.size() - 1; index >= 1; index -= 1) {
-			if (hasDuplicateBoardings(limited, limited.get(index).boardings())) {
-				return index;
-			}
-		}
-		return -1;
-	}
-
-	private static boolean hasDuplicateBoardings(List<Label> labels, int boardings) {
-		int count = 0;
-		for (Label label : labels) {
-			if (label.boardings() == boardings) {
-				count += 1;
-				if (count > 1) {
-					return true;
-				}
+	/**
+	 * #469: 이 여정의 계단 환승 중 같은 환승의 계단 없는 동선이 이 프로필·시설 차단으로 막히지 않았지만 근거(검증
+	 * 상태·실측)가 없어 쓰지 못한 곳이 있는지. 있으면 이 여정을 계단 없이 갈 수 있는지 확정할 수 없다.
+	 */
+	static boolean hasUnconfirmedStairFreeTransfer(
+		CompiledTimetable timetable, Label label, int profileBit, RealtimeOverlay realtimeOverlay
+	) {
+		List<RideLeg> path = label.path();
+		for (int index = 1; index < path.size(); index += 1) {
+			if (unconfirmedStairFreeTransfer(timetable, label.accessTransitions()[index], profileBit, realtimeOverlay)) {
+				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * #469 F1(#480): 이 환승에서 계단 없이 갈 수 있는지 확정할 수 없는지. 쓴 동선의 계단 상태가 미확정이거나, 계단 확정
+	 * 동선을 썼지만 같은 환승의 다른 동선 중 계단 없음이 확정되지 않았거나 근거가 없어 쓰지 못한 동선이 있으면 true다.
+	 */
+	static boolean unconfirmedStairFreeTransfer(
+		CompiledTimetable timetable, int transition, int profileBit, RealtimeOverlay realtimeOverlay
+	) {
+		byte access = timetable.transitionStairAccess(transition);
+		if (access == STAIR_ACCESS_UNCONFIRMED) {
+			return true;
+		}
+		return access == STAIR_ACCESS_STAIRS && hasUnconfirmedStairFreeAlternative(
+			timetable, timetable.transitionGroup(transition), transition, profileBit, realtimeOverlay);
+	}
+
+	/** {@code group} 안에 {@code transition} 말고 근거가 없어 쓰지 못한 계단 없는 동선이 있는지. */
+	static boolean hasUnconfirmedStairFreeAlternative(
+		CompiledTimetable timetable, int[] group, int transition, int profileBit, RealtimeOverlay realtimeOverlay
+	) {
+		for (int candidate : group) {
+			if (candidate != transition
+				&& unconfirmedStairFreeCandidate(timetable, candidate, profileBit, realtimeOverlay)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 계단이 확정되지 않았고 이 프로필·시설 차단으로 막히지 않았지만, 계단 없음이 확정되지 않았거나 검증 근거가 없어 계단
+	 * 없는 동선으로 쓸 수 없는 동선인지(#469 F1).
+	 */
+	private static boolean unconfirmedStairFreeCandidate(
+		CompiledTimetable timetable, int candidate, int profileBit, RealtimeOverlay realtimeOverlay
+	) {
+		byte access = timetable.transitionStairAccess(candidate);
+		return access != STAIR_ACCESS_STAIRS
+			&& !realtimeOverlay.isTransitionBlocked(candidate)
+			&& timetable.isTransitionEligible(candidate, profileBit, false, false, false)
+			&& !(access == STAIR_ACCESS_STEP_FREE
+				&& timetable.isTransitionEligible(candidate, profileBit, false, true, true));
+	}
+
+	static boolean hasStairWarning(Label label) {
+		return (label.warningBits() & WARNING_STAIRS) != 0;
 	}
 
 	static Map<RoutePersona, JourneyItinerary> classifyPersonas(List<JourneyItinerary> itineraries) {
@@ -1897,7 +1962,7 @@ public final class RouteTimetableRaptorPlanner {
 			requiredQuery.timePolicy()
 				== com.easysubway.journey.application.JourneyRequest.TimePolicy.REALTIME_REQUIRED,
 			requiredQuery.maxTransfers(),
-			Math.max(requiredQuery.alternativeCount(), requiredQuery.maxTransfers() + 1),
+			requiredQuery.alternativeCount(),
 			requiredQuery.cancellationSignal()
 		);
 	}
@@ -2841,6 +2906,11 @@ public final class RouteTimetableRaptorPlanner {
 		byte transitionWarningCodes(int transition, int profileBit, boolean ignoreBlocked) {
 			return accessTransitions.warningCodes(transition, profileBit, ignoreBlocked);
 		}
+		/** #469 F1: 전환의 계단 접근 상태({@code STAIR_ACCESS_*}). */
+		byte transitionStairAccess(int transition) {
+			return accessTransitions.stairAccess(transition);
+		}
+		/** 계단 없음이 확정되지 않았으면(계단 확정 또는 미확정) true다(#469 F1). */
 		boolean transitionIncludesStairs(int transition) {
 			return accessTransitions.includesStairs(transition);
 		}
@@ -2876,6 +2946,10 @@ public final class RouteTimetableRaptorPlanner {
 		}
 		int[] transferTransitions(int station, int fromLine, int toLine) {
 			return accessTransitions.transferCandidates(station, fromLine, toLine);
+		}
+		/** #469: 이 전환과 같은 환승(또는 같은 역 밖 보행)의 동선 후보 묶음(자신 포함). */
+		int[] transitionGroup(int transition) {
+			return accessTransitions.transitionGroup(transition);
 		}
 		int allocatedTransferSlotCount() {
 			return accessTransitions.allocatedTransferSlotCount();
@@ -3218,12 +3292,16 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[] blockedProfiles;
 		private final int[] warningProfiles;
 		private final byte[] warningCodes;
+		/** 계단 없음이 확정되지 않았으면 true다(계단 확정·미확정). */
 		private final boolean[] includesStairs;
+		private final byte[] stairAccess;
 		private final String[] edgeIds;
 		private final Map<String, int[]> edgeTransitions;
 		private final String[] verificationStatuses;
 		private final boolean[] outOfStation;
 		private final List<OutOfStationFootpath> outOfStationFootpaths;
+		/** #469: 전환마다 같은 환승(또는 같은 역 밖 보행)의 동선 후보 묶음. 컴파일 때 한 번 만든다. */
+		private final int[][] transitionGroups;
 		private final int unsupportedTransferCount;
 		private AccessTransitions(
 			int stationCount,
@@ -3255,6 +3333,7 @@ public final class RouteTimetableRaptorPlanner {
 			warningProfiles = new int[candidates.size()];
 			warningCodes = new byte[candidates.size()];
 			includesStairs = new boolean[candidates.size()];
+			stairAccess = new byte[candidates.size()];
 			edgeIds = new String[candidates.size()];
 			verificationStatuses = new String[candidates.size()];
 			Map<String, List<Integer>> edgeMap = new HashMap<>();
@@ -3266,6 +3345,7 @@ public final class RouteTimetableRaptorPlanner {
 				warningProfiles[index] = candidate.warningProfiles();
 				warningCodes[index] = candidate.warningCodes();
 				includesStairs[index] = candidate.includesStairs();
+				stairAccess[index] = candidate.stairAccess();
 				edgeIds[index] = candidate.edgeId();
 				verificationStatuses[index] = candidate.verificationStatus();
 				String edgeId = candidate.edgeId();
@@ -3278,6 +3358,23 @@ public final class RouteTimetableRaptorPlanner {
 				compiledEdgeTransitions.put(entry.getKey(), entry.getValue().stream().mapToInt(Integer::intValue).toArray());
 			}
 			this.edgeTransitions = Map.copyOf(compiledEdgeTransitions);
+			this.transitionGroups = new int[candidates.size()][];
+			Arrays.fill(transitionGroups, NO_TRANSITIONS);
+			for (int[] group : transferTransitions) {
+				for (int transition : group) {
+					transitionGroups[transition] = group;
+				}
+			}
+			for (OutOfStationFootpath footpath : outOfStationFootpaths) {
+				int[] group = footpath.candidateTransitions();
+				for (int transition : group) {
+					transitionGroups[transition] = group;
+				}
+			}
+		}
+
+		private int[] transitionGroup(int transition) {
+			return transitionGroups[transition];
 		}
 
 		private static AccessTransitions compile(
@@ -3334,9 +3431,10 @@ public final class RouteTimetableRaptorPlanner {
 				PathwayEdge normalEdge = ownedByRule(edges.get(rule.pathwayEdgeId()), rule, nodes);
 				PathwayEdge strictEdge = ownedByRule(edges.get(rule.strictStepFreePathwayEdgeId()), rule, nodes);
 				if (normalEdge == null && strictEdge == null && rule.minTransferSeconds() > 0) {
+					// #469 F1: 동선이 없는 규칙은 계단 여부도 미확정이다.
 					candidates.add(new Candidate(rule.minTransferSeconds(), TRANSFER_DISTANCE_METERS,
-						STRICT_PROFILE_MASK, NON_STRICT_PROFILE_MASK, WARNING_LOW_CONFIDENCE,
-						false, null, "MISSING"));
+						STRICT_PROFILE_MASK, NON_STRICT_PROFILE_MASK, (byte) (WARNING_LOW_CONFIDENCE | WARNING_STAIRS),
+						true, STAIR_ACCESS_UNCONFIRMED, null, "MISSING"));
 				}
 				if (normalEdge != null) {
 					boolean strictCandidate = normalEdge.id().equals(rule.strictStepFreePathwayEdgeId());
@@ -3386,7 +3484,7 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			List<Candidate> flattened = new ArrayList<>();
 			// 출발·도착 승강장 경계(PLATFORM_BOUNDARY): 이동 없음, 경고·차단 없음, 간선 없음.
-			flattened.add(new Candidate(0, 0, 0, 0, (byte) 0, false, null, PLATFORM_BOUNDARY_STATUS));
+			flattened.add(new Candidate(0, 0, 0, 0, (byte) 0, false, STAIR_ACCESS_STEP_FREE, null, PLATFORM_BOUNDARY_STATUS));
 
 			long[] transferKeys = transfers.keySet().stream().mapToLong(Long::longValue).sorted().toArray();
 			int[][] transferIds = new int[transferKeys.length][];
@@ -3464,19 +3562,21 @@ public final class RouteTimetableRaptorPlanner {
 			boolean available = "AVAILABLE".equals(edge.accessibilityStatus());
 			boolean unavailable = "UNAVAILABLE".equals(edge.accessibilityStatus())
 				|| "UNDER_MAINTENANCE".equals(edge.accessibilityStatus());
+			byte stairAccess = stairAccess(edge);
+			boolean mayIncludeStairs = stairAccess != STAIR_ACCESS_STEP_FREE;
 			boolean strictAllowed = strictCandidate
 				&& verified
 				&& trusted
 				&& available
 				&& edge.reliabilityScore() >= 80
 				&& evidence.strictRouteEligible()
-				&& !edge.includesStairs();
+				&& !mayIncludeStairs;
 			byte warnings = 0;
 			if (!verified || !trusted || !available || edge.reliabilityScore() < 80
 				|| evidence != null && !evidence.strictRouteEligible()) {
 				warnings |= WARNING_LOW_CONFIDENCE;
 			}
-			if (edge.includesStairs()) {
+			if (mayIncludeStairs) {
 				warnings |= WARNING_STAIRS;
 			}
 			if ("STALE".equals(edge.verificationStatus())
@@ -3492,10 +3592,20 @@ public final class RouteTimetableRaptorPlanner {
 					: (strictAllowed ? 0 : STRICT_PROFILE_MASK),
 				warnings == 0 ? 0 : NON_STRICT_PROFILE_MASK,
 				warnings,
-				edge.includesStairs(),
+				mayIncludeStairs,
+				stairAccess,
 				edge.id(),
 				verificationStatus
 			);
+		}
+
+		/** #469 F1(#480): 원천 사실로 정한 계단 접근 상태. 추정으로 계단 없음을 만들지 않는다. */
+		static byte stairAccess(PathwayEdge edge) {
+			String state = edge.stairAccessState();
+			if (edge.includesStairs() || "STAIR_ONLY".equals(state)) {
+				return STAIR_ACCESS_STAIRS;
+			}
+			return "STEP_FREE".equals(state) ? STAIR_ACCESS_STEP_FREE : STAIR_ACCESS_UNCONFIRMED;
 		}
 		private static boolean trustedProvenance(String provenance) {
 			return "OFFICIAL_SOURCE".equals(provenance)
@@ -3543,8 +3653,10 @@ public final class RouteTimetableRaptorPlanner {
 					distanceMeters,
 					STRICT_PROFILE_MASK,
 					NON_STRICT_PROFILE_MASK,
-					WARNING_LOW_CONFIDENCE,
-					false,
+					(byte) (WARNING_LOW_CONFIDENCE | WARNING_STAIRS),
+					// #469 F1: 동선 근거가 없으면 계단 여부도 미확정이다.
+					true,
+					STAIR_ACCESS_UNCONFIRMED,
 					null,
 					"MISSING"
 				));
@@ -3632,6 +3744,9 @@ public final class RouteTimetableRaptorPlanner {
 		private boolean includesStairs(int transition) {
 			return includesStairs[transition];
 		}
+		private byte stairAccess(int transition) {
+			return stairAccess[transition];
+		}
 		private boolean verified(int transition) {
 			return "VERIFIED".equals(verificationStatuses[transition])
 				&& (warningCodes[transition] & (WARNING_LOW_CONFIDENCE | WARNING_STALE)) == 0;
@@ -3693,6 +3808,7 @@ public final class RouteTimetableRaptorPlanner {
 			int warningProfiles,
 			byte warningCodes,
 			boolean includesStairs,
+			byte stairAccess,
 			String edgeId,
 			String verificationStatus
 		) {
@@ -3825,6 +3941,9 @@ public final class RouteTimetableRaptorPlanner {
 		int[] lowerBounds = null;
 
 		final ScheduledTrip[] bagTrips = new ScheduledTrip[WARNING_STATE_COUNT];
+		/** #469: 경고 상태별 가장 빠른 대안 동선을 고를 때 쓰는 칸. */
+		final int[] alternativeTransitions = new int[WARNING_STATE_COUNT];
+		final int[] alternativeSeconds = new int[WARNING_STATE_COUNT];
 		final int[] bagBoardPositions = new int[WARNING_STATE_COUNT];
 		final int[] bagEarliestDepartureSeconds = new int[WARNING_STATE_COUNT];
 		final int[] bagAccessTransitions = new int[WARNING_STATE_COUNT];
@@ -4356,7 +4475,7 @@ public final class RouteTimetableRaptorPlanner {
 		boolean requiresVerifiedJourneyDistance,
 		boolean realtimeRequired,
 		int maxTransfers,
-		int candidateLimit,
+		int alternativeCount,
 		BooleanSupplier cancellationSignal
 	) {
 		ScanInput {
@@ -4370,6 +4489,11 @@ public final class RouteTimetableRaptorPlanner {
 
 		private boolean prefersStepFree() {
 			return constraintMode == ConstraintMode.PREFER_STEP_FREE;
+		}
+
+		/** #469: 엄격 무단차가 아니면 계단 경고를 결과를 가르는 차원으로 보존한다. */
+		boolean preservesStairAlternatives() {
+			return constraintMode != ConstraintMode.STRICT_STEP_FREE;
 		}
 	}
 
@@ -4390,7 +4514,15 @@ public final class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	private record ScanResult(ServiceDay serviceDay, List<Label> labels, ScanMetrics scanMetrics) {
+	private record ScanResult(
+		ServiceDay serviceDay,
+		JourneyAlternatives.Selection<Label> selection,
+		ScanMetrics scanMetrics
+	) {
+		List<Label> labels() {
+			return selection.items();
+		}
+
 	}
 
 	record JourneyDepartureProfilePoint(
@@ -5514,11 +5646,16 @@ public final class RouteTimetableRaptorPlanner {
 	) {
 	}
 
+	/** #469: {@code stairFreeStatus}는 결과가 있을 때만 있다(결과가 없으면 null). */
 	record JourneyPlan(List<JourneyItinerary> itineraries, ScanMetrics scanMetrics,
-		JourneyRequestMeasurement.RouteObservation measurementObservation) {
+		JourneyRequestMeasurement.RouteObservation measurementObservation,
+		JourneyAlternatives.StairFreeStatus stairFreeStatus) {
 		JourneyPlan {
 			itineraries = List.copyOf(itineraries);
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
+			if (itineraries.isEmpty() != (stairFreeStatus == null)) {
+				throw new IllegalArgumentException("stairFreeStatus must be present exactly when itineraries exist");
+			}
 		}
 	}
 
@@ -5537,11 +5674,14 @@ public final class RouteTimetableRaptorPlanner {
 		Instant realtimeArrivalTime,
 		JourneyProfileRaptorPort.ItineraryMetrics metrics,
 		List<JourneyLegProjection> legs,
-		RoutePersona persona
+		RoutePersona persona,
+		java.util.Set<JourneyAlternatives.Category> alternativeCategories,
+		boolean unconfirmedStairFreeTransfer
 	) {
 		JourneyItinerary {
 			metrics = Objects.requireNonNull(metrics, "metrics");
 			legs = List.copyOf(legs);
+			alternativeCategories = alternativeCategories == null ? null : java.util.Set.copyOf(alternativeCategories);
 		}
 
 		JourneyItinerary(
@@ -5553,14 +5693,33 @@ public final class RouteTimetableRaptorPlanner {
 			JourneyProfileRaptorPort.ItineraryMetrics metrics,
 			List<JourneyLegProjection> legs
 		) {
-			this(serviceDate, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime, metrics, legs, null);
+			this(serviceDate, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime, metrics, legs,
+				null, null, false);
 		}
 
 		JourneyItinerary withPersona(RoutePersona newPersona) {
 			return new JourneyItinerary(
 				serviceDate, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
-				metrics, legs, newPersona
+				metrics, legs, newPersona, alternativeCategories, unconfirmedStairFreeTransfer
 			);
+		}
+
+		/**
+		 * #469: 결과 구성에서 이 여정이 대표하는 묶음과, 계단 환승에 근거 없는 계단 없는 동선이 있는지. 구성 전 여정의
+		 * 묶음은 null이다.
+		 */
+		JourneyItinerary withComposition(
+			java.util.Set<JourneyAlternatives.Category> categories, boolean unconfirmedStairFree
+		) {
+			return new JourneyItinerary(
+				serviceDate, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				metrics, legs, persona, Objects.requireNonNull(categories, "categories"), unconfirmedStairFree
+			);
+		}
+
+		/** 환승 동선에 계단이 없는지(환승 없는 여정은 계단 없음). */
+		boolean stairFree() {
+			return legs.stream().noneMatch(leg -> leg instanceof JourneyAccessProjection access && access.includesStairs());
 		}
 	}
 

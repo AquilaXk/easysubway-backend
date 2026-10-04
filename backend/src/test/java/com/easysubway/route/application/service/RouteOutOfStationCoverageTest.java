@@ -435,8 +435,7 @@ class RouteOutOfStationCoverageTest {
 		String transferEdge2Id = "a-c-out-transfer-edge";
 		edges.add(new LoadRouteTimetablePort.PathwayEdge(
 			transferEdge2Id, "station-a:l1", "station-c:l2", 900, 600, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-		));
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
 			"a-c-transfer-evidence", "station-c", "l2", transferEdge2Id, "TRANSFER",
 			"OFFICIAL_SOURCE", "VERIFIED", true, null
@@ -516,8 +515,7 @@ class RouteOutOfStationCoverageTest {
 		String transferEdge2Id = "a-c-out-transfer-edge";
 		edges.add(new LoadRouteTimetablePort.PathwayEdge(
 			transferEdge2Id, "station-a:l1", "station-c:l2", 900, 600, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-		));
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
 			"a-c-transfer-evidence", "station-c", "l2", transferEdge2Id, "TRANSFER",
 			"OFFICIAL_SOURCE", "VERIFIED", true, null

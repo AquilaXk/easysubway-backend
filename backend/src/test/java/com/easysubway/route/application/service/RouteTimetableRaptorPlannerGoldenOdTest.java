@@ -97,8 +97,7 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 				var entryEdgeId = "entry-" + stationId + "-" + lineId;
 				edges.add(new LoadRouteTimetablePort.PathwayEdge(
 					entryEdgeId, entranceNodeId, platformNodeId, 240, 180, false, false, 100,
-					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-				));
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
 					"ev-" + entryEdgeId, stationId, lineId, entryEdgeId, "ENTRY",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null
@@ -107,8 +106,7 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 				var exitEdgeId = "exit-" + stationId + "-" + lineId;
 				edges.add(new LoadRouteTimetablePort.PathwayEdge(
 					exitEdgeId, platformNodeId, exitNodeId, 180, 120, false, false, 100,
-					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-				));
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
 					"ev-" + exitEdgeId, stationId, lineId, exitEdgeId, "EXIT",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null

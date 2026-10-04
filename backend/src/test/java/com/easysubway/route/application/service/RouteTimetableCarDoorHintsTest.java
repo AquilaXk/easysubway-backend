@@ -350,11 +350,11 @@ class RouteTimetableCarDoorHintsTest {
 		);
 
 		var edges = List.of(
-			new PathwayEdge("entry", "entrance", "platform-a", 120, 60, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
-			new PathwayEdge("transfer", "platform-transfer-a", "platform-transfer-b", 120, 60, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
-			new PathwayEdge("exit", "platform-c", "outside", 60, 40, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
-			new PathwayEdge("entry-3", "entrance-3", "platform-a-l3", 120, 60, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
-			new PathwayEdge("exit-3", "platform-b-l3", "outside-3", 60, 40, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			new PathwayEdge("entry", "entrance", "platform-a", 120, 60, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("transfer", "platform-transfer-a", "platform-transfer-b", 120, 60, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("exit", "platform-c", "outside", 60, 40, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("entry-3", "entrance-3", "platform-a-l3", 120, 60, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("exit-3", "platform-b-l3", "outside-3", 60, 40, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")
 		);
 
 		var transferRules = List.of(

@@ -82,9 +82,11 @@ public final class JourneyProfileSummaryPolicyV1 {
 		// 출발시각으로 운행일을 다시 계산하면 다음 날 03시 이후의 정상 막차를 거부한다.
 		SelectedLabel last = inventory.labelFor(ObjectiveTag.LATEST_DEPARTURE);
 		SelectedLabel safest = inventory.labelFor(ObjectiveTag.SAFEST_CONNECTION);
+		// #469: 더 안전한 대안도 대표 순위와 같은 상한(10분)까지의 여유로 비교한다.
 		List<String> saferAlternatives = safest.candidate().journeyId().equals(last.candidate().journeyId())
 			|| JourneyProfileRaptorPort.ConnectionSlack.compareSafety(
-				safest.candidate().connectionSlack(), last.candidate().connectionSlack()) <= 0
+				JourneyFrontierPolicyV1.creditedSafety(safest.candidate().connectionSlack()),
+				JourneyFrontierPolicyV1.creditedSafety(last.candidate().connectionSlack())) <= 0
 			? List.of() : List.of(safest.candidate().journeyId());
 		return new LastConnection(last.candidate().departure(), last.candidate().journeyId(), saferAlternatives,
 			recommended(inventory, alternativeCount, ObjectiveTag.LATEST_DEPARTURE,

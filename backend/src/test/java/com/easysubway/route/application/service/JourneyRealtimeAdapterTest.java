@@ -351,10 +351,10 @@ class JourneyRealtimeAdapterTest {
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new RouteEdgeEvidence(
 				"entry-evidence", "station-a", "line", "entry", "ENTRY",

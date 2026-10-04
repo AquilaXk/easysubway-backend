@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
+import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRaptorPort;
@@ -72,8 +73,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
-		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityBlocks.capture(
+		JourneyFacilityBlockOverlay.Capture facilityCapture = facilityBlocks.captureWithStatus(
 			requiredRequest.constraintMode(), routeRuntime.compiledTimetable());
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityCapture.overlay();
 
 		if (requiredRequest.viaStationId() != null) {
 			return planChainedVia(
@@ -83,7 +85,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				realtimeOrNull,
 				requiredMeasurement,
 				routeRuntime,
-				facilityOverlay
+				facilityCapture
 			);
 		}
 
@@ -109,8 +111,10 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 					planned.measurementObservation()));
 		}
 
+		// #469: 결과 구성은 planner가 정했다. 여정마다 대표 묶음을 붙이고 계단 없는 경로 결과를 함께 낸다.
 		List<JourneyCandidate> candidates = itineraries.stream()
-			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()))
+			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes())
+				.withAlternativeCategories(ordered(itinerary.alternativeCategories())))
 			.toList();
 		if (new HashSet<>(candidates.stream().map(JourneyCandidate::journeyId).toList()).size()
 			!= candidates.size()) {
@@ -119,7 +123,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
 			measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
-				planned.measurementObservation()));
+				planned.measurementObservation()),
+			new JourneyAlternatives.StairFreeAlternative(planned.stairFreeStatus(), facilityCapture.status()));
 	}
 
 	private PlanResult planChainedVia(
@@ -129,8 +134,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RealtimeObservation realtimeOrNull,
 		JourneyRequestMeasurement requiredMeasurement,
 		RaptorRouteBundleRuntimeView routeRuntime,
-		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+		JourneyFacilityBlockOverlay.Capture facilityCapture
 	) {
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityCapture.overlay();
 		String viaStationId = requiredRequest.viaStationId();
 		var timetable = routeRuntime.compiledTimetable();
 
@@ -228,7 +234,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 					leg1,
 					leg2,
 					lastRide1,
-					firstRide2
+					firstRide2,
+					facilityOverlay
 				);
 				if (chained != null) {
 					chainedItineraries.add(chained);
@@ -246,28 +253,44 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 					planned1.measurementObservation()));
 		}
 
-		List<JourneyCandidate> candidates = new ArrayList<>();
+		Comparator<ChainedCandidate> arrivalOrder = Comparator
+			.comparing((ChainedCandidate chained) -> chained.candidate().plannedArrivalTime())
+			.thenComparingLong(chained -> chained.candidate().durationSeconds())
+			.thenComparingInt(chained -> chained.candidate().transferCount());
+		List<ChainedCandidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
-			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()));
+			candidates.add(new ChainedCandidate(
+				toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()),
+				itinerary.unconfirmedStairFreeTransfer()));
 		}
+		candidates.sort(arrivalOrder);
 
-		candidates.sort(Comparator
-			.comparing(JourneyCandidate::plannedArrivalTime)
-			.thenComparingLong(JourneyCandidate::durationSeconds)
-			.thenComparingInt(JourneyCandidate::transferCount));
-
-		Map<String, JourneyCandidate> unique = new LinkedHashMap<>();
-		for (JourneyCandidate c : candidates) {
-			unique.putIfAbsent(c.journeyId(), c);
+		Map<String, ChainedCandidate> unique = new LinkedHashMap<>();
+		for (ChainedCandidate c : candidates) {
+			unique.putIfAbsent(c.candidate().journeyId(), c);
 		}
-		List<JourneyCandidate> finalCandidates = unique.values().stream()
-			.limit(requiredRequest.alternativeCount())
-			.toList();
+		// #469: 직행 검색과 같은 결과 구성 규칙으로 경유 여정을 고른다.
+		JourneyAlternatives.Selection<ChainedCandidate> selection = JourneyAlternatives.compose(
+			List.copyOf(unique.values()), requiredRequest.alternativeCount(),
+			requiredRequest.mobilityProfile() == JourneyRequest.MobilityProfile.STEP_FREE
+				&& requiredRequest.constraintMode() == JourneyRequest.ConstraintMode.NONE,
+			arrivalOrder, chained -> chained.candidate().transferCount() + 1,
+			chained -> chained.candidate().accessibility().stairFree());
+		List<JourneyCandidate> finalCandidates = new ArrayList<>(selection.items().size());
+		for (int index = 0; index < selection.items().size(); index += 1) {
+			finalCandidates.add(selection.items().get(index).candidate()
+				.withAlternativeCategories(ordered(selection.categories().get(index))));
+		}
+		JourneyAlternatives.StairFreeStatus stairFreeStatus = JourneyAlternatives.stairFreeStatus(
+			finalCandidates.stream().anyMatch(candidate -> candidate.accessibility().stairFree()),
+			selection.stairFreeOmitted(),
+			selection.items().stream().anyMatch(ChainedCandidate::unconfirmedStairFreeTransfer));
 
 		return new PlanResult(requiredRequest.requestId(), finalCandidates, combinedScanMetrics,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
 			measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
-				planned1.measurementObservation()));
+				planned1.measurementObservation()),
+			new JourneyAlternatives.StairFreeAlternative(stairFreeStatus, facilityCapture.status()));
 	}
 
 	private static RouteTimetableRaptorPlanner.JourneyItinerary chainLegs(
@@ -276,7 +299,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RouteTimetableRaptorPlanner.JourneyItinerary leg1,
 		RouteTimetableRaptorPlanner.JourneyItinerary leg2,
 		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1,
-		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2
+		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
 		String via = request.viaStationId();
 		int station = timetable.stationIndex(via);
@@ -290,6 +314,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		String transferType = null;
 		Boolean farePenaltyApplies = null;
 		Integer transferLimitMinutes = null;
+		boolean junctionUnconfirmedStairFree = false;
 
 		int fromLine = timetable.lineIndex(lastRide1.lineId());
 		int toLine = timetable.lineIndex(firstRide2.lineId());
@@ -309,6 +334,11 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			includesStairs = timetable.transitionIncludesStairs(transition);
 			verified = timetable.transitionVerified(transition);
 			status = timetable.transitionVerificationStatus(transition);
+			if (includesStairs) {
+				// #469 F1: 경유역 접속 환승의 계단 상태가 미확정이거나 근거 없는 계단 없는 동선이 있으면 확정할 수 없다.
+				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.unconfirmedStairFreeTransfer(
+					timetable, transition, profileBit, facilityOverlay);
+			}
 
 			if (timetable.isOutOfStationTransition(transition)) {
 				transferType = "OUT_OF_STATION";
@@ -389,8 +419,19 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			realtime ? leg1.realtimeDepartureTime() : null,
 			realtime ? leg2.realtimeArrivalTime() : null,
 			metrics,
-			combinedLegs
+			combinedLegs,
+			null,
+			null,
+			leg1.unconfirmedStairFreeTransfer() || leg2.unconfirmedStairFreeTransfer() || junctionUnconfirmedStairFree
 		);
+	}
+
+	private static List<JourneyAlternatives.Category> ordered(java.util.Set<JourneyAlternatives.Category> categories) {
+		return java.util.Objects.requireNonNull(categories, "categories").stream().sorted().toList();
+	}
+
+	/** #469: 경유 여정 후보와, 그 여정의 계단 환승에 근거 없는 계단 없는 동선이 있는지. */
+	private record ChainedCandidate(JourneyCandidate candidate, boolean unconfirmedStairFreeTransfer) {
 	}
 
 	static int resolveFootpathTransition(
@@ -613,7 +654,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			realtime ? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
 			fare,
-			legs
+			legs,
+			List.of()
 		);
 	}
 

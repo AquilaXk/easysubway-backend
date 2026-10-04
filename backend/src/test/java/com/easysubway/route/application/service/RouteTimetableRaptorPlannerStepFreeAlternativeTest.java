@@ -62,7 +62,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	}
 
 	@Test
-	@DisplayName("자리가 하나뿐이면(candidateLimit()==1) 최속 경로를 교체하지 않는다")
+	@DisplayName("자리가 하나뿐이면(alternativeCount==1) 최속 경로를 교체하지 않는다")
 	void keepsFastestRouteWhenCandidateLimitIsOne() {
 		var planner = new RouteTimetableRaptorPlanner();
 
@@ -139,8 +139,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	}
 
 	@Test
-	@DisplayName("ALLOW_WITH_WARNINGS는 기존대로 환승 수마다 최속 후보 1개만 남긴다")
-	void allowWithWarningsKeepsSingleFastestCandidatePerBoardings() {
+	@DisplayName("#469 ALLOW_WITH_WARNINGS(느린 걸음)도 계단 경고 차원을 보존해 무단차 대안을 함께 남긴다")
+	void allowWithWarningsAlsoKeepsStepFreeAlternative() {
 		var planner = new RouteTimetableRaptorPlanner();
 
 		List<JourneyItinerary> results = planner.journeyItineraries(
@@ -150,7 +150,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
 				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
-			.containsExactly(tuple(33L, STAIR_HUB, true));
+			.containsExactly(tuple(33L, STAIR_HUB, true), tuple(36L, STEP_FREE_HUB, false));
 	}
 
 	@Test
@@ -268,7 +268,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 
 	/**
 	 * 직통 두 개만 있는 시각표 — 26분과 31분. #454 이후 진입 간선은 무시되어 두 직행 모두 경고가 없다.
-	 * `candidateLimit()`이 1이 되는 경계를 만들기 위해 환승 경로를 두지 않는다.
+	 * 결과 자리가 1개(alternativeCount 1, 환승 0)인 경계를 만들기 위해 환승 경로를 두지 않는다.
 	 */
 	private static RouteTimetable directRoutesTimetable() {
 		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
@@ -467,7 +467,7 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, id + "-from", id + "-to", duration, distance, false, includesStairs, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", verificationStatus);
+			"AVAILABLE", "OFFICIAL_SOURCE", verificationStatus).withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.RouteEdgeEvidence verifiedEvidence(

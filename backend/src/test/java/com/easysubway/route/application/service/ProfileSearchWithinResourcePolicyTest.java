@@ -28,7 +28,7 @@ class ProfileSearchWithinResourcePolicyTest {
 		JourneyEnginePerformanceGateTest.CANDIDATE_POLICY_LIMITS;
 
 	@Test
-	@DisplayName("대표 수도권 질의가 거절 없이 경로를 찾는다")
+	@DisplayName("대표 수도권 질의가 거절 없이 경로를 찾고, 엄격 무단차는 확정된 계단 없는 환승이 없어 경로 없음이다")
 	void representativeCapitalQueriesFindJourneysWithinThePolicy() {
 		var runtime = RaptorRouteBundleRuntimeView.compile("a".repeat(64), 1, CapitalRealDerivedFixture.load());
 		var adapter = new JourneyProfileRaptorAdapter();
@@ -41,10 +41,13 @@ class ProfileSearchWithinResourcePolicyTest {
 			String outcome = describe(result);
 			System.out.println("#461 policy " + testCase.mode() + " " + testCase.origin() + "->" + testCase.destination()
 				+ " " + testCase.profile() + " " + outcome);
-			if (!outcome.startsWith("found")) failures.add(testCase + " -> " + outcome);
+			// #469 F1(#480): 이 fixture(release 125)의 환승 동선은 모두 계단 상태가 확정되지 않았다. 엄격 무단차는 확정된
+			// 계단 없는 동선만 쓰므로 환승이 필요한 질의는 자원 한도 거절이 아니라 경로 없음이어야 한다.
+			String expected = testCase.constraint() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE ? "notFound" : "found";
+			if (!outcome.startsWith(expected)) failures.add(testCase + " -> " + outcome + " (expected " + expected + ")");
 			windowViolations.addAll(windowViolations(testCase, result));
 		}
-		assertThat(failures).as("운영 정책 안에서 경로를 찾지 못한 질의").isEmpty();
+		assertThat(failures).as("운영 정책 안에서 기대한 결과를 내지 못한 질의").isEmpty();
 		assertThat(windowViolations).as("30분 대안 창을 벗어난 결과").isEmpty();
 	}
 
@@ -56,6 +59,9 @@ class ProfileSearchWithinResourcePolicyTest {
 		assertThat(timetable.transitTrips()).hasSize(9_691);
 		assertThat(CapitalRealDerivedFixture.stations()).hasSize(656);
 		assertThat(timetable.routeAccessData().transferRules()).hasSize(297);
+		// #469 F1(#480): 원본 번들의 환승 동선에는 계단 없음이 확정된 상태(STEP_FREE)가 없다.
+		assertThat(timetable.routeAccessData().pathwayEdges())
+			.noneMatch(edge -> "STEP_FREE".equals(edge.stairAccessState()));
 	}
 
 	/**

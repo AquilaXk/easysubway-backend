@@ -246,8 +246,7 @@ class RouteTimetablePlatformGapsTest {
 			var entryEdgeId = "entry-" + stationId + "-" + LINE_1;
 			edges.add(new PathwayEdge(
 				entryEdgeId, entranceNodeId, platformNodeId, 60, 25, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-			));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 			evidence.add(new RouteEdgeEvidence(
 				"ev-" + entryEdgeId, stationId, LINE_1, entryEdgeId, "ENTRY",
 				"OFFICIAL_SOURCE", "VERIFIED", true, null
@@ -256,8 +255,7 @@ class RouteTimetablePlatformGapsTest {
 			var exitEdgeId = "exit-" + stationId + "-" + LINE_1;
 			edges.add(new PathwayEdge(
 				exitEdgeId, platformNodeId, exitNodeId, 60, 25, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-			));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 			evidence.add(new RouteEdgeEvidence(
 				"ev-" + exitEdgeId, stationId, LINE_1, exitEdgeId, "EXIT",
 				"OFFICIAL_SOURCE", "VERIFIED", true, null

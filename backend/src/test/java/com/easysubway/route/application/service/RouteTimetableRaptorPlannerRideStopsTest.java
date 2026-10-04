@@ -248,8 +248,8 @@ class RouteTimetableRaptorPlannerRideStopsTest {
 			String station = parts[0];
 			String line = parts[1];
 			String key = station + "-" + line;
-			var entry = new PathwayEdge(key + "-entry", key + "-entrance", key + "-platform", 240, 180, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
-			var exit = new PathwayEdge(key + "-exit", key + "-platform", key + "-exit", 180, 120, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			var entry = new PathwayEdge(key + "-entry", key + "-entrance", key + "-platform", 240, 180, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
+			var exit = new PathwayEdge(key + "-exit", key + "-platform", key + "-exit", 180, 120, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 			edges.add(entry);
 			edges.add(exit);
 			nodes.add(new PathwayNode(entry.fromNodeId(), station, null, "ENTRANCE"));
@@ -265,7 +265,7 @@ class RouteTimetableRaptorPlannerRideStopsTest {
 			String fromLine = parts[1];
 			String toLine = parts[2];
 			String key = station + "-" + fromLine + "-" + toLine;
-			var transferEdge = new PathwayEdge(key + "-edge", station + "-" + fromLine + "-platform", station + "-" + toLine + "-platform", 120, 80, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			var transferEdge = new PathwayEdge(key + "-edge", station + "-" + fromLine + "-platform", station + "-" + toLine + "-platform", 120, 80, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 			edges.add(transferEdge);
 			evidence.add(new RouteEdgeEvidence(key + "-transfer-ev", station, toLine, transferEdge.id(), "TRANSFER", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 			transfers.add(new TransferRule(key + "-rule", station, fromLine, station, toLine, "IN_STATION", 120, transferEdge.id(), transferEdge.id(), "VERIFIED"));

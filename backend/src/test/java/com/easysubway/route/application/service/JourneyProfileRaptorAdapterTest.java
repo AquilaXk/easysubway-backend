@@ -472,6 +472,30 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void unconfirmedStairStatePathwayCountsAsStairBurdenInProfiles() {
+		// #469 F1(#480): 프로필 응답의 stairFree와 계단 부담도 계단 없음이 확정된 동선만 계단 없음으로 본다.
+		var timetable = RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable("UNKNOWN");
+		var ready = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var query = new JourneyRaptorQuery(REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION,
+			new JourneyRaptorQuery.DepartBetween(ready, ready.plusSeconds(600)), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			1, 3, () -> false);
+
+		var result = adapter.planRuntime(query, RaptorRouteBundleRuntimeView.compile("c".repeat(64), 1, timetable), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+
+		var points = ((JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan()).points();
+		assertThat(points).isNotEmpty().allSatisfy(point -> assertThat(point.itineraries()).isNotEmpty()
+			.allSatisfy(itinerary -> {
+				assertThat(itinerary.metrics().accessibilityBurden()).isEqualTo(1);
+				assertThat(itinerary.legs()).filteredOn(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
+					.allSatisfy(leg -> assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).includesStairs()).isTrue());
+			}));
+	}
+
+	@Test
 	void preservesThreeIndependentDirectFactsAndEveryRequiredDepartureRepresentative() {
 		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001));
 		var result = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
@@ -974,7 +998,13 @@ class JourneyProfileRaptorAdapterTest {
 			case FEWEST_TRANSFERS -> Integer.compare(left.transfers(), right.transfers());
 			case LOWEST_WALKING_BURDEN -> left.compareWalking(right);
 			case BEST_ACCESSIBILITY -> Long.compare(left.stairBurden(), right.stairBurden());
-			case SAFEST_CONNECTION -> Boolean.compare(right.noTransfer(), left.noTransfer());
+			// #469: 환승 여유는 10분 상한까지만 비교하고 같으면 더 이른 도착이다. 이 픽스처의 세 경로는 환승 여유가
+			// 모두 20초로 같아(35,400 도착 + 보행 + 승차 여유 60초 = 다음 열차 출발 - 20초) 도착 시각으로 정해진다.
+			case SAFEST_CONNECTION -> {
+				int safety = Boolean.compare(right.noTransfer(), left.noTransfer());
+				yield safety != 0 ? safety
+					: Integer.compare(left.destinationArrivalSeconds(), right.destinationArrivalSeconds());
+			}
 		};
 		return comparison != 0 ? comparison : canonicalKeys.get(left.pathId()).compareTo(canonicalKeys.get(right.pathId()));
 	}
@@ -1021,7 +1051,7 @@ class JourneyProfileRaptorAdapterTest {
 	private static LoadRouteTimetablePort.PathwayEdge edge(String id, String from, String to, int seconds) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, 50, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.PathwayEdge edge(
@@ -1029,7 +1059,7 @@ class JourneyProfileRaptorAdapterTest {
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, distance, false, stairs, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((stairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(

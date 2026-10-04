@@ -288,16 +288,16 @@ class RouteTimetableRaptorPlannerProfileGoldenTest {
 				// Entry edges
 				String entryH = "entry-h-edge-" + r + "-" + c;
 				String entryV = "entry-v-edge-" + r + "-" + c;
-				edges.add(new PathwayEdge(entryH, entryNode, platH, 180, 100, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-				edges.add(new PathwayEdge(entryV, entryNode, platV, 180, 100, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				edges.add(new PathwayEdge(entryH, entryNode, platH, 180, 100, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+				edges.add(new PathwayEdge(entryV, entryNode, platV, 180, 100, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 				evidences.add(new RouteEdgeEvidence("ev-entry-h-" + r + "-" + c, stId, lineH, entryH, "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 				evidences.add(new RouteEdgeEvidence("ev-entry-v-" + r + "-" + c, stId, lineV, entryV, "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 
 				// Exit edges
 				String exitH = "exit-h-edge-" + r + "-" + c;
 				String exitV = "exit-v-edge-" + r + "-" + c;
-				edges.add(new PathwayEdge(exitH, platH, exitNode, 120, 80, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-				edges.add(new PathwayEdge(exitV, platV, exitNode, 120, 80, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				edges.add(new PathwayEdge(exitH, platH, exitNode, 120, 80, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+				edges.add(new PathwayEdge(exitV, platV, exitNode, 120, 80, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 				evidences.add(new RouteEdgeEvidence("ev-exit-h-" + r + "-" + c, stId, lineH, exitH, "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 				evidences.add(new RouteEdgeEvidence("ev-exit-v-" + r + "-" + c, stId, lineV, exitV, "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 
@@ -308,8 +308,8 @@ class RouteTimetableRaptorPlannerProfileGoldenTest {
 
 				String transHV = "trans-hv-edge-" + r + "-" + c;
 				String transVH = "trans-vh-edge-" + r + "-" + c;
-				edges.add(new PathwayEdge(transHV, platH, platV, walkSec, walkMeters, hasStairs, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
-				edges.add(new PathwayEdge(transVH, platV, platH, walkSec, walkMeters, hasStairs, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				edges.add(new PathwayEdge(transHV, platH, platV, walkSec, walkMeters, hasStairs, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+				edges.add(new PathwayEdge(transVH, platV, platH, walkSec, walkMeters, hasStairs, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 
 				transferRules.add(new TransferRule(
 					"rule-hv-" + r + "-" + c, stId, lineH, stId, lineV, "IN_STATION", walkSec, transHV, transHV, "VERIFIED"));

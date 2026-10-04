@@ -244,7 +244,7 @@ class JourneyBenchmarkObservationControllerTest {
 			new JourneyExecutionResult.RequestPolicy(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 				JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
 				JourneyRequest.ConstraintMode.NONE, 1, alternativeCount), journeys,
-			JourneyExecutionResult.SafetyBoundary.observed(), requestMeasurement);
+			JourneyExecutionResult.SafetyBoundary.observed(), requestMeasurement, TestJourneyCandidates.stairFreeAlternative(journeys));
 	}
 
 	private static JourneyCandidate candidate(String journeyId) {

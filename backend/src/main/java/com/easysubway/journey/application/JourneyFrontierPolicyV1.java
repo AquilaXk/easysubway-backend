@@ -21,7 +21,15 @@ import java.util.Set;
  */
 public final class JourneyFrontierPolicyV1 {
 
-	private static final Identity IDENTITY = new Identity("FRONTIER_POLICY_V1", "1.0.0");
+	private static final Identity IDENTITY = new Identity("FRONTIER_POLICY_V1", "1.1.0");
+	/**
+	 * #469: SAFEST_CONNECTION 대표 순위에서 최소 환승 여유를 인정하는 상한(10분). 더 기다린다고 더 안전하다는 근거가
+	 * 없고, 놓친 환승의 비용은 다음 열차 간격이다. 상한까지 같으면 더 이른 도착을 고른다. 파레토 지배 판정은 원래
+	 * 값을 그대로 쓴다. 식별자 버전 1.1.0부터 적용한다.
+	 * 600초는 에픽 #457 기본값이다. 상용 지하철 서비스의 해당 규칙은 공개 자료로 확인하지 못했다(근거: 엔진 설계 문서
+	 * {@code backend/src/test/java/com/easysubway/route/application/service/package-info.java} 8절, 이슈 #469 결정 5).
+	 */
+	public static final long SAFEST_CONNECTION_SLACK_CREDIT_CAP_SECONDS = 600;
 	private static final Comparator<FeasibleCandidate> CANONICAL_ORDER = Comparator
 		.comparing(FeasibleCandidate::journeyId)
 		.thenComparing(FeasibleCandidate::departure)
@@ -150,10 +158,26 @@ public final class JourneyFrontierPolicyV1 {
 			case FEWEST_TRANSFERS -> Long.compare(left.transfers(), right.transfers());
 			case LOWEST_WALKING_BURDEN -> compareWalkingBurden(left, right);
 			case BEST_ACCESSIBILITY -> Long.compare(left.accessibilityBurden(), right.accessibilityBurden());
-			case SAFEST_CONNECTION -> ConnectionSlack.compareSafety(
-				right.connectionSlack(), left.connectionSlack());
+			case SAFEST_CONNECTION -> {
+				int safety = ConnectionSlack.compareSafety(
+					creditedSafety(right.connectionSlack()), creditedSafety(left.connectionSlack()));
+				yield safety != 0 ? safety : left.arrivalAtDestination().compareTo(right.arrivalAtDestination());
+			}
 		};
 		return comparison != 0 ? comparison : CANONICAL_ORDER.compare(left, right);
+	}
+
+	/**
+	 * #469: 대표 순위에 쓰는 안전도. 환승 없는 여정은 그대로 가장 안전하고, 최소 환승 여유는
+	 * {@link #SAFEST_CONNECTION_SLACK_CREDIT_CAP_SECONDS}까지만 인정한다.
+	 */
+	public static ConnectionSlack creditedSafety(ConnectionSlack slack) {
+		Objects.requireNonNull(slack, "slack");
+		if (slack instanceof JourneyProfileRaptorPort.MinimumTransferSeconds seconds
+			&& seconds.seconds() > SAFEST_CONNECTION_SLACK_CREDIT_CAP_SECONDS) {
+			return new JourneyProfileRaptorPort.MinimumTransferSeconds(SAFEST_CONNECTION_SLACK_CREDIT_CAP_SECONDS);
+		}
+		return slack;
 	}
 
 	private static int compareWalkingBurden(FeasibleCandidate left, FeasibleCandidate right) {

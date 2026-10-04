@@ -301,9 +301,29 @@ class JourneyV3ContractTest {
 		Map<String, Object> document = openApi();
 		assertClosedSchema(document, "JourneySearchSuccess",
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"),
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys",
+				"stairFreeAlternative"),
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"));
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys",
+				"stairFreeAlternative"));
+		// #469: 계단 없는 경로 묶음 결과와 시설 가동 정보 적용 여부.
+		assertClosedSchema(document, "JourneyStairFreeAlternative",
+			Set.of("status", "facilityStatus"), Set.of("status", "facilityStatus"));
+		assertEnum(property(document, "JourneyStairFreeAlternative", "status"),
+			"INCLUDED", "OMITTED", "NOT_FOUND", "UNDETERMINED");
+		assertEnum(property(document, "JourneyStairFreeAlternative", "facilityStatus"), "APPLIED", "UNOBSERVED");
+		// #469 F2: 계약 문구는 계단 상태 미확정(UNKNOWN·필드 없음)을 계단 없음으로 보지 않는다는 규칙을 밝혀야 한다.
+		assertThat(String.valueOf(schema(document, "JourneyStairFreeAlternative").get("description")))
+			.contains("STEP_FREE").contains("UNKNOWN").contains("never stair-free");
+		assertThat(String.valueOf(property(document, "JourneyStairFreeAlternative", "status").get("description")))
+			.contains("unconfirmed stair state");
+		assertThat(String.valueOf(property(document, "Journey", "alternativeCategories").get("description")))
+			.contains("confirmed stair-free");
+		assertThat(String.valueOf(schema(document, "JourneyAccessibility").get("description")))
+			.contains("confirmed stair-free").contains("UNKNOWN");
+		// #469 F4: 600초 상한은 확인된 상용 서비스 규칙이 아니라 에픽 #457 기본값이다.
+		assertThat(String.valueOf(property(document, "JourneyProfileJourneyCandidate", "objectiveTags").get("description")))
+			.contains("epic #457 default").contains("not confirmed");
 		assertEnum(property(document, "JourneySearchSuccess", "contractVersion"), "JOURNEY_SEARCH_V3");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceTimezone"), "Asia/Seoul");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceDayCutoff"), "03:00");
@@ -320,7 +340,10 @@ class JourneyV3ContractTest {
 		Set<String> journeyFields = Set.of("journeyId", "status", "planSource", "plannedDepartureTime",
 			"plannedArrivalTime", "realtimeDepartureTime", "realtimeArrivalTime", "durationSeconds",
 			"transferCount", "walkingDistanceMeters", "timeSource", "accessibility", "fare", "legs");
-		assertClosedSchema(document, "Journey", journeyFields, journeyFields);
+		// #469: alternativeCategories는 검색 응답 여정에만 있어 필수가 아니다(프로필 응답 여정은 objectiveTags).
+		Set<String> journeyProperties = new java.util.HashSet<>(journeyFields);
+		journeyProperties.add("alternativeCategories");
+		assertClosedSchema(document, "Journey", journeyFields, journeyProperties);
 		assertEnum(property(document, "Journey", "status"), "FOUND");
 		assertEnum(property(document, "Journey", "planSource"), "SERVER_TIMETABLE_RAPTOR");
 		assertEnum(property(document, "Journey", "timeSource"), "TIMETABLE", "REALTIME");

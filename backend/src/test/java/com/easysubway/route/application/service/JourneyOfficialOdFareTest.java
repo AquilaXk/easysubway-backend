@@ -548,10 +548,10 @@ class JourneyOfficialOdFareTest {
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new RouteEdgeEvidence(
 				"entry-evidence", "station-a", "line", "entry", "ENTRY",
@@ -592,19 +592,19 @@ class JourneyOfficialOdFareTest {
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"entry-transfer", "entrance-transfer", "platform-transfer-b", 120, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"exit-transfer", "platform-transfer-a", "outside-transfer", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(
 				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),

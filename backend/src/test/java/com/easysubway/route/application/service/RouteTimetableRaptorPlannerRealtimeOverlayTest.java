@@ -418,10 +418,10 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		var edges = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-b", "outside", 60, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
 				"entry-evidence", "station-a", lineId, "entry", "ENTRY",
@@ -442,13 +442,13 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		var edges = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", 300, 300, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-b", "outside", 60, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
 				"entry-evidence", "station-a", "line-a", "entry", "ENTRY",
@@ -529,16 +529,16 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		var edges = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"transfer-primary", "platform-transfer-a", "platform-transfer-b", 180, 150, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"transfer-detour", "platform-transfer-a", "platform-transfer-b", 300, 250, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-b", "outside", 60, 40, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = List.of(
 			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
 				"entry-evidence", "station-a", "line-a", "entry", "ENTRY",

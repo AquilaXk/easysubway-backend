@@ -292,7 +292,7 @@ class JourneyCandidateTest {
 			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50
 		)));
 		JourneyRaptorPort.PlanResult result = new JourneyRaptorPort.PlanResult("query-1", candidates,
-			new JourneyRaptorPort.ScanMetrics(1, 2, 3), JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3), JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), TestJourneyCandidates.stairFreeAlternative(candidates));
 		candidates.clear();
 		assertThat(result.candidates()).extracting(JourneyCandidate::journeyId).containsExactly("journey-1");
 		assertThatThrownBy(() -> result.candidates().clear()).isInstanceOf(UnsupportedOperationException.class);

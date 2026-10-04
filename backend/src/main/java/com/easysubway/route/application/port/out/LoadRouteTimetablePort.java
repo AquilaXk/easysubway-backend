@@ -255,7 +255,12 @@ public interface LoadRouteTimetablePort {
 			String accessibilityStatus,
 			String provenanceKind,
 			String verificationStatus,
-			String legacyInternalRouteEdgeId
+			String legacyInternalRouteEdgeId,
+			/**
+			 * #469·#480: 원천 번들의 계단 접근 상태({@code stair_access_state}). data 어휘는 STEP_FREE(계단 없음 확정),
+			 * STAIR_ONLY(계단 확정), UNKNOWN(미확정)이다. null은 필드가 없다는 뜻이고 미확정과 같다.
+			 */
+			String stairAccessState
 		) {
 			public PathwayEdge(
 				String id, String fromNodeId, String toNodeId, int durationSeconds, int distanceMeters,
@@ -263,7 +268,14 @@ public interface LoadRouteTimetablePort {
 				String accessibilityStatus, String provenanceKind, String verificationStatus
 			) {
 				this(id, fromNodeId, toNodeId, durationSeconds, distanceMeters, bidirectional, includesStairs,
-					reliabilityScore, accessibilityStatus, provenanceKind, verificationStatus, id);
+					reliabilityScore, accessibilityStatus, provenanceKind, verificationStatus, id, null);
+			}
+
+			/** 같은 동선에 계단 접근 상태만 바꾼 사본. */
+			public PathwayEdge withStairAccessState(String state) {
+				return new PathwayEdge(id, fromNodeId, toNodeId, durationSeconds, distanceMeters, bidirectional,
+					includesStairs, reliabilityScore, accessibilityStatus, provenanceKind, verificationStatus,
+					legacyInternalRouteEdgeId, state);
 			}
 		}
 	record TransferRule(

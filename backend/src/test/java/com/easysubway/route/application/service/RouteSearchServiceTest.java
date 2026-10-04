@@ -2457,7 +2457,7 @@ class RouteSearchServiceTest {
 	) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, id + "-from", id + "-to", duration, distance, false, includesStairs, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE");
 	}
 
 	private static LoadRouteTimetablePort.RouteEdgeEvidence objectiveEvidence(

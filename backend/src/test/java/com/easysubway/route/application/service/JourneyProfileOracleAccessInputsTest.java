@@ -116,7 +116,7 @@ class JourneyProfileOracleAccessInputsTest {
 	}
 	private static LoadRouteTimetablePort.PathwayNode node(String id, String station, String line) { return new LoadRouteTimetablePort.PathwayNode(id, station, line, "PLATFORM"); }
 	private static LoadRouteTimetablePort.PathwayEdge edge(String id, String from, String to, int seconds, int distance, boolean bidirectional) {
-		return new LoadRouteTimetablePort.PathwayEdge(id, from, to, seconds, distance, bidirectional, false, 90, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+		return new LoadRouteTimetablePort.PathwayEdge(id, from, to, seconds, distance, bidirectional, false, 90, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(String id, String station, String line, String edge, String type) {
 		return new LoadRouteTimetablePort.RouteEdgeEvidence(id, station, line, edge, type, "OFFICIAL_SOURCE", "VERIFIED", true, null);

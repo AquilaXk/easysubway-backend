@@ -75,6 +75,32 @@ class JourneyProfileSummaryPolicyV1Test {
 	}
 
 	@Test
+	void lastConnectionSaferAlternativeComparesSlackOnlyUpToTheCap() {
+		// #469 R4: 막차가 이미 12분 여유를 가지면 25분 기다리는 여정은 더 안전한 대안이 아니다(둘 다 10분 상한).
+		var summary = JourneyProfileSummaryPolicyV1.select(
+			query(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 2)), 3),
+			frontier(
+				label("last", 3_000, 5_000, 1, 100, 100, 1, 720, ObjectiveTag.LATEST_DEPARTURE,
+					ObjectiveTag.FEWEST_TRANSFERS, ObjectiveTag.BEST_ACCESSIBILITY, ObjectiveTag.FASTEST_ARRIVAL),
+				label("long-wait", 2_000, 5_200, 1, 50, 50, 1, 1_500, ObjectiveTag.SAFEST_CONNECTION,
+					ObjectiveTag.LOWEST_WALKING_BURDEN)),
+			3);
+
+		assertThat(((JourneyProfileSummaryPolicyV1.LastConnection) summary).saferAlternativeJourneyIds()).isEmpty();
+
+		var tightLast = JourneyProfileSummaryPolicyV1.select(
+			query(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 2)), 3),
+			frontier(
+				label("last", 3_000, 5_000, 1, 100, 100, 1, 120, ObjectiveTag.LATEST_DEPARTURE,
+					ObjectiveTag.FEWEST_TRANSFERS, ObjectiveTag.BEST_ACCESSIBILITY, ObjectiveTag.FASTEST_ARRIVAL),
+				label("long-wait", 2_000, 5_200, 1, 50, 50, 1, 1_500, ObjectiveTag.SAFEST_CONNECTION,
+					ObjectiveTag.LOWEST_WALKING_BURDEN)),
+			3);
+		assertThat(((JourneyProfileSummaryPolicyV1.LastConnection) tightLast).saferAlternativeJourneyIds())
+			.containsExactly("long-wait");
+	}
+
+	@Test
 	void rejectsPointQueriesMissingRepresentativesDuplicateIdsAndMismatchedFacts() {
 		var labels = frontier(
 			label("fast", 10, 30, 2, 200, 200, 2, 20, ObjectiveTag.FASTEST_ARRIVAL),

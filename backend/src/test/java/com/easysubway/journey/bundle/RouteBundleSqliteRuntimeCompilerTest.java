@@ -1,5 +1,7 @@
 package com.easysubway.journey.bundle;
 
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -527,6 +529,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			new Edge("transfer-stairs", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 1),
 			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
 			new Edge("transfer-blocked-stairs", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 1),
+			// #469 F1(#480): seq126처럼 계단 플래그는 0이지만 계단 상태가 UNKNOWN인 동선은 엄격 무단차 동선이 아니다.
+			new Edge("transfer-unknown", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0, "UNKNOWN"),
 			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
 
 		var states = Map.of(
@@ -558,6 +562,17 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 		var blockedStairsRule = rules.stream().filter(r -> "transfer-blocked-stairs".equals(r.id())).findFirst().orElseThrow();
 		assertThat(blockedStairsRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var unknownRule = rules.stream().filter(r -> "transfer-unknown".equals(r.id())).findFirst().orElseThrow();
+		assertThat(unknownRule.strictStepFreePathwayEdgeId()).isNull();
+		assertThat(timetable.routeAccessData().pathwayEdges()).filteredOn(edge -> edge.id().startsWith("transfer-"))
+			.extracting(LoadRouteTimetablePort.PathwayEdge::id, LoadRouteTimetablePort.PathwayEdge::stairAccessState)
+			.containsExactlyInAnyOrder(
+				org.assertj.core.groups.Tuple.tuple("transfer-blocked", "STEP_FREE"),
+				org.assertj.core.groups.Tuple.tuple("transfer-blocked-stairs", "STAIR_ONLY"),
+				org.assertj.core.groups.Tuple.tuple("transfer-pass", "STEP_FREE"),
+				org.assertj.core.groups.Tuple.tuple("transfer-stairs", "STAIR_ONLY"),
+				org.assertj.core.groups.Tuple.tuple("transfer-unknown", "UNKNOWN"));
 
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
 		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
@@ -865,7 +880,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			for (var edge : edges) {
 				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
-					edge.serviceClass(), edge.includesStairs(), "VERIFIED_PRESENT", accessibilityStatus, 100, "official", "snapshot",
+					edge.serviceClass(), edge.includesStairs(), edge.stairAccessState(), accessibilityStatus, 100, "official", "snapshot",
 					"d".repeat(64), provenanceKind, verificationStatus, null, 1_786_485_600_000L,
 					"e".repeat(64));
 			}
@@ -1117,9 +1132,16 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 	private record Edge(
 		String id, String from, String to, int duration, int distance, String type, String pattern,
-		String serviceClass, int includesStairs) {
+		String serviceClass, int includesStairs, String stairAccessState) {
 		Edge(String id, String from, String to, int duration, int distance, String type, String pattern, String serviceClass) {
 			this(id, from, to, duration, distance, type, pattern, serviceClass, 0);
+		}
+
+		/** data 어휘의 확정 상태(계단이면 STAIR_ONLY, 아니면 STEP_FREE)를 둔다. */
+		Edge(String id, String from, String to, int duration, int distance, String type, String pattern, String serviceClass,
+			int includesStairs) {
+			this(id, from, to, duration, distance, type, pattern, serviceClass, includesStairs,
+				includesStairs == 1 ? "STAIR_ONLY" : "STEP_FREE");
 		}
 	}
 }

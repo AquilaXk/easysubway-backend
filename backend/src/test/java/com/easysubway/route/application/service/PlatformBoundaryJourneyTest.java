@@ -368,7 +368,7 @@ class PlatformBoundaryJourneyTest {
 	private static TransferFixture verifiedTransfer(int durationSeconds, int distanceMeters) {
 		return new TransferFixture(
 			List.of(new PathwayEdge("transfer", "platform-transfer-a", "platform-transfer-b",
-				durationSeconds, distanceMeters, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")),
+				durationSeconds, distanceMeters, false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")),
 			List.of(new RouteEdgeEvidence("transfer-evidence", "station-transfer", "line-b", "transfer", "TRANSFER",
 				"OFFICIAL_SOURCE", "VERIFIED", true, null)),
 			durationSeconds);
@@ -377,7 +377,7 @@ class PlatformBoundaryJourneyTest {
 	private static TransferFixture unverifiedTransfer() {
 		return new TransferFixture(
 			List.of(new PathwayEdge("transfer", "platform-transfer-a", "platform-transfer-b",
-				120, 100, false, false, 100, "AVAILABLE", "UNKNOWN", "UNKNOWN")),
+				120, 100, false, false, 100, "AVAILABLE", "UNKNOWN", "UNKNOWN").withStairAccessState("STEP_FREE")),
 			List.of(new RouteEdgeEvidence("transfer-evidence", "station-transfer", "line-b", "transfer", "TRANSFER",
 				"UNKNOWN", "UNKNOWN", true, null)),
 			120);
@@ -425,9 +425,9 @@ class PlatformBoundaryJourneyTest {
 		nodes.add(new PathwayNode("outside", "station-b", null, "EXIT"));
 		var edges = new ArrayList<>(access.pathwayEdges());
 		edges.add(new PathwayEdge("entry", "entrance", "platform-a", 240, 180, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		edges.add(new PathwayEdge("exit", "platform-b", "outside", 180, 120, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
 		var evidence = new ArrayList<>(access.routeEdgeEvidence());
 		evidence.add(new RouteEdgeEvidence("entry-evidence", "station-a", "line-a", "entry", "ENTRY",
 			"OFFICIAL_SOURCE", "VERIFIED", true, null));

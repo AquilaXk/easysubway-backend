@@ -373,7 +373,7 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 		}
 		var generatedEntry = new LoadRouteTimetablePort.PathwayEdge(
 			"blocked-entry", "blocked-entrance", "blocked-platform", 240, 180, false, false, 40,
-			"UNKNOWN", "GENERATED", "GENERATED");
+			"UNKNOWN", "GENERATED", "GENERATED").withStairAccessState("STEP_FREE");
 		edges.add(generatedEntry);
 		nodes.add(new LoadRouteTimetablePort.PathwayNode("blocked-entrance", "blocked-a", null, "ENTRANCE"));
 		nodes.add(new LoadRouteTimetablePort.PathwayNode("blocked-platform", "blocked-a", "lb", "PLATFORM"));
@@ -416,7 +416,7 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 		String key = station + "-" + fromLine + "-" + toLine;
 		var stairEdge = new LoadRouteTimetablePort.PathwayEdge(
 			key + "-stairs", key + "-stairs-from", key + "-stairs-to", 120, 80, false, true, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY");
 		var stepFreeEdge = verifiedEdge(key + "-step-free", 360, 260);
 		edges.add(stairEdge);
 		edges.add(stepFreeEdge);
@@ -433,7 +433,7 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 	private static LoadRouteTimetablePort.PathwayEdge verifiedEdge(String id, int duration, int distance) {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, id + "-from", id + "-to", duration, distance, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 	}
 	private static LoadRouteTimetablePort.RouteEdgeEvidence verifiedEvidence(
 		String id, String station, String line, String edgeId, String edgeType

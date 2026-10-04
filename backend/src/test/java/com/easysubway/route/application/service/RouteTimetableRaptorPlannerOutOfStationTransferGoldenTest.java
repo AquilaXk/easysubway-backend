@@ -210,7 +210,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 				JourneyRequest.ConstraintMode.NONE,
 				1, 2, () -> false);
 			// profile frontier는 환승 여유가 더 큰 대안도 남기므로 point 결과를 포함하는지 본다.
-			var pointItineraries = planner.journeyItineraries(pointQuery, compiled).itineraries();
+			var pointItineraries = projectionOnly(planner.journeyItineraries(pointQuery, compiled).itineraries());
 			assertThat(pointItineraries).isNotEmpty();
 			assertThat(point.itineraries()).containsAll(pointItineraries);
 		});
@@ -268,7 +268,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 			SERVICE_DATE.plusYears(1), SERVICE_DATE.plusYears(1).plusDays(7), "Asia/Seoul");
 		var otherLineEdge = new PathwayEdge(
 			"b3-c-out-transfer-edge", MID_OUT + ":l3", MID_IN + ":l2", 60, 40, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		List<TransferRule> rules = new ArrayList<>(access.transferRules());
 		rules.add(new TransferRule(
 			"b3-c-transfer-rule", MID_OUT, "l3", MID_IN, "l2", "OUT_OF_STATION",
@@ -370,7 +370,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 			.map(edge -> edge.id().equals("b-c-out-transfer-edge")
 				? new PathwayEdge(edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(),
 					edge.distanceMeters(), edge.bidirectional(), includesStairs, edge.reliabilityScore(),
-					edge.accessibilityStatus(), edge.provenanceKind(), edge.verificationStatus())
+					edge.accessibilityStatus(), edge.provenanceKind(), edge.verificationStatus()).withStairAccessState((includesStairs) ? "STAIR_ONLY" : "STEP_FREE")
 				: edge)
 			.toList();
 		return new RouteTimetable(
@@ -472,8 +472,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		String transferEdgeId = "b-c-out-transfer-edge";
 		var transferEdge = new PathwayEdge(
 			transferEdgeId, MID_OUT + ":l1", MID_IN + ":l2", 600, 400, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
-		);
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		edges.add(transferEdge);
 		evidence.add(new RouteEdgeEvidence(
 			"b-c-transfer-evidence", MID_IN, "l2", transferEdgeId, "TRANSFER",
@@ -517,10 +516,10 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		String key = station + "-" + line;
 		var entry = new PathwayEdge(
 			key + "-entry", key + "-entry-from", station + ":" + line, 180, 120, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		var exit = new PathwayEdge(
 			key + "-exit", station + ":" + line, key + "-exit-to", 180, 120, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
 		edges.add(entry);
 		edges.add(exit);
 		nodes.add(new PathwayNode(entry.fromNodeId(), station, null, "ENTRANCE"));
@@ -528,5 +527,14 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		nodes.add(new PathwayNode(exit.toNodeId(), station, null, "EXIT"));
 		evidence.add(new RouteEdgeEvidence(key + "-entry-evidence", station, line, entry.id(), "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null));
 		evidence.add(new RouteEdgeEvidence(key + "-exit-evidence", station, line, exit.id(), "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null));
+	}
+
+	/** #469: point 결과 구성 정보(대표 묶음·근거 없는 계단 없는 동선 여부)를 빼고 여정 투영만 비교한다. */
+	private static List<RouteTimetableRaptorPlanner.JourneyItinerary> projectionOnly(
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries
+	) {
+		return itineraries.stream().map(it -> new RouteTimetableRaptorPlanner.JourneyItinerary(it.serviceDate(),
+			it.plannedDepartureTime(), it.plannedArrivalTime(), it.realtimeDepartureTime(), it.realtimeArrivalTime(),
+			it.metrics(), it.legs(), it.persona(), null, false)).toList();
 	}
 }
