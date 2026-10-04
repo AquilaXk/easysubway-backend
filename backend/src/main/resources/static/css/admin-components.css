@@ -1656,7 +1656,7 @@ label.admin-radio input[type="radio"] {
 .login-field input,
 .login-submit {
 	width: 100%;
-	min-height: 44px;
+	min-height: 48px;
 }
 
 .login-field input {
