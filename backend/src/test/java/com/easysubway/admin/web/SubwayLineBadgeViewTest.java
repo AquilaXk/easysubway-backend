@@ -16,15 +16,45 @@ class SubwayLineBadgeViewTest {
 		assertThat(badge.name()).isEqualTo("4호선");
 		assertThat(badge.emblemText()).isEqualTo("4");
 		assertThat(badge.color()).isEqualTo("#00A5DE");
+
+		var badge2 = SubwayLineBadgeView.fromName("2호선");
+		assertThat(badge2.color()).isEqualTo("#00A84D");
+		assertThat(badge2.emblemText()).isEqualTo("2");
+
+		var badge9 = SubwayLineBadgeView.fromName("9호선");
+		assertThat(badge9.color()).isEqualTo("#BB8336");
 	}
 
 	@Test
 	@DisplayName("특수 노선명을 정규화하고 약칭 엠블럼을 반환한다")
 	void fromSpecialLine() {
-		var badge = SubwayLineBadgeView.fromName("수인분당선");
-		assertThat(badge.name()).isEqualTo("수인분당선");
-		assertThat(badge.emblemText()).isEqualTo("수인");
-		assertThat(badge.color()).isEqualTo("#F5A200");
+		var suin = SubwayLineBadgeView.fromName("수인분당선");
+		assertThat(suin.name()).isEqualTo("수인분당선");
+		assertThat(suin.emblemText()).isEqualTo("수인");
+		assertThat(suin.color()).isEqualTo("#F5A200");
+
+		var sinbundang = SubwayLineBadgeView.fromName("신분당선");
+		assertThat(sinbundang.emblemText()).isEqualTo("신분당");
+		assertThat(sinbundang.color()).isEqualTo("#D4003B");
+
+		var gyeongui = SubwayLineBadgeView.fromName("경의중앙선");
+		assertThat(gyeongui.emblemText()).isEqualTo("경의");
+
+		var airport = SubwayLineBadgeView.fromName("공항철도");
+		assertThat(airport.emblemText()).isEqualTo("공항");
+
+		var itx = SubwayLineBadgeView.fromName("ITX-청춘");
+		assertThat(itx.emblemText()).isEqualTo("ITX");
+
+		var gtx = SubwayLineBadgeView.fromName("GTX-A");
+		assertThat(gtx.emblemText()).isEqualTo("GTX");
+
+		var unknown = SubwayLineBadgeView.fromName("자가용");
+		assertThat(unknown.emblemText()).isEqualTo("자가");
+		assertThat(unknown.color()).isEqualTo("#5C6BC0");
+
+		var shortName = SubwayLineBadgeView.fromName("경전철");
+		assertThat(shortName.emblemText()).isEqualTo("경전");
 	}
 
 	@Test
@@ -37,6 +67,8 @@ class SubwayLineBadgeViewTest {
 		assertThat(badges.get(2).name()).isEqualTo("수인분당선");
 
 		assertThat(SubwayLineBadgeView.fromCommaSeparated(null)).isEmpty();
+		assertThat(SubwayLineBadgeView.fromCommaSeparated("")).isEmpty();
+		assertThat(SubwayLineBadgeView.fromCommaSeparated("   ")).isEmpty();
 		assertThat(SubwayLineBadgeView.fromCommaSeparated("—")).isEmpty();
 	}
 
@@ -50,7 +82,12 @@ class SubwayLineBadgeViewTest {
 		assertThat(badge.emblemText()).isEqualTo("4");
 		assertThat(badge.color()).isEqualTo("#00A5DE");
 
+		SubwayLine emptyColorLine = new SubwayLine("line-2", "op-seoul", "2호선", "", "수도권", null, true);
+		var badgeEmptyColor = SubwayLineBadgeView.from(emptyColorLine);
+		assertThat(badgeEmptyColor.color()).isEqualTo("#00A84D");
+
 		assertThat(SubwayLineBadgeView.from(null).name()).isEqualTo("—");
 		assertThat(SubwayLineBadgeView.fromName(null).name()).isEqualTo("—");
+		assertThat(SubwayLineBadgeView.cleanLineName(null)).isEmpty();
 	}
 }
