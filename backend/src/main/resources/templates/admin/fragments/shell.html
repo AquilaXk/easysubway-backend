@@ -309,7 +309,7 @@
 	<span class="metro-line-name" th:text="${badge.name}">4호선</span>
 </span>
 <span th:fragment="lineBadgesFromNames(lineNames)" class="metro-line-list"
-      th:with="badgeList=${T(com.easysubway.transit.adapter.in.web.SubwayLineBadgeView).fromCommaSeparated(lineNames)}">
+      th:with="badgeList=${T(com.easysubway.admin.web.SubwayLineBadgeView).fromCommaSeparated(lineNames)}">
 	<th:block th:if="${!badgeList.isEmpty()}">
 		<span th:each="b : ${badgeList}" class="metro-line-badge" th:style="|--line-color: ${b.color};|">
 			<span class="metro-line-emblem" th:text="${b.emblemText}">4</span>

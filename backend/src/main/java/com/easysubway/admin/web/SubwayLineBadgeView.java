@@ -1,4 +1,4 @@
-package com.easysubway.transit.adapter.in.web;
+package com.easysubway.admin.web;
 
 import com.easysubway.transit.domain.SubwayLine;
 import java.util.ArrayList;
