@@ -65,12 +65,16 @@ public class AdminMasterLabelResolver {
 		return labels;
 	}
 
-	/** "이름(코드)". 이름이 비면 코드만, 코드도 없으면 빈 문자열. */
+	/**
+	 * 인간 친화적 명칭 우선 표기(#1737 개선).
+	 * 운영자가 직관적으로 인지할 수 있도록 이름이 있으면 이름을 반환하고,
+	 * 마스터에 없는 미확인 코드일 때만 코드 그대로 fallback한다.
+	 */
 	public static String label(String name, String code) {
-		if (name == null || name.isBlank()) {
-			return code == null ? "" : code;
+		if (name != null && !name.isBlank()) {
+			return name.trim();
 		}
-		return name + "(" + code + ")";
+		return code == null ? "" : code;
 	}
 
 	private Set<String> normalize(Collection<String> ids) {

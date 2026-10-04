@@ -497,6 +497,10 @@ class TransitStationAdminPageController {
 		long attentionFacilityCount
 	) {
 
+		public List<SubwayLineBadgeView> lineBadges() {
+			return SubwayLineBadgeView.fromCommaSeparated(lineNames);
+		}
+
 		static StationRow from(
 			StationWithLines stationWithLines,
 			StationMasterDataCounts counts,
@@ -537,6 +541,10 @@ class TransitStationAdminPageController {
 		String sourceType,
 		String lastVerifiedAt
 	) {
+
+		public List<SubwayLineBadgeView> lineBadges() {
+			return SubwayLineBadgeView.fromCommaSeparated(lineNames);
+		}
 
 		static StationDetail from(StationWithLines stationWithLines) {
 			return new StationDetail(

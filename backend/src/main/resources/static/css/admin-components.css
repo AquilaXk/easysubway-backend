@@ -290,6 +290,49 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* 지하철 공인 노선 뱃지 */
+.metro-line-list {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.metro-line-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 8px 2px 3px;
+	border-radius: 999px;
+	background: var(--admin-header-bg);
+	border: 1px solid var(--admin-border);
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
+	line-height: 1.4;
+	white-space: nowrap;
+}
+
+.metro-line-emblem {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 4px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--admin-surface);
+	background-color: var(--line-color, var(--admin-accent));
+	line-height: 1;
+}
+
+.metro-line-name {
+	font-size: 12px;
+	color: var(--admin-ink);
+}
+
 .station-line-pill {
 	display: inline-flex;
 	align-items: center;
@@ -313,6 +356,64 @@
 	background: var(--admin-bg);
 	border: 1px solid var(--admin-border);
 	white-space: nowrap;
+}
+
+/* 역 목록 복합 메트릭 태그 칩 (출구/시설/자료, 노드/간선) */
+.station-metrics-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: nowrap;
+}
+
+.station-metric-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--admin-bg);
+	border: 1px solid var(--admin-border);
+	font-size: 11px;
+	white-space: nowrap;
+	transition: background-color 0.15s ease;
+}
+
+.station-metric-chip .metric-tag {
+	color: var(--admin-ink-3);
+	font-size: 11px;
+	font-weight: var(--admin-w-body);
+}
+
+.station-metric-chip strong {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	font-variant-numeric: tabular-nums;
+}
+
+.station-metric-chip.has-count strong {
+	color: var(--admin-ink);
+}
+
+.station-metric-chip.is-empty {
+	opacity: 0.45;
+}
+
+.station-metric-chip.is-empty strong {
+	color: var(--admin-ink-3);
+}
+
+.station-metric-chip.highlight.has-count {
+	background: var(--admin-accent-soft);
+	border-color: color-mix(in srgb, var(--admin-accent) 30%, transparent);
+}
+
+.station-metric-chip.highlight.has-count .metric-tag {
+	color: var(--admin-accent-ink);
+}
+
+.station-metric-chip.highlight.has-count strong {
+	color: var(--admin-accent-ink);
 }
 
 .report-metrics-panel {
@@ -967,16 +1068,134 @@
 
 /* 신고 사진 썸네일(#1740): 목록에서 첨부 미리보기, 클릭 시 원본으로 이동 */
 .admin-v3 .report-thumb {
-	display: inline-block;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border-radius: 6px;
+	border: 1px solid var(--admin-border);
+	background: var(--admin-header-bg);
+	overflow: hidden;
 	line-height: 0;
+	text-decoration: none;
+	position: relative;
+}
+
+.admin-v3 .report-thumb::before {
+	content: "📷";
+	position: absolute;
+	font-size: 14px;
+	opacity: 0.6;
+	pointer-events: none;
 }
 
 .admin-v3 .report-thumb img {
-	width: 48px;
-	height: 48px;
+	width: 100%;
+	height: 100%;
 	object-fit: cover;
-	border-radius: 6px;
+	position: relative;
+	z-index: 1;
+	transition: transform 0.15s ease;
+}
+
+.admin-v3 .report-thumb:hover img {
+	transform: scale(1.1);
+}
+
+/* 신고 목록 위치/역/시설/내용 B2B 스타일 */
+.admin-v3 .report-table th,
+.admin-v3 .report-table td {
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.coordinate-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 7px;
+	border-radius: 4px;
+	background: var(--admin-bg);
 	border: 1px solid var(--admin-border);
+	font-size: 11px;
+	color: var(--admin-ink-2);
+	white-space: nowrap;
+	cursor: default;
+}
+
+.coordinate-badge .pin-icon {
+	font-size: 11px;
+	line-height: 1;
+}
+
+.photo-badge-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 7px;
+	border-radius: 4px;
+	background: var(--admin-bg);
+	border: 1px solid var(--admin-border);
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
+	text-decoration: none;
+	white-space: nowrap;
+	transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.photo-badge-link:hover {
+	background: var(--admin-accent-soft);
+	border-color: var(--admin-accent);
+	color: var(--admin-accent-ink);
+}
+
+.photo-badge-link .camera-icon {
+	font-size: 11px;
+	line-height: 1;
+}
+
+.photo-fallback-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 7px;
+	border-radius: 4px;
+	background: var(--admin-bg);
+	border: 1px solid var(--admin-border);
+	font-size: 11px;
+	color: var(--admin-ink-2);
+	white-space: nowrap;
+}
+
+.report-station-link {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+
+.report-station-link:hover {
+	color: var(--admin-primary);
+	text-decoration: underline;
+}
+
+.report-facility-name {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-medium);
+	white-space: nowrap;
+}
+
+.report-desc-cell {
+	max-width: 280px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--admin-ink);
 }
 
 /* 키보드로 이동한 행 강조(#1740): 상세 링크에 포커스가 들어오면 행 전체를 표시 */

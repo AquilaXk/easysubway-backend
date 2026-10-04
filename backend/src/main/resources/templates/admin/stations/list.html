@@ -124,24 +124,39 @@
 						         ${station.qualityLabel == '고장·공사 반영' ? 'good' : 'info'})}">정보 확인 중</span>
 					</td>
 					<td>
-						<span class="station-line-pill" th:text="${station.lineNames}">4호선</span>
+						<span th:replace="~{admin/fragments/shell :: lineBadgesFromNames(${station.lineNames})}"></span>
 					</td>
 					<td>
 						<span class="station-region-pill" th:text="${station.region}">수도권</span>
 					</td>
 					<td class="cell-num">
-						<span class="admin-metric-split" th:if="${station.exitCount > 0 or station.facilityCount > 0 or station.layoutSourceCount > 0}">
-							<span class="admin-split-item" th:classappend="${station.exitCount > 0 ? ' is-positive' : ' is-zero'}" title="출구 수"><span class="admin-split-label">출구</span><strong th:text="${station.exitCount}">0</strong></span>
-							<span class="admin-split-item" th:classappend="${station.facilityCount > 0 ? ' is-positive' : ' is-zero'}" title="시설 수"><span class="admin-split-label">시설</span><strong th:text="${station.facilityCount}">0</strong></span>
-							<span class="admin-split-item" th:classappend="${station.layoutSourceCount > 0 ? ' is-positive' : ' is-zero'}" title="자료 수"><span class="admin-split-label">자료</span><strong th:text="${station.layoutSourceCount}">0</strong></span>
-						</span>
+						<div class="station-metrics-group" th:if="${station.exitCount > 0 or station.facilityCount > 0 or station.layoutSourceCount > 0}">
+							<span class="station-metric-chip" th:classappend="${station.exitCount > 0} ? 'has-count' : 'is-empty'" title="출구 수">
+								<span class="metric-tag">출구</span>
+								<strong th:text="${station.exitCount}">0</strong>
+							</span>
+							<span class="station-metric-chip highlight" th:classappend="${station.facilityCount > 0} ? 'has-count' : 'is-empty'" title="교통약자 시설 수">
+								<span class="metric-tag">시설</span>
+								<strong th:text="${station.facilityCount}">0</strong>
+							</span>
+							<span class="station-metric-chip" th:classappend="${station.layoutSourceCount > 0} ? 'has-count' : 'is-empty'" title="도면/자료 수">
+								<span class="metric-tag">자료</span>
+								<strong th:text="${station.layoutSourceCount}">0</strong>
+							</span>
+						</div>
 						<span th:unless="${station.exitCount > 0 or station.facilityCount > 0 or station.layoutSourceCount > 0}" class="meta">—</span>
 					</td>
 					<td class="cell-num">
-						<span class="admin-metric-split" th:if="${station.routeNodeCount > 0 or station.routeEdgeCount > 0}">
-							<span class="admin-split-item" th:classappend="${station.routeNodeCount > 0 ? ' is-positive' : ' is-zero'}" title="노드 수"><span class="admin-split-label">노드</span><strong th:text="${station.routeNodeCount}">0</strong></span>
-							<span class="admin-split-item" th:classappend="${station.routeEdgeCount > 0 ? ' is-positive' : ' is-zero'}" title="간선 수"><span class="admin-split-label">간선</span><strong th:text="${station.routeEdgeCount}">0</strong></span>
-						</span>
+						<div class="station-metrics-group" th:if="${station.routeNodeCount > 0 or station.routeEdgeCount > 0}">
+							<span class="station-metric-chip" th:classappend="${station.routeNodeCount > 0} ? 'has-count' : 'is-empty'" title="이동 경로 노드 수">
+								<span class="metric-tag">노드</span>
+								<strong th:text="${station.routeNodeCount}">0</strong>
+							</span>
+							<span class="station-metric-chip" th:classappend="${station.routeEdgeCount > 0} ? 'has-count' : 'is-empty'" title="이동 경로 간선 수">
+								<span class="metric-tag">간선</span>
+								<strong th:text="${station.routeEdgeCount}">0</strong>
+							</span>
+						</div>
 						<span th:unless="${station.routeNodeCount > 0 or station.routeEdgeCount > 0}" class="meta">—</span>
 					</td>
 					<td>

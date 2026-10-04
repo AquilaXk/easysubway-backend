@@ -24,7 +24,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 class AdminSearchServiceTest {
 
 	@Test
-	@DisplayName("역 검색은 이름(코드)와 역 상세 링크를 준다")
+	@DisplayName("역 검색은 이름과 역 상세 링크를 준다")
 	void stationSearchReturnsNameCodeAndDetailLink() {
 		TransitMasterQueryUseCase transitQuery = mock(TransitMasterQueryUseCase.class);
 		when(transitQuery.searchStations(any()))
@@ -37,7 +37,7 @@ class AdminSearchServiceTest {
 			.filteredOn(group -> group.type().equals("station"))
 			.singleElement()
 			.satisfies(group -> assertThat(group.hits()).singleElement().satisfies(hit -> {
-				assertThat(hit.label()).isEqualTo("상록수(station-sangnoksu)");
+				assertThat(hit.label()).isEqualTo("상록수");
 				assertThat(hit.href()).isEqualTo("/admin/stations/station-sangnoksu/page");
 			}));
 	}

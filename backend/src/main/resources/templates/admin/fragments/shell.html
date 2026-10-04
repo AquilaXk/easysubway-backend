@@ -303,5 +303,20 @@
         (#lists.contains({'실패','오류','고장','폐쇄','반려됨','차단','중단','OPEN','FAIL','FAILED','ERROR'}, label) ? ' bad' :
         (#lists.contains({'접수됨','진행 중','실행 중','대기','확인 중','확인 필요','공사 중','미확인','사용자 제보','엘리베이터 미확인','PENDING','RUNNING'}, label) ? ' warn' : '')))}"
       th:text="${label}">상태</span>
+<span th:fragment="lineBadge(badge)" class="metro-line-badge"
+      th:style="|--line-color: ${badge.color};|">
+	<span class="metro-line-emblem" th:text="${badge.emblemText}">4</span>
+	<span class="metro-line-name" th:text="${badge.name}">4호선</span>
+</span>
+<span th:fragment="lineBadgesFromNames(lineNames)" class="metro-line-list"
+      th:with="badgeList=${T(com.easysubway.transit.adapter.in.web.SubwayLineBadgeView).fromCommaSeparated(lineNames)}">
+	<th:block th:if="${!badgeList.isEmpty()}">
+		<span th:each="b : ${badgeList}" class="metro-line-badge" th:style="|--line-color: ${b.color};|">
+			<span class="metro-line-emblem" th:text="${b.emblemText}">4</span>
+			<span class="metro-line-name" th:text="${b.name}">4호선</span>
+		</span>
+	</th:block>
+	<span th:if="${badgeList.isEmpty()}" class="meta">—</span>
+</span>
 </body>
 </html>
