@@ -48,7 +48,7 @@ class JourneyEngineRandomizedDifferentialTest {
 	static final int LINE4_QUERIES = 240;
 	/** #469 표준·느린 걸음 전용 point 질의 수(번들당). */
 	static final int STAIR_ALTERNATIVE_QUERIES_PER_BUNDLE = 20;
-	/** #469 표준·느린 걸음 각각 계단 없는 대안이 남은 point 질의 최소 수(150 번들 실측 표준 29·느린 걸음 36의 절반 안쪽). */
+	/** #469 표준·느린 걸음 각각 계단 없는 대안이 남은 point 질의 최소 수(150 번들 실측 표준 37·느린 걸음 47의 절반 안쪽, #469 리뷰 F3 생성기 기준). */
 	static final int STAIR_FREE_ALTERNATIVE_MINIMUM = 14;
 	private static final int REPORTED_COUNTEREXAMPLES = 3;
 
@@ -126,8 +126,8 @@ class JourneyEngineRandomizedDifferentialTest {
 
 	/**
 	 * #469: 표준·느린 걸음(제약 없음)의 출발 시각 고정 질의만 모아 비교한다. 혼합 무작위 질의에서는 계단 없는 대안
-	 * 동선이 결과를 바꾸는 경우가 드물어(번들 150개 질의 3,000건 중 표준·느린 걸음 4건), 이 차원이 실제로 비교되도록
-	 * 따로 돌린다(같은 번들 3,000건에서 표준 29건·느린 걸음 36건).
+	 * 동선이 결과를 바꾸는 경우가 드물어(번들 150개 질의 3,000건 중 표준·느린 걸음 7건), 이 차원이 실제로 비교되도록
+	 * 따로 돌린다(같은 번들 3,000건에서 표준 37건·느린 걸음 47건).
 	 */
 	@Test
 	@DisplayName("표준·느린 걸음 출발 시각 고정 질의에서 계단 없는 대안까지 기준 해와 정확히 같다(#469)")
