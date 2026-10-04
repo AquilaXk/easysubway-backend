@@ -24,20 +24,22 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 40px;
-	padding: 0 14px;
-	border: 1px solid var(--admin-border-strong);
+	min-height: 36px;
+	padding: 0 12px;
+	border: 1px solid var(--admin-border);
 	background: var(--admin-surface);
 	color: var(--admin-ink);
 	font-size: var(--admin-fs-control);
-	font-weight: var(--admin-w-strong);
+	font-weight: var(--admin-w-medium);
 	cursor: pointer;
 	text-decoration: none;
+	transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .admin-btn:hover,
 .admin-v3 button:hover {
-	background: var(--admin-accent-soft);
+	background: var(--admin-bg);
+	border-color: var(--admin-border-strong);
 }
 
 /* primary — 화면(폼)당 대표 제출 액션 1개 */
@@ -46,11 +48,13 @@
 	border-color: var(--admin-primary);
 	background: var(--admin-primary);
 	color: var(--admin-on-primary);
+	font-weight: var(--admin-w-strong);
 }
 
 .admin-btn.primary:hover,
 .admin-v3 button.primary:hover {
 	background: var(--admin-primary-hover);
+	border-color: var(--admin-primary-hover);
 }
 
 /* secondary — 일반 버튼 기본값·검색·필터·보조 제출 */
@@ -59,7 +63,7 @@
 .admin-btn.outline,
 .admin-v3 button.outline {
 	background: var(--admin-surface);
-	border: 1px solid var(--admin-border-strong);
+	border: 1px solid var(--admin-border);
 	color: var(--admin-ink);
 }
 
@@ -67,7 +71,8 @@
 .admin-v3 button.secondary:hover,
 .admin-btn.outline:hover,
 .admin-v3 button.outline:hover {
-	background: var(--admin-accent-soft);
+	background: var(--admin-bg);
+	border-color: var(--admin-border-strong);
 }
 
 /* tertiary — 닫기·아이콘·내비게이션성 텍스트 버튼 */
@@ -244,25 +249,26 @@
 .admin-metric-split {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	flex-wrap: wrap;
+	gap: 6px;
+	flex-wrap: nowrap;
 }
 
 .admin-split-item {
 	display: inline-flex;
 	align-items: baseline;
 	gap: 3px;
-	padding: 2px 7px;
-	background: var(--admin-bg);
-	border: 1px solid var(--admin-border);
-	border-radius: var(--admin-radius-badge);
+	padding: 0;
+	background: transparent;
+	border: 0;
+	border-radius: 0;
 	font-size: var(--admin-fs-meta);
 	white-space: nowrap;
 }
 
-.admin-split-item.is-positive {
-	background: var(--admin-surface);
-	border-color: var(--admin-border-strong);
+.admin-split-item + .admin-split-item::before {
+	content: "·";
+	margin-right: 3px;
+	color: var(--admin-ink-3);
 }
 
 .admin-split-item.is-positive strong {
@@ -270,7 +276,7 @@
 }
 
 .admin-split-item.is-zero {
-	opacity: 0.6;
+	opacity: 0.5;
 }
 
 .admin-split-label {
@@ -313,10 +319,24 @@
 	margin-bottom: 16px;
 	padding: 0;
 	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+@media (min-width: 769px) {
+	.report-metrics-panel {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+	}
+
+	.admin-v3 .report-metrics-panel .surge-alert + .processing-time {
+		border-top: 0;
+		border-left: 1px solid var(--admin-border);
+	}
 }
 
 .report-metrics-panel > section {
-	padding: 10px 18px;
+	padding: 12px 20px;
 }
 
 .admin-table-scroll th:first-child,
@@ -766,32 +786,52 @@
 	color: var(--admin-ink);
 }
 
-/* 저장된 뷰(#1737) */
+/* 저장된 뷰(#1737) — 슬림 인라인 마이크로 바 */
 .admin-v3 .saved-views {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 10px;
+	gap: 8px;
 	align-items: center;
 	margin-bottom: 12px;
+	padding: 0 4px;
+	font-size: 13px;
 }
 
 .admin-v3 .saved-view-list {
-	display: flex;
+	display: inline-flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 6px;
+	align-items: center;
 }
 
 .admin-v3 .saved-view {
 	display: inline-flex;
 	align-items: center;
-	gap: 2px;
-	border: 1px solid var(--admin-border);
-	border-radius: 6px;
-	padding: 0 4px 0 10px;
+	gap: 4px;
+	border: 0;
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-bg);
+	padding: 2px 6px 2px 10px;
+	font-size: 12px;
+	transition: background-color 0.15s ease;
+}
+
+.admin-v3 .saved-view:hover {
+	background: var(--admin-accent-soft);
+}
+
+.admin-v3 .saved-view a {
+	color: var(--admin-ink-2);
+	text-decoration: none;
+}
+
+.admin-v3 .saved-view a:hover {
+	color: var(--admin-ink);
 }
 
 .admin-v3 .saved-view a.is-default {
-	font-weight: 700;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
 }
 
 .admin-v3 .saved-view form {
@@ -800,11 +840,21 @@
 }
 
 .admin-v3 .saved-view button {
+	min-height: 20px;
+	height: 20px;
 	border: 0;
 	background: transparent;
 	cursor: pointer;
-	padding: 2px 4px;
-	color: var(--admin-ink-2);
+	padding: 0 4px;
+	color: var(--admin-ink-3);
+	font-size: 11px;
+	line-height: 1;
+	border-radius: 4px;
+}
+
+.admin-v3 .saved-view button:hover {
+	color: var(--admin-ink);
+	background: rgba(0, 0, 0, 0.05);
 }
 
 .admin-v3 .save-view {
@@ -812,6 +862,54 @@
 	gap: 6px;
 	align-items: center;
 	margin: 0;
+	margin-left: auto;
+}
+
+.admin-v3 .save-view input[type="text"] {
+	min-height: 28px;
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	font-size: 12px;
+	color: var(--admin-ink);
+	width: 140px;
+	transition: border-color 0.15s ease;
+}
+
+.admin-v3 .save-view input[type="text"]:focus {
+	border-color: var(--admin-primary);
+	outline: none;
+}
+
+.admin-v3 .save-view .save-view-default {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--admin-ink-2);
+	cursor: pointer;
+	user-select: none;
+}
+
+.admin-v3 .save-view button[type="submit"] {
+	min-height: 28px;
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	border-radius: var(--admin-radius-control);
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-v3 .save-view button[type="submit"]:hover {
+	background: var(--admin-bg);
+	color: var(--admin-ink);
 }
 
 /* 표준 빈 상태(#1737) — 텍스트 중심, 과장 박스 금지 */
@@ -1483,7 +1581,7 @@ label.admin-radio input[type="radio"] {
 	min-height: 100vh;
 	min-height: 100dvh;
 	padding: 32px 18px;
-	background: var(--admin-bg);
+	background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--admin-sidebar-accent) 12%, transparent), transparent 70%), var(--admin-bg);
 }
 
 .login-card {
@@ -1499,7 +1597,7 @@ label.admin-radio input[type="radio"] {
 	display: grid;
 	justify-items: center;
 	text-align: center;
-	gap: 10px;
+	gap: 8px;
 	color: var(--admin-ink);
 }
 
@@ -1512,25 +1610,25 @@ label.admin-radio input[type="radio"] {
 }
 
 .login-brand strong {
-	font-size: 15px;
+	font-size: 14px;
 	font-weight: var(--admin-w-strong);
 	letter-spacing: -0.02em;
-	color: var(--admin-ink);
+	color: var(--admin-ink-2);
 }
 
 .login-card h1 {
-	margin: 12px 0 20px;
-	font-size: 20px;
+	margin: 8px 0 20px;
+	font-size: 22px;
 	font-weight: var(--admin-w-title);
 	line-height: 1.25;
-	letter-spacing: -0.02em;
+	letter-spacing: -0.03em;
 	text-align: center;
 	color: var(--admin-ink);
 }
 
 .login-field {
 	display: grid;
-	gap: 7px;
+	gap: 6px;
 	margin-top: 16px;
 }
 
@@ -1558,7 +1656,7 @@ label.admin-radio input[type="radio"] {
 .login-field input,
 .login-submit {
 	width: 100%;
-	min-height: 48px;
+	min-height: 44px;
 }
 
 .login-field input {
@@ -1609,12 +1707,15 @@ label.admin-radio input[type="radio"] {
 	justify-content: center;
 	gap: 8px;
 	width: 100%;
-	min-height: 48px;
+	min-height: 44px;
 	margin-top: 22px;
 	font-size: 15px;
 	font-weight: var(--admin-w-strong);
 	letter-spacing: -0.01em;
 	border-radius: var(--admin-radius-control);
+	background: var(--admin-primary);
+	border: 1px solid var(--admin-primary);
+	color: var(--admin-on-primary);
 	transition: background-color 0.15s ease, transform 0.1s ease;
 }
 
@@ -1807,8 +1908,7 @@ label.admin-radio input[type="radio"] {
 	margin-bottom: 20px;
 }
 
-.admin-v3 .status-filter a,
-.admin-v3 .pagination a {
+.admin-v3 .status-filter a {
 	display: inline-flex;
 	align-items: center;
 	min-height: 38px;
@@ -1822,12 +1922,40 @@ label.admin-radio input[type="radio"] {
 	text-decoration: none;
 }
 
-.admin-v3 .status-filter a[aria-current="page"],
-.admin-v3 .pagination a[aria-current="page"],
-.admin-v3 .pagination a.is-active {
+.admin-v3 .status-filter a[aria-current="page"] {
 	border-color: var(--admin-primary);
 	background: var(--admin-primary);
 	color: var(--admin-on-primary);
+}
+
+.admin-v3 .pagination a {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 32px;
+	min-width: 32px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--admin-radius-control);
+	background: transparent;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-v3 .pagination a:hover {
+	background: var(--admin-bg);
+	color: var(--admin-ink);
+}
+
+.admin-v3 .pagination a[aria-current="page"],
+.admin-v3 .pagination a.is-active {
+	border: 0;
+	background: var(--admin-primary);
+	color: var(--admin-on-primary);
+	font-weight: var(--admin-w-strong);
 }
 
 .admin-v3 .pagination {
@@ -1867,15 +1995,16 @@ label.admin-radio input[type="radio"] {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 38px;
-	padding: 0 14px;
-	border: 1px solid var(--admin-border);
+	min-height: 32px;
+	min-width: 32px;
+	padding: 0 10px;
+	border: 0;
 	border-radius: var(--admin-radius-control);
-	background: var(--admin-bg);
+	background: transparent;
 	color: var(--admin-ink-3);
-	font-size: 14px;
-	font-weight: var(--admin-w-medium);
+	font-size: 13px;
 	cursor: not-allowed;
+	user-select: none;
 	opacity: 0.6;
 }
 
