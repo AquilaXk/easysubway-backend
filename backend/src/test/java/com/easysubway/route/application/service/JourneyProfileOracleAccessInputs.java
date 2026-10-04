@@ -88,12 +88,40 @@ final class JourneyProfileOracleAccessInputs {
 			&& edge.id().equals(item.edgeId()) && rule.toStationId().equals(item.stationId()) && rule.toLineId().equals(item.lineId()), "transfer evidence");
 		Direction direction = directionBetween(edge, nodes, rule.fromStationId(), rule.fromLineId(), rule.toStationId(), rule.toLineId());
 		boolean strict = strictPath && edge.id().equals(rule.strictStepFreePathwayEdgeId()) && strictEligible(edge, destination, constraint)
-			&& !edge.includesStairs();
+			&& stepFreeConfirmed(edge);
 		result.add(access(JourneyProfileExactOracle.AccessKind.TRANSFER, destination.id(), rule.id(), edge, direction,
 			rule.fromStationId(), rule.fromLineId(), rule.toStationId(), rule.toLineId(), transferSeconds(edge, speed, profile),
-			edge.distanceMeters(), edge.includesStairs() ? 1 : 0,
+			edge.distanceMeters(), stepFreeConfirmed(edge) ? 0 : 1,
 			verified(edge, destination) && "VERIFIED".equals(rule.verificationStatus()),
 			allowed(edge, constraint, strict) && !blockedEdgeIds.contains(edge.id())));
+	}
+
+	/**
+	 * #469 F3(#480): 원천 필드만으로 정한 계단 없음 확정. 계단 플래그가 없고 원천 계단 상태가 STEP_FREE일 때만 참이다.
+	 * UNKNOWN·필드 없음·STAIR_ONLY·계단 플래그는 모두 계단 부담 1이고 엄격 무단차에 쓸 수 없다. 엔진 코드를 쓰지 않는다.
+	 */
+	static boolean stepFreeConfirmed(LoadRouteTimetablePort.PathwayEdge edge) {
+		return !edge.includesStairs() && "STEP_FREE".equals(edge.stairAccessState());
+	}
+
+	/** #469 F3: 계단 확정(계단 플래그 또는 STAIR_ONLY). 확정도 계단 없음 확정도 아니면 미확정이다. */
+	static boolean stairsConfirmed(LoadRouteTimetablePort.PathwayEdge edge) {
+		return edge.includesStairs() || "STAIR_ONLY".equals(edge.stairAccessState());
+	}
+
+	/** {@code encode}로 만든 접근 id에서 동선 edge id를 꺼낸다(필드 순서: 종류, evidence, 규칙, edge, 방향). */
+	static String edgeId(JourneyProfileExactOracle.Access access) {
+		String value = access.id();
+		List<String> parts = new ArrayList<>();
+		int index = 0;
+		while (index < value.length()) {
+			int colon = value.indexOf(':', index);
+			int length = Integer.parseInt(value.substring(index, colon));
+			parts.add(value.substring(colon + 1, colon + 1 + length));
+			index = colon + 1 + length;
+		}
+		if (parts.size() != 5) throw unavailable("access id");
+		return parts.get(3);
 	}
 
 	private static boolean allowed(LoadRouteTimetablePort.PathwayEdge edge, ConstraintMode constraint, boolean strict) {

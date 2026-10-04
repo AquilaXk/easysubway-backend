@@ -206,9 +206,10 @@ final class JourneyEngineDifferentialHarness {
 			: new JourneyProfileExactOracle().solvePoint(oracleQuery(query, readyAt, deadline),
 				window(rides, readyAt, deadline), accesses);
 
-		List<JourneyProfileRaptorPort.Itinerary> actual = engine(() -> new RouteTimetableRaptorPlanner()
-			.journeyItineraries(query, runtime.compiledTimetable()).itineraries().stream()
-			.map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList());
+		RouteTimetableRaptorPlanner.JourneyPlan plan = engine(() -> new RouteTimetableRaptorPlanner()
+			.journeyItineraries(query, runtime.compiledTimetable()));
+		List<JourneyProfileRaptorPort.Itinerary> actual = plan.itineraries().stream()
+			.map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList();
 
 		List<String> problems = new ArrayList<>();
 		for (JourneyProfileRaptorPort.Itinerary itinerary : actual) {
@@ -221,15 +222,127 @@ final class JourneyEngineDifferentialHarness {
 		int limit = query.alternativeCount();
 		if (actual.size() > limit) problems.add("engine returned " + actual.size() + " journeys over alternativeCount " + limit);
 		if (new TreeSet<>(actualKeys).size() != actualKeys.size()) problems.add("duplicate engine key " + actualKeys);
-		TreeSet<String> selected = keys(compose(front, limit, mobility.prefersStepFree()));
+		List<long[]> kept = compose(front, limit, mobility.prefersStepFree());
+		TreeSet<String> selected = keys(kept);
 		if (!selected.equals(new TreeSet<>(actualKeys))) {
 			problems.add((front.size() > limit ? "composed point front differs: full front " + keys(front) + ", " : "point front differs: ")
 				+ "expected " + selected + " actual " + new TreeSet<>(actualKeys));
+		} else {
+			// #469 F3: 키가 같으면 여정마다 대표 묶음과 검색 결과의 계단 없는 경로 status도 같아야 한다.
+			Map<String, TreeSet<String>> expectedCategories = categories(front, kept, mobility.prefersStepFree());
+			for (int index = 0; index < actual.size(); index += 1) {
+				TreeSet<String> actualCategories = new TreeSet<>();
+				plan.itineraries().get(index).alternativeCategories().forEach(category -> actualCategories.add(category.name()));
+				TreeSet<String> expectedForKey = expectedCategories.get(actualKeys.get(index));
+				if (!actualCategories.equals(expectedForKey)) {
+					problems.add("categories differ for " + actualKeys.get(index) + ": expected " + expectedForKey
+						+ " actual " + actualCategories);
+				}
+			}
+			String expectedStatus = actual.isEmpty() ? null
+				: stairFreeStatus(front, kept, actual, rides, accesses(source, query), source.routeAccessData(),
+					mobility.boardingSlackSeconds());
+			String actualStatus = plan.stairFreeStatus() == null ? null : plan.stairFreeStatus().name();
+			if (!Objects.equals(expectedStatus, actualStatus)) {
+				problems.add("stairFreeAlternative.status differs: expected " + expectedStatus + " actual " + actualStatus);
+			}
 		}
 		// 계단 경고 차원이 없었다면 지배되었을 계단 없는 키가 있는지(새 차원이 실제로 결과를 바꾼 질의).
 		boolean stairFreeAlternative = warningDimension && front.size() > pointFront(expected, false).size();
 		return verdict(testCase, problems, front.size(), actual.size(), expected)
 			.withPointFront(front.size() > limit, stairFreeAlternative);
+	}
+
+	/**
+	 * 제품 계약(#469 F3): 고른 키마다 대표 묶음. 빠른 경로 = (도착, 승차 수, 계단) 최소, 환승 적은 경로 = (승차 수, 도착,
+	 * 계단) 최소, 계단 없는 경로 = 계단 경고 없는 키 중 (도착, 승차 수) 최소. 파레토 키 전체에서 정하고 고른 키에만 붙는다.
+	 */
+	static Map<String, TreeSet<String>> categories(List<long[]> front, List<long[]> kept, boolean prefersStepFree) {
+		Comparator<long[]> byArrival = Comparator.<long[]>comparingLong(key -> key[0])
+			.thenComparingLong(key -> key[1]).thenComparingLong(key -> key[2]);
+		Comparator<long[]> byTransfers = Comparator.<long[]>comparingLong(key -> key[1])
+			.thenComparingLong(key -> key[0]).thenComparingLong(key -> key[2]);
+		long[] fastest = front.stream().min(byArrival).orElse(null);
+		long[] fewest = front.stream().min(byTransfers).orElse(null);
+		long[] stairFree = front.stream().filter(key -> key[2] == 0).min(byArrival).orElse(null);
+		Map<String, TreeSet<String>> result = new LinkedHashMap<>();
+		for (long[] key : kept) {
+			TreeSet<String> roles = new TreeSet<>();
+			if (key == fastest) roles.add("FASTEST");
+			if (key == fewest) roles.add("FEWEST_TRANSFERS");
+			if (key == stairFree) roles.add("STAIR_FREE");
+			result.put(pointKey(key[0], (int) key[1], key[2] == 1), roles);
+		}
+		return result;
+	}
+
+	/**
+	 * 제품 계약(#469 F1·F3): 계단 없는 경로 status를 원천 동선 근거로 다시 정한다. 엔진 판정 코드를 쓰지 않는다.
+	 * <ul>
+	 *   <li>INCLUDED: 고른 키에 계단 없는 키가 있다(계단 없음 = 모든 환승이 원천 상태 STEP_FREE이고 계단 플래그 없음).</li>
+	 *   <li>OMITTED: 파레토 키에는 계단 없는 키가 있지만 고르지 못했다.</li>
+	 *   <li>UNDETERMINED: 반환 여정 중 어느 환승이 계단 상태 미확정 동선을 쓰거나, 계단 확정 동선을 썼는데 같은 환승에
+	 *   계단 확정이 아니고 이용할 수 있는(차단·가동 중단 아님) 동선 중 "계단 없음 확정이면서 검증된" 동선이 아닌 것이 있다.</li>
+	 *   <li>NOT_FOUND: 그 밖.</li>
+	 * </ul>
+	 */
+	private static String stairFreeStatus(
+		List<long[]> front, List<long[]> kept, List<JourneyProfileRaptorPort.Itinerary> actual,
+		List<JourneyProfileExactOracle.Ride> rides, List<JourneyProfileExactOracle.Access> allAccesses,
+		LoadRouteTimetablePort.RouteAccessData raw, int slack
+	) {
+		if (kept.stream().anyMatch(key -> key[2] == 0)) return "INCLUDED";
+		if (front.stream().anyMatch(key -> key[2] == 0)) return "OMITTED";
+		Map<String, LoadRouteTimetablePort.PathwayEdge> edges = new LinkedHashMap<>();
+		for (LoadRouteTimetablePort.PathwayEdge edge : raw.pathwayEdges()) edges.put(edge.id(), edge);
+		for (JourneyProfileRaptorPort.Itinerary itinerary : actual) {
+			List<JourneyProfileExactOracle.Ride> matched = matchedRides(itinerary, rides);
+			List<JourneyProfileRaptorPort.Leg> legs = itinerary.legs();
+			for (int index = 1; index < legs.size(); index += 2) {
+				var access = (JourneyProfileRaptorPort.AccessLeg) legs.get(index);
+				var previous = matched.get(index / 2);
+				var next = matched.get(index / 2 + 1);
+				List<JourneyProfileExactOracle.Access> group = allAccesses.stream()
+					.filter(candidate -> candidate.fromStationId().equals(previous.toStationId())
+						&& candidate.toStationId().equals(next.fromStationId())
+						&& candidate.fromLineId().equals(previous.toLineId()) && candidate.toLineId().equals(next.fromLineId()))
+					.toList();
+				List<JourneyProfileExactOracle.Access> used = group.stream()
+					.filter(candidate -> candidate.usable() && candidate.durationSeconds() == access.durationSeconds()
+						&& candidate.walkingDistanceMeters() == access.distanceMeters()
+						&& (candidate.accessibilityBurden() > 0) == access.includesStairs())
+					.toList();
+				for (JourneyProfileExactOracle.Access usedAccess : used) {
+					LoadRouteTimetablePort.PathwayEdge usedEdge = edges.get(JourneyProfileOracleAccessInputs.edgeId(usedAccess));
+					boolean usedConfirmedStepFree = JourneyProfileOracleAccessInputs.stepFreeConfirmed(usedEdge);
+					boolean usedConfirmedStairs = JourneyProfileOracleAccessInputs.stairsConfirmed(usedEdge);
+					if (!usedConfirmedStepFree && !usedConfirmedStairs) return "UNDETERMINED";
+					if (usedConfirmedStairs && group.stream().anyMatch(sibling -> {
+						LoadRouteTimetablePort.PathwayEdge edge = edges.get(JourneyProfileOracleAccessInputs.edgeId(sibling));
+						return !edge.id().equals(usedEdge.id()) && sibling.allowed()
+							&& !JourneyProfileOracleAccessInputs.stairsConfirmed(edge)
+							&& !(JourneyProfileOracleAccessInputs.stepFreeConfirmed(edge) && sibling.verified());
+					})) {
+						return "UNDETERMINED";
+					}
+				}
+			}
+		}
+		return "NOT_FOUND";
+	}
+
+	/** 엔진 여정의 승차를 원시 승차 사실에 대응시킨다(실행 가능성은 {@link #unsound}가 따로 확인한다). */
+	private static List<JourneyProfileExactOracle.Ride> matchedRides(
+		JourneyProfileRaptorPort.Itinerary itinerary, List<JourneyProfileExactOracle.Ride> rides
+	) {
+		List<JourneyProfileExactOracle.Ride> matched = new ArrayList<>();
+		for (JourneyProfileRaptorPort.Leg leg : itinerary.legs()) {
+			if (!(leg instanceof JourneyProfileRaptorPort.RideLeg ride)) continue;
+			matched.add(rides.stream().filter(candidate -> candidate.tripId().equals(ride.tripId())
+				&& candidate.fromStationId().equals(ride.fromStationId()) && candidate.toStationId().equals(ride.toStationId())
+				&& candidate.departureAt().equals(ride.plannedDepartureTime())).findFirst().orElseThrow());
+		}
+		return matched;
 	}
 
 	/** point 결과의 (도착, 승차 수[, 계단 경고]) 파레토 키. 같은 키는 하나만 남긴다. */

@@ -105,7 +105,8 @@ final class JourneyEngineSyntheticBundles {
 			? List.of(new ServiceCalendarDate("special", queryDate, 2))
 			: List.of();
 		// 환승 동선을 먼저 만들어 일부 열차를 앞선 열차의 도착에 정확히 맞춰 출발시킨다(여유 0초 경계 연결).
-		RouteAccessData access = transfers(lineStations, random);
+		// #469 F3: 계단 상태는 별도 시드로 뽑아 기존 번들의 무작위 순서를 바꾸지 않는다.
+		RouteAccessData access = transfers(lineStations, random, new Random(seed ^ 0x480L));
 		Map<String, Integer> measuredTransfer = measuredTransferSeconds(access);
 		Map<String, List<int[]>> arrivalsByStation = new LinkedHashMap<>();
 		List<TransitRoute> routes = new ArrayList<>();
@@ -224,7 +225,7 @@ final class JourneyEngineSyntheticBundles {
 			WEDNESDAY.minusDays(3), SATURDAY.plusDays(3), ZONE);
 	}
 
-	private static RouteAccessData transfers(Map<String, List<String>> lineStations, Random random) {
+	private static RouteAccessData transfers(Map<String, List<String>> lineStations, Random random, Random stairStates) {
 		Map<String, List<String>> linesByStation = new LinkedHashMap<>();
 		for (Map.Entry<String, List<String>> entry : lineStations.entrySet()) {
 			for (String station : entry.getValue()) {
@@ -250,8 +251,10 @@ final class JourneyEngineSyntheticBundles {
 					int stairsDistance = 30 + random.nextInt(420);
 					int stepFreeDistance = 30 + random.nextInt(420);
 					if (stepFreeDistance == stairsDistance) stepFreeDistance += 1;
-					PathwayEdge stairs = edge("e-" + key + "-stairs", fromNode, toNode, stairsDistance, true, random);
-					PathwayEdge stepFree = edge("e-" + key + "-step-free", fromNode, toNode, stepFreeDistance, false, random);
+					PathwayEdge stairs = edge("e-" + key + "-stairs", fromNode, toNode, stairsDistance, true, random)
+						.withStairAccessState(stairState(true, stairStates));
+					PathwayEdge stepFree = edge("e-" + key + "-step-free", fromNode, toNode, stepFreeDistance, false, random)
+						.withStairAccessState(stairState(false, stairStates));
 					String normal;
 					String strict;
 					switch (kind) {
@@ -282,7 +285,18 @@ final class JourneyEngineSyntheticBundles {
 		// 그대로 쓰므로 30초 격자 시각과 맞물려 여유 0초 연결이 자주 생긴다.
 		int meters = random.nextInt(3) == 0 ? 0 : distance;
 		String status = random.nextInt(12) == 0 ? "UNAVAILABLE" : "AVAILABLE";
-		return new PathwayEdge(id, from, to, duration, meters, false, stairs, 100, status, "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((stairs) ? "STAIR_ONLY" : "STEP_FREE");
+		return new PathwayEdge(id, from, to, duration, meters, false, stairs, 100, status, "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
+	/**
+	 * #469 F3: 원천 계단 상태. 대부분은 계단 플래그와 맞는 확정 상태(STAIR_ONLY/STEP_FREE)이고, 25%는 UNKNOWN,
+	 * 5%는 필드 없음(null)이다. 계단 플래그가 있는 동선은 상태와 무관하게 계단 확정이다.
+	 */
+	private static String stairState(boolean stairs, Random stairStates) {
+		int draw = stairStates.nextInt(20);
+		if (draw < 5) return "UNKNOWN";
+		if (draw == 5) return null;
+		return stairs ? "STAIR_ONLY" : "STEP_FREE";
 	}
 
 	/** 승차·환승 건수를 줄여 최소 반례를 찾는 데 쓰는 번들 사본. */
@@ -331,6 +345,6 @@ final class JourneyEngineSyntheticBundles {
 	private static String edgeText(PathwayEdge edge) {
 		if (edge == null) return "-";
 		return edge.id() + "(dur=" + edge.durationSeconds() + ",m=" + edge.distanceMeters()
-			+ (edge.includesStairs() ? ",stairs" : "") + "," + edge.accessibilityStatus() + ")";
+			+ (edge.includesStairs() ? ",stairs" : "") + ",state=" + edge.stairAccessState() + "," + edge.accessibilityStatus() + ")";
 	}
 }

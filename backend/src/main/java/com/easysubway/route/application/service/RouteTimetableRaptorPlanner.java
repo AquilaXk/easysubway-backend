@@ -1168,31 +1168,13 @@ public final class RouteTimetableRaptorPlanner {
 				timetable, workspace, station, incomingLine, canonicalTransition, round, slackSeconds,
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
 
-			// #469: 엄격 무단차가 아니면 계단 여부가 다른 대안 동선도 본다(표준·느린 걸음의 "느리지만 계단 없는" 경로).
+			// #469: 엄격 무단차가 아니면 경고 상태(계단 없음 확정 여부)마다 환승 시간이 가장 짧은 동선도 본다. 표준·느린
+			// 걸음의 "느리지만 계단 없는" 경로와, 기본 동선과 같은 경고 상태지만 더 빠른 동선(예: 계단 상태 미확정 기본
+			// 동선 옆의 계단 확정 동선, #469 F1)을 함께 찾는다.
 			if (round > 0 && input.preservesStairAlternatives()) {
-				int[] candidates = timetable.transferTransitions(station, incomingLine, boardingLine);
-				byte canonicalWarnings = timetable.transitionWarningCodes(
-					canonicalTransition, accessProfileBit, ignoreAccessBlocks);
-				int bestAlternative = -1;
-				for (int alt : candidates) {
-					if (alt == canonicalTransition
-						|| (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(alt))
-						|| !timetable.isTransitionEligible(alt, accessProfileBit, ignoreAccessBlocks,
-							input.requiresVerifiedJourneyDistance(), true)) {
-						continue;
-					}
-					byte altWarnings = timetable.transitionWarningCodes(alt, accessProfileBit, ignoreAccessBlocks);
-					if (altWarnings != canonicalWarnings
-						&& (bestAlternative < 0
-							|| timetable.transitionDurationSeconds(alt) < timetable.transitionDurationSeconds(bestAlternative))) {
-						bestAlternative = alt;
-					}
-				}
-				if (bestAlternative >= 0) {
-					evaluateTransitionIntoReady(
-						timetable, workspace, station, incomingLine, bestAlternative, round, slackSeconds,
-						accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
-				}
+				evaluateWarningStateAlternatives(timetable, workspace, station, incomingLine, boardingLine,
+					canonicalTransition, round, slackSeconds, accessProfileBit, input, ignoreAccessBlocks,
+					boardingDeadlineSeconds, realtimeOverlay);
 			}
 		}
 		if (round > 0) {
@@ -1201,6 +1183,54 @@ public final class RouteTimetableRaptorPlanner {
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds, realtimeOverlay);
 		}
 		enforceReadyCapacity(workspace, PARETO_LIMIT);
+	}
+
+	@SuppressWarnings("java:S107")
+	private static void evaluateWarningStateAlternatives(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		int station,
+		int incomingLine,
+		int boardingLine,
+		int canonicalTransition,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		ScanInput input,
+		boolean ignoreAccessBlocks,
+		int boardingDeadlineSeconds,
+		RealtimeOverlay realtimeOverlay
+	) {
+		int[] candidates = timetable.transferTransitions(station, incomingLine, boardingLine);
+		if (candidates.length < 2) {
+			return;
+		}
+		// 질의마다 할당하지 않도록 작업 공간의 칸을 다시 쓴다.
+		int[] bestByWarningState = workspace.alternativeTransitions;
+		int[] bestSeconds = workspace.alternativeSeconds;
+		Arrays.fill(bestByWarningState, -1);
+		for (int candidate : candidates) {
+			if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(candidate))
+				|| !timetable.isTransitionEligible(candidate, accessProfileBit, ignoreAccessBlocks,
+					input.requiresVerifiedJourneyDistance(), true)) {
+				continue;
+			}
+			int state = Byte.toUnsignedInt(timetable.transitionWarningCodes(candidate, accessProfileBit, ignoreAccessBlocks));
+			int seconds = journeyTransferSeconds(input, timetable.transitionDurationSeconds(candidate),
+				timetable.transitionDistanceMeters(candidate));
+			if (bestByWarningState[state] < 0 || seconds < bestSeconds[state]) {
+				bestByWarningState[state] = candidate;
+				bestSeconds[state] = seconds;
+			}
+		}
+		for (int state = 0; state < WARNING_STATE_COUNT; state += 1) {
+			int alternative = bestByWarningState[state];
+			if (alternative >= 0 && alternative != canonicalTransition) {
+				evaluateTransitionIntoReady(
+					timetable, workspace, station, incomingLine, alternative, round, slackSeconds,
+					accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
+			}
+		}
 	}
 
 	@SuppressWarnings("java:S107")
@@ -3911,6 +3941,9 @@ public final class RouteTimetableRaptorPlanner {
 		int[] lowerBounds = null;
 
 		final ScheduledTrip[] bagTrips = new ScheduledTrip[WARNING_STATE_COUNT];
+		/** #469: 경고 상태별 가장 빠른 대안 동선을 고를 때 쓰는 칸. */
+		final int[] alternativeTransitions = new int[WARNING_STATE_COUNT];
+		final int[] alternativeSeconds = new int[WARNING_STATE_COUNT];
 		final int[] bagBoardPositions = new int[WARNING_STATE_COUNT];
 		final int[] bagEarliestDepartureSeconds = new int[WARNING_STATE_COUNT];
 		final int[] bagAccessTransitions = new int[WARNING_STATE_COUNT];
