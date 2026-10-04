@@ -16,9 +16,12 @@
 }
 
 .admin-v3 .dashboard-overview-grid .admin-panel {
-	padding: 22px;
-	border-radius: calc(var(--admin-radius-card) * 2 + 2px);
+	padding: 24px;
+	border-radius: var(--admin-radius-card);
 	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
 }
 
 .dashboard-overview-head {
@@ -374,8 +377,8 @@
 
 .dashboard-reference-lower {
 	display: block;
-	margin-top: 16px;
-	max-width: 860px;
+	margin-top: 20px;
+	width: 100%;
 }
 
 .dashboard-operations-details {

@@ -212,13 +212,12 @@
 					<th scope="col" class="col-date" th:attr="aria-sort=${createdSort.ariaSort}">
 						<a th:href="${createdSort.href}" th:attr="hx-get=${createdSort.href}">접수일 · 경과</a>
 					</th>
-					<th scope="col" class="col-evidence">증빙 / 사진</th>
-					<th scope="col" class="col-action">상세</th>
+					<th scope="col" class="col-action">관리</th>
 				</tr>
 				</thead>
 				<tbody>
 				<tr th:if="${reports.isEmpty()}">
-					<td class="empty" colspan="7">
+					<td class="empty" colspan="6">
 						<div th:replace="~{admin/fragments/empty-state :: panel('확인할 신고가 없습니다.', '검색어·상태·기간 필터를 조정해 보세요.')}"></div>
 					</td>
 				</tr>
@@ -233,6 +232,22 @@
 						<div class="report-content-wrapper">
 							<span class="report-type-tag" th:text="${report.reportTypeLabel}">고장</span>
 							<span class="report-desc-text" th:text="${report.description}" th:title="${report.description}">신고 내용</span>
+							<!-- 첨부 증빙 인라인 뱃지: 사진/위치가 있으면 내용 뒤에 가볍게 노출 -->
+							<div class="report-inline-evidence">
+								<span th:if="${report.coordinateLabel != '위치 없음' and report.coordinateLabel != '—' and !#strings.isEmpty(report.coordinateLabel)}"
+								      class="coordinate-badge" th:title="|좌표: ${report.coordinateLabel}|">
+									<span class="pin-icon" aria-hidden="true">📍</span>
+								</span>
+								<th:block th:if="${report.hasPhoto}">
+									<a th:if="${canReadPhoto}" class="report-thumb"
+									   th:href="@{/admin/reports/{reportId}/photo/original(reportId=${report.id})}"
+									   th:attr="aria-label=|${report.stationLabel} 신고 사진 원본 보기|">
+										<img th:src="@{/admin/reports/{reportId}/photo/thumbnail(reportId=${report.id})}"
+										     alt="신고 사진" loading="lazy" width="22" height="22">
+									</a>
+									<span th:unless="${canReadPhoto}" class="photo-perm-text">있음</span>
+								</th:block>
+							</div>
 						</div>
 					</td>
 					<td class="col-target">
@@ -253,26 +268,6 @@
 							<th:block th:if="${!report.slaTone.isEmpty()}">
 								<span th:replace="~{admin/fragments/shell :: status(${report.slaLabel}, ${report.slaTone})}">경과</span>
 							</th:block>
-						</div>
-					</td>
-					<td class="col-evidence">
-						<!-- 위치 뱃지 및 사진 썸네일 콤팩트 그룹 -->
-						<div class="report-evidence-group">
-							<span th:if="${report.coordinateLabel != '위치 없음' and report.coordinateLabel != '—' and !#strings.isEmpty(report.coordinateLabel)}"
-							      class="coordinate-badge" th:title="|좌표: ${report.coordinateLabel}|">
-								<span class="pin-icon" aria-hidden="true">📍</span>
-							</span>
-							<th:block th:if="${report.hasPhoto}">
-								<a th:if="${canReadPhoto}" class="report-thumb"
-								   th:href="@{/admin/reports/{reportId}/photo/original(reportId=${report.id})}"
-								   th:attr="aria-label=|${report.stationLabel} 신고 사진 원본 보기|">
-									<img th:src="@{/admin/reports/{reportId}/photo/thumbnail(reportId=${report.id})}"
-									     alt="신고 사진" loading="lazy" width="28" height="28">
-								</a>
-								<span th:unless="${canReadPhoto}">있음</span>
-							</th:block>
-							<span th:if="${(report.coordinateLabel == '위치 없음' or report.coordinateLabel == '—' or #strings.isEmpty(report.coordinateLabel)) and !report.hasPhoto}"
-							      class="meta">—</span>
 						</div>
 					</td>
 					<td class="col-action">

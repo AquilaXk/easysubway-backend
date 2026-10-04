@@ -1152,24 +1152,25 @@
 	border-bottom: 0;
 }
 
-/* 7열 고정 및 유연 너비 배분 (100% 폭 안에서 절대 창을 뚫고 나가지 않음) */
+/* 6열 고정 및 유연 너비 배분 (100% 폭 안에서 절대 창을 뚫고 나가지 않음) */
 .admin-v3 .report-table .select-col { width: 44px; text-align: center; }
 .admin-v3 .report-table .col-status { width: 84px; text-align: left; }
-.admin-v3 .report-table .col-content { width: auto; min-width: 220px; text-align: left; }
-.admin-v3 .report-table .col-target { width: 170px; text-align: left; }
+.admin-v3 .report-table .col-content { width: auto; min-width: 260px; text-align: left; }
+.admin-v3 .report-table .col-target { width: 175px; text-align: left; }
 .admin-v3 .report-table .col-date { width: 145px; text-align: left; }
-.admin-v3 .report-table .col-evidence { width: 90px; text-align: left; }
-.admin-v3 .report-table .col-action { width: 75px; text-align: right; }
+.admin-v3 .report-table .col-action { width: 95px; text-align: right; }
 
-.admin-v3 .report-table thead th.col-action {
+.admin-v3 .report-table thead th.col-action,
+.admin-v3 .report-table td.col-action {
 	text-align: right;
+	padding-right: 20px;
 }
 
 .admin-v3 .report-table tbody tr:hover {
 	background: var(--admin-surface-2);
 }
 
-/* 신고 내용 + 유형 마이크로 태그 */
+/* 신고 내용 + 유형 마이크로 태그 + 인라인 증빙 뱃지 */
 .admin-v3 .report-content-wrapper {
 	display: flex;
 	align-items: center;
@@ -1199,6 +1200,23 @@
 	color: var(--admin-ink);
 	min-width: 0;
 	flex: 1;
+}
+
+.admin-v3 .report-inline-evidence {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	flex-shrink: 0;
+	margin-left: 6px;
+}
+
+.admin-v3 .photo-perm-text {
+	font-size: 11px;
+	color: var(--admin-ink-2);
+	background: var(--admin-surface-2);
+	padding: 1px 5px;
+	border-radius: var(--admin-radius-control);
+	border: 1px solid var(--admin-border);
 }
 
 /* 역사 및 시설 계층형 셀 */
@@ -1247,20 +1265,12 @@
 	white-space: nowrap;
 }
 
-/* 증빙(위치/사진) 셀 */
-.admin-v3 .report-evidence-group {
-	display: inline-flex;
-	align-items: center;
-	justify-content: flex-start;
-	gap: 6px;
-}
-
 .admin-v3 .coordinate-badge {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
+	width: 22px;
+	height: 22px;
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-surface-2);
 	border: 1px solid var(--admin-border);
@@ -1270,7 +1280,7 @@
 }
 
 .admin-v3 .coordinate-badge .pin-icon {
-	font-size: 12px;
+	font-size: 11px;
 	line-height: 1;
 }
 
@@ -1278,8 +1288,8 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
+	width: 22px;
+	height: 22px;
 	border-radius: var(--admin-radius-control);
 	overflow: hidden;
 	border: 1px solid var(--admin-border);
@@ -1304,11 +1314,11 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: flex-end;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: var(--admin-w-semibold);
 	color: var(--admin-ink);
 	text-decoration: none;
-	padding: 4px 8px;
+	padding: 4px 10px;
 	border-radius: var(--admin-radius-control);
 	transition: background-color 0.15s ease, color 0.15s ease;
 	white-space: nowrap;
@@ -1317,6 +1327,66 @@
 .admin-v3 .detail-link:hover {
 	background: var(--admin-surface-2);
 	color: var(--admin-primary);
+}
+
+/* 역 목록 및 시설 상태판 일체형 B2B 카드 래퍼 */
+.admin-v3 .station-table-card,
+.admin-v3 .facility-table-card {
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	box-shadow: var(--admin-shadow-card);
+	overflow: hidden;
+	margin-bottom: 20px;
+}
+
+.admin-v3 .station-table-card .admin-table-scroll,
+.admin-v3 .facility-table-card .admin-table-scroll {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	background: transparent;
+	max-block-size: none;
+}
+
+.admin-v3 .station-table-card table,
+.admin-v3 .facility-table-card table {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	margin: 0;
+	width: 100%;
+}
+
+.admin-v3 .station-table-card table thead th,
+.admin-v3 .facility-table-card table thead th {
+	background: var(--admin-header-bg);
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-semibold);
+	letter-spacing: -0.01em;
+}
+
+.admin-v3 .facility-status-form {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.admin-v3 .facility-status-form select {
+	height: 30px;
+	padding: 2px 24px 2px 8px;
+	font-size: 12px;
+	border-radius: var(--admin-radius-control);
+	border: 1px solid var(--admin-border);
+	background: var(--admin-surface);
+}
+
+.admin-v3 .facility-status-form button {
+	height: 30px;
+	padding: 0 10px;
+	font-size: 12px;
+	border-radius: var(--admin-radius-control);
 }
 
 /* 키보드로 이동한 행 강조(#1740): 상세 링크에 포커스가 들어오면 행 전체를 표시 */
