@@ -26,6 +26,8 @@ public final class JourneyFrontierPolicyV1 {
 	 * #469: SAFEST_CONNECTION 대표 순위에서 최소 환승 여유를 인정하는 상한(10분). 더 기다린다고 더 안전하다는 근거가
 	 * 없고, 놓친 환승의 비용은 다음 열차 간격이다. 상한까지 같으면 더 이른 도착을 고른다. 파레토 지배 판정은 원래
 	 * 값을 그대로 쓴다. 식별자 버전 1.1.0부터 적용한다.
+	 * 600초는 에픽 #457 기본값이다. 상용 지하철 서비스의 해당 규칙은 공개 자료로 확인하지 못했다(근거: 엔진 설계 문서
+	 * {@code backend/src/test/java/com/easysubway/route/application/service/package-info.java} 8절, 이슈 #469 결정 5).
 	 */
 	public static final long SAFEST_CONNECTION_SLACK_CREDIT_CAP_SECONDS = 600;
 	private static final Comparator<FeasibleCandidate> CANONICAL_ORDER = Comparator

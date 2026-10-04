@@ -321,6 +321,9 @@ class JourneyV3ContractTest {
 			.contains("confirmed stair-free");
 		assertThat(String.valueOf(schema(document, "JourneyAccessibility").get("description")))
 			.contains("confirmed stair-free").contains("UNKNOWN");
+		// #469 F4: 600초 상한은 확인된 상용 서비스 규칙이 아니라 에픽 #457 기본값이다.
+		assertThat(String.valueOf(property(document, "JourneyProfileJourneyCandidate", "objectiveTags").get("description")))
+			.contains("epic #457 default").contains("not confirmed");
 		assertEnum(property(document, "JourneySearchSuccess", "contractVersion"), "JOURNEY_SEARCH_V3");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceTimezone"), "Asia/Seoul");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceDayCutoff"), "03:00");

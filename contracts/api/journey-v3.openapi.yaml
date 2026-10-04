@@ -1367,7 +1367,9 @@ components:
             Representative roles of this candidate. Since frontier policy 1.1.0, SAFEST_CONNECTION
             ranks a direct journey first and otherwise credits the minimum transfer slack only up to
             600 seconds, breaking ties by earlier destination arrival; the last-connection safer
-            alternative uses the same capped comparison. BEST_ACCESSIBILITY counts every transfer that is not confirmed stair-free.
+            alternative uses the same capped comparison. The 600-second cap is the epic #457 default;
+            a matching commercial subway service rule could not be confirmed from public sources and is
+            not confirmed. BEST_ACCESSIBILITY counts every transfer that is not confirmed stair-free.
           items:
             type: string
             enum: [FASTEST_ARRIVAL, LATEST_DEPARTURE, FEWEST_TRANSFERS, LOWEST_WALKING_BURDEN, BEST_ACCESSIBILITY, SAFEST_CONNECTION]
