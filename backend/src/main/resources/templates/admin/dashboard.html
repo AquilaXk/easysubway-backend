@@ -121,13 +121,6 @@
 	<details class="dashboard-operations-details">
 		<summary>상세 운영 지표 보기</summary>
 		<div class="dashboard-operations-details-body">
-		<form th:if="${adminProgramIds.contains('a-batches')}"
-		      class="dashboard-snapshot-form" data-dashboard-snapshot-form method="post"
-		      th:action="@{/admin/dashboard/metrics/snapshot}">
-			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-			<button type="submit" class="admin-btn outline">지표 다시 집계</button>
-		</form>
 	<!-- 핵심 지표 패널(#2281 V6-09): 시점·비율 대표 KPI만 headline으로 노출하고 누계 총량 지표는
 	     disclosure로 격하해 urgent state를 먼저 식별하게 한다. 각 셀 = 흐린 라벨 + 큰 숫자(tabular-nums)
 	     + 파랑 스파크라인 + 상태 3색 델타. 셀 전체가 해당 화면으로 이동(a 태그 유지).
@@ -144,6 +137,13 @@
 	                  moreCards=${cards.?[metricKey == T(com.easysubway.admin.metric.domain.AdminMetricKeys).PUSH_FAILED]}">
 		<div class="admin-panel-head">
 			<h2 id="dashboard-metric-panel-title">핵심 지표</h2>
+			<form th:if="${adminProgramIds.contains('a-batches')}"
+			      class="dashboard-snapshot-form" data-dashboard-snapshot-form method="post"
+			      th:action="@{/admin/dashboard/metrics/snapshot}">
+				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+				<button type="submit" class="admin-btn outline small">지표 다시 집계</button>
+			</form>
 		</div>
 		<p class="section-hint sr-only">현재 값 · 최근 7일 스파크라인 · 전일 대비. 기간 추이는 아래 추이 섹션에서 봅니다.</p>
 		<!-- headline: 시점·비율 대표 KPI. data-metric-key로 카드의 지표 정체성을 노출한다(격하 근거·QA 계약).

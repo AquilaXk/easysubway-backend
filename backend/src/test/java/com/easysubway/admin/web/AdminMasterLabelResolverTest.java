@@ -26,21 +26,21 @@ class AdminMasterLabelResolverTest {
 	private final AdminMasterLabelResolver resolver = new AdminMasterLabelResolver(new FakeTransitMasterPort());
 
 	@Test
-	@DisplayName("역 ID는 이름(코드)로, 마스터에 없는 코드는 코드 그대로 해석한다")
+	@DisplayName("역 ID는 인간 친화적 역명으로, 마스터에 없는 코드는 코드 그대로 해석한다")
 	void resolvesStationLabelsWithFallback() {
 		var labels = resolver.stationLabels(List.of("station-sangnoksu", "station-unknown", ""));
 
-		assertThat(labels).containsEntry("station-sangnoksu", "상록수(station-sangnoksu)");
+		assertThat(labels).containsEntry("station-sangnoksu", "상록수");
 		assertThat(labels).containsEntry("station-unknown", "station-unknown");
 		assertThat(labels).doesNotContainKey("");
 	}
 
 	@Test
-	@DisplayName("시설 ID는 시설명(코드)로 해석한다")
+	@DisplayName("시설 ID는 인간 친화적 시설명으로 해석한다")
 	void resolvesFacilityLabels() {
 		var labels = resolver.facilityLabels(List.of("facility-elevator-1"));
 
-		assertThat(labels).containsEntry("facility-elevator-1", "1번 출구 엘리베이터(facility-elevator-1)");
+		assertThat(labels).containsEntry("facility-elevator-1", "1번 출구 엘리베이터");
 	}
 
 	@Test
@@ -51,9 +51,9 @@ class AdminMasterLabelResolverTest {
 	}
 
 	@Test
-	@DisplayName("이름이 없으면 코드만, 코드도 없으면 빈 문자열로 표기한다")
+	@DisplayName("이름이 있으면 이름만, 이름이 없으면 코드만, 둘 다 없으면 빈 문자열로 표기한다")
 	void labelFormatterHandlesBlanks() {
-		assertThat(AdminMasterLabelResolver.label("상록수", "code-1")).isEqualTo("상록수(code-1)");
+		assertThat(AdminMasterLabelResolver.label("상록수", "code-1")).isEqualTo("상록수");
 		assertThat(AdminMasterLabelResolver.label(" ", "code-1")).isEqualTo("code-1");
 		assertThat(AdminMasterLabelResolver.label(null, null)).isEqualTo("");
 	}

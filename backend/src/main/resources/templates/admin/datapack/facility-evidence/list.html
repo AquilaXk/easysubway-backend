@@ -17,7 +17,6 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>시설 근거 검토</h1>
-			<p>역×시설 유형별 출처 근거, 상태 의미, strict 경로 사용 가능 여부를 검수합니다.</p>
 		</div>
 	</header>
 
@@ -37,7 +36,7 @@
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
 			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
-			<button type="submit" class="outline">검색</button>
+			<button type="submit" class="admin-btn secondary">검색</button>
 			<a class="admin-btn plain" th:href="@{/admin/datapack/facility-evidence/page}">초기화</a>
 		</form>
 		<div class="table-filters" th:if="${filter.active()}">

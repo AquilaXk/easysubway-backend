@@ -46,12 +46,12 @@
 			<dd th:text="${report.description}">신고 내용</dd>
 			<dt>역</dt>
 			<dd>
-				<!-- 역 허브 크로스링크(#1741): 이름(코드) → 역 상세 허브. -->
+				<!-- 역 허브 크로스링크: 인간 친화적 역명 -->
 				<a th:href="@{/admin/stations/{stationId}/page(stationId=${report.stationId},tab='reports')}"
-				   th:text="${stationLabel}">상록수(코드)</a>
+				   th:text="${stationLabel}">상록수</a>
 			</dd>
 			<dt>시설</dt>
-			<dd th:text="${facilityLabel}">엘리베이터(facility-id)</dd>
+			<dd th:text="${facilityLabel}">엘리베이터</dd>
 			<dt th:if="${report.correctionOverrideHref != null}">임시 override</dt>
 			<dd th:if="${report.correctionOverrideHref != null}"><a class="admin-btn outline" th:href="@{__${report.correctionOverrideHref}__}">manual override 요청</a></dd>
 			<dt>신고자</dt>

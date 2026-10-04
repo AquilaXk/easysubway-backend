@@ -92,6 +92,7 @@
 
 		<!-- V6-06 공통 표 영역: wrapper(.admin-table-scroll)만 가로 overflow를 소유하고, 첫 식별자 열은
 		     sticky, 상태 변경 form 열은 우측 sticky(action)다. head·rows 마크업만 주입한다. -->
+		<div class="facility-table-card admin-card">
 		<div th:replace="~{admin/fragments/table-region :: region(
 		         '시설 상태 표', ~{::facilityTableHead}, ~{::facilityTableRows})}">
 			<th:block th:fragment="facilityTableHead">
@@ -155,7 +156,7 @@
 						   th:attr="aria-label=|${facility.stationName} 제보 보기|">제보 보기</a>
 					</td>
 					<td class="cell-sticky-action">
-						<form th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
+						<form class="facility-status-form" th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
 						      method="post">
 							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
@@ -173,6 +174,7 @@
 					</td>
 				</tr>
 			</th:block>
+		</div>
 		</div>
 		<div th:replace="~{admin/fragments/pagination :: pager('시설 상태 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</div>
