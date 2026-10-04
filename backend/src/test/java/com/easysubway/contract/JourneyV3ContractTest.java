@@ -312,6 +312,15 @@ class JourneyV3ContractTest {
 		assertEnum(property(document, "JourneyStairFreeAlternative", "status"),
 			"INCLUDED", "OMITTED", "NOT_FOUND", "UNDETERMINED");
 		assertEnum(property(document, "JourneyStairFreeAlternative", "facilityStatus"), "APPLIED", "UNOBSERVED");
+		// #469 F2: 계약 문구는 계단 상태 미확정(UNKNOWN·필드 없음)을 계단 없음으로 보지 않는다는 규칙을 밝혀야 한다.
+		assertThat(String.valueOf(schema(document, "JourneyStairFreeAlternative").get("description")))
+			.contains("STEP_FREE").contains("UNKNOWN").contains("never stair-free");
+		assertThat(String.valueOf(property(document, "JourneyStairFreeAlternative", "status").get("description")))
+			.contains("unconfirmed stair state");
+		assertThat(String.valueOf(property(document, "Journey", "alternativeCategories").get("description")))
+			.contains("confirmed stair-free");
+		assertThat(String.valueOf(schema(document, "JourneyAccessibility").get("description")))
+			.contains("confirmed stair-free").contains("UNKNOWN");
 		assertEnum(property(document, "JourneySearchSuccess", "contractVersion"), "JOURNEY_SEARCH_V3");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceTimezone"), "Asia/Seoul");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceDayCutoff"), "03:00");

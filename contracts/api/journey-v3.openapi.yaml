@@ -675,6 +675,9 @@ components:
       enum: [STANDARD, SLOW, NO_STAIRS, STEP_FREE]
     ConstraintMode:
       type: string
+      description: >-
+        REQUIRE_STEP_FREE uses only confirmed stair-free transfer pathways (source stair access state STEP_FREE and
+        no stairs flag); a route that needs a transfer with unconfirmed stair state is not returned.
       enum: [NONE, REQUIRE_STEP_FREE]
     JourneyProfileRequest:
       type: object
@@ -1009,7 +1012,8 @@ components:
           description: >-
             At most requestPolicy.alternativeCount journeys chosen from the Pareto set over
             destination arrival, transfer count, and (unless constraintMode is REQUIRE_STEP_FREE)
-            whether any transfer uses a verified pathway with stairs. Selection order is the fastest
+            whether every transfer uses a confirmed stair-free pathway (a pathway with stairs or with
+            unconfirmed stair state counts as not stair-free). Selection order is the fastest
             journey, then the journey with the fewest transfers, then the earliest journey whose
             accessibility.stairFree is true (for mobilityProfile STEP_FREE the stair-free journey comes
             before the fewest-transfer journey). Duplicates are skipped, remaining slots are filled
@@ -1024,8 +1028,13 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        Outcome of the stair-free group for this search. Stair facts come only from verified transfer
-        pathways; a pathway without verified evidence is never used and never reported as stair-free.
+        Outcome of the stair-free group for this search. A transfer pathway is confirmed stair-free only when its
+        source stair access state is STEP_FREE and it carries no stairs flag; STAIR_ONLY or a stairs flag is
+        confirmed stairs. A pathway whose stair access state is UNKNOWN or missing is unconfirmed and is never
+        stair-free. A journey is stair-free only when every transfer uses a confirmed stair-free pathway; a journey
+        without transfers is stair-free because journeys run platform to platform and station entrances are out of
+        scope. INCLUDED does not confirm the current operation of elevators on that journey unless facilityStatus is
+        APPLIED.
       required: [status, facilityStatus]
       properties:
         status:
@@ -1034,10 +1043,12 @@ components:
           description: >-
             INCLUDED: journeys contain a journey whose accessibility.stairFree is true.
             OMITTED: a stair-free journey was found but alternativeCount slots went to the fastest and
-            fewest-transfer journeys. NOT_FOUND: no stair-free journey was found and no stairs transfer of the
-            returned journeys has an unverified stair-free pathway. UNDETERMINED: no stair-free journey was
-            found and at least one stairs transfer of the returned journeys has a stair-free pathway that was
-            not used because its evidence is not verified, so a stair-free trip cannot be confirmed.
+            fewest-transfer journeys. UNDETERMINED: no stair-free journey was found and at least one transfer of the
+            returned journeys uses a pathway with unconfirmed stair state, or uses a confirmed stairs pathway while
+            the same transfer has another available pathway that is not confirmed stairs and is not both confirmed
+            stair-free and verified, so a stair-free trip cannot be confirmed. NOT_FOUND: no stair-free journey was
+            found and every transfer of the returned journeys uses a confirmed stairs pathway with no such
+            alternative.
         facilityStatus:
           type: string
           enum: [APPLIED, UNOBSERVED]
@@ -1356,7 +1367,7 @@ components:
             Representative roles of this candidate. Since frontier policy 1.1.0, SAFEST_CONNECTION
             ranks a direct journey first and otherwise credits the minimum transfer slack only up to
             600 seconds, breaking ties by earlier destination arrival; the last-connection safer
-            alternative uses the same capped comparison.
+            alternative uses the same capped comparison. BEST_ACCESSIBILITY counts every transfer that is not confirmed stair-free.
           items:
             type: string
             enum: [FASTEST_ARRIVAL, LATEST_DEPARTURE, FEWEST_TRANSFERS, LOWEST_WALKING_BURDEN, BEST_ACCESSIBILITY, SAFEST_CONNECTION]
@@ -1578,7 +1589,8 @@ components:
           description: >-
             Search responses only (absent in profile responses, which use objectiveTags). Groups this journey
             represents among the found Pareto journeys: FASTEST (earliest arrival), FEWEST_TRANSFERS (fewest
-            transfers, then earliest arrival), STAIR_FREE (earliest journey without a stairs transfer). Exactly one
+            transfers, then earliest arrival), STAIR_FREE (earliest journey whose transfers all use confirmed
+            stair-free pathways; see JourneyStairFreeAlternative). Exactly one
             journey carries FASTEST; each group appears on at most one journey; an empty array marks a journey that
             fills a remaining slot.
           items:
@@ -1619,6 +1631,10 @@ components:
     JourneyAccessibility:
       type: object
       additionalProperties: false
+      description: >-
+        stairFree is true only when every transfer of the journey uses a confirmed stair-free pathway (source
+        stair access state STEP_FREE and no stairs flag). A pathway whose stair access state is UNKNOWN or missing
+        makes stairFree false; it is never assumed stair-free.
       required: [result, stairFree, reasonCodes]
       properties:
         result:
