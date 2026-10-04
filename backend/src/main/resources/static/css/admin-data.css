@@ -184,10 +184,10 @@
 	flex-direction: column;
 	justify-content: center;
 	gap: 4px;
-	padding: 4px 8px;
-	border: 0;
-	border-radius: 0;
-	background: transparent;
+	padding: 8px 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-header-bg);
 	text-align: left;
 }
 
@@ -320,27 +320,46 @@
 	padding: 0;
 	background: transparent;
 	border: 0;
+	align-items: flex-end;
 }
 
 .dashboard-week-day {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	justify-content: center;
+	justify-content: flex-end;
 	gap: 6px;
 	min-width: 0;
+	height: 82px;
 	padding: 8px 4px;
 	border: 1px solid transparent;
 	border-radius: var(--admin-radius-control);
 	background: transparent;
 	transition: background-color 0.15s ease, border-color 0.15s ease;
+	position: relative;
+}
+
+.dashboard-week-day::before {
+	content: "";
+	display: block;
+	width: 8px;
+	height: 26px;
+	border-radius: 4px;
+	background: var(--admin-border);
+	transition: height 0.2s ease, background-color 0.15s ease;
+	order: 2;
 }
 
 .dashboard-week-day:hover {
-	background: var(--admin-bg);
+	background: var(--admin-header-bg);
+}
+
+.dashboard-week-day:hover::before {
+	background: var(--admin-accent);
 }
 
 .dashboard-week-day span {
+	order: 3;
 	color: var(--admin-ink-3);
 	font-size: var(--admin-fs-meta);
 	font-weight: var(--admin-w-medium);
@@ -348,16 +367,23 @@
 }
 
 .dashboard-week-day strong {
+	order: 1;
 	color: var(--admin-ink);
 	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-title);
 	font-variant-numeric: tabular-nums;
+	line-height: 1;
 }
 
 .dashboard-week-day.is-today {
 	border-color: var(--admin-border-strong);
 	background: var(--admin-surface);
 	box-shadow: none;
+}
+
+.dashboard-week-day.is-today::before {
+	height: 38px;
+	background: var(--admin-primary);
 }
 
 .dashboard-week-day.is-today span {
@@ -1216,6 +1242,35 @@
 	background: var(--admin-surface);
 	box-shadow: var(--admin-shadow-card);
 	margin-bottom: 16px;
+}
+
+.table-toolbar-unified select {
+	height: 34px;
+	padding: 0 28px 0 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background-color: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	appearance: none;
+	-webkit-appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgb(105,112,137)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 8px center;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.table-toolbar-unified select:hover {
+	border-color: var(--admin-border-strong);
+	background-color: var(--admin-header-bg);
+}
+
+.table-toolbar-unified select:focus {
+	border-color: var(--admin-primary);
+	outline: 2px solid var(--admin-focus);
+	outline-offset: 0;
 }
 
 .table-toolbar-unified .admin-list-toolbar {

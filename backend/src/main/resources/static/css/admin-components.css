@@ -352,7 +352,7 @@
 	display: inline-flex;
 	align-items: center;
 	padding: 2px 7px;
-	border-radius: 999px;
+	border-radius: 4px;
 	font-size: 11px;
 	color: var(--admin-ink-2);
 	background: var(--admin-bg);
@@ -1187,7 +1187,7 @@
 	padding: 2px 6px;
 	font-size: 11px;
 	font-weight: var(--admin-w-medium);
-	border-radius: var(--admin-radius-control);
+	border-radius: var(--admin-radius-badge);
 	background: var(--admin-surface-2);
 	color: var(--admin-ink-2);
 	border: 1px solid var(--admin-border);
@@ -1217,7 +1217,7 @@
 	color: var(--admin-ink-2);
 	background: var(--admin-surface-2);
 	padding: 1px 5px;
-	border-radius: var(--admin-radius-control);
+	border-radius: var(--admin-radius-badge);
 	border: 1px solid var(--admin-border);
 }
 
@@ -1273,7 +1273,7 @@
 	justify-content: center;
 	width: 22px;
 	height: 22px;
-	border-radius: var(--admin-radius-control);
+	border-radius: var(--admin-radius-badge);
 	background: var(--admin-surface-2);
 	border: 1px solid var(--admin-border);
 	font-size: 11px;
@@ -1292,7 +1292,7 @@
 	justify-content: center;
 	width: 22px;
 	height: 22px;
-	border-radius: var(--admin-radius-control);
+	border-radius: var(--admin-radius-badge);
 	overflow: hidden;
 	border: 1px solid var(--admin-border);
 	background: var(--admin-surface-2);
