@@ -214,10 +214,12 @@
 }
 
 .admin-v3 th {
-	background: var(--admin-header-bg);
-	color: var(--admin-ink-2);
-	font-size: var(--admin-fs-control);
-	font-weight: var(--admin-w-medium);
+	background: var(--admin-surface);
+	color: var(--admin-ink-3);
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+	letter-spacing: 0.01em;
+	border-bottom: 1px solid var(--admin-border-strong);
 }
 
 .admin-v3 thead th {
@@ -1313,20 +1315,33 @@
 .admin-v3 .detail-link {
 	display: inline-flex;
 	align-items: center;
+	gap: 4px;
 	justify-content: flex-end;
 	font-size: 13px;
-	font-weight: var(--admin-w-semibold);
-	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-accent);
 	text-decoration: none;
-	padding: 4px 10px;
+	padding: 4px 8px;
 	border-radius: var(--admin-radius-control);
 	transition: background-color 0.15s ease, color 0.15s ease;
 	white-space: nowrap;
 }
 
 .admin-v3 .detail-link:hover {
-	background: var(--admin-surface-2);
-	color: var(--admin-primary);
+	background: var(--admin-accent-soft);
+	color: var(--admin-accent-ink);
+}
+
+.admin-v3 .detail-link::after {
+	content: " →";
+	font-size: 11px;
+	opacity: 0.6;
+	transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.admin-v3 .detail-link:hover::after {
+	opacity: 1;
+	transform: translateX(2px);
 }
 
 /* 역 목록 및 시설 상태판 일체형 B2B 카드 래퍼 */
@@ -1370,23 +1385,43 @@
 .admin-v3 .facility-status-form {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 }
 
 .admin-v3 .facility-status-form select {
-	height: 30px;
-	padding: 2px 24px 2px 8px;
+	height: 28px;
+	padding: 2px 20px 2px 8px;
 	font-size: 12px;
 	border-radius: var(--admin-radius-control);
 	border: 1px solid var(--admin-border);
 	background: var(--admin-surface);
+	color: var(--admin-ink);
+	cursor: pointer;
+	transition: border-color 0.15s ease;
+}
+
+.admin-v3 .facility-status-form select:focus {
+	border-color: var(--admin-primary);
 }
 
 .admin-v3 .facility-status-form button {
-	height: 30px;
-	padding: 0 10px;
+	height: 28px;
+	min-height: 28px;
+	padding: 0 8px;
 	font-size: 12px;
+	font-weight: var(--admin-w-strong);
 	border-radius: var(--admin-radius-control);
+	border: 1px solid transparent;
+	background: var(--admin-header-bg);
+	color: var(--admin-accent);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.admin-v3 .facility-status-form button:hover {
+	background: var(--admin-surface-2);
+	border-color: var(--admin-border-strong);
+	color: var(--admin-primary);
 }
 
 /* 키보드로 이동한 행 강조(#1740): 상세 링크에 포커스가 들어오면 행 전체를 표시 */
@@ -2292,16 +2327,13 @@ label.admin-radio input[type="radio"] {
 	font-weight: var(--admin-w-medium);
 }
 
-.admin-v3 .detail-link,
 .admin-v3 .back-link {
 	color: var(--admin-accent);
 	font-weight: var(--admin-w-strong);
 	text-decoration: none;
-	/* 표 행 액션 링크("상세 보기")가 좁은 컬럼에서 세로로 꺾이지 않게 한다(#2349 PR⑩a). */
 	white-space: nowrap;
 }
 
-.admin-v3 .detail-link:hover,
 .admin-v3 .back-link:hover {
 	text-decoration: underline;
 }
@@ -2362,9 +2394,9 @@ label.admin-radio input[type="radio"] {
 
 .admin-v3 .pagination a[aria-current="page"],
 .admin-v3 .pagination a.is-active {
-	border: 0;
-	background: var(--admin-primary);
-	color: var(--admin-on-primary);
+	border: 1px solid var(--admin-border-strong);
+	background: var(--admin-accent-soft);
+	color: var(--admin-accent-ink);
 	font-weight: var(--admin-w-strong);
 }
 

@@ -388,29 +388,31 @@
 .dashboard-operations-details > summary {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	padding: 6px 12px;
-	border: 0;
+	gap: 8px;
+	padding: 8px 16px;
+	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-control);
-	background: transparent;
-	color: var(--admin-ink-2);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
 	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-strong);
 	cursor: pointer;
-	box-shadow: none;
-	transition: background-color 0.15s ease, color 0.15s ease;
+	box-shadow: var(--admin-shadow-card);
+	transition: all 0.15s ease;
 	user-select: none;
 }
 
 .dashboard-operations-details > summary:hover {
-	background: var(--admin-bg);
-	color: var(--admin-ink);
+	background: var(--admin-header-bg);
+	border-color: var(--admin-border-strong);
+	color: var(--admin-primary);
 }
 
 .dashboard-operations-details[open] > summary {
-	margin-bottom: 16px;
-	background: transparent;
-	color: var(--admin-ink);
+	margin-bottom: 20px;
+	background: var(--admin-header-bg);
+	border-color: var(--admin-primary);
+	color: var(--admin-primary);
 }
 
 .dashboard-reference-lower > section + section {
@@ -418,8 +420,8 @@
 }
 
 .admin-v3 .dashboard-reference-lower .admin-panel {
-	padding: 25px;
-	border-radius: calc(var(--admin-radius-card) * 2 + 2px);
+	padding: 24px;
+	border-radius: var(--admin-radius-card);
 }
 
 .admin-v3 .dashboard-reference-lower h2 {
