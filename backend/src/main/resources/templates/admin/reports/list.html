@@ -204,25 +204,21 @@
 					<th scope="col" class="select-col">
 						<input type="checkbox" aria-label="목록 전체 선택" x-on:change="toggleAll">
 					</th>
-					<th scope="col" th:attr="aria-sort=${statusSort.ariaSort}">
+					<th scope="col" class="col-status" th:attr="aria-sort=${statusSort.ariaSort}">
 						<a th:href="${statusSort.href}" th:attr="hx-get=${statusSort.href}">상태</a>
 					</th>
-					<th scope="col">유형</th>
-					<th scope="col">신고 내용</th>
-					<th scope="col">역</th>
-					<th scope="col">시설</th>
-					<th scope="col" th:attr="aria-sort=${createdSort.ariaSort}">
-						<a th:href="${createdSort.href}" th:attr="hx-get=${createdSort.href}">접수일</a>
+					<th scope="col" class="col-content">신고 내용</th>
+					<th scope="col" class="col-target">대상 역사 · 시설</th>
+					<th scope="col" class="col-date" th:attr="aria-sort=${createdSort.ariaSort}">
+						<a th:href="${createdSort.href}" th:attr="hx-get=${createdSort.href}">접수일 · 경과</a>
 					</th>
-					<th scope="col">경과</th>
-					<th scope="col">위치</th>
-					<th scope="col">사진</th>
-					<th scope="col">상세</th>
+					<th scope="col" class="col-evidence">증빙 / 사진</th>
+					<th scope="col" class="col-action">상세</th>
 				</tr>
 				</thead>
 				<tbody>
 				<tr th:if="${reports.isEmpty()}">
-					<td class="empty" colspan="11">
+					<td class="empty" colspan="7">
 						<div th:replace="~{admin/fragments/empty-state :: panel('확인할 신고가 없습니다.', '검색어·상태·기간 필터를 조정해 보세요.')}"></div>
 					</td>
 				</tr>
@@ -232,53 +228,54 @@
 						       aria-label="신고 선택"
 						       x-on:change="recount" th:attr="aria-label=|${report.stationLabel} 신고 선택|">
 					</td>
-					<td><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></td>
-					<td th:text="${report.reportTypeLabel}">고장</td>
-					<td>
-						<div class="report-desc-cell" th:text="${report.description}" th:title="${report.description}">신고 내용</div>
+					<td class="col-status"><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></td>
+					<td class="col-content">
+						<div class="report-content-wrapper">
+							<span class="report-type-tag" th:text="${report.reportTypeLabel}">고장</span>
+							<span class="report-desc-text" th:text="${report.description}" th:title="${report.description}">신고 내용</span>
+						</div>
 					</td>
-					<td>
-						<!-- 역 허브 크로스링크: 인간 친화적 역명 -->
-						<a class="report-station-link"
-						   th:href="@{/admin/stations/{stationId}/page(stationId=${report.stationId},tab='reports')}"
-						   th:title="${report.stationId}"
-						   th:text="${report.stationLabel}">상록수</a>
+					<td class="col-target">
+						<!-- 역사 및 시설 계층형 배치: 상단 역명 볼드, 하단 시설명 12px -->
+						<div class="report-target-group">
+							<a class="report-station-link"
+							   th:href="@{/admin/stations/{stationId}/page(stationId=${report.stationId},tab='reports')}"
+							   th:title="${report.stationId}"
+							   th:text="${report.stationLabel}">상록수</a>
+							<span class="report-facility-name" th:text="${report.facilityLabel}"
+							      th:title="${report.facilityId}">엘리베이터</span>
+						</div>
 					</td>
-					<td>
-						<span class="report-facility-name" th:text="${report.facilityLabel}"
-						      th:title="${report.facilityId}">엘리베이터</span>
+					<td class="col-date">
+						<!-- 접수일시 및 SLA 경과 뱃지 계층형 배치 -->
+						<div class="report-time-group">
+							<span class="report-time" th:text="${#temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm')}">2026-06-17 09:00</span>
+							<th:block th:if="${!report.slaTone.isEmpty()}">
+								<span th:replace="~{admin/fragments/shell :: status(${report.slaLabel}, ${report.slaTone})}">경과</span>
+							</th:block>
+						</div>
 					</td>
-					<td th:text="${#temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm')}">2026-06-17 09:00</td>
-					<td>
-						<!-- SLA 경과 뱃지(#1740): 대기 상태가 24h/72h를 넘기면 표시, 아니면 빈 칸. -->
-						<th:block th:if="${!report.slaTone.isEmpty()}">
-							<span th:replace="~{admin/fragments/shell :: status(${report.slaLabel}, ${report.slaTone})}">경과</span>
-						</th:block>
+					<td class="col-evidence">
+						<!-- 위치 뱃지 및 사진 썸네일 콤팩트 그룹 -->
+						<div class="report-evidence-group">
+							<span th:if="${report.coordinateLabel != '위치 없음' and report.coordinateLabel != '—' and !#strings.isEmpty(report.coordinateLabel)}"
+							      class="coordinate-badge" th:title="|좌표: ${report.coordinateLabel}|">
+								<span class="pin-icon" aria-hidden="true">📍</span>
+							</span>
+							<th:block th:if="${report.hasPhoto}">
+								<a th:if="${canReadPhoto}" class="report-thumb"
+								   th:href="@{/admin/reports/{reportId}/photo/original(reportId=${report.id})}"
+								   th:attr="aria-label=|${report.stationLabel} 신고 사진 원본 보기|">
+									<img th:src="@{/admin/reports/{reportId}/photo/thumbnail(reportId=${report.id})}"
+									     alt="신고 사진" loading="lazy" width="28" height="28">
+								</a>
+								<span th:unless="${canReadPhoto}">있음</span>
+							</th:block>
+							<span th:if="${(report.coordinateLabel == '위치 없음' or report.coordinateLabel == '—' or #strings.isEmpty(report.coordinateLabel)) and !report.hasPhoto}"
+							      class="meta">—</span>
+						</div>
 					</td>
-					<td>
-						<span th:if="${report.coordinateLabel != '위치 없음' and report.coordinateLabel != '—' and !#strings.isEmpty(report.coordinateLabel)}"
-						      class="coordinate-badge" th:title="|좌표: ${report.coordinateLabel}|">
-							<span class="pin-icon" aria-hidden="true">📍</span>
-							<span>등록됨</span>
-						</span>
-						<span th:unless="${report.coordinateLabel != '위치 없음' and report.coordinateLabel != '—' and !#strings.isEmpty(report.coordinateLabel)}"
-						      class="meta">—</span>
-					</td>
-					<td>
-						<!-- 사진 썸네일(#1740): 첨부가 있고 사진 열람 권한(REPORT_PHOTO_READ)이 있으면 썸네일을
-						     보여주고 클릭 시 원본으로 이동한다. 권한이 없으면 '있음' 텍스트만(썸네일 endpoint 403). -->
-						<th:block th:if="${report.hasPhoto}">
-							<a th:if="${canReadPhoto}" class="report-thumb"
-							   th:href="@{/admin/reports/{reportId}/photo/original(reportId=${report.id})}"
-							   th:attr="aria-label=|${report.stationLabel} 신고 사진 원본 보기|">
-								<img th:src="@{/admin/reports/{reportId}/photo/thumbnail(reportId=${report.id})}"
-								     alt="신고 사진" loading="lazy" width="36" height="36">
-							</a>
-							<span th:unless="${canReadPhoto}">있음</span>
-						</th:block>
-						<span th:unless="${report.hasPhoto}" class="meta">—</span>
-					</td>
-					<td>
+					<td class="col-action">
 						<!-- 드로어로 열되(hx-target 오버라이드) no-JS는 상세 페이지로 이동. hx-push-url=false로 URL 유지 -->
 						<a class="detail-link"
 						   th:href="@{/admin/reports/{reportId}/page(reportId=${report.id})}"

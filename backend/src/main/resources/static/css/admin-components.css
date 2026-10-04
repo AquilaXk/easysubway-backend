@@ -1103,99 +1103,220 @@
 	transform: scale(1.1);
 }
 
-/* 신고 목록 위치/역/시설/내용 B2B 스타일 */
+/* 신고 대기열 모던 B2B SaaS 테이블 래퍼 및 반응형 7열 시스템 */
+.admin-v3 .report-table {
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	box-shadow: var(--admin-shadow-card);
+	overflow: hidden;
+}
+
+.admin-v3 .report-table .admin-table-scroll {
+	max-block-size: none;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	background: transparent;
+	overflow-x: auto;
+}
+
+.admin-v3 .report-table table {
+	width: 100%;
+	table-layout: fixed;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	margin: 0;
+}
+
 .admin-v3 .report-table th,
 .admin-v3 .report-table td {
-	white-space: nowrap;
+	padding: 12px 14px;
 	vertical-align: middle;
+	border-bottom: 1px solid var(--admin-border);
+	font-size: 13px;
+	line-height: 1.4;
 }
 
-.coordinate-badge {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	padding: 2px 7px;
-	border-radius: 4px;
-	background: var(--admin-bg);
-	border: 1px solid var(--admin-border);
-	font-size: 11px;
+.admin-v3 .report-table thead th {
+	background: var(--admin-header-bg);
 	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-semibold);
+	letter-spacing: -0.01em;
 	white-space: nowrap;
-	cursor: default;
 }
 
-.coordinate-badge .pin-icon {
-	font-size: 11px;
-	line-height: 1;
+.admin-v3 .report-table tbody tr:last-child td {
+	border-bottom: 0;
 }
 
-.photo-badge-link {
+/* 7열 고정 및 유연 너비 배분 (100% 폭 안에서 절대 창을 뚫고 나가지 않음) */
+.admin-v3 .report-table .select-col { width: 44px; text-align: center; }
+.admin-v3 .report-table .col-status { width: 84px; text-align: left; }
+.admin-v3 .report-table .col-content { width: auto; min-width: 220px; text-align: left; }
+.admin-v3 .report-table .col-target { width: 170px; text-align: left; }
+.admin-v3 .report-table .col-date { width: 145px; text-align: left; }
+.admin-v3 .report-table .col-evidence { width: 90px; text-align: left; }
+.admin-v3 .report-table .col-action { width: 75px; text-align: right; }
+
+.admin-v3 .report-table thead th.col-action {
+	text-align: right;
+}
+
+.admin-v3 .report-table tbody tr:hover {
+	background: var(--admin-surface-2);
+}
+
+/* 신고 내용 + 유형 마이크로 태그 */
+.admin-v3 .report-content-wrapper {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.admin-v3 .report-type-tag {
+	flex-shrink: 0;
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding: 2px 7px;
-	border-radius: 4px;
-	background: var(--admin-bg);
-	border: 1px solid var(--admin-border);
+	padding: 2px 6px;
 	font-size: 11px;
+	font-weight: var(--admin-w-medium);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface-2);
+	color: var(--admin-ink-2);
+	border: 1px solid var(--admin-border);
+	white-space: nowrap;
+}
+
+.admin-v3 .report-desc-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+	color: var(--admin-ink);
+	min-width: 0;
+	flex: 1;
+}
+
+/* 역사 및 시설 계층형 셀 */
+.admin-v3 .report-target-group {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.admin-v3 .report-target-group .report-station-link {
+	font-size: 13px;
 	font-weight: var(--admin-w-strong);
 	color: var(--admin-ink);
 	text-decoration: none;
-	white-space: nowrap;
-	transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.photo-badge-link:hover {
-	background: var(--admin-accent-soft);
-	border-color: var(--admin-accent);
-	color: var(--admin-accent-ink);
-}
-
-.photo-badge-link .camera-icon {
-	font-size: 11px;
-	line-height: 1;
-}
-
-.photo-fallback-badge {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	padding: 2px 7px;
-	border-radius: 4px;
-	background: var(--admin-bg);
-	border: 1px solid var(--admin-border);
-	font-size: 11px;
-	color: var(--admin-ink-2);
+	overflow: hidden;
+	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.report-station-link {
-	color: var(--admin-ink);
-	font-weight: var(--admin-w-strong);
-	text-decoration: none;
-	display: inline-flex;
-	align-items: center;
-	gap: 5px;
-	white-space: nowrap;
-}
-
-.report-station-link:hover {
+.admin-v3 .report-target-group .report-station-link:hover {
 	color: var(--admin-primary);
 	text-decoration: underline;
 }
 
-.report-facility-name {
-	color: var(--admin-ink);
-	font-weight: var(--admin-w-medium);
-	white-space: nowrap;
-}
-
-.report-desc-cell {
-	max-width: 280px;
+.admin-v3 .report-target-group .report-facility-name {
+	font-size: 11px;
+	color: var(--admin-ink-2);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* 접수일 및 경과 뱃지 계층형 셀 */
+.admin-v3 .report-time-group {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.admin-v3 .report-time-group .report-time {
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: var(--admin-ink-2);
+	white-space: nowrap;
+}
+
+/* 증빙(위치/사진) 셀 */
+.admin-v3 .report-evidence-group {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 6px;
+}
+
+.admin-v3 .coordinate-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface-2);
+	border: 1px solid var(--admin-border);
+	font-size: 11px;
+	color: var(--admin-ink-2);
+	cursor: default;
+}
+
+.admin-v3 .coordinate-badge .pin-icon {
+	font-size: 12px;
+	line-height: 1;
+}
+
+.admin-v3 .report-thumb {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: var(--admin-radius-control);
+	overflow: hidden;
+	border: 1px solid var(--admin-border);
+	background: var(--admin-surface-2);
+	line-height: 0;
+	transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-v3 .report-thumb img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.admin-v3 .report-thumb:hover {
+	transform: scale(1.1);
+	border-color: var(--admin-primary);
+}
+
+.admin-v3 .detail-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	font-size: 12px;
+	font-weight: var(--admin-w-semibold);
 	color: var(--admin-ink);
+	text-decoration: none;
+	padding: 4px 8px;
+	border-radius: var(--admin-radius-control);
+	transition: background-color 0.15s ease, color 0.15s ease;
+	white-space: nowrap;
+}
+
+.admin-v3 .detail-link:hover {
+	background: var(--admin-surface-2);
+	color: var(--admin-primary);
 }
 
 /* 키보드로 이동한 행 강조(#1740): 상세 링크에 포커스가 들어오면 행 전체를 표시 */
