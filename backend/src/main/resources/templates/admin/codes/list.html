@@ -24,13 +24,13 @@
 		<h2>그룹</h2>
 		<form class="table-toolbar" method="get" th:action="@{/admin/codes/page}"
 		      role="search" aria-label="공통코드 그룹 조회">
-			<select id="code-group-filter" name="groupCode" aria-label="그룹 필터">
+			<select id="code-group-filter" name="groupCode" aria-label="그룹 필터" onchange="this.form.submit()">
 				<option th:each="group : ${groups}"
 				        th:value="${group.groupCode}"
 				        th:selected="${group.groupCode == selectedGroup}"
 				        th:text="${group.displayName}">신고 반려 사유</option>
 			</select>
-			<button type="submit" class="outline">조회</button>
+			<button type="submit" class="admin-btn secondary">조회</button>
 			<a class="admin-btn plain" th:href="@{/admin/codes/page}">초기화</a>
 		</form>
 	</section>
