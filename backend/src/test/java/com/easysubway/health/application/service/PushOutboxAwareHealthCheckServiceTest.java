@@ -62,6 +62,22 @@ class PushOutboxAwareHealthCheckServiceTest {
 	}
 
 	@Test
+	@DisplayName("기본 결과에 pushOutbox가 없으면 조용히 넘기지 않고 판정 결과를 덧붙여 드러낸다")
+	void appendsPushOutboxWhenBaseOmitsIt() {
+		CheckHealthUseCase baseWithoutPushOutbox = () -> HealthStatus.of("UP", "easysubway-backend", List.of(
+			new HealthComponent("application", "UP", "애플리케이션", "정상")
+		));
+
+		HealthStatus status = new PushOutboxAwareHealthCheckService(
+			baseWithoutPushOutbox,
+			() -> new PushDeliveryAvailability(false, List.of("사유"))
+		).checkHealth();
+
+		assertThat(status.components()).extracting("name").containsExactly("application", "pushOutbox");
+		assertThat(status.components().get(1).status()).isEqualTo("UNAVAILABLE");
+	}
+
+	@Test
 	@DisplayName("실제 HealthCheckService 결과와 함께 써도 pushOutbox 하나만 교체하고 나머지는 그대로다")
 	void replacesOnlyPushOutboxOfRealHealthCheck() throws Exception {
 		HealthCheckService real = new HealthCheckService(availableDataSource(), new InMemoryTransitMasterRepository());

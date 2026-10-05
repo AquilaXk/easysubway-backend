@@ -5,6 +5,7 @@ import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
 import com.easysubway.notification.application.port.in.PushDeliveryAvailabilityUseCase;
 import com.easysubway.notification.domain.PushDeliveryAvailability;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
@@ -44,9 +45,14 @@ public class PushOutboxAwareHealthCheckService implements CheckHealthUseCase {
 	public HealthStatus checkHealth() {
 		HealthStatus base = baseHealthCheck.checkHealth();
 		HealthComponent pushOutbox = pushOutboxComponent();
-		List<HealthComponent> components = base.components().stream()
+		boolean replaced = base.components().stream().anyMatch(component -> COMPONENT_NAME.equals(component.name()));
+		List<HealthComponent> components = new ArrayList<>(base.components().stream()
 			.map(component -> COMPONENT_NAME.equals(component.name()) ? pushOutbox : component)
-			.toList();
+			.toList());
+		// 기본 결과에 pushOutbox가 없어도(이름 변경·누락) 조용히 넘기지 않고 판정 결과를 덧붙여 드러낸다.
+		if (!replaced) {
+			components.add(pushOutbox);
+		}
 		return HealthStatus.of(base.status(), base.service(), components);
 	}
 
