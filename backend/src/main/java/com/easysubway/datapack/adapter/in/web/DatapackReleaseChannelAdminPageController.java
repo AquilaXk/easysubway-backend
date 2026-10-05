@@ -3,6 +3,7 @@ package com.easysubway.datapack.adapter.in.web;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository.ReleaseChannelEventRow;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository.ReleaseChannelRow;
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService;
 import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService.ReleaseChannelCommand;
 import java.time.LocalDateTime;
@@ -24,13 +25,16 @@ class DatapackReleaseChannelAdminPageController {
 
 	private final JdbcDatapackReleaseChannelRepository releaseChannelRepository;
 	private final DatapackReleaseChannelCommandService releaseChannelCommandService;
+	private final DatapackReleaseCatalogPort releaseCatalog;
 
 	DatapackReleaseChannelAdminPageController(
 		JdbcDatapackReleaseChannelRepository releaseChannelRepository,
-		DatapackReleaseChannelCommandService releaseChannelCommandService
+		DatapackReleaseChannelCommandService releaseChannelCommandService,
+		DatapackReleaseCatalogPort releaseCatalog
 	) {
 		this.releaseChannelRepository = releaseChannelRepository;
 		this.releaseChannelCommandService = releaseChannelCommandService;
+		this.releaseCatalog = releaseCatalog;
 	}
 
 	@GetMapping("/admin/datapack/release-channels/page")
@@ -77,6 +81,8 @@ class DatapackReleaseChannelAdminPageController {
 			))
 			.filter(event -> eventStatusMatches(event, filter.statusValue()))
 			.toList());
+		model.addAttribute("observations",
+			ReleaseObservationView.all(releaseChannelRepository.listObservations(), releaseCatalog));
 		model.addAttribute("filter", filter);
 		return "admin/datapack/release-channels/list";
 	}
