@@ -21,11 +21,11 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "bc4b54d23cbee723f652da8b79e233139be7503e94b7b65c97c93d44d81d1762"
+    "sourceInventorySha256": "c594ef942a915beced43801d1f8d8f23b0e168b06d15dc58f631aa8edb482697"
   },
   "scope": {
-    "criticalSourceCount": 464,
-    "reportedSourceCount": 464,
+    "criticalSourceCount": 465,
+    "reportedSourceCount": 465,
     "missingSourceCount": 0,
     "excludedSourceCount": 1
   },
@@ -122,6 +122,7 @@
     {"path":"backend/src/main/java/com/easysubway/health/adapter/out/actuator/BackendComponentHealthIndicator.java","sha256":"4d1e0d2d3bdd79c1835c043ab4a6fff4a09e0f004e70a63b94d288b39365d68e","packageName":"com.easysubway.health.adapter.out.actuator","sourceFileName":"BackendComponentHealthIndicator.java","boundaryIds":["HEALTH_READINESS"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":13,"total":13,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/health/application/port/in/CheckHealthUseCase.java","sha256":"b51c2e3a49b941dda061e37fccdd3375a162105d0d3d5d14e885a19ebc697038","packageName":"com.easysubway.health.application.port.in","sourceFileName":"CheckHealthUseCase.java","boundaryIds":["HEALTH_READINESS"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":0,"total":0,"basisPoints":null},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/health/application/service/HealthCheckService.java","sha256":"9e407fda1648646661b1cd5c869e9ada5de1ce4bc140657762932acc4803b407","packageName":"com.easysubway.health.application.service","sourceFileName":"HealthCheckService.java","boundaryIds":["HEALTH_READINESS"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":8,"covered":42,"total":50,"basisPoints":8400},"branch":{"missed":10,"covered":18,"total":28,"basisPoints":6428}},
+    {"path":"backend/src/main/java/com/easysubway/health/application/service/PushOutboxAwareHealthCheckService.java","sha256":"cb72fe783528c7ebc93f56101ca23abd10d1dbfc4010ceec7a91be2ca3b59bb2","packageName":"com.easysubway.health.application.service","sourceFileName":"PushOutboxAwareHealthCheckService.java","boundaryIds":["HEALTH_READINESS"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":22,"total":22,"basisPoints":10000},"branch":{"missed":0,"covered":6,"total":6,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/health/domain/HealthComponent.java","sha256":"f6c6b8e51dec1cad98827028d587efc75357a7f7ccf16fb4fe28e9fe77c1664f","packageName":"com.easysubway.health.domain","sourceFileName":"HealthComponent.java","boundaryIds":["HEALTH_READINESS"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/health/domain/HealthStatus.java","sha256":"c5feb385cb33bb627297e829b1327fb91852c9b7f62721a4d5a1cefbcfb3e18c","packageName":"com.easysubway.health.domain","sourceFileName":"HealthStatus.java","boundaryIds":["HEALTH_READINESS"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":4,"total":5,"basisPoints":8000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/activation/JourneyActivationCommandParser.java","sha256":"fd1a1b4d1181cc21b079aebec89dbbed87b653f9fb69e8cd97aef1ec56462aa7","packageName":"com.easysubway.journey.activation","sourceFileName":"JourneyActivationCommandParser.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":48,"total":48,"basisPoints":10000},"branch":{"missed":0,"covered":58,"total":58,"basisPoints":10000}},
@@ -615,20 +616,20 @@
     },
     {
       "id": "HEALTH_READINESS",
-      "sourceCount": 6,
-      "reportedSourceCount": 6,
+      "sourceCount": 7,
+      "reportedSourceCount": 7,
       "missingSourceCount": 0,
       "line": {
         "missed": 9,
-        "covered": 68,
-        "total": 77,
-        "basisPoints": 8831
+        "covered": 90,
+        "total": 99,
+        "basisPoints": 9090
       },
       "branch": {
         "missed": 10,
-        "covered": 18,
-        "total": 28,
-        "basisPoints": 6428
+        "covered": 24,
+        "total": 34,
+        "basisPoints": 7058
       }
     },
     {
