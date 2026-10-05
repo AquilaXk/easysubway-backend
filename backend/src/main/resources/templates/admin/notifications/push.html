@@ -20,6 +20,15 @@
 		</div>
 	</header>
 
+	<div id="push-delivery-unavailable" class="api-error-alert warning" role="status"
+	     th:if="${!deliveryAvailability.available}">
+		<strong>푸시 발송 불가</strong>
+		<p>지금은 푸시가 사용자에게 나가지 않습니다. 대기 중으로 보이는 알림은 처리되지 않고 쌓여 있습니다.</p>
+		<ul>
+			<li th:each="reason : ${deliveryAvailability.reasons}" th:text="${reason}">푸시 자동 발송이 꺼져 있습니다.</li>
+		</ul>
+	</div>
+
 	<section class="admin-panel" aria-labelledby="push-metric-panel-title">
 		<div class="admin-panel-head">
 			<h2 id="push-metric-panel-title">푸시 알림 outbox 요약</h2>
@@ -30,7 +39,7 @@
 				<strong class="cell-num" th:text="${summary.totalCount}">0</strong>
 			</div>
 			<div class="metric metric-cell">
-				<span>대기 중</span>
+				<span th:text="${deliveryAvailability.available} ? '대기 중' : '발송 불가'">대기 중</span>
 				<strong class="cell-num" th:text="${summary.pendingCount}">0</strong>
 			</div>
 			<div class="metric metric-cell">

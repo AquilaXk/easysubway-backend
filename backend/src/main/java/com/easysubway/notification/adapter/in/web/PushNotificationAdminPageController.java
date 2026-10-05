@@ -13,11 +13,13 @@ import com.easysubway.admin.metric.domain.AdminMetricKeys;
 import com.easysubway.admin.metric.domain.AdminMetricSparkline;
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.common.web.pagination.EgovPaginationView;
+import com.easysubway.notification.application.port.in.PushDeliveryAvailabilityUseCase;
 import com.easysubway.notification.application.port.in.PushNotificationDashboardUseCase;
 import com.easysubway.notification.application.port.in.PushNotificationHistoryQuery;
 import com.easysubway.notification.application.port.in.PushNotificationHistoryUseCase;
 import com.easysubway.notification.application.port.in.PushNotificationResendUseCase;
 import com.easysubway.notification.application.port.in.ResendPushNotificationsCommand;
+import com.easysubway.notification.domain.PushDeliveryAvailability;
 import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.notification.domain.PushNotificationFailureReasonCount;
@@ -60,6 +62,7 @@ class PushNotificationAdminPageController {
 	private final PushNotificationDashboardUseCase pushNotificationDashboardUseCase;
 	private final PushNotificationHistoryUseCase pushNotificationHistoryUseCase;
 	private final PushNotificationResendUseCase pushNotificationResendUseCase;
+	private final PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase;
 	private final AdminMetricQueryService metricQueryService;
 	private final AdminCommonCodeService commonCodeService;
 	private final AdminAuditWriter auditWriter;
@@ -69,6 +72,7 @@ class PushNotificationAdminPageController {
 		PushNotificationDashboardUseCase pushNotificationDashboardUseCase,
 		PushNotificationHistoryUseCase pushNotificationHistoryUseCase,
 		PushNotificationResendUseCase pushNotificationResendUseCase,
+		PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase,
 		AdminMetricQueryService metricQueryService,
 		AdminCommonCodeService commonCodeService,
 		AdminAuditWriter auditWriter,
@@ -77,6 +81,7 @@ class PushNotificationAdminPageController {
 		this.pushNotificationDashboardUseCase = pushNotificationDashboardUseCase;
 		this.pushNotificationHistoryUseCase = pushNotificationHistoryUseCase;
 		this.pushNotificationResendUseCase = pushNotificationResendUseCase;
+		this.pushDeliveryAvailabilityUseCase = pushDeliveryAvailabilityUseCase;
 		this.metricQueryService = metricQueryService;
 		this.commonCodeService = commonCodeService;
 		this.auditWriter = auditWriter;
@@ -98,7 +103,9 @@ class PushNotificationAdminPageController {
 		Model model
 	) {
 		PushNotificationDashboardSummary summary = pushNotificationDashboardUseCase.summarizePushNotifications();
-		model.addAttribute("summary", PushNotificationDashboardView.from(summary));
+		PushDeliveryAvailability availability = pushDeliveryAvailabilityUseCase.check();
+		model.addAttribute("summary", PushNotificationDashboardView.from(summary, availability));
+		model.addAttribute("deliveryAvailability", availability);
 		populateTrends(days, model);
 		populateSummarySparklines(model);
 		populateHistory(historyQuery(status, type, keyword, reason, from, to, page), authentication, request, model);
@@ -277,8 +284,9 @@ class PushNotificationAdminPageController {
 		EgovPaginationView pageView = EgovPaginationView.from(query.page(), query.size(), total);
 		PushNotificationHistoryQuery pageQuery = query.withPage(pageView.page());
 		PageResult<PushNotification> historyPage = pushNotificationHistoryUseCase.searchPushNotifications(pageQuery);
+		boolean deliveryAvailable = pushDeliveryAvailabilityUseCase.check().available();
 		List<PushNotificationHistoryRow> rows = historyPage.items().stream()
-			.map(PushNotificationHistoryRow::from)
+			.map(notification -> PushNotificationHistoryRow.from(notification, deliveryAvailable))
 			.toList();
 
 		model.addAttribute("historyRows", rows);
