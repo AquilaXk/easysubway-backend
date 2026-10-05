@@ -238,6 +238,7 @@ class RouteSearchAdminPageControllerTest {
 			.contains("접근성 정보가 부족해 확정하지 못함")
 			.contains("계단 없는 경로")
 			.contains("기록 실패(서버 시작 이후)")
+			.doesNotContain("기록에 실패해도 검색 응답은 그대로 나갑니다.")
 			.contains("aria-label=\"가로로 스크롤 가능한 탐색 종류별 결과 분류 표\"")
 			.contains("aria-label=\"가로로 스크롤 가능한 일별 탐색 결과 추이 표\"")
 			.doesNotContain("UNDETERMINED")
