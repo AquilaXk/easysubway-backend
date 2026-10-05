@@ -1,15 +1,20 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
 import com.easysubway.journey.application.JourneyProfileExecutionDisposition;
 import com.easysubway.journey.application.JourneyProfileExecutionResult;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneySessionService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +35,7 @@ final class JourneyProfileController {
 	private final JourneySessionService sessionService;
 	private final JourneyProfileDeadlineExecutor deadlineExecutor;
 	private final JourneyProfileResourcePolicy resourcePolicy;
+	private final JourneySearchRecorder recorder;
 	private final int maxRequestBytes;
 
 	@Autowired
@@ -37,11 +43,13 @@ final class JourneyProfileController {
 		JourneySessionService sessionService,
 		JourneyProfileDeadlineExecutor deadlineExecutor,
 		JourneyProfileResourcePolicy resourcePolicy,
-		@Value("${easysubway.journey.profile.max-request-bytes:65536}") int maxRequestBytes
+		@Value("${easysubway.journey.profile.max-request-bytes:65536}") int maxRequestBytes,
+		JourneySearchRecorder recorder
 	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
 		this.resourcePolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
+		this.recorder = Objects.requireNonNull(recorder, "recorder");
 		if (maxRequestBytes <= 0) throw new IllegalArgumentException("maxRequestBytes must be positive");
 		this.maxRequestBytes = maxRequestBytes;
 	}
@@ -54,25 +62,30 @@ final class JourneyProfileController {
 		String token = JourneySearchController.requireBearerToken(authorization);
 		JourneyRaptorQuery query = decode(readRequest(servletRequest));
 		sessionService.authorize(token, resourcePolicy.costUnitsFor(query.temporalQuery()));
-		JourneyProfileDeadlineExecutor.Outcome outcome;
+		JourneyProfileDeadlineExecutor.Outcome outcome = null;
 		try {
 			outcome = deadlineExecutor.execute(query, resourcePolicy);
 		} catch (RuntimeException exception) {
-			throw serviceUnavailable(query.requestId());
+			// 실행 실패와 null 결과는 같은 503으로 닫고 같은 방식으로 기록한다.
 		}
 		if (outcome == null) {
-			throw serviceUnavailable(query.requestId());
+			throw recorded(query, null, serviceUnavailable(query.requestId()));
 		}
 		JourneyProfileExecutionResult result = switch (outcome) {
 			case JourneyProfileDeadlineExecutor.Completed completed -> completed.result();
-			case JourneyProfileDeadlineExecutor.TimedOut ignored -> throw webFailure(query.requestId(), 504,
-				"JOURNEY_PROFILE_TIMEOUT");
+			case JourneyProfileDeadlineExecutor.TimedOut ignored -> throw recorded(query, null,
+				webFailure(query.requestId(), 504, "JOURNEY_PROFILE_TIMEOUT"));
 		};
 		return switch (result) {
-			case JourneyProfileExecutionResult.Success success -> ResponseEntity.ok()
-				.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-				.body(map(query, success));
-			case JourneyProfileExecutionResult.Failure failure -> throw disposition(query.requestId(), failure);
+			case JourneyProfileExecutionResult.Success success -> {
+				ObjectNode body = map(query, success);
+				recorder.recordProfileSuccess(query, success, objectiveTags(body));
+				yield ResponseEntity.ok()
+					.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+					.body(body);
+			}
+			case JourneyProfileExecutionResult.Failure failure -> throw recorded(query, failure.countSnapshot(),
+				disposition(query.requestId(), failure));
 		};
 	}
 
@@ -80,8 +93,26 @@ final class JourneyProfileController {
 		try {
 			return JourneyProfileResponseMapper.map(query, success, resourcePolicy, UUID.randomUUID().toString());
 		} catch (JourneyProfileResponseMapper.MappingException exception) {
-			throw disposition(query.requestId(), new JourneyProfileExecutionResult.Failure(exception.reason()));
+			throw recorded(query, success.countSnapshot(),
+				disposition(query.requestId(), new JourneyProfileExecutionResult.Failure(exception.reason())));
 		}
+	}
+
+	private static List<String> objectiveTags(ObjectNode body) {
+		List<String> tags = new ArrayList<>();
+		for (JsonNode journey : body.path("journeys")) {
+			for (JsonNode tag : journey.path("objectiveTags")) tags.add(tag.asText());
+		}
+		return tags;
+	}
+
+	private JourneySearchController.JourneySearchWebException recorded(
+		JourneyRaptorQuery query,
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+		JourneySearchController.JourneySearchWebException exception
+	) {
+		recorder.recordProfileFailure(query, exception.httpStatus(), exception.machineCode(), countSnapshot);
+		return exception;
 	}
 
 	private byte[] readRequest(HttpServletRequest request) {
@@ -102,7 +133,7 @@ final class JourneyProfileController {
 		}
 	}
 
-	private static RuntimeException disposition(
+	private static JourneySearchController.JourneySearchWebException disposition(
 		String requestId, JourneyProfileExecutionResult.Failure failure
 	) {
 		return switch (JourneyProfileExecutionDisposition.from(failure)) {

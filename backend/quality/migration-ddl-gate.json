@@ -59,6 +59,10 @@
     {
       "file": "V77__datapack_release_channel_observations.sql",
       "sha256": "b519d72d1b5c03ee43a345a9709e6a7aa5e2b6eead79080af71deab26b50bc81"
+    },
+    {
+      "file": "V78__journey_v3_search_records.sql",
+      "sha256": "f9ae359bb9e70b29a8a16d3ace339dbc89dad2a6412849e35b8e2376024abe9f"
     }
   ],
   "allowlist": [

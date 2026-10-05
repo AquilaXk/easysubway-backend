@@ -563,7 +563,10 @@ class JourneyV3RuntimeParityTest {
 			JourneyApplicationDeadlineExecutor deadlineExecutor
 		) {
 			return new JourneySearchController(sessionService, deadlineExecutor,
-				JourneyProfileResponseMapperTest.policy());
+				JourneyProfileResponseMapperTest.policy(),
+				new com.easysubway.journey.analytics.JourneySearchRecorder(
+					new com.easysubway.journey.analytics.InMemoryJourneySearchRecordStore(), Runnable::run,
+					Clock.fixed(NOW, ZoneOffset.UTC), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 		}
 
 		@Bean

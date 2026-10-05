@@ -5,6 +5,10 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.journey.analytics.JourneySearchKind;
+import com.easysubway.journey.analytics.JourneySearchOutcome;
+import com.easysubway.journey.analytics.JourneySearchRecord;
+import com.easysubway.journey.analytics.JourneySearchRecordStore;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.domain.EtaSource;
@@ -39,6 +43,9 @@ class RouteSearchAdminPageControllerTest {
 
 	@Autowired
 	private SaveRouteSearchPort saveRouteSearchPort;
+
+	@Autowired
+	private JourneySearchRecordStore journeySearchRecordStore;
 
 	@Test
 	@DisplayName("관리자는 경로 검색의 전체, 상태별, 이동 프로필별 건수를 확인한다")
@@ -187,6 +194,72 @@ class RouteSearchAdminPageControllerTest {
 		mockMvc.perform(get("/admin/routes/searches/page")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("관리자는 Journey 탐색 종류별 결과 분류·엔진 버전·접근성 판정과 기록 없는 날을 확인한다")
+	void adminGetsJourneySearchAnalytics() throws Exception {
+		java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+		journeySearchRecordStore.save(journeyRecord(today, JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND,
+			"UNKNOWN", java.util.List.of("FASTEST", "STAIR_FREE"), "UNDETERMINED"));
+		journeySearchRecordStore.save(journeyRecord(today, JourneySearchKind.DEPART_AT, JourneySearchOutcome.NO_ROUTE,
+			"UNKNOWN", java.util.List.of(), "NOT_APPLICABLE"));
+		journeySearchRecordStore.save(journeyRecord(today, JourneySearchKind.ARRIVE_BY, JourneySearchOutcome.TOO_COMPLEX,
+			"EASYSUBWAY_RAPTOR_SUITE_V2/REVERSE_RANGE_RAPTOR/2.0.0", java.util.List.of(), "NOT_APPLICABLE"));
+		journeySearchRecordStore.save(journeyRecord(today, JourneySearchKind.LAST_CONNECTION, JourneySearchOutcome.TIMEOUT,
+			"UNKNOWN", java.util.List.of(), "NOT_APPLICABLE"));
+
+		String html = mockMvc.perform(get("/admin/routes/searches/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String dump = System.getenv("EASYSUBWAY_EVIDENCE_HTML");
+		if (dump != null) {
+			java.nio.file.Files.writeString(java.nio.file.Path.of(dump), html);
+		}
+		assertThat(html)
+			.contains("경로 탐색 종류별 결과 (최근 7일)")
+			.contains("탐색 종류별 결과 분류")
+			.contains("<th scope=\"row\">출발 시각</th>")
+			.contains("<th scope=\"row\">도착 희망</th>")
+			.contains("<th scope=\"row\">막차</th>")
+			.doesNotContain("<th scope=\"row\">출발 시간대</th>")
+			.contains("<th scope=\"col\">복잡도 초과</th>")
+			.contains("<th scope=\"col\">시간 초과</th>")
+			.contains("<th scope=\"col\">일시 불가</th>")
+			.contains("일별 추이")
+			.contains("기록 없음")
+			.contains("EASYSUBWAY_RAPTOR_SUITE_V2/REVERSE_RANGE_RAPTOR/2.0.0")
+			.contains("확인되지 않음")
+			.contains("접근성 정보가 부족해 확정하지 못함")
+			.contains("계단 없는 경로")
+			.contains("기록 실패(서버 시작 이후)")
+			.contains("aria-label=\"가로로 스크롤 가능한 탐색 종류별 결과 분류 표\"")
+			.contains("aria-label=\"가로로 스크롤 가능한 일별 탐색 결과 추이 표\"")
+			.doesNotContain("UNDETERMINED")
+			.doesNotContain("NOT_APPLICABLE");
+	}
+
+	@Test
+	@DisplayName("Journey 탐색 기록이 없으면 기록 없음으로 표시한다")
+	void adminSeesNoRecordsExplicitly() throws Exception {
+		String html = mockMvc.perform(get("/admin/routes/searches/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html).contains("경로 탐색 종류별 결과").contains("기록 없음");
+	}
+
+	private static JourneySearchRecord journeyRecord(java.time.LocalDate day, JourneySearchKind kind,
+		JourneySearchOutcome outcome, String engine, java.util.List<String> categories, String stairFree) {
+		return new JourneySearchRecord(java.util.UUID.randomUUID().toString(), java.time.Instant.now(), day, kind,
+			outcome, outcome == JourneySearchOutcome.FOUND ? 200 : 422, null, engine, "STEP_FREE", categories, stairFree);
 	}
 
 	private RouteSearchResult foundRouteSearch(String routeSearchId, MobilityType mobilityType) {

@@ -14,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
+import com.easysubway.journey.analytics.JourneySearchRecordStore;
+import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyProfileExecutionResult;
@@ -44,6 +46,10 @@ class JourneyProfileControllerTest {
 	private final JourneySessionService sessions = mock(JourneySessionService.class);
 	private final JourneyProfileDeadlineExecutor executor = mock(JourneyProfileDeadlineExecutor.class);
 	private final JourneyProfileResourcePolicy policy = JourneyProfileResponseMapperTest.policy();
+	private final JourneySearchRecordStore recordStore = mock(JourneySearchRecordStore.class);
+	private final JourneySearchRecorder recorder = new JourneySearchRecorder(
+		recordStore, Runnable::run, java.time.Clock.fixed(java.time.Instant.parse("2026-09-01T00:00:00Z"), java.time.ZoneOffset.UTC),
+		new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
 
 	@Test
 	void rejectsMissingBearerMalformedAndOversizedBodiesBeforeExecution() throws Exception {
@@ -138,8 +144,78 @@ class JourneyProfileControllerTest {
 			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"));
 	}
 
+	@Test
+	void recordsProfileKindOutcomeAndEngineVersion() throws Exception {
+		when(executor.execute(any(), same(policy))).thenAnswer(invocation -> {
+			JourneyRaptorQuery query = invocation.getArgument(0);
+			var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(true))));
+			return new JourneyProfileDeadlineExecutor.Completed(JourneyProfileResponseMapperTest.success(query, plan));
+		});
+		String body = request(ARRIVE_BY);
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(body))
+			.andExpect(status().isOk());
+
+		var saved = org.mockito.ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+		verify(recordStore).save(saved.capture());
+		assertThat(saved.getValue()).satisfies(record -> {
+			assertThat(record.kind()).isEqualTo(com.easysubway.journey.analytics.JourneySearchKind.ARRIVE_BY);
+			assertThat(record.outcome()).isEqualTo(com.easysubway.journey.analytics.JourneySearchOutcome.FOUND);
+			assertThat(record.engineVersion()).isEqualTo(
+				com.easysubway.journey.application.JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR.algorithmSuiteId()
+					+ "/" + com.easysubway.journey.application.JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR.queryAlgorithmId()
+					+ "/" + com.easysubway.journey.application.JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR.semanticVersion());
+			assertThat(record.engineVersion()).doesNotContain("UNKNOWN");
+			assertThat(record.mobilityProfile()).isEqualTo("STEP_FREE");
+			assertThat(record.stairFreeStatus()).isEqualTo("UNKNOWN");
+			assertThat(record.alternativeCategories()).isNotEmpty();
+		});
+	}
+
+	@Test
+	void recordsProfileFailureClassifications() throws Exception {
+		var cases = List.of(
+			new Object[] {JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX, 422, "TOO_COMPLEX"},
+			new Object[] {JourneyProfileExecutionResult.Reason.NO_ROUTE_ARRIVING_BY_DEADLINE, 422, "NO_ROUTE"},
+			new Object[] {JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE, 400, "REJECTED"},
+			new Object[] {JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE, 503, "UNAVAILABLE"});
+		for (Object[] c : cases) {
+			clearInvocations(recordStore);
+			when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.Completed(
+				new JourneyProfileExecutionResult.Failure((JourneyProfileExecutionResult.Reason) c[0])));
+			mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+				.andExpect(status().is((Integer) c[1]));
+			var saved = org.mockito.ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+			verify(recordStore).save(saved.capture());
+			assertThat(saved.getValue().outcome().name()).isEqualTo(c[2]);
+			assertThat(saved.getValue().httpStatus()).isEqualTo((Integer) c[1]);
+		}
+	}
+
+	@Test
+	void recordsProfileTimeoutAndKeepsResponseWhenRecordingFails() throws Exception {
+		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.TimedOut());
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isGatewayTimeout());
+		var saved = org.mockito.ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+		verify(recordStore).save(saved.capture());
+		assertThat(saved.getValue().outcome()).isEqualTo(com.easysubway.journey.analytics.JourneySearchOutcome.TIMEOUT);
+
+		org.mockito.Mockito.doThrow(new IllegalStateException("db down")).when(recordStore).save(any());
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isGatewayTimeout()).andExpect(jsonPath("$.code").value("JOURNEY_PROFILE_TIMEOUT"));
+		assertThat(recorder.failureCount()).isEqualTo(1);
+	}
+
+	@Test
+	void doesNotRecordInvalidTemporalQueries() throws Exception {
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content("{}"))
+			.andExpect(status().isBadRequest());
+		verifyNoInteractions(recordStore);
+	}
+
 	private MockMvc mvc(int maxBytes) {
-		return MockMvcBuilders.standaloneSetup(new JourneyProfileController(sessions, executor, policy, maxBytes))
+		return MockMvcBuilders.standaloneSetup(new JourneyProfileController(sessions, executor, policy, maxBytes, recorder))
 			.setControllerAdvice(new JourneySearchExceptionHandler()).build();
 	}
 
@@ -155,7 +231,7 @@ class JourneyProfileControllerTest {
 	void requiresAPositiveBoundedRequestSize() {
 		assertThatThrownBy(() -> new JourneyProfileController(
 			mock(JourneySessionService.class), mock(JourneyProfileDeadlineExecutor.class),
-			mock(JourneyProfileResourcePolicy.class), 0))
+			mock(JourneyProfileResourcePolicy.class), 0, recorder))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("maxRequestBytes must be positive");
 	}
@@ -165,6 +241,7 @@ class JourneyProfileControllerTest {
 	void bindsMaxRequestBytesConfigurationProperty() {
 		var runner = new ApplicationContextRunner()
 			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withBean(JourneySearchRecorder.class, () -> recorder)
 			.withBean(JourneyProfileDeadlineExecutor.class, () -> mock(JourneyProfileDeadlineExecutor.class))
 			.withBean(JourneyProfileResourcePolicy.class, () -> policy)
 			.withUserConfiguration(ProfileWebConfiguration.class)
