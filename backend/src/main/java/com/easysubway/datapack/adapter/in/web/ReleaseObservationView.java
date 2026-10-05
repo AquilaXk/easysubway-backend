@@ -7,7 +7,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -44,11 +43,9 @@ record ReleaseObservationView(
 	) {
 		boolean productionObserved = observations.stream().anyMatch(row -> COMPARED_CHANNEL.equals(row.channel()));
 		Optional<CatalogIdentity> catalog = productionObserved ? productionCatalog.get() : Optional.empty();
-		var views = new ArrayList<ReleaseObservationView>();
-		for (String channel : CHANNELS) {
-			views.add(of(channel, observations.stream().filter(row -> row.channel().equals(channel)).findFirst(), catalog));
-		}
-		return views;
+		return CHANNELS.stream()
+			.map(channel -> of(channel, observations.stream().filter(row -> row.channel().equals(channel)).findFirst(), catalog))
+			.toList();
 	}
 
 	static Optional<CatalogIdentity> readCatalog(DatapackReleaseCatalogPort catalogPort, String channel) {

@@ -157,7 +157,7 @@ class DatapackReleaseChannelObservationPageTest {
 	void rendersWhenCatalogIsSlow() throws Exception {
 		insertObservation("production", 126);
 		when(catalog.fetchCurrent("production")).thenAnswer(invocation -> {
-			Thread.sleep(10_000);
+			new java.util.concurrent.CountDownLatch(1).await();
 			return new CatalogIdentity(126, SHA, "production", "", true, SHA);
 		});
 

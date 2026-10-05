@@ -36,8 +36,10 @@ class ReleaseCatalogObservationReader {
 		thread.setDaemon(true);
 		return thread;
 	});
-	private Optional<CatalogIdentity> cached;
-	private Instant cachedAt;
+	private Cached cached;
+
+	private record Cached(Optional<CatalogIdentity> catalog, Instant at) {
+	}
 
 	@Autowired
 	ReleaseCatalogObservationReader(
@@ -58,17 +60,15 @@ class ReleaseCatalogObservationReader {
 
 	synchronized Optional<CatalogIdentity> readProduction() {
 		Instant now = clock.instant();
-		if (cached != null && now.isBefore(cachedAt.plus(ttl))) {
-			return cached;
+		if (cached != null && now.isBefore(cached.at().plus(ttl))) {
+			return cached.catalog();
 		}
-		cached = fetch();
-		cachedAt = now;
-		return cached;
+		cached = new Cached(fetch(), now);
+		return cached.catalog();
 	}
 
 	synchronized void clear() {
 		cached = null;
-		cachedAt = null;
 	}
 
 	@PreDestroy

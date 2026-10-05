@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -100,7 +101,7 @@ class ReleaseCatalogObservationReaderTest {
 
 	private static void sleepUntilInterrupted() {
 		try {
-			Thread.sleep(30_000);
+			new CountDownLatch(1).await();
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new DatapackReleaseCatalogPort.Unavailable();
