@@ -179,6 +179,48 @@
 	</section>
 
 	<section class="admin-panel">
+		<h2>git 원본 발행 관측</h2>
+		<p class="meta">발행 완료 알림이 마지막으로 기록한 채널별 발행 상태입니다. 읽기 전용이며 운영 채널은 공개 목록의 발행 번호와 비교합니다.</p>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 git 원본 발행 관측 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">채널</th>
+				<th scope="col">발행 번호</th>
+				<th scope="col">목록 지문</th>
+				<th scope="col">요청 번호</th>
+				<th scope="col">관측 시각</th>
+				<th scope="col">실행 기록</th>
+				<th scope="col">공개 목록 비교</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="observation : ${observations}" th:attr="data-observation-state=${observation.state}">
+				<th scope="row" th:text="${observation.channelLabel}">프로덕션</th>
+				<td th:text="${observation.observedSequence != null ? observation.observedSequence : '관측 없음'}">126</td>
+				<td>
+					<span th:if="${observation.manifestSha256 != null}" th:title="${observation.manifestSha256}"
+					      th:text="${#strings.abbreviate(observation.manifestSha256, 11)}">sha</span>
+					<span th:if="${observation.manifestSha256 == null}">관측 없음</span>
+				</td>
+				<td th:text="${observation.releaseRequestId != null ? observation.releaseRequestId : '관측 없음'}">request</td>
+				<td th:text="${observation.observedAtText != null ? observation.observedAtText : '관측 없음'}">2026-10-03 18:30</td>
+				<td>
+					<span th:if="${observation.workflowRunUrl != null}" th:text="${observation.workflowRunUrl}">run</span>
+					<span th:if="${observation.workflowRunUrl == null}">관측 없음</span>
+				</td>
+				<td>
+					<strong th:if="${observation.warning}" role="status" th:text="${observation.message}">경고</strong>
+					<span th:unless="${observation.warning}" th:text="${observation.message}">일치</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
 		<h2>채널 이벤트</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 채널 이벤트 표">

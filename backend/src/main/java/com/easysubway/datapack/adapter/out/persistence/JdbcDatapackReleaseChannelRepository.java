@@ -44,6 +44,21 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			""", this::mapChannel);
 	}
 
+	public List<ReleaseChannelObservationRow> listObservations() {
+		return jdbcTemplate.query("""
+			SELECT channel, release_sequence, manifest_sha256, release_request_id,
+				workflow_run_url, observed_at
+			FROM datapack_release_channel_observations
+			ORDER BY CASE channel WHEN 'production' THEN 1 WHEN 'staging' THEN 2 ELSE 3 END
+			""", (resultSet, rowNumber) -> new ReleaseChannelObservationRow(
+			resultSet.getString("channel"),
+			resultSet.getLong("release_sequence"),
+			resultSet.getString("manifest_sha256"),
+			resultSet.getString("release_request_id"),
+			resultSet.getString("workflow_run_url"),
+			resultSet.getTimestamp("observed_at").toLocalDateTime()));
+	}
+
 	public List<ReleaseChannelEventRow> listRecentEvents(int limit) {
 		return jdbcTemplate.query("""
 			SELECT id, channel, previous_candidate_id, next_candidate_id,
@@ -341,6 +356,16 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			resultSet.getBoolean("rollback_available"),
 			resultSet.getString("last_operation_status")
 		);
+	}
+
+	public record ReleaseChannelObservationRow(
+		String channel,
+		long releaseSequence,
+		String manifestSha256,
+		String releaseRequestId,
+		String workflowRunUrl,
+		LocalDateTime observedAt
+	) {
 	}
 
 	public record ReleaseChannelRow(

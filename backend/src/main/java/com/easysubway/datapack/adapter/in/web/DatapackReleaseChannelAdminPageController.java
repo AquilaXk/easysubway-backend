@@ -24,13 +24,16 @@ class DatapackReleaseChannelAdminPageController {
 
 	private final JdbcDatapackReleaseChannelRepository releaseChannelRepository;
 	private final DatapackReleaseChannelCommandService releaseChannelCommandService;
+	private final ReleaseCatalogObservationReader catalogReader;
 
 	DatapackReleaseChannelAdminPageController(
 		JdbcDatapackReleaseChannelRepository releaseChannelRepository,
-		DatapackReleaseChannelCommandService releaseChannelCommandService
+		DatapackReleaseChannelCommandService releaseChannelCommandService,
+		ReleaseCatalogObservationReader catalogReader
 	) {
 		this.releaseChannelRepository = releaseChannelRepository;
 		this.releaseChannelCommandService = releaseChannelCommandService;
+		this.catalogReader = catalogReader;
 	}
 
 	@GetMapping("/admin/datapack/release-channels/page")
@@ -77,6 +80,8 @@ class DatapackReleaseChannelAdminPageController {
 			))
 			.filter(event -> eventStatusMatches(event, filter.statusValue()))
 			.toList());
+		model.addAttribute("observations",
+			ReleaseObservationView.all(releaseChannelRepository.listObservations(), catalogReader::readProduction));
 		model.addAttribute("filter", filter);
 		return "admin/datapack/release-channels/list";
 	}
