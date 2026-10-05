@@ -21,7 +21,7 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "8c2c56276fb303597aa14d38ac9843f17e4bdeb82a92cdca7ab6c386670b180a"
+    "sourceInventorySha256": "30dfed5bc657f47eec1440c023a1d0bc225213ec8b5ffada64ac039d80639f3a"
   },
   "scope": {
     "criticalSourceCount": 467,
@@ -79,8 +79,8 @@
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/DataSourceSnapshotAdminPageController.java","sha256":"7f86bef22eedf2e001f14c627bede7ce6c7ec0d9ca38a2d14ef8806fc0c21349","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"DataSourceSnapshotAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":74,"total":75,"basisPoints":9866},"branch":{"missed":5,"covered":5,"total":10,"basisPoints":5000}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/FacilityEvidenceAdminPageController.java","sha256":"b865839ce540265557251651ad70f7cd88afe48e78f546702b0eeedcc40421d7","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"FacilityEvidenceAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":10,"covered":61,"total":71,"basisPoints":8591},"branch":{"missed":21,"covered":7,"total":28,"basisPoints":2500}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ManualOverrideLedgerAdminPageController.java","sha256":"d4fba10a90c8c9d530afe9fedf2d3fd4571bfaf0411676334d36e0d2c7996547","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ManualOverrideLedgerAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":13,"covered":89,"total":102,"basisPoints":8725},"branch":{"missed":21,"covered":22,"total":43,"basisPoints":5116}},
-    {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ReleaseCatalogObservationReader.java","sha256":"870ef95d782a5990a71c65d0c39bd7ae069a86dba6680327d72ead21d74a7965","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ReleaseCatalogObservationReader.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":4,"covered":29,"total":33,"basisPoints":8787},"branch":{"missed":0,"covered":4,"total":4,"basisPoints":10000}},
-    {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ReleaseObservationView.java","sha256":"857d97a141fc57f01031173ac16ca5d8dda5fe9b91081f02d7c6d8f105cbd411","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ReleaseObservationView.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":41,"total":42,"basisPoints":9761},"branch":{"missed":1,"covered":23,"total":24,"basisPoints":9583}},
+    {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ReleaseCatalogObservationReader.java","sha256":"4f7279427a4328e79174895989eeda248020b233dd6afc64a42fb3d916c72ded","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ReleaseCatalogObservationReader.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":4,"covered":28,"total":32,"basisPoints":8750},"branch":{"missed":0,"covered":4,"total":4,"basisPoints":10000}},
+    {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ReleaseObservationView.java","sha256":"e9d1faf33f44740dacebd393d1cbf4cd5354b58ebe28c3c12ee2a33831ee1cda","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ReleaseObservationView.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":39,"total":40,"basisPoints":9750},"branch":{"missed":1,"covered":21,"total":22,"basisPoints":9545}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/RouteGateMatrixAdminPageController.java","sha256":"304164d4f1dc7947ee26bb96596b4799a2adfd303e94d475ee97ae74dcd22524","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"RouteGateMatrixAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":16,"covered":50,"total":66,"basisPoints":7575},"branch":{"missed":30,"covered":14,"total":44,"basisPoints":3181}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/WorkflowServiceTokenFilter.java","sha256":"091f1147aeb39bfdcfe10b913d105e0c07bea7f74fd16a0a894247fa7680c485","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"WorkflowServiceTokenFilter.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":13,"total":13,"basisPoints":10000},"branch":{"missed":4,"covered":6,"total":10,"basisPoints":6000}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/out/catalog/HttpDatapackReleaseCatalogAdapter.java","sha256":"82943f5999833951b5b151d11fb8b078d2bd42e8e8f14f8f925c80f384044d0d","packageName":"com.easysubway.datapack.adapter.out.catalog","sourceFileName":"HttpDatapackReleaseCatalogAdapter.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":14,"covered":125,"total":139,"basisPoints":8992},"branch":{"missed":29,"covered":69,"total":98,"basisPoints":7040}},
@@ -533,15 +533,15 @@
       "missingSourceCount": 0,
       "line": {
         "missed": 279,
-        "covered": 2847,
-        "total": 3126,
-        "basisPoints": 9107
+        "covered": 2844,
+        "total": 3123,
+        "basisPoints": 9106
       },
       "branch": {
         "missed": 540,
-        "covered": 951,
-        "total": 1491,
-        "basisPoints": 6378
+        "covered": 949,
+        "total": 1489,
+        "basisPoints": 6373
       }
     },
     {
