@@ -34,7 +34,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
   const gateSource = readFileSync(new URL('./backend-spotbugs-gate.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
-  assert.match(gateSource, /classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6'/);
+  assert.match(gateSource, /classpathDigest: 'd5ad1730f49008d12fc1ede030d407c6d9e005a295fcd40317b4c4713b439e75'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'ce4aa12170bb07eee2b48fa5d07931faf05a43c65edf9c53cd80ee2b83443247');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
