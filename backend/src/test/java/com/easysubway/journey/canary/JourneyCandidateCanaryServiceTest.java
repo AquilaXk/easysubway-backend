@@ -32,8 +32,8 @@ import org.mockito.ArgumentCaptor;
 class JourneyCandidateCanaryServiceTest {
 
 	private static final Instant CAPTURED_AT = Instant.parse("2026-08-13T03:00:00Z");
-	/** 2026-08-13 10:00 KST. CAPTURED_AT(12:00 KST)이 속한 운행일의 대표 출발 시각이다. */
-	private static final Instant REPRESENTATIVE_AT = Instant.parse("2026-08-13T01:00:00Z");
+	/** 2026-08-14 10:00 KST. 번들 유효 구간(2026-08-13 11:00 KST~) 안에서 처음 오는 10:00 KST다. */
+	private static final Instant REPRESENTATIVE_AT = Instant.parse("2026-08-14T01:00:00Z");
 	private static final String SHA_A = JourneyCandidateCanaryCommandParserTest.SHA_A;
 	private static final JourneyRaptorPort.ScanMetrics OBSERVED_SCAN = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
 	private final RouteBundleActivationRegistry registry = mock(RouteBundleActivationRegistry.class);
@@ -214,7 +214,33 @@ class JourneyCandidateCanaryServiceTest {
 	}
 
 	@Test
-	void representativeDepartureFollowsTheServiceDayOfTheRunAndNeverTheWallClockTimeOfDay() {
+	void representativeDepartureIsTheFirstTenAmKstInsideTheBundleValidityWindow() {
+		var departures = new java.util.ArrayList<Instant>();
+		when(raptorPort.plan(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+			departures.add(invocation.getArgument(2));
+			return planned();
+		});
+		// activeFrom 11:00 KST는 같은 날 10:00을 지났으므로 다음 날 10:00, 10:00 정각과 그 이전은 같은 날 10:00이다.
+		var cases = java.util.Map.of(
+			"2026-08-13T11:00:00.000+09:00", Instant.parse("2026-08-14T01:00:00Z"),
+			"2026-08-13T10:00:00.001+09:00", Instant.parse("2026-08-14T01:00:00Z"),
+			"2026-08-13T10:00:00.000+09:00", Instant.parse("2026-08-13T01:00:00Z"),
+			"2026-08-13T09:59:59.999+09:00", Instant.parse("2026-08-13T01:00:00Z"),
+			"2026-08-12T23:00:00.000+09:00", Instant.parse("2026-08-13T01:00:00Z"));
+		for (var entry : cases.entrySet()) {
+			var staged = staged(SHA_A, 1, entry.getKey(), "2026-08-15T12:00:00.000+09:00");
+			when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+			when(registry.candidateSnapshot()).thenReturn(candidateProjection(staged));
+			departures.clear();
+
+			assertThat(service.execute(command(SHA_A, 1)).passed()).as(entry.getKey()).isTrue();
+
+			assertThat(departures).as(entry.getKey()).containsExactly(entry.getValue());
+		}
+	}
+
+	@Test
+	void runsBeforeTheServiceDayCutoffUseTheSameBundleDeparture() {
 		var staged = staged(SHA_A, 1);
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 		when(registry.candidateSnapshot()).thenReturn(candidateProjection(staged));
@@ -224,13 +250,28 @@ class JourneyCandidateCanaryServiceTest {
 			return planned();
 		});
 
-		// 2026-08-14 02:59 KST는 아직 08-13 운행일, 03:00 KST부터 08-14 운행일이다.
+		// 2026-08-14 00:06, 02:59, 03:00 KST. 운행일 03:00 경계 전후에도 출발 시각은 번들 기준 하나다.
+		serviceAt(Instant.parse("2026-08-13T15:06:00Z")).execute(command(SHA_A, 1));
 		serviceAt(Instant.parse("2026-08-13T17:59:00Z")).execute(command(SHA_A, 1));
 		serviceAt(Instant.parse("2026-08-13T18:00:00Z")).execute(command(SHA_A, 1));
 
-		assertThat(departures).containsExactly(
-			Instant.parse("2026-08-13T01:00:00Z"),
-			Instant.parse("2026-08-14T01:00:00Z"));
+		assertThat(departures).containsExactly(REPRESENTATIVE_AT, REPRESENTATIVE_AT, REPRESENTATIVE_AT);
+	}
+
+	@Test
+	void bundleWindowWithoutAnyTenAmKstReportsWindowMismatchBeforePlanning() {
+		// 같은 날 11:00~20:00 KST 창에는 10:00이 없다.
+		var staged = staged(SHA_A, 1, "2026-08-13T11:00:00.000+09:00", "2026-08-13T20:00:00.000+09:00");
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, service);
+
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+		// 창의 끝(freshUntil) 정각 10:00도 [activeFrom, freshUntil)에 속하지 않는다.
+		var boundary = staged(SHA_A, 1, "2026-08-13T11:00:00.000+09:00", "2026-08-14T10:00:00.000+09:00");
+		when(registry.candidateExecutionSnapshot()).thenReturn(boundary);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, service);
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
 	}
 
 	@Test
@@ -364,11 +405,16 @@ class JourneyCandidateCanaryServiceTest {
 	}
 
 	private static RouteBundleActivationRegistry.CandidateExecutionSnapshot staged(String manifest, long generation) {
+		return staged(manifest, generation, "2026-08-13T11:00:00.000+09:00", "2026-08-14T12:00:00.000+09:00");
+	}
+
+	private static RouteBundleActivationRegistry.CandidateExecutionSnapshot staged(
+		String manifest, long generation, String activeFrom, String freshUntil) {
 		var runtime = mock(TestRuntimeView.class);
 		when(runtime.routeBundleSha256()).thenReturn(manifest);
 		when(runtime.generation()).thenReturn(generation);
 		return new RouteBundleActivationRegistry.CandidateExecutionSnapshot(
-			generation, identity("a"), evidence(manifest), runtime,
+			generation, identity("a", activeFrom, freshUntil), evidence(manifest), runtime,
 			CAPTURED_AT.minusSeconds(2), CAPTURED_AT.minusSeconds(1));
 	}
 
@@ -379,11 +425,15 @@ class JourneyCandidateCanaryServiceTest {
 	}
 
 	private static RouteBundleIdentity identity(String marker) {
+		return identity(marker, "2026-08-13T11:00:00.000+09:00", "2026-08-14T12:00:00.000+09:00");
+	}
+
+	private static RouteBundleIdentity identity(String marker, String activeFrom, String freshUntil) {
 		return new RouteBundleIdentity(
 			1, "server-route-bundle", "bundle-" + marker, 31,
 			"0".repeat(64), "1".repeat(64), "2".repeat(64), "3".repeat(64),
 			"4".repeat(64), "5".repeat(64), "6".repeat(64), "7".repeat(64),
-			"Asia/Seoul", "2026-08-13T11:00:00.000+09:00", "2026-08-14T12:00:00.000+09:00",
+			"Asia/Seoul", activeFrom, freshUntil,
 			new RouteBundleIdentity.SchemaCompatibility(3, 3), "route-bundle-key",
 			new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "AQID"));
 	}

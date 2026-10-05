@@ -8,6 +8,7 @@ import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.journey.bundle.RouteBundleActivationException;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
+import com.easysubway.journey.bundle.RouteBundleIdentity;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,13 +23,14 @@ import org.slf4j.LoggerFactory;
 /**
  * Journey 후보 활성화 canary.
  *
- * <p>출발 시각은 실행 시각(wall-clock)이 아니라 실행 시점이 속한 운행일({@link ServiceDayResolver}, 03:00 경계)의
- * 고정 대표 시각 {@link #REPRESENTATIVE_DEPARTURE_LOCAL_TIME}(KST)이다. 같은 번들·probe는 막차 이후 심야에 실행해도
- * 주간과 같은 판정을 받는다. 번들 유효 구간(activeFrom~freshUntil)은 여전히 실행 시각으로 검증한다.</p>
+ * <p>출발 시각은 실행 시각(wall-clock)이 아니라 번들 기준이다. 번들 유효 구간 [activeFrom, freshUntil) 안에서 처음 오는
+ * {@link #REPRESENTATIVE_DEPARTURE_LOCAL_TIME}(KST)이다. 그래서 같은 번들·probe는 막차 이후 심야에 실행해도 주간과 같은
+ * 판정을 받고, 항상 번들이 서비스하는 시각을 조회한다. 유효 구간 안에 그 시각이 없으면 {@code WINDOW_MISMATCH}다.
+ * 번들 유효 구간 자체는 여전히 실제 실행 시각으로 검증한다.</p>
  */
 public final class JourneyCandidateCanaryService {
 
-	/** 모든 노선이 운행 중인 평일·휴일 공통 주간 시각. 운행일 기준 {@code Asia/Seoul} 로컬 시각이다. */
+	/** 모든 노선이 운행 중인 주간 대표 시각. {@code Asia/Seoul} 로컬 시각이며 번들 유효 구간에서 처음 오는 것을 쓴다. */
 	public static final LocalTime REPRESENTATIVE_DEPARTURE_LOCAL_TIME = LocalTime.of(10, 0);
 	private static final Logger LOG = LoggerFactory.getLogger(JourneyCandidateCanaryService.class);
 	private static final int SCHEMA_VERSION = 1;
@@ -64,7 +66,7 @@ public final class JourneyCandidateCanaryService {
 			|| command.candidateGeneration() != runtimeView.generation()) {
 			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, null);
 		}
-		Instant departureAt = representativeDeparture(capturedAt);
+		Instant departureAt = representativeDeparture(candidate.identity(), command);
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		JourneyRequest request;
@@ -149,12 +151,21 @@ public final class JourneyCandidateCanaryService {
 			evidenceSha256);
 	}
 
-	/** 실행 시점이 속한 운행일의 대표 출발 시각. 같은 운행일 안에서는 실행 시각과 무관하다. */
-	private static Instant representativeDeparture(Instant capturedAt) {
-		return ServiceDayResolver.resolve(capturedAt).serviceDate()
+	/** 번들 유효 구간 [activeFrom, freshUntil) 안에서 처음 오는 대표 시각. 실행 시각에 의존하지 않는다. */
+	private static Instant representativeDeparture(
+		RouteBundleIdentity identity, JourneyCandidateCanaryCommandParser.Command command) {
+		Instant activeFrom = identity.activeFromInstant();
+		Instant departure = activeFrom.atZone(ServiceDayResolver.ZONE).toLocalDate()
 			.atTime(REPRESENTATIVE_DEPARTURE_LOCAL_TIME)
 			.atZone(ServiceDayResolver.ZONE)
 			.toInstant();
+		if (departure.isBefore(activeFrom)) {
+			departure = departure.atZone(ServiceDayResolver.ZONE).plusDays(1).toInstant();
+		}
+		if (!departure.isBefore(identity.freshUntilInstant())) {
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, null);
+		}
+		return departure;
 	}
 
 	private RouteBundleActivationRegistry.CandidateExecutionSnapshot currentCandidate(
