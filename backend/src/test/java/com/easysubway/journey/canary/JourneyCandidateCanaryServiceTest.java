@@ -296,6 +296,7 @@ class JourneyCandidateCanaryServiceTest {
 			RouteBundleActivationException.Reason.BUNDLE_FUTURE, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
 			RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR);
 		for (var entry : expected.entrySet()) {
+			org.mockito.Mockito.reset(registry);
 			var failure = mock(RouteBundleActivationException.class);
 			when(failure.reason()).thenReturn(entry.getKey());
 			when(registry.candidateExecutionSnapshot()).thenThrow(failure);
@@ -389,7 +390,24 @@ class JourneyCandidateCanaryServiceTest {
 			assertThat(event.getMessage().getFormattedMessage())
 				.contains("reason=NO_CANDIDATES")
 				.contains("probeId=" + JourneyCandidateCanaryCommandParserTest.REQUEST_ID)
-				.contains("kind=UNAVAILABLE");
+				.contains("kind=UNAVAILABLE")
+				.contains("causeClass=none");
+			assertThat(event.getThrown()).isNull();
+
+			// 원인 예외는 클래스 이름만 남기고 메시지·stack은 로그에 붙이지 않는다.
+			events.clear();
+			when(raptorPort.plan(any(), any(), any(), any(), any()))
+				.thenThrow(new IllegalStateException("secret-detail-must-not-leak"));
+			assertUnavailable(JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, service);
+
+			assertThat(events).hasSize(1);
+			var planFailure = events.get(0);
+			assertThat(planFailure.getMessage().getFormattedMessage())
+				.contains("reason=PLAN_ERROR")
+				.contains("causeClass=IllegalStateException")
+				.doesNotContain("secret-detail-must-not-leak");
+			assertThat(planFailure.getThrown()).isNull();
+			assertThat(planFailure.getThrownProxy()).isNull();
 		} finally {
 			logger.removeAppender(appender);
 			logger.setLevel(null);

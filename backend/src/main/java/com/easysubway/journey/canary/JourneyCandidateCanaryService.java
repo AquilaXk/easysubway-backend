@@ -204,14 +204,15 @@ public final class JourneyCandidateCanaryService {
 		}
 	}
 
-	/** 구분된 UNAVAILABLE 실패. 사유와 실패한 probe id를 로그에 남기고 응답으로 전달한다. */
+	/** 구분된 UNAVAILABLE 실패. 사유와 실패한 probe id를 로그에 남기고 응답으로 전달한다. 원인 예외는 클래스 이름만 남긴다. */
 	private static JourneyCandidateCanaryException unavailable(
 		JourneyCandidateCanaryCommandParser.Command command,
 		JourneyCandidateCanaryException.FailureReason reason,
 		RuntimeException cause) {
 		var kind = JourneyCandidateCanaryException.Kind.UNAVAILABLE;
-		LOG.warn("Journey candidate canary failed kind={} reason={} probeId={} candidateGeneration={}",
-			kind, reason, command.requestId(), command.candidateGeneration(), cause);
+		LOG.warn("Journey candidate canary failed kind={} reason={} probeId={} candidateGeneration={} causeClass={}",
+			kind, reason, command.requestId(), command.candidateGeneration(),
+			cause == null ? "none" : cause.getClass().getSimpleName());
 		return new JourneyCandidateCanaryException(kind, reason, command.requestId());
 	}
 
