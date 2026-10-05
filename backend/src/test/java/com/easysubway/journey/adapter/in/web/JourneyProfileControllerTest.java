@@ -208,6 +208,23 @@ class JourneyProfileControllerTest {
 	}
 
 	@Test
+	void recordsMappingFailureAsUnavailableWithTheEngineVersion() throws Exception {
+		when(executor.execute(any(), same(policy))).thenAnswer(invocation -> {
+			JourneyRaptorQuery query = invocation.getArgument(0);
+			var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(false))));
+			return new JourneyProfileDeadlineExecutor.Completed(JourneyProfileResponseMapperTest.success(query, plan));
+		});
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("ROUTE_SERVICE_UNAVAILABLE"));
+
+		var saved = org.mockito.ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+		verify(recordStore).save(saved.capture());
+		assertThat(saved.getValue().outcome()).isEqualTo(com.easysubway.journey.analytics.JourneySearchOutcome.UNAVAILABLE);
+		assertThat(saved.getValue().engineVersion()).contains("REVERSE_RANGE_RAPTOR");
+	}
+
+	@Test
 	void doesNotRecordInvalidTemporalQueries() throws Exception {
 		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content("{}"))
 			.andExpect(status().isBadRequest());
