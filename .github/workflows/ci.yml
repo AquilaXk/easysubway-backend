@@ -166,7 +166,7 @@ jobs:
           node-version: 24
 
       - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4
         with:
           version: 1.3.3
 
@@ -428,7 +428,7 @@ jobs:
           node-version: 24
 
       - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4
         with:
           version: 1.3.3
 
@@ -548,7 +548,7 @@ jobs:
 
       - name: Set up ORAS
         if: needs.scope.outputs.heavy == 'true'
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4
         with:
           version: 1.3.3
 
@@ -702,7 +702,7 @@ jobs:
 
       - name: Analyze with SonarQube Cloud
         if: ${{ needs.scope.outputs.heavy == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
