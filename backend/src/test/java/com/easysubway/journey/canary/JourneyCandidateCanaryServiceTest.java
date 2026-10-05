@@ -290,6 +290,22 @@ class JourneyCandidateCanaryServiceTest {
 	}
 
 	@Test
+	void snapshotLookupStaleOrFutureReportsWindowMismatchWhileOtherLookupFailuresReportSnapshotError() {
+		var expected = java.util.Map.of(
+			RouteBundleActivationException.Reason.BUNDLE_STALE, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			RouteBundleActivationException.Reason.BUNDLE_FUTURE, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR);
+		for (var entry : expected.entrySet()) {
+			var failure = mock(RouteBundleActivationException.class);
+			when(failure.reason()).thenReturn(entry.getKey());
+			when(registry.candidateExecutionSnapshot()).thenThrow(failure);
+
+			assertUnavailable(entry.getValue(), service);
+		}
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+	}
+
+	@Test
 	void candidateOutsideItsValidityWindowReportsWindowMismatchBeforePlanning() {
 		var staged = staged(SHA_A, 1);
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);

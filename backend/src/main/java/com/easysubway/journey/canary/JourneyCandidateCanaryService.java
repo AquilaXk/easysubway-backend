@@ -173,8 +173,17 @@ public final class JourneyCandidateCanaryService {
 		try {
 			return registry.candidateExecutionSnapshot();
 		} catch (RouteBundleActivationException exception) {
-			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, exception);
+			throw unavailable(command, lookupFailureReason(exception), exception);
 		}
+	}
+
+	/** 번들 만료·미래는 유효 구간 불일치, 그 밖의 조회 실패는 snapshot 오류다. requireStillStaged와 같은 기준이다. */
+	private static JourneyCandidateCanaryException.FailureReason lookupFailureReason(
+		RouteBundleActivationException exception) {
+		return switch (exception.reason()) {
+			case BUNDLE_STALE, BUNDLE_FUTURE -> JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH;
+			default -> JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR;
+		};
 	}
 
 	private void requireStillStaged(JourneyCandidateCanaryCommandParser.Command command) {
@@ -186,10 +195,8 @@ public final class JourneyCandidateCanaryService {
 			}
 		} catch (RouteBundleActivationException exception) {
 			throw switch (exception.reason()) {
-				case BUNDLE_UNAVAILABLE ->
-					unavailable(command, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, exception);
-				case BUNDLE_STALE, BUNDLE_FUTURE ->
-					unavailable(command, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, exception);
+				case BUNDLE_UNAVAILABLE, BUNDLE_STALE, BUNDLE_FUTURE ->
+					unavailable(command, lookupFailureReason(exception), exception);
 				case CANDIDATE_ALREADY_STAGED, CANDIDATE_ALREADY_ACTIVE,
 					CANDIDATE_NOT_STAGED, CANDIDATE_IDENTITY_MISMATCH, ACTIVATION_CONFLICT ->
 					failure(JourneyCandidateCanaryException.Kind.CONFLICT);
