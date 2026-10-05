@@ -93,6 +93,134 @@
 				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
 			</section>
 		</div>
+
+		<section class="admin-panel" aria-labelledby="journey-analytics-title">
+			<div class="admin-panel-head">
+				<h2 id="journey-analytics-title" th:text="|경로 탐색 종류별 결과 (최근 ${journeyAnalytics.periodDays}일)|">경로 탐색 종류별 결과</h2>
+			</div>
+			<div class="metric-grid">
+				<div class="metric metric-cell">
+					<span>기록된 탐색</span>
+					<strong class="cell-num" th:text="${journeyAnalytics.totalCount}">0</strong>
+				</div>
+				<div class="metric metric-cell">
+					<span>기록 실패(서버 시작 이후)</span>
+					<strong class="cell-num" th:text="${journeyAnalytics.recordFailureCount}">0</strong>
+				</div>
+			</div>
+
+			<h3>탐색 종류별 결과 분류</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 탐색 종류별 결과 분류 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">탐색 종류</th>
+					<th scope="col">전체</th>
+					<th scope="col" th:each="column : ${journeyAnalytics.columns}" th:text="${column.label}">결과 있음</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.kindRows}">
+					<th scope="row" th:text="${row.label}">출발 시각</th>
+					<td th:text="${row.total}">0</td>
+					<td th:each="count : ${row.counts}" th:text="${count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.kindRows)}">
+					<td th:colspan="${#lists.size(journeyAnalytics.columns) + 2}"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 기록된 경로 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>일별 추이</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 일별 탐색 결과 추이 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">날짜</th>
+					<th scope="col">전체</th>
+					<th scope="col" th:each="column : ${journeyAnalytics.columns}" th:text="${column.label}">결과 있음</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.dayRows}">
+					<th scope="row" th:text="${row.day}">2026-10-01</th>
+					<td th:if="${row.recorded}" th:text="${row.total}">0</td>
+					<td th:if="${row.recorded}" th:each="count : ${row.counts}" th:text="${count}">0</td>
+					<td th:unless="${row.recorded}" th:colspan="${#lists.size(journeyAnalytics.columns) + 1}">기록 없음</td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>경로 계산기 버전별 건수</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 경로 계산기 버전별 건수 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">버전</th>
+					<th scope="col">건수</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.engineRows}">
+					<th scope="row" th:text="${row.label}" th:attr="title=${row.detail}">버전 2.0.0</th>
+					<td th:text="${row.count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.engineRows)}">
+					<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 기록된 경로 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>대표 대안 분류별 건수</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 대표 대안 분류별 건수 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">대표 분류</th>
+					<th scope="col">건수</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.categoryRows}">
+					<th scope="row" th:text="${row.label}">빠른 경로</th>
+					<td th:text="${row.count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.categoryRows)}">
+					<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 대표 분류가 기록된 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>계단 없는 경로 판정별 건수</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 계단 없는 경로 판정별 건수 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">판정</th>
+					<th scope="col">건수</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.stairFreeRows}">
+					<th scope="row" th:text="${row.label}">계단 없는 경로 포함</th>
+					<td th:text="${row.count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.stairFreeRows)}">
+					<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 기록된 경로 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+		</section>
 	</div>
 
 	<section class="admin-panel">

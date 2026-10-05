@@ -15,6 +15,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.journey.analytics.JourneySearchRecordStore;
+import com.easysubway.journey.analytics.JourneySearchRecorder;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Completed;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
@@ -71,13 +74,17 @@ class JourneySearchControllerTest {
 	private JourneyApplicationDeadlineExecutor deadlineExecutor;
 	private JourneyProfileResourcePolicy resourcePolicy;
 	private MockMvc mockMvc;
+	private JourneySearchRecordStore recordStore;
+	private JourneySearchRecorder recorder;
 
 	@BeforeEach
 	void setUp() {
 		sessionService = mock(JourneySessionService.class);
+		recordStore = mock(JourneySearchRecordStore.class);
+		recorder = new JourneySearchRecorder(recordStore, Runnable::run, Clock.fixed(NOW, ZoneOffset.UTC), new SimpleMeterRegistry());
 		deadlineExecutor = mock(JourneyApplicationDeadlineExecutor.class);
 		resourcePolicy = policy();
-		mockMvc = MockMvcBuilders.standaloneSetup(new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy))
+		mockMvc = MockMvcBuilders.standaloneSetup(new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, recorder))
 			.setControllerAdvice(new JourneySearchExceptionHandler(
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new SecureRandom(new byte[] {1, 2, 3, 4})
@@ -242,7 +249,7 @@ class JourneySearchControllerTest {
 
 		var exception = assertThrows(
 			JourneySearchController.JourneySearchWebException.class,
-			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy)
+			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, recorder)
 				.search("Bearer session-token", request)
 		);
 
@@ -257,7 +264,7 @@ class JourneySearchControllerTest {
 	void rejectsOversizedAuthorizedRequestBeforeExecution() throws Exception {
 		allowSession();
 		int maxBytes = 100;
-		var controller = new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, maxBytes);
+		var controller = new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, maxBytes, recorder);
 		var mvc = MockMvcBuilders.standaloneSetup(controller)
 			.setControllerAdvice(new JourneySearchExceptionHandler(
 				Clock.fixed(NOW, ZoneOffset.UTC),
@@ -287,7 +294,7 @@ class JourneySearchControllerTest {
 		// 정확히 exactLength 바이트 허용: 200 성공
 		var allowedExecutor = mock(JourneyApplicationDeadlineExecutor.class);
 		when(allowedExecutor.execute(any())).thenReturn(new Completed(success()));
-		var allowedController = new JourneySearchController(sessionService, allowedExecutor, resourcePolicy, exactLength);
+		var allowedController = new JourneySearchController(sessionService, allowedExecutor, resourcePolicy, exactLength, recorder);
 		var allowedMvc = MockMvcBuilders.standaloneSetup(allowedController).build();
 		allowedMvc.perform(post("/api/v3/journeys/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
@@ -298,7 +305,7 @@ class JourneySearchControllerTest {
 
 		// exactLength - 1 바이트 허용 (1바이트 부족): 400 차단
 		var rejectedExecutor = mock(JourneyApplicationDeadlineExecutor.class);
-		var rejectedController = new JourneySearchController(sessionService, rejectedExecutor, resourcePolicy, exactLength - 1);
+		var rejectedController = new JourneySearchController(sessionService, rejectedExecutor, resourcePolicy, exactLength - 1, recorder);
 		var rejectedMvc = MockMvcBuilders.standaloneSetup(rejectedController)
 			.setControllerAdvice(new JourneySearchExceptionHandler(Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(new byte[] {1, 2, 3, 4})))
 			.build();
@@ -317,7 +324,7 @@ class JourneySearchControllerTest {
 		String validBody = validRequest("{\"mode\":\"NOW\"}");
 		byte[] validBytes = validBody.getBytes(StandardCharsets.UTF_8);
 		int maxBytes = validBytes.length;
-		var controller = new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, maxBytes);
+		var controller = new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, maxBytes, recorder);
 
 		byte[] streamBytes = new byte[maxBytes + 10];
 		System.arraycopy(validBytes, 0, streamBytes, 0, maxBytes);
@@ -348,9 +355,9 @@ class JourneySearchControllerTest {
 	@DisplayName("maxRequestBytes가 0 이하이면 생성자에서 IllegalArgumentException이 발생한다")
 	void constructorRejectsNonPositiveMaxRequestBytes() {
 		assertThrows(IllegalArgumentException.class,
-			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, 0));
+			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, 0, recorder));
 		assertThrows(IllegalArgumentException.class,
-			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, -1));
+			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, -1, recorder));
 	}
 
 	@Test
@@ -358,6 +365,7 @@ class JourneySearchControllerTest {
 	void bindsMaxRequestBytesConfigurationProperty() {
 		var runner = new ApplicationContextRunner()
 			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withBean(JourneySearchRecorder.class, () -> recorder)
 			.withBean(JourneyApplicationDeadlineExecutor.class, () -> mock(JourneyApplicationDeadlineExecutor.class))
 			.withBean(JourneyProfileResourcePolicy.class, JourneySearchControllerTest::policy)
 			.withUserConfiguration(SearchWebConfiguration.class)
@@ -583,9 +591,10 @@ class JourneySearchControllerTest {
 		return fields;
 	}
 
-	private static void assertConditionalRegistration() {
+	private void assertConditionalRegistration() {
 		var runner = new ApplicationContextRunner()
 			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withBean(JourneySearchRecorder.class, () -> recorder)
 			.withUserConfiguration(SearchWebConfiguration.class);
 		runner.run(context -> assertThat(context)
 			.doesNotHaveBean(JourneySearchController.class)
@@ -606,6 +615,116 @@ class JourneySearchControllerTest {
 		).withPropertyValues(SEARCH_WEB_ENABLED).run(context -> assertThat(context)
 			.hasSingleBean(JourneySearchController.class)
 			.hasSingleBean(JourneySearchExceptionHandler.class));
+	}
+
+	@Test
+	@DisplayName("성공한 검색은 결과 있음으로 탐색 종류·이동 프로필·대표 분류·접근성 판정을 기록한다")
+	void recordsSuccessFacts() throws Exception {
+		allowSession();
+		var success = success();
+		var withCategories = new JourneyExecutionResult.Success(
+			success.requestId(), success.queryId(), success.calculatedAt(), success.validUntil(),
+			success.effectiveDepartureTime(), success.serviceDate(), success.bundleGeneration(),
+			success.scanMetrics(), success.sourceIdentity(), success.requestPolicy(),
+			List.of(success.journeys().getFirst().withAlternativeCategories(
+				List.of(com.easysubway.journey.application.JourneyAlternatives.Category.FASTEST,
+					com.easysubway.journey.application.JourneyAlternatives.Category.STAIR_FREE))),
+			success.safetyBoundary(), success.stairFreeAlternative());
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(withCategories));
+
+		perform(validRequest("{\"mode\":\"NOW\"}")).andExpect(status().isOk());
+
+		var saved = ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+		verify(recordStore).save(saved.capture());
+		assertThat(saved.getValue()).satisfies(record -> {
+			assertThat(record.kind()).isEqualTo(com.easysubway.journey.analytics.JourneySearchKind.DEPART_AT);
+			assertThat(record.outcome()).isEqualTo(com.easysubway.journey.analytics.JourneySearchOutcome.FOUND);
+			assertThat(record.httpStatus()).isEqualTo(200);
+			assertThat(record.machineCode()).isNull();
+			assertThat(record.mobilityProfile()).isEqualTo("STEP_FREE");
+			assertThat(record.alternativeCategories()).containsExactly("FASTEST", "STAIR_FREE");
+			assertThat(record.stairFreeStatus()).isEqualTo("INCLUDED");
+			assertThat(record.engineVersion()).isEqualTo("UNKNOWN");
+		});
+	}
+
+	@Test
+	@DisplayName("실패 응답은 같은 상태·코드로 결과 분류를 기록한다")
+	void recordsFailureOutcomes() throws Exception {
+		allowSession();
+		var expectations = List.of(
+			new FailureCase(Reason.NO_ROUTE, 422, "NO_ROUTE"),
+			new FailureCase(Reason.ACTIVE_SNAPSHOT_STALE, 503, "UNAVAILABLE"));
+		for (FailureCase expected : expectations) {
+			org.mockito.Mockito.clearInvocations(recordStore);
+			when(deadlineExecutor.execute(any())).thenReturn(new Completed(new JourneyExecutionFailure(expected.reason())));
+
+			perform(validRequest("{\"mode\":\"NOW\"}")).andExpect(status().is(expected.status()));
+
+			var saved = ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+			verify(recordStore).save(saved.capture());
+			assertThat(saved.getValue().outcome().name()).isEqualTo(expected.code());
+			assertThat(saved.getValue().httpStatus()).isEqualTo(expected.status());
+			assertThat(saved.getValue().stairFreeStatus()).isEqualTo("NOT_APPLICABLE");
+		}
+	}
+
+	@Test
+	@DisplayName("시간 초과와 실행 실패는 시간 초과·일시 불가로 기록한다")
+	void recordsTimeoutAndUnavailable() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new TimedOut());
+		perform(validRequest("{\"mode\":\"NOW\"}")).andExpect(status().isGatewayTimeout());
+		when(deadlineExecutor.execute(any())).thenThrow(new RuntimeException("failed"));
+		perform(validRequest("{\"mode\":\"NOW\"}")).andExpect(status().isServiceUnavailable());
+
+		var saved = ArgumentCaptor.forClass(com.easysubway.journey.analytics.JourneySearchRecord.class);
+		verify(recordStore, times(2)).save(saved.capture());
+		assertThat(saved.getAllValues()).extracting(record -> record.outcome().name(), record -> record.httpStatus())
+			.containsExactly(org.assertj.core.api.Assertions.tuple("TIMEOUT", 504),
+				org.assertj.core.api.Assertions.tuple("UNAVAILABLE", 503));
+	}
+
+	@Test
+	@DisplayName("요청 검증 실패와 인증 실패는 검색 기록으로 남기지 않는다")
+	void doesNotRecordInvalidOrUnauthorizedRequests() throws Exception {
+		allowSession();
+		perform("{}").andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/v3/journeys/search").contentType(MediaType.APPLICATION_JSON).content("{}"))
+			.andExpect(status().isUnauthorized());
+
+		verifyNoInteractions(recordStore);
+	}
+
+	@Test
+	@DisplayName("기록 저장이 실패해도 검색 응답은 그대로이고 실패 건수가 늘어난다")
+	void recordingFailureDoesNotChangeTheResponse() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
+		String expected = perform(validRequest("{\"mode\":\"NOW\"}")).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		org.mockito.Mockito.doThrow(new IllegalStateException("db down")).when(recordStore).save(any());
+
+		String actual = perform(validRequest("{\"mode\":\"NOW\"}")).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(actual).isEqualTo(expected);
+		assertThat(recorder.failureCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("기록 저장이 실패해도 실패 응답은 그대로이다")
+	void recordingFailureDoesNotChangeFailureResponses() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new TimedOut());
+		org.mockito.Mockito.doThrow(new IllegalStateException("db down")).when(recordStore).save(any());
+
+		assertError(post("/api/v3/journeys/search")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(validRequest("{\"mode\":\"NOW\"}")), 504, "JOURNEY_SEARCH_TIMEOUT", true);
+
+		assertThat(recorder.failureCount()).isEqualTo(1);
 	}
 
 	private record FailureCase(Reason reason, int status, String code) {
