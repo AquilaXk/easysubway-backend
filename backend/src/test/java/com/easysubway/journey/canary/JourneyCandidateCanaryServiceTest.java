@@ -32,6 +32,8 @@ import org.mockito.ArgumentCaptor;
 class JourneyCandidateCanaryServiceTest {
 
 	private static final Instant CAPTURED_AT = Instant.parse("2026-08-13T03:00:00Z");
+	/** 2026-08-14 10:00 KST. 번들 유효 구간(2026-08-13 11:00 KST~) 안에서 처음 오는 10:00 KST다. */
+	private static final Instant REPRESENTATIVE_AT = Instant.parse("2026-08-14T01:00:00Z");
 	private static final String SHA_A = JourneyCandidateCanaryCommandParserTest.SHA_A;
 	private static final JourneyRaptorPort.ScanMetrics OBSERVED_SCAN = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
 	private final RouteBundleActivationRegistry registry = mock(RouteBundleActivationRegistry.class);
@@ -70,9 +72,10 @@ class JourneyCandidateCanaryServiceTest {
 
 		var request = ArgumentCaptor.forClass(JourneyRequest.class);
 		var snapshot = ArgumentCaptor.forClass(ActiveJourneySnapshotPort.ActiveJourneySnapshot.class);
-		verify(raptorPort).plan(request.capture(), snapshot.capture(), org.mockito.ArgumentMatchers.eq(CAPTURED_AT),
+		verify(raptorPort).plan(request.capture(), snapshot.capture(), org.mockito.ArgumentMatchers.eq(REPRESENTATIVE_AT),
 			org.mockito.ArgumentMatchers.isNull(), any());
-		assertThat(request.getValue().departure()).isInstanceOf(JourneyRequest.Departure.Now.class);
+		assertThat(request.getValue().departure())
+			.isEqualTo(new JourneyRequest.Departure.Scheduled(REPRESENTATIVE_AT));
 		assertThat(request.getValue().timePolicy()).isEqualTo(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
 		assertThat(request.getValue().isCancelled()).isFalse();
 		assertThat(snapshot.getValue().routeBundleSha256()).isEqualTo(SHA_A);
@@ -171,12 +174,281 @@ class JourneyCandidateCanaryServiceTest {
 		verify(registry, never()).activate(anyString(), anyLong());
 	}
 
+	@Test
+	void nightAndDaytimeRunsOfTheSameBundleAndProbeGiveTheSameVerdictAtTheSameDeparture() {
+		var staged = staged(SHA_A, 1);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+		when(registry.candidateSnapshot()).thenReturn(candidateProjection(staged));
+		var departures = new java.util.ArrayList<Instant>();
+		// 실제 planner처럼 자기 운행일의 05:00 이후 24:00 이전 열차만 있다. 심야 wall-clock을 넘기면 후보가 사라진다.
+		when(raptorPort.plan(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+			Instant effective = invocation.getArgument(2);
+			departures.add(effective);
+			int seconds = com.easysubway.journey.application.ServiceDayResolver.resolve(effective)
+				.secondsFromServiceDayStart();
+			var candidates = seconds >= 5 * 3600 && seconds < 24 * 3600
+				? List.of(mock(JourneyCandidate.class)) : List.<JourneyCandidate>of();
+			return candidates.isEmpty()
+				? new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, candidates,
+					OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0))
+				: new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, candidates,
+					OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+					JourneyRaptorPort.RouteMeasurementReceipt.unobservable(),
+					new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(
+						com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND,
+						com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED));
+		});
+
+		// 같은 운행일(2026-08-13)의 주간 14:00, 심야 23:50, 익일 00:06 KST. 번들 유효 구간 안이다.
+		var wallClocks = List.of(
+			Instant.parse("2026-08-13T05:00:00Z"),
+			Instant.parse("2026-08-13T14:50:00Z"),
+			Instant.parse("2026-08-13T15:06:00Z"));
+		for (Instant wallClock : wallClocks) {
+			var result = serviceAt(wallClock).execute(command(SHA_A, 1));
+			assertThat(result.passed()).as("wall clock %s", wallClock).isTrue();
+			assertThat(result.capturedAt()).isEqualTo(wallClock);
+		}
+
+		assertThat(departures).hasSize(wallClocks.size()).containsOnly(REPRESENTATIVE_AT);
+	}
+
+	@Test
+	void representativeDepartureIsTheFirstTenAmKstInsideTheBundleValidityWindow() {
+		var departures = new java.util.ArrayList<Instant>();
+		when(raptorPort.plan(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+			departures.add(invocation.getArgument(2));
+			return planned();
+		});
+		// activeFrom 11:00 KST는 같은 날 10:00을 지났으므로 다음 날 10:00, 10:00 정각과 그 이전은 같은 날 10:00이다.
+		var cases = java.util.Map.of(
+			"2026-08-13T11:00:00.000+09:00", Instant.parse("2026-08-14T01:00:00Z"),
+			"2026-08-13T10:00:00.001+09:00", Instant.parse("2026-08-14T01:00:00Z"),
+			"2026-08-13T10:00:00.000+09:00", Instant.parse("2026-08-13T01:00:00Z"),
+			"2026-08-13T09:59:59.999+09:00", Instant.parse("2026-08-13T01:00:00Z"),
+			"2026-08-12T23:00:00.000+09:00", Instant.parse("2026-08-13T01:00:00Z"));
+		for (var entry : cases.entrySet()) {
+			var staged = staged(SHA_A, 1, entry.getKey(), "2026-08-15T12:00:00.000+09:00");
+			when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+			when(registry.candidateSnapshot()).thenReturn(candidateProjection(staged));
+			departures.clear();
+
+			assertThat(service.execute(command(SHA_A, 1)).passed()).as(entry.getKey()).isTrue();
+
+			assertThat(departures).as(entry.getKey()).containsExactly(entry.getValue());
+		}
+	}
+
+	@Test
+	void runsBeforeTheServiceDayCutoffUseTheSameBundleDeparture() {
+		var staged = staged(SHA_A, 1);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+		when(registry.candidateSnapshot()).thenReturn(candidateProjection(staged));
+		var departures = new java.util.ArrayList<Instant>();
+		when(raptorPort.plan(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+			departures.add(invocation.getArgument(2));
+			return planned();
+		});
+
+		// 2026-08-14 00:06, 02:59, 03:00 KST. 운행일 03:00 경계 전후에도 출발 시각은 번들 기준 하나다.
+		serviceAt(Instant.parse("2026-08-13T15:06:00Z")).execute(command(SHA_A, 1));
+		serviceAt(Instant.parse("2026-08-13T17:59:00Z")).execute(command(SHA_A, 1));
+		serviceAt(Instant.parse("2026-08-13T18:00:00Z")).execute(command(SHA_A, 1));
+
+		assertThat(departures).containsExactly(REPRESENTATIVE_AT, REPRESENTATIVE_AT, REPRESENTATIVE_AT);
+	}
+
+	@Test
+	void bundleWindowWithoutAnyTenAmKstReportsWindowMismatchBeforePlanning() {
+		// 같은 날 11:00~20:00 KST 창에는 10:00이 없다.
+		var staged = staged(SHA_A, 1, "2026-08-13T11:00:00.000+09:00", "2026-08-13T20:00:00.000+09:00");
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, service);
+
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+		// 창의 끝(freshUntil) 정각 10:00도 [activeFrom, freshUntil)에 속하지 않는다.
+		var boundary = staged(SHA_A, 1, "2026-08-13T11:00:00.000+09:00", "2026-08-14T10:00:00.000+09:00");
+		when(registry.candidateExecutionSnapshot()).thenReturn(boundary);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, service);
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void snapshotFailuresReportSnapshotErrorWithTheFailingProbe() {
+		when(registry.candidateExecutionSnapshot()).thenThrow(candidateNotStaged());
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, service);
+
+		org.mockito.Mockito.reset(registry);
+		var invalidRuntime = staged(SHA_A, 1);
+		when(((JourneyRaptorRuntimeView) invalidRuntime.runtimeView()).routeBundleSha256())
+			.thenReturn("b".repeat(64));
+		when(registry.candidateExecutionSnapshot()).thenReturn(invalidRuntime);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, service);
+
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void snapshotLookupStaleOrFutureReportsWindowMismatchWhileOtherLookupFailuresReportSnapshotError() {
+		var expected = java.util.Map.of(
+			RouteBundleActivationException.Reason.BUNDLE_STALE, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			RouteBundleActivationException.Reason.BUNDLE_FUTURE, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR);
+		for (var entry : expected.entrySet()) {
+			org.mockito.Mockito.reset(registry);
+			var failure = mock(RouteBundleActivationException.class);
+			when(failure.reason()).thenReturn(entry.getKey());
+			when(registry.candidateExecutionSnapshot()).thenThrow(failure);
+
+			assertUnavailable(entry.getValue(), service);
+		}
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void candidateOutsideItsValidityWindowReportsWindowMismatchBeforePlanning() {
+		var staged = staged(SHA_A, 1);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+
+		// freshUntil(2026-08-14 12:00 KST) 이후, activeFrom(2026-08-13 11:00 KST) 이전, verifiedAt 이전.
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			serviceAt(Instant.parse("2026-08-14T04:00:00Z")));
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			serviceAt(Instant.parse("2026-08-13T01:30:00Z")));
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH,
+			serviceAt(CAPTURED_AT.minusSeconds(10)));
+
+		verify(raptorPort, never()).plan(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void planFailuresReportPlanErrorAndEmptyCandidatesReportNoCandidates() {
+		var staged = staged(SHA_A, 1);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+		when(raptorPort.plan(any(), any(), any(), any(), any()))
+			.thenThrow(new IllegalStateException("synthetic"))
+			.thenReturn(
+				null,
+				new JourneyRaptorPort.PlanResult("other-query", List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN,
+					JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(),
+					new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(
+						com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND,
+						com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED)),
+				new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(),
+					OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0)));
+
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, service);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, service);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, service);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.NO_CANDIDATES, service);
+	}
+
+	@Test
+	void candidateStateLostAfterPlanningKeepsItsOwnReason() {
+		var staged = staged(SHA_A, 1);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+		when(raptorPort.plan(any(), any(), any(), any(), any())).thenReturn(planned());
+		var stale = mock(RouteBundleActivationException.class);
+		when(stale.reason()).thenReturn(RouteBundleActivationException.Reason.BUNDLE_STALE);
+		var absent = mock(RouteBundleActivationException.class);
+		when(absent.reason()).thenReturn(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE);
+		when(registry.candidateSnapshot()).thenThrow(stale).thenThrow(absent);
+
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, service);
+		assertUnavailable(JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, service);
+	}
+
+	@Test
+	void everyUnavailableFailureIsLoggedWithItsReasonAndProbe() {
+		var events = new java.util.concurrent.CopyOnWriteArrayList<org.apache.logging.log4j.core.LogEvent>();
+		var appender = new org.apache.logging.log4j.core.appender.AbstractAppender(
+			"journey-canary-test-appender", null, null, false, org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY) {
+			@Override
+			public void append(org.apache.logging.log4j.core.LogEvent event) {
+				events.add(event.toImmutable());
+			}
+		};
+		appender.start();
+		var logger = (org.apache.logging.log4j.core.Logger) org.apache.logging.log4j.LogManager
+			.getLogger(JourneyCandidateCanaryService.class);
+		logger.addAppender(appender);
+		// addAppender가 이 로거 전용 설정을 새로 만들 수 있으므로 appender를 붙인 뒤에 수준을 낮춘다.
+		logger.setLevel(org.apache.logging.log4j.Level.ALL);
+		try {
+			var staged = staged(SHA_A, 1);
+			when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+			when(raptorPort.plan(any(), any(), any(), any(), any())).thenReturn(
+				new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(),
+					OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0)));
+
+			assertUnavailable(JourneyCandidateCanaryException.FailureReason.NO_CANDIDATES, service);
+
+			assertThat(events).hasSize(1);
+			var event = events.get(0);
+			assertThat(event.getLevel()).isEqualTo(org.apache.logging.log4j.Level.WARN);
+			assertThat(event.getMessage().getFormattedMessage())
+				.contains("reason=NO_CANDIDATES")
+				.contains("probeId=" + JourneyCandidateCanaryCommandParserTest.REQUEST_ID)
+				.contains("kind=UNAVAILABLE")
+				.contains("causeClass=none");
+			assertThat(event.getThrown()).isNull();
+
+			// 원인 예외는 클래스 이름만 남기고 메시지·stack은 로그에 붙이지 않는다.
+			events.clear();
+			when(raptorPort.plan(any(), any(), any(), any(), any()))
+				.thenThrow(new IllegalStateException("secret-detail-must-not-leak"));
+			assertUnavailable(JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, service);
+
+			assertThat(events).hasSize(1);
+			var planFailure = events.get(0);
+			assertThat(planFailure.getMessage().getFormattedMessage())
+				.contains("reason=PLAN_ERROR")
+				.contains("causeClass=IllegalStateException")
+				.doesNotContain("secret-detail-must-not-leak");
+			assertThat(planFailure.getThrown()).isNull();
+			assertThat(planFailure.getThrownProxy()).isNull();
+		} finally {
+			logger.removeAppender(appender);
+			logger.setLevel(null);
+			appender.stop();
+		}
+	}
+
+	private JourneyCandidateCanaryService serviceAt(Instant wallClock) {
+		return new JourneyCandidateCanaryService(registry, raptorPort, Clock.fixed(wallClock, ZoneOffset.UTC));
+	}
+
+	private static JourneyRaptorPort.PlanResult planned() {
+		return new JourneyRaptorPort.PlanResult(
+			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(),
+			new com.easysubway.journey.application.JourneyAlternatives.StairFreeAlternative(
+				com.easysubway.journey.application.JourneyAlternatives.StairFreeStatus.NOT_FOUND,
+				com.easysubway.journey.application.JourneyAlternatives.FacilityStatus.UNOBSERVED));
+	}
+
+	private static void assertUnavailable(
+		JourneyCandidateCanaryException.FailureReason reason, JourneyCandidateCanaryService target) {
+		assertThatThrownBy(() -> target.execute(command(SHA_A, 1)))
+			.isInstanceOfSatisfying(JourneyCandidateCanaryException.class, exception -> {
+				assertThat(exception.kind()).isEqualTo(JourneyCandidateCanaryException.Kind.UNAVAILABLE);
+				assertThat(exception.failureReason()).isEqualTo(reason);
+				assertThat(exception.probeId()).isEqualTo(JourneyCandidateCanaryCommandParserTest.REQUEST_ID);
+			});
+	}
+
 	private static RouteBundleActivationRegistry.CandidateExecutionSnapshot staged(String manifest, long generation) {
+		return staged(manifest, generation, "2026-08-13T11:00:00.000+09:00", "2026-08-14T12:00:00.000+09:00");
+	}
+
+	private static RouteBundleActivationRegistry.CandidateExecutionSnapshot staged(
+		String manifest, long generation, String activeFrom, String freshUntil) {
 		var runtime = mock(TestRuntimeView.class);
 		when(runtime.routeBundleSha256()).thenReturn(manifest);
 		when(runtime.generation()).thenReturn(generation);
 		return new RouteBundleActivationRegistry.CandidateExecutionSnapshot(
-			generation, identity("a"), evidence(manifest), runtime,
+			generation, identity("a", activeFrom, freshUntil), evidence(manifest), runtime,
 			CAPTURED_AT.minusSeconds(2), CAPTURED_AT.minusSeconds(1));
 	}
 
@@ -187,11 +459,15 @@ class JourneyCandidateCanaryServiceTest {
 	}
 
 	private static RouteBundleIdentity identity(String marker) {
+		return identity(marker, "2026-08-13T11:00:00.000+09:00", "2026-08-14T12:00:00.000+09:00");
+	}
+
+	private static RouteBundleIdentity identity(String marker, String activeFrom, String freshUntil) {
 		return new RouteBundleIdentity(
 			1, "server-route-bundle", "bundle-" + marker, 31,
 			"0".repeat(64), "1".repeat(64), "2".repeat(64), "3".repeat(64),
 			"4".repeat(64), "5".repeat(64), "6".repeat(64), "7".repeat(64),
-			"Asia/Seoul", "2026-08-13T11:00:00.000+09:00", "2026-08-14T12:00:00.000+09:00",
+			"Asia/Seoul", activeFrom, freshUntil,
 			new RouteBundleIdentity.SchemaCompatibility(3, 3), "route-bundle-key",
 			new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "AQID"));
 	}
