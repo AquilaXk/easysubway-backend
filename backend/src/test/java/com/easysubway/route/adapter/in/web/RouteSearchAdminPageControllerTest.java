@@ -258,7 +258,7 @@ class RouteSearchAdminPageControllerTest {
 
 	private static JourneySearchRecord journeyRecord(java.time.LocalDate day, JourneySearchKind kind,
 		JourneySearchOutcome outcome, String engine, java.util.List<String> categories, String stairFree) {
-		return new JourneySearchRecord(java.util.UUID.randomUUID().toString(), java.time.Instant.now(), day, kind,
+		return new JourneySearchRecord(java.util.UUID.randomUUID().toString(), day, kind,
 			outcome, outcome == JourneySearchOutcome.FOUND ? 200 : 422, null, engine, "STEP_FREE", categories, stairFree);
 	}
 

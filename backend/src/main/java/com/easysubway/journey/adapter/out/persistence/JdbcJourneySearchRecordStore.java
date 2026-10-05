@@ -6,7 +6,6 @@ import com.easysubway.journey.analytics.JourneySearchOutcome;
 import com.easysubway.journey.analytics.JourneySearchRecord;
 import com.easysubway.journey.analytics.JourneySearchRecordStore;
 import java.sql.Date;
-import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.List;
 import javax.sql.DataSource;
@@ -29,11 +28,11 @@ public class JdbcJourneySearchRecordStore implements JourneySearchRecordStore {
 	@Override
 	public void save(JourneySearchRecord record) {
 		jdbcTemplate.update("""
-			INSERT INTO journey_v3_search_records (record_id, recorded_at, recorded_on, search_kind, outcome,
+			INSERT INTO journey_v3_search_records (record_id, recorded_on, search_kind, outcome,
 				http_status, machine_code, engine_version, mobility_profile, alternative_categories, stair_free_status)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
-			record.recordId(), Timestamp.from(record.recordedAt()), Date.valueOf(record.recordedOn()),
+			record.recordId(), Date.valueOf(record.recordedOn()),
 			record.kind().name(), record.outcome().name(), record.httpStatus(), record.machineCode(),
 			record.engineVersion(), record.mobilityProfile(), record.alternativeCategoriesText(),
 			record.stairFreeStatus());

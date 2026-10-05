@@ -2,7 +2,6 @@ package com.easysubway.journey.analytics;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +15,7 @@ class InMemoryJourneySearchRecordStoreTest {
 	void aggregatesRecordsInRange() {
 		var store = new InMemoryJourneySearchRecordStore();
 		for (String day : List.of("2026-10-01", "2026-10-01", "2026-09-01")) {
-			store.save(new JourneySearchRecord(day + java.util.UUID.randomUUID(), Instant.parse(day + "T03:00:00Z"),
+			store.save(new JourneySearchRecord(day + java.util.UUID.randomUUID(),
 				LocalDate.parse(day), JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, 200, null,
 				"UNKNOWN", "STEP_FREE", List.of("FASTEST"), "INCLUDED"));
 		}
@@ -35,7 +34,7 @@ class InMemoryJourneySearchRecordStoreTest {
 	void deletesOnlyRecordsBeforeCutoff() {
 		var store = new InMemoryJourneySearchRecordStore();
 		for (String day : List.of("2026-07-01", "2026-07-02", "2026-07-03")) {
-			store.save(new JourneySearchRecord(day, Instant.parse(day + "T03:00:00Z"),
+			store.save(new JourneySearchRecord(day,
 				LocalDate.parse(day), JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, 200, null,
 				"UNKNOWN", "STEP_FREE", List.of(), "INCLUDED"));
 		}

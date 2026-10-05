@@ -8,7 +8,6 @@ import com.easysubway.journey.analytics.JourneySearchAggregateRow;
 import com.easysubway.journey.analytics.JourneySearchKind;
 import com.easysubway.journey.analytics.JourneySearchOutcome;
 import com.easysubway.journey.analytics.JourneySearchRecord;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -41,7 +40,7 @@ class JdbcJourneySearchRecordStoreTest {
 	private static JourneySearchRecord record(String day, JourneySearchKind kind, JourneySearchOutcome outcome,
 		String engine, String stairFree, List<String> categories) {
 		LocalDate date = LocalDate.parse(day);
-		return new JourneySearchRecord(UUID.randomUUID().toString(), Instant.parse(day + "T03:00:00Z"), date, kind,
+		return new JourneySearchRecord(UUID.randomUUID().toString(), date, kind,
 			outcome, outcome == JourneySearchOutcome.FOUND ? 200 : 422, outcome == JourneySearchOutcome.FOUND ? null : "ROUTE_NOT_FOUND",
 			engine, "STEP_FREE", categories, stairFree);
 	}
@@ -84,12 +83,22 @@ class JdbcJourneySearchRecordStoreTest {
 	}
 
 	@Test
+	@DisplayName("정확한 검색 시각은 저장하지 않고 날짜(recorded_on)만 둔다")
+	void storesOnlyRecordedDate() {
+		List<String> columns = jdbc.queryForList(
+			"SELECT LOWER(column_name) FROM information_schema.columns WHERE LOWER(table_name) = 'journey_v3_search_records'",
+			String.class);
+
+		assertThat(columns).contains("recorded_on").doesNotContain("recorded_at");
+	}
+
+	@Test
 	@DisplayName("정의되지 않은 결과 분류·탐색 종류 값은 저장하지 못한다")
 	void rejectsUnknownEnumValues() {
 		assertThatThrownBy(() -> jdbc.update("""
-			INSERT INTO journey_v3_search_records (record_id, recorded_at, recorded_on, search_kind, outcome,
+			INSERT INTO journey_v3_search_records (record_id, recorded_on, search_kind, outcome,
 				http_status, machine_code, engine_version, mobility_profile, alternative_categories, stair_free_status)
-			VALUES ('x', CURRENT_TIMESTAMP, CURRENT_DATE, 'DEPART_AT', 'SUCCESS_MAYBE', 200, NULL, 'UNKNOWN', 'STEP_FREE', '', 'UNKNOWN')
+			VALUES ('x', CURRENT_DATE, 'DEPART_AT', 'SUCCESS_MAYBE', 200, NULL, 'UNKNOWN', 'STEP_FREE', '', 'UNKNOWN')
 			""")).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 	}
 

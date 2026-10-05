@@ -153,7 +153,7 @@ public class JourneySearchRecorder {
 		String engineVersion, String mobilityProfile, List<String> categories, String stairFreeStatus
 	) {
 		Instant now = clock.instant();
-		return new JourneySearchRecord(UUID.randomUUID().toString(), now, LocalDate.ofInstant(now, SERVICE_ZONE),
+		return new JourneySearchRecord(UUID.randomUUID().toString(), LocalDate.ofInstant(now, SERVICE_ZONE),
 			kind, outcome, httpStatus, machineCode, engineVersion, mobilityProfile, categories, stairFreeStatus);
 	}
 

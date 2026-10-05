@@ -52,7 +52,6 @@ class JourneySearchRecorderTest {
 		assertThat(record.stairFreeStatus()).isEqualTo(JourneySearchRecord.NOT_APPLICABLE);
 		assertThat(record.alternativeCategories()).isEmpty();
 		assertThat(record.recordedOn()).isEqualTo(LocalDate.parse("2026-10-01"));
-		assertThat(record.recordedAt()).isEqualTo(Instant.parse("2026-09-30T16:00:00Z"));
 		assertThat(record.recordId()).isNotBlank();
 		assertThat(recorder.failureCount()).isZero();
 	}
