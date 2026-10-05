@@ -116,10 +116,35 @@ class JourneyCandidateCanaryControllerTest {
 			.andExpect(jsonPath("$.artifactKind").value("journey-v3-candidate-canary-failure"))
 			.andExpect(jsonPath("$.passed").value(false))
 			.andExpect(jsonPath("$.reason").value("CONFLICT"))
+			.andExpect(jsonPath("$.failureReason").doesNotExist())
+			.andExpect(jsonPath("$.probeId").doesNotExist())
 			.andExpect(jsonPath("$.detail").doesNotExist());
 		mockMvc.perform(validRequest())
 			.andExpect(status().isServiceUnavailable())
-			.andExpect(jsonPath("$.reason").value("UNAVAILABLE"));
+			.andExpect(jsonPath("$.reason").value("UNAVAILABLE"))
+			.andExpect(jsonPath("$.failureReason").doesNotExist())
+			.andExpect(jsonPath("$.probeId").doesNotExist());
+	}
+
+	@Test
+	void unavailableAddsTheDistinctFailureReasonAndFailingProbeWithoutChangingTheExistingFields() throws Exception {
+		for (var reason : JourneyCandidateCanaryException.FailureReason.values()) {
+			org.mockito.Mockito.reset(service);
+			when(service.execute(any())).thenThrow(new JourneyCandidateCanaryException(
+				JourneyCandidateCanaryException.Kind.UNAVAILABLE, reason,
+				JourneyCandidateCanaryCommandParserTest.REQUEST_ID));
+
+			mockMvc.perform(validRequest())
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(jsonPath("$.schemaVersion").value(1))
+				.andExpect(jsonPath("$.artifactKind").value("journey-v3-candidate-canary-failure"))
+				.andExpect(jsonPath("$.passed").value(false))
+				.andExpect(jsonPath("$.reason").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.failureReason").value(reason.name()))
+				.andExpect(jsonPath("$.probeId").value(JourneyCandidateCanaryCommandParserTest.REQUEST_ID))
+				.andExpect(jsonPath("$.detail").doesNotExist());
+		}
 	}
 
 	@Test

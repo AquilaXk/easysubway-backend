@@ -3,6 +3,7 @@ package com.easysubway.journey.adapter.in.web;
 import com.easysubway.journey.canary.JourneyCandidateCanaryCommandParser;
 import com.easysubway.journey.canary.JourneyCandidateCanaryException;
 import com.easysubway.journey.canary.JourneyCandidateCanaryService;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.Objects;
@@ -40,9 +41,9 @@ public final class JourneyCandidateCanaryController {
 				.readNBytes(JourneyCandidateCanaryCommandParser.MAX_REQUEST_BYTES + 1);
 			return response(HttpStatus.OK, service.execute(parser.parse(requestBytes)));
 		} catch (JourneyCandidateCanaryException exception) {
-			return failure(exception.kind());
+			return failure(exception);
 		} catch (IOException exception) {
-			return failure(JourneyCandidateCanaryException.Kind.INVALID_REQUEST);
+			return failure(new JourneyCandidateCanaryException(JourneyCandidateCanaryException.Kind.INVALID_REQUEST));
 		}
 	}
 
@@ -63,14 +64,17 @@ public final class JourneyCandidateCanaryController {
 		}
 	}
 
-	private static ResponseEntity<?> failure(JourneyCandidateCanaryException.Kind kind) {
+	private static ResponseEntity<?> failure(JourneyCandidateCanaryException exception) {
+		var kind = exception.kind();
 		HttpStatus status = switch (kind) {
 			case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
 			case CONFLICT -> HttpStatus.CONFLICT;
 			case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
 		};
 		return response(status, new Failure(
-			1, "journey-v3-candidate-canary-failure", false, kind.name()));
+			1, "journey-v3-candidate-canary-failure", false, kind.name(),
+			exception.failureReason() == null ? null : exception.failureReason().name(),
+			exception.probeId()));
 	}
 
 	private static ResponseEntity<?> response(HttpStatus status, Object body) {
@@ -79,6 +83,13 @@ public final class JourneyCandidateCanaryController {
 			.body(body);
 	}
 
-	private record Failure(int schemaVersion, String artifactKind, boolean passed, String reason) {
+	/** {@code failureReason}·{@code probeId}는 추가 필드다. 값이 없으면 직렬화하지 않아 기존 응답과 같다. */
+	private record Failure(
+		int schemaVersion,
+		String artifactKind,
+		boolean passed,
+		String reason,
+		@JsonInclude(JsonInclude.Include.NON_NULL) String failureReason,
+		@JsonInclude(JsonInclude.Include.NON_NULL) String probeId) {
 	}
 }

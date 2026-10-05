@@ -5,6 +5,7 @@ import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.journey.bundle.RouteBundleActivationException;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import java.nio.charset.StandardCharsets;
@@ -12,11 +13,24 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.HexFormat;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/**
+ * Journey 후보 활성화 canary.
+ *
+ * <p>출발 시각은 실행 시각(wall-clock)이 아니라 실행 시점이 속한 운행일({@link ServiceDayResolver}, 03:00 경계)의
+ * 고정 대표 시각 {@link #REPRESENTATIVE_DEPARTURE_LOCAL_TIME}(KST)이다. 같은 번들·probe는 막차 이후 심야에 실행해도
+ * 주간과 같은 판정을 받는다. 번들 유효 구간(activeFrom~freshUntil)은 여전히 실행 시각으로 검증한다.</p>
+ */
 public final class JourneyCandidateCanaryService {
 
+	/** 모든 노선이 운행 중인 평일·휴일 공통 주간 시각. 운행일 기준 {@code Asia/Seoul} 로컬 시각이다. */
+	public static final LocalTime REPRESENTATIVE_DEPARTURE_LOCAL_TIME = LocalTime.of(10, 0);
+	private static final Logger LOG = LoggerFactory.getLogger(JourneyCandidateCanaryService.class);
 	private static final int SCHEMA_VERSION = 1;
 	private static final String ARTIFACT_KIND = "journey-v3-candidate-canary-result";
 	private final RouteBundleActivationRegistry registry;
@@ -35,19 +49,22 @@ public final class JourneyCandidateCanaryService {
 	public Result execute(JourneyCandidateCanaryCommandParser.Command command) {
 		Objects.requireNonNull(command, "command");
 		Instant capturedAt = clock.instant();
-		var candidate = currentCandidate();
+		var candidate = currentCandidate(command);
 		if (!candidate.admissionEvidence().manifestSha256().equals(command.candidateManifestSha256())
 			|| candidate.generation() != command.candidateGeneration()) {
 			throw failure(JourneyCandidateCanaryException.Kind.CONFLICT);
 		}
 		if (candidate.verifiedAt().isAfter(capturedAt)
 			|| capturedAt.isBefore(candidate.identity().activeFromInstant())
-			|| !capturedAt.isBefore(candidate.identity().freshUntilInstant())
-			|| !(candidate.runtimeView() instanceof JourneyRaptorRuntimeView runtimeView)
+			|| !capturedAt.isBefore(candidate.identity().freshUntilInstant())) {
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, null);
+		}
+		if (!(candidate.runtimeView() instanceof JourneyRaptorRuntimeView runtimeView)
 			|| !command.candidateManifestSha256().equals(runtimeView.routeBundleSha256())
 			|| command.candidateGeneration() != runtimeView.generation()) {
-			throw failure(JourneyCandidateCanaryException.Kind.UNAVAILABLE);
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, null);
 		}
+		Instant departureAt = representativeDeparture(capturedAt);
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		JourneyRequest request;
@@ -69,7 +86,7 @@ public final class JourneyCandidateCanaryService {
 				command.requestId(),
 				command.originStationId(),
 				command.destinationStationId(),
-				new JourneyRequest.Departure.Now(),
+				new JourneyRequest.Departure.Scheduled(departureAt),
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 				JourneyRequest.WalkingPace.STANDARD,
 				command.mobilityProfile(),
@@ -83,15 +100,16 @@ public final class JourneyCandidateCanaryService {
 
 		JourneyRaptorPort.PlanResult plan;
 		try {
-			plan = raptorPort.plan(request, snapshot, capturedAt, null,
+			plan = raptorPort.plan(request, snapshot, departureAt, null,
 				new JourneyRequestMeasurement(request.requestId()));
 		} catch (RuntimeException exception) {
-			throw failure(JourneyCandidateCanaryException.Kind.UNAVAILABLE);
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, exception);
 		}
-		if (plan == null
-			|| !command.requestId().equals(plan.queryId())
-			|| plan.candidates().isEmpty()) {
-			throw failure(JourneyCandidateCanaryException.Kind.UNAVAILABLE);
+		if (plan == null || !command.requestId().equals(plan.queryId())) {
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.PLAN_ERROR, null);
+		}
+		if (plan.candidates().isEmpty()) {
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.NO_CANDIDATES, null);
 		}
 
 		requireStillStaged(command);
@@ -131,11 +149,20 @@ public final class JourneyCandidateCanaryService {
 			evidenceSha256);
 	}
 
-	private RouteBundleActivationRegistry.CandidateExecutionSnapshot currentCandidate() {
+	/** 실행 시점이 속한 운행일의 대표 출발 시각. 같은 운행일 안에서는 실행 시각과 무관하다. */
+	private static Instant representativeDeparture(Instant capturedAt) {
+		return ServiceDayResolver.resolve(capturedAt).serviceDate()
+			.atTime(REPRESENTATIVE_DEPARTURE_LOCAL_TIME)
+			.atZone(ServiceDayResolver.ZONE)
+			.toInstant();
+	}
+
+	private RouteBundleActivationRegistry.CandidateExecutionSnapshot currentCandidate(
+		JourneyCandidateCanaryCommandParser.Command command) {
 		try {
 			return registry.candidateExecutionSnapshot();
 		} catch (RouteBundleActivationException exception) {
-			throw failure(JourneyCandidateCanaryException.Kind.UNAVAILABLE);
+			throw unavailable(command, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, exception);
 		}
 	}
 
@@ -147,15 +174,27 @@ public final class JourneyCandidateCanaryService {
 				throw failure(JourneyCandidateCanaryException.Kind.CONFLICT);
 			}
 		} catch (RouteBundleActivationException exception) {
-			var kind = switch (exception.reason()) {
-				case BUNDLE_UNAVAILABLE, BUNDLE_STALE, BUNDLE_FUTURE ->
-					JourneyCandidateCanaryException.Kind.UNAVAILABLE;
+			throw switch (exception.reason()) {
+				case BUNDLE_UNAVAILABLE ->
+					unavailable(command, JourneyCandidateCanaryException.FailureReason.SNAPSHOT_ERROR, exception);
+				case BUNDLE_STALE, BUNDLE_FUTURE ->
+					unavailable(command, JourneyCandidateCanaryException.FailureReason.WINDOW_MISMATCH, exception);
 				case CANDIDATE_ALREADY_STAGED, CANDIDATE_ALREADY_ACTIVE,
 					CANDIDATE_NOT_STAGED, CANDIDATE_IDENTITY_MISMATCH, ACTIVATION_CONFLICT ->
-					JourneyCandidateCanaryException.Kind.CONFLICT;
+					failure(JourneyCandidateCanaryException.Kind.CONFLICT);
 			};
-			throw failure(kind);
 		}
+	}
+
+	/** 구분된 UNAVAILABLE 실패. 사유와 실패한 probe id를 로그에 남기고 응답으로 전달한다. */
+	private static JourneyCandidateCanaryException unavailable(
+		JourneyCandidateCanaryCommandParser.Command command,
+		JourneyCandidateCanaryException.FailureReason reason,
+		RuntimeException cause) {
+		var kind = JourneyCandidateCanaryException.Kind.UNAVAILABLE;
+		LOG.warn("Journey candidate canary failed kind={} reason={} probeId={} candidateGeneration={}",
+			kind, reason, command.requestId(), command.candidateGeneration(), cause);
+		return new JourneyCandidateCanaryException(kind, reason, command.requestId());
 	}
 
 	private static String evidenceSha256(Object... values) {
