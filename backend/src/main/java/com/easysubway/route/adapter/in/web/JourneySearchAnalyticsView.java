@@ -16,25 +16,12 @@ record JourneySearchAnalyticsView(
 	List<OutcomeColumn> columns,
 	List<KindRow> kindRows,
 	List<DayRow> dayRows,
-	List<LabeledCount> engineRows,
+	List<EngineRow> engineRows,
 	List<LabeledCount> stairFreeRows,
 	List<LabeledCount> categoryRows
 ) {
 
-	private static final Map<JourneySearchKind, String> KIND_LABELS = Map.of(
-		JourneySearchKind.DEPART_AT, "출발 시각",
-		JourneySearchKind.DEPART_BETWEEN, "출발 시간대",
-		JourneySearchKind.ARRIVE_BY, "도착 희망",
-		JourneySearchKind.LAST_CONNECTION, "막차");
-
-	private static final Map<JourneySearchOutcome, String> OUTCOME_LABELS = Map.of(
-		JourneySearchOutcome.FOUND, "결과 있음",
-		JourneySearchOutcome.NO_ROUTE, "경로 없음",
-		JourneySearchOutcome.TOO_COMPLEX, "복잡도 초과",
-		JourneySearchOutcome.TIMEOUT, "시간 초과",
-		JourneySearchOutcome.UNAVAILABLE, "일시 불가",
-		JourneySearchOutcome.REJECTED, "조건 거절",
-		JourneySearchOutcome.UNCLASSIFIED, "분류 불가");
+	private static final String OTHER = "기타";
 
 	private static final Map<String, String> STAIR_FREE_LABELS = Map.of(
 		"INCLUDED", "계단 없는 경로 포함",
@@ -54,6 +41,43 @@ record JourneySearchAnalyticsView(
 		"BEST_ACCESSIBILITY", "접근성 우수",
 		"SAFEST_CONNECTION", "안전한 환승");
 
+	static String kindLabel(JourneySearchKind kind) {
+		return switch (kind) {
+			case DEPART_AT -> "출발 시각";
+			case DEPART_BETWEEN -> "출발 시간대";
+			case ARRIVE_BY -> "도착 희망";
+			case LAST_CONNECTION -> "막차";
+		};
+	}
+
+	static String outcomeLabel(JourneySearchOutcome outcome) {
+		return switch (outcome) {
+			case FOUND -> "결과 있음";
+			case NO_ROUTE -> "경로 없음";
+			case TOO_COMPLEX -> "복잡도 초과";
+			case TIMEOUT -> "시간 초과";
+			case UNAVAILABLE -> "일시 불가";
+			case REJECTED -> "조건 거절";
+			case UNCLASSIFIED -> "분류 불가";
+		};
+	}
+
+	static String stairFreeLabel(String value) {
+		return STAIR_FREE_LABELS.getOrDefault(value, OTHER);
+	}
+
+	static String categoryLabel(String value) {
+		return CATEGORY_LABELS.getOrDefault(value, OTHER);
+	}
+
+	/** 엔진 식별자(묶음/알고리즘/버전)는 보조 설명에만 두고 화면에는 버전만 짧게 보여 준다. */
+	static EngineRow engineRow(String engineVersion, long count) {
+		if (JourneySearchRecord.UNKNOWN.equals(engineVersion)) return new EngineRow("확인되지 않음", null, count);
+		String[] parts = engineVersion.split("/");
+		if (parts.length != 3 || parts[2].isBlank()) return new EngineRow(OTHER, null, count);
+		return new EngineRow("버전 " + parts[2], engineVersion, count);
+	}
+
 	record OutcomeColumn(JourneySearchOutcome outcome, String label) {
 	}
 
@@ -66,24 +90,26 @@ record JourneySearchAnalyticsView(
 	record LabeledCount(String label, long count) {
 	}
 
+	record EngineRow(String label, String detail, long count) {
+	}
+
 	static JourneySearchAnalyticsView from(JourneySearchAnalyticsSummary summary) {
 		List<JourneySearchOutcome> outcomes = List.of(JourneySearchOutcome.values());
 		List<OutcomeColumn> columns = outcomes.stream()
-			.map(outcome -> new OutcomeColumn(outcome, OUTCOME_LABELS.get(outcome))).toList();
+			.map(outcome -> new OutcomeColumn(outcome, outcomeLabel(outcome))).toList();
 		return new JourneySearchAnalyticsView(
 			summary.periodDays(),
 			summary.totalCount(),
 			summary.recordFailureCount(),
 			columns,
-			summary.kindRows().stream().map(row -> new KindRow(KIND_LABELS.get(row.kind()), row.total(),
+			summary.kindRows().stream().map(row -> new KindRow(kindLabel(row.kind()), row.total(),
 				outcomes.stream().map(row::count).toList())).toList(),
 			summary.days().stream().map(row -> new DayRow(row.day(), row.recorded(), row.total(),
 				outcomes.stream().map(row::count).toList())).toList(),
-			summary.engineRows().stream().map(row -> new LabeledCount(
-				JourneySearchRecord.UNKNOWN.equals(row.label()) ? "확인되지 않음" : row.label(), row.count())).toList(),
+			summary.engineRows().stream().map(row -> engineRow(row.label(), row.count())).toList(),
 			summary.stairFreeRows().stream().map(row -> new LabeledCount(
-				STAIR_FREE_LABELS.getOrDefault(row.label(), row.label()), row.count())).toList(),
+				stairFreeLabel(row.label()), row.count())).toList(),
 			summary.categoryRows().stream().map(row -> new LabeledCount(
-				CATEGORY_LABELS.getOrDefault(row.label(), row.label()), row.count())).toList());
+				categoryLabel(row.label()), row.count())).toList());
 	}
 }

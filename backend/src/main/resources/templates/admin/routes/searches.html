@@ -156,19 +156,19 @@
 			</table>
 			</div>
 
-			<h3>엔진 버전별 건수</h3>
+			<h3>경로 계산기 버전별 건수</h3>
 			<div class="admin-table-scroll" tabindex="0" role="group"
-			     aria-label="가로로 스크롤 가능한 엔진 버전별 건수 표">
+			     aria-label="가로로 스크롤 가능한 경로 계산기 버전별 건수 표">
 			<table class="static-table">
 				<thead>
 				<tr>
-					<th scope="col">엔진 버전</th>
+					<th scope="col">버전</th>
 					<th scope="col">건수</th>
 				</tr>
 				</thead>
 				<tbody>
 				<tr th:each="row : ${journeyAnalytics.engineRows}">
-					<th scope="row" th:text="${row.label}">EASYSUBWAY_RAPTOR_SUITE_V2/REVERSE_RANGE_RAPTOR/2.0.0</th>
+					<th scope="row" th:text="${row.label}" th:attr="title=${row.detail}">버전 2.0.0</th>
 					<td th:text="${row.count}">0</td>
 				</tr>
 				<tr th:if="${#lists.isEmpty(journeyAnalytics.engineRows)}">
