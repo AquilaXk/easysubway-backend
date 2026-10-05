@@ -83,7 +83,7 @@ const phaseTwoFixture = () => {
 
 test('Phase B policy, reviewed baseline and JaCoCo report are closed evidence', () => {
   assert.equal(digest(trackedPolicyBytes), '78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b');
-  assert.equal(digest(trackedBaselineBytes), 'd045871d7717fd45276d0ec11b03291211a2149f69b63e1b52ea7af07d7e080a');
+  assert.equal(digest(trackedBaselineBytes), 'e02882ec60b3afe3cd3fb9188feb5da252976806aa5342fbf9270b279d05fec7');
   assert.deepEqual(parseCanonicalJson(trackedPolicyBytes, 'policy'), fixturePolicy());
   assert.equal(validatePolicy(fixturePolicy()), true);
   const trackedBaseline = JSON.parse(trackedBaselineBytes);

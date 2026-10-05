@@ -108,6 +108,7 @@ class DatabaseMigrationContainerTest {
 				"datapack_release_channels",
 				"datapack_release_channel_events",
 				"datapack_release_channel_observations",
+				"journey_v3_search_records",
 				"external_alias_approvals",
 				"source_quarantine_records",
 				"source_quarantine_resolutions",
@@ -130,7 +131,7 @@ class DatabaseMigrationContainerTest {
 				"facility_operational_status",
 				"facility_status_feed_heartbeat"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70", "75", "76", "77");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70", "75", "76", "77", "78");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i

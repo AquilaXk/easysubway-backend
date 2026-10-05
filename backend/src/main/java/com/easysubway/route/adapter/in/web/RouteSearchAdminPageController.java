@@ -4,6 +4,7 @@ import com.easysubway.admin.metric.adapter.in.web.AnalyticsComparisonCard;
 import com.easysubway.admin.metric.application.service.AdminMetricQueryService;
 import com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
+import com.easysubway.journey.analytics.JourneySearchAnalyticsService;
 import com.easysubway.route.application.port.in.RouteSearchDashboardUseCase;
 import com.easysubway.route.domain.BlockedStationRanking;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
@@ -30,12 +31,15 @@ class RouteSearchAdminPageController {
 	private final RouteSearchDashboardUseCase routeSearchDashboardUseCase;
 	private final AdminMetricQueryService metricQueryService;
 	private final ObjectMapper objectMapper;
+	private final JourneySearchAnalyticsService journeySearchAnalyticsService;
 
 	RouteSearchAdminPageController(
 		RouteSearchDashboardUseCase routeSearchDashboardUseCase,
 		AdminMetricQueryService metricQueryService,
-		ObjectMapper objectMapper
+		ObjectMapper objectMapper,
+		JourneySearchAnalyticsService journeySearchAnalyticsService
 	) {
+		this.journeySearchAnalyticsService = journeySearchAnalyticsService;
 		this.routeSearchDashboardUseCase = routeSearchDashboardUseCase;
 		this.metricQueryService = metricQueryService;
 		this.objectMapper = objectMapper;
@@ -71,6 +75,8 @@ class RouteSearchAdminPageController {
 		model.addAttribute("trendJson", toJson(chart));
 		model.addAttribute("trendDays", chart.days());
 		model.addAttribute("exportKeys", TREND_KEYS);
+		model.addAttribute("journeyAnalytics",
+			JourneySearchAnalyticsView.from(journeySearchAnalyticsService.summarize(chart.days())));
 		model.addAttribute("comparisons", metricQueryService.compare(TREND_KEYS, days)
 			.stream()
 			.map(comparison -> AnalyticsComparisonCard.from(comparison, HIGHER_IS_BETTER.contains(comparison.key())))
