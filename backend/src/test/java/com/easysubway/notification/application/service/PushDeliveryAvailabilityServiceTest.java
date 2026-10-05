@@ -17,6 +17,19 @@ class PushDeliveryAvailabilityServiceTest {
 		public PushNotificationSendResult send(PushNotification notification) {
 			return PushNotificationSendResult.sent();
 		}
+
+		@Override
+		public boolean isConfigured() {
+			return true;
+		}
+	};
+
+	// isConfigured()를 구현하지 않은 새 어댑터는 발송 가능으로 보이면 안 된다(fail-closed).
+	private static final PushNotificationSenderPort SILENT_SENDER = new PushNotificationSenderPort() {
+		@Override
+		public PushNotificationSendResult send(PushNotification notification) {
+			return PushNotificationSendResult.sent();
+		}
 	};
 
 	private static final PushNotificationSenderPort UNCONFIGURED_SENDER = new PushNotificationSenderPort() {
@@ -56,6 +69,16 @@ class PushDeliveryAvailabilityServiceTest {
 	void unavailableWhenSenderNotConfigured() {
 		PushDeliveryAvailability availability =
 			new PushDeliveryAvailabilityService(true, UNCONFIGURED_SENDER).check();
+
+		assertThat(availability.available()).isFalse();
+		assertThat(availability.reasons()).containsExactly("외부 푸시 발송 어댑터가 설정되지 않았습니다.");
+	}
+
+	@Test
+	@DisplayName("준비 상태를 밝히지 않은 어댑터는 발송 불가로 판정한다")
+	void adapterWithoutExplicitReadinessIsUnavailable() {
+		PushDeliveryAvailability availability =
+			new PushDeliveryAvailabilityService(true, SILENT_SENDER).check();
 
 		assertThat(availability.available()).isFalse();
 		assertThat(availability.reasons()).containsExactly("외부 푸시 발송 어댑터가 설정되지 않았습니다.");

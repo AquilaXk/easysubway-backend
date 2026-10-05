@@ -11,8 +11,11 @@ public interface PushNotificationSenderPort {
 	 */
 	PushNotificationSendResult send(PushNotification notification);
 
-	/** 실제 발송 어댑터가 구성되어 있는지. 미구성 어댑터는 false를 반환해 관리자 화면에 사유를 드러낸다. */
+	/**
+	 * 실제 발송 어댑터가 구성되어 있는지. 기본값은 false(fail-closed)이며, 실제 FCM/APNs 어댑터는
+	 * 자격 증명까지 갖춰졌을 때만 명시적으로 true를 반환해야 한다.
+	 */
 	default boolean isConfigured() {
-		return true;
+		return false;
 	}
 }
