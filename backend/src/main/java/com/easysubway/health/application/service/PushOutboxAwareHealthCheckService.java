@@ -1,7 +1,6 @@
-package com.easysubway.notification.application.service;
+package com.easysubway.health.application.service;
 
 import com.easysubway.health.application.port.in.CheckHealthUseCase;
-import com.easysubway.health.application.service.HealthCheckService;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
 import com.easysubway.notification.application.port.in.PushDeliveryAvailabilityUseCase;
