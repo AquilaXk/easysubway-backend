@@ -1,4 +1,4 @@
-package com.easysubway.health.application.service;
+package com.easysubway.notification.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
