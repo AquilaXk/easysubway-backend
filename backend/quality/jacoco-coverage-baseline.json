@@ -21,11 +21,11 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "c594ef942a915beced43801d1f8d8f23b0e168b06d15dc58f631aa8edb482697"
+    "sourceInventorySha256": "1ce726d1cfeb90988e92a11a1188f8aab4349c3254767574f9bdfdf87581ef51"
   },
   "scope": {
-    "criticalSourceCount": 465,
-    "reportedSourceCount": 465,
+    "criticalSourceCount": 466,
+    "reportedSourceCount": 466,
     "missingSourceCount": 0,
     "excludedSourceCount": 1
   },
@@ -79,6 +79,7 @@
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/DataSourceSnapshotAdminPageController.java","sha256":"7f86bef22eedf2e001f14c627bede7ce6c7ec0d9ca38a2d14ef8806fc0c21349","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"DataSourceSnapshotAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":74,"total":75,"basisPoints":9866},"branch":{"missed":5,"covered":5,"total":10,"basisPoints":5000}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/FacilityEvidenceAdminPageController.java","sha256":"b865839ce540265557251651ad70f7cd88afe48e78f546702b0eeedcc40421d7","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"FacilityEvidenceAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":10,"covered":61,"total":71,"basisPoints":8591},"branch":{"missed":21,"covered":7,"total":28,"basisPoints":2500}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ManualOverrideLedgerAdminPageController.java","sha256":"d4fba10a90c8c9d530afe9fedf2d3fd4571bfaf0411676334d36e0d2c7996547","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ManualOverrideLedgerAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":13,"covered":89,"total":102,"basisPoints":8725},"branch":{"missed":21,"covered":22,"total":43,"basisPoints":5116}},
+    {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/ReleaseObservationView.java","sha256":"9b15e4d518b1fdf36e6b9767ba8150e8644c4661545ccd151d9a840809f757e1","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"ReleaseObservationView.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":37,"total":38,"basisPoints":9736},"branch":{"missed":1,"covered":19,"total":20,"basisPoints":9500}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/RouteGateMatrixAdminPageController.java","sha256":"304164d4f1dc7947ee26bb96596b4799a2adfd303e94d475ee97ae74dcd22524","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"RouteGateMatrixAdminPageController.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":16,"covered":50,"total":66,"basisPoints":7575},"branch":{"missed":30,"covered":14,"total":44,"basisPoints":3181}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/in/web/WorkflowServiceTokenFilter.java","sha256":"091f1147aeb39bfdcfe10b913d105e0c07bea7f74fd16a0a894247fa7680c485","packageName":"com.easysubway.datapack.adapter.in.web","sourceFileName":"WorkflowServiceTokenFilter.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":13,"total":13,"basisPoints":10000},"branch":{"missed":4,"covered":6,"total":10,"basisPoints":6000}},
     {"path":"backend/src/main/java/com/easysubway/datapack/adapter/out/catalog/HttpDatapackReleaseCatalogAdapter.java","sha256":"82943f5999833951b5b151d11fb8b078d2bd42e8e8f14f8f925c80f384044d0d","packageName":"com.easysubway.datapack.adapter.out.catalog","sourceFileName":"HttpDatapackReleaseCatalogAdapter.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":14,"covered":125,"total":139,"basisPoints":8992},"branch":{"missed":29,"covered":69,"total":98,"basisPoints":7040}},
@@ -526,20 +527,20 @@
     },
     {
       "id": "ARTIFACT_RELEASE",
-      "sourceCount": 52,
-      "reportedSourceCount": 52,
+      "sourceCount": 53,
+      "reportedSourceCount": 53,
       "missingSourceCount": 0,
       "line": {
-        "missed": 274,
-        "covered": 2774,
-        "total": 3048,
-        "basisPoints": 9101
+        "missed": 275,
+        "covered": 2811,
+        "total": 3086,
+        "basisPoints": 9108
       },
       "branch": {
-        "missed": 539,
-        "covered": 924,
-        "total": 1463,
-        "basisPoints": 6315
+        "missed": 540,
+        "covered": 943,
+        "total": 1483,
+        "basisPoints": 6358
       }
     },
     {
