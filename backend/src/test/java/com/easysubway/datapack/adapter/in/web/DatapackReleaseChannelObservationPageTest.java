@@ -26,7 +26,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
-	"easysubway.admin.password=admin-test-password"
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.datapack.admin-catalog-read-timeout=PT0.3S"
 })
 @AutoConfigureMockMvc
 @DisplayName("관리자 배포 채널 화면의 git 원본 발행 관측")
@@ -41,12 +42,16 @@ class DatapackReleaseChannelObservationPageTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	@Autowired
+	private ReleaseCatalogObservationReader catalogReader;
+
 	@MockitoBean
 	private DatapackReleaseCatalogPort catalog;
 
 	@BeforeEach
 	@AfterEach
 	void clean() {
+		catalogReader.clear();
 		jdbcTemplate.update("DELETE FROM datapack_release_channel_observations");
 	}
 
@@ -60,15 +65,17 @@ class DatapackReleaseChannelObservationPageTest {
 
 		assertThat(html)
 			.contains("git 원본 발행 관측")
-			.contains("<th scope=\"col\">release sequence</th>")
+			.contains("<th scope=\"col\">발행 번호</th>")
 			.contains("126")
 			.contains(SHA.substring(0, 11))
 			.contains("request-126")
-			.contains("2026-10-03")
+			.contains("2026-10-03 18:30")
+			.doesNotContain("2026-10-03T")
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/126")
-			.contains("공개 catalog와 일치")
+			.contains("공개 목록과 일치")
 			.contains("가로로 스크롤 가능한 git 원본 발행 관측 표")
-			.doesNotContain("공개 catalog와 sequence가 다릅니다");
+			.doesNotContain("공개 목록과 발행 번호가 다릅니다")
+			.doesNotContain("role=\"status\"");
 		assertThat(observationSection(html)).doesNotContain("<form").doesNotContain("<button");
 	}
 
@@ -81,8 +88,9 @@ class DatapackReleaseChannelObservationPageTest {
 		assertThat(section.split("관측 없음", -1).length - 1).isGreaterThanOrEqualTo(3);
 		assertThat(section)
 			.contains("프로덕션").contains("스테이징").contains("개발")
-			.doesNotContain("공개 catalog와 일치")
-			.doesNotContain("sequence가 다릅니다");
+			.doesNotContain("공개 목록과 일치")
+			.doesNotContain("발행 번호가 다릅니다")
+			.doesNotContain("role=\"status\"");
 		org.mockito.Mockito.verifyNoInteractions(catalog);
 	}
 
@@ -95,10 +103,11 @@ class DatapackReleaseChannelObservationPageTest {
 		String html = render("sequence-mismatch");
 
 		assertThat(observationSection(html))
-			.contains("공개 catalog와 sequence가 다릅니다")
+			.contains("role=\"status\"")
+			.contains("공개 목록과 발행 번호가 다릅니다")
 			.contains("관측 126")
-			.contains("catalog 125")
-			.doesNotContain("공개 catalog와 일치");
+			.contains("공개 목록 125")
+			.doesNotContain("공개 목록과 일치");
 	}
 
 	@Test
@@ -110,8 +119,55 @@ class DatapackReleaseChannelObservationPageTest {
 		String html = render("catalog-unavailable");
 
 		assertThat(observationSection(html))
-			.contains("공개 catalog를 읽지 못해 비교하지 못했습니다")
-			.doesNotContain("공개 catalog와 일치");
+			.contains("공개 목록을 읽지 못해 비교하지 못했습니다")
+			.doesNotContain("공개 목록과 일치");
+	}
+
+	@Test
+	@DisplayName("운영이 아닌 채널의 관측은 경고 없이 비교 대상 아님으로 보여준다")
+	void showsNotComparedWithoutWarning() throws Exception {
+		insertObservation("staging", 7);
+		insertObservation("production", 126);
+		when(catalog.fetchCurrent("production")).thenReturn(new CatalogIdentity(126, SHA, "production", "", true, SHA));
+
+		String section = observationSection(render("not-compared"));
+
+		assertThat(section).contains("비교 대상 아님 (공개 목록은 운영 채널 기준)");
+		assertThat(section.split("role=\"status\"", -1).length - 1).isZero();
+		assertThat(section).contains("data-observation-state=\"NOT_COMPARED\"");
+		org.mockito.Mockito.verify(catalog).fetchCurrent("production");
+		org.mockito.Mockito.verify(catalog, org.mockito.Mockito.never()).fetchCurrent("staging");
+	}
+
+	@Test
+	@DisplayName("경고 상태에만 role=status가 있고 채널 이름은 행 머리글이다")
+	void marksWarningsOnlyAndRowHeaders() throws Exception {
+		insertObservation("production", 126);
+		when(catalog.fetchCurrent("production")).thenReturn(new CatalogIdentity(125, SHA, "production", "", true, SHA));
+
+		String section = observationSection(render("warning-role"));
+
+		assertThat(section.split("role=\"status\"", -1).length - 1).isEqualTo(1);
+		assertThat(section.split("<th scope=\"row\"", -1).length - 1).isEqualTo(3);
+		assertThat(section).contains("<th scope=\"row\">프로덕션</th>");
+	}
+
+	@Test
+	@DisplayName("공개 목록 응답이 느려 시간 제한을 넘어도 화면은 렌더링되고 읽지 못했다고 표시한다")
+	void rendersWhenCatalogIsSlow() throws Exception {
+		insertObservation("production", 126);
+		when(catalog.fetchCurrent("production")).thenAnswer(invocation -> {
+			Thread.sleep(10_000);
+			return new CatalogIdentity(126, SHA, "production", "", true, SHA);
+		});
+
+		long start = System.nanoTime();
+		String html = render("catalog-slow");
+
+		assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofSeconds(5));
+		assertThat(observationSection(html))
+			.contains("공개 목록을 읽지 못해 비교하지 못했습니다")
+			.contains("role=\"status\"");
 	}
 
 	@Test
@@ -121,7 +177,9 @@ class DatapackReleaseChannelObservationPageTest {
 		when(catalog.fetchCurrent("production")).thenReturn(new CatalogIdentity(125, SHA, "production", "", true, SHA));
 
 		assertThat(observationSection(render("governance-words")))
-			.doesNotContain("pilot").doesNotContain("게이트").doesNotContain("검증");
+			.doesNotContain("pilot").doesNotContain("게이트").doesNotContain("검증")
+			.doesNotContain("콜백").doesNotContain("catalog").doesNotContain("sequence")
+			.doesNotContain("manifest").doesNotContain("release request id");
 	}
 
 	private String render(String name) throws Exception {

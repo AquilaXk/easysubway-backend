@@ -72,18 +72,54 @@ class ReleaseObservationViewTest {
 		assertThat(view.state()).isEqualTo(State.CATALOG_UNAVAILABLE);
 		assertThat(view.isWarning()).isTrue();
 		assertThat(view.catalogSequence()).isNull();
-		assertThat(view.message()).contains("공개 catalog를 읽지 못");
+		assertThat(view.message()).contains("공개 목록을 읽지 못");
 	}
 
 	@Test
-	@DisplayName("catalog가 다른 채널 기준이면 같은 sequence여도 일치로 보지 않는다")
-	void otherChannelCatalogIsNotMatch() {
+	@DisplayName("운영이 아닌 채널은 공개 목록이 다뤄지지 않으므로 경고 없이 비교 대상 아님으로 표시한다")
+	void nonProductionChannelIsNotCompared() {
 		var view = ReleaseObservationView.of("staging", Optional.of(row("staging", 126)),
 			Optional.of(catalog("production", 126)));
 
+		assertThat(view.state()).isEqualTo(State.NOT_COMPARED);
+		assertThat(view.isWarning()).isFalse();
+		assertThat(view.catalogSequence()).isNull();
+		assertThat(view.message()).contains("비교 대상 아님").contains("공개 목록은 운영 채널 기준");
+	}
+
+	@Test
+	@DisplayName("운영 채널인데 공개 목록이 다른 채널 기준이면 일치로 보지 않고 경고한다")
+	void productionWithOtherChannelCatalogWarns() {
+		var view = ReleaseObservationView.of("production", Optional.of(row("production", 126)),
+			Optional.of(catalog("staging", 126)));
+
 		assertThat(view.state()).isEqualTo(State.CATALOG_CHANNEL_DIFFERS);
 		assertThat(view.isWarning()).isTrue();
-		assertThat(view.message()).contains("production");
+	}
+
+	@Test
+	@DisplayName("관측 시각은 UTC 저장값을 Asia/Seoul yyyy-MM-dd HH:mm으로 표시한다")
+	void observedAtIsFormattedInSeoul() {
+		var view = ReleaseObservationView.of("production", Optional.of(row("production", 126)),
+			Optional.of(catalog("production", 126)));
+
+		assertThat(view.observedAtText()).isEqualTo("2026-10-03 18:30");
+	}
+
+	@Test
+	@DisplayName("운영자 문구는 콜백·catalog·sequence 같은 개발 용어를 쓰지 않는다")
+	void messagesUsePlainKorean() {
+		var absent = ReleaseObservationView.of("staging", Optional.empty(), Optional.empty());
+		var mismatch = ReleaseObservationView.of("production", Optional.of(row("production", 126)),
+			Optional.of(catalog("production", 125)));
+		var unavailable = ReleaseObservationView.of("production", Optional.of(row("production", 126)),
+			Optional.empty());
+
+		assertThat(List.of(absent.message(), mismatch.message(), unavailable.message()))
+			.allSatisfy(message -> assertThat(message)
+				.doesNotContain("콜백").doesNotContain("catalog").doesNotContain("sequence"));
+		assertThat(absent.message()).contains("발행 완료 알림");
+		assertThat(mismatch.message()).contains("공개 목록").contains("발행 번호");
 	}
 
 	@Test
@@ -103,28 +139,34 @@ class ReleaseObservationViewTest {
 	}
 
 	@Test
-	@DisplayName("관측 행이 하나도 없으면 catalog를 호출하지 않고 세 채널 모두 관측 없음")
-	void noObservationSkipsCatalogAndListsAllChannels() {
-		var port = new FixedCatalog(catalog("production", 1));
+	@DisplayName("운영 관측 행이 없으면 공개 목록을 조회하지 않고 세 채널을 순서대로 보여준다")
+	void noProductionObservationSkipsCatalog() {
+		var calls = new int[1];
 
-		var views = ReleaseObservationView.all(List.of(), port);
-
-		assertThat(views).extracting(ReleaseObservationView::channel).containsExactly("production", "staging", "dev");
-		assertThat(views).extracting(ReleaseObservationView::state).containsOnly(State.ABSENT);
-		assertThat(port.calls).isZero();
-	}
-
-	@Test
-	@DisplayName("관측 채널은 production·staging·dev 순서로 한 번의 catalog 조회로 비교한다")
-	void allOrdersChannelsAndReadsCatalogOnce() {
-		var port = new FixedCatalog(catalog("production", 126));
-
-		var views = ReleaseObservationView.all(List.of(row("dev", 7), row("production", 126)), port);
+		var views = ReleaseObservationView.all(List.of(row("staging", 7)), () -> {
+			calls[0]++;
+			return Optional.of(catalog("production", 1));
+		});
 
 		assertThat(views).extracting(ReleaseObservationView::channel).containsExactly("production", "staging", "dev");
 		assertThat(views).extracting(ReleaseObservationView::state)
-			.containsExactly(State.MATCH, State.ABSENT, State.CATALOG_CHANNEL_DIFFERS);
-		assertThat(port.calls).isEqualTo(1);
+			.containsExactly(State.ABSENT, State.NOT_COMPARED, State.ABSENT);
+		assertThat(calls[0]).isZero();
+	}
+
+	@Test
+	@DisplayName("운영 관측이 있으면 공개 목록을 한 번만 조회해 운영 행만 비교한다")
+	void productionObservationComparesOnlyProduction() {
+		var calls = new int[1];
+
+		var views = ReleaseObservationView.all(List.of(row("dev", 7), row("production", 126)), () -> {
+			calls[0]++;
+			return Optional.of(catalog("production", 126));
+		});
+
+		assertThat(views).extracting(ReleaseObservationView::state)
+			.containsExactly(State.MATCH, State.ABSENT, State.NOT_COMPARED);
+		assertThat(calls[0]).isEqualTo(1);
 	}
 
 	private static final class FixedCatalog implements DatapackReleaseCatalogPort {
