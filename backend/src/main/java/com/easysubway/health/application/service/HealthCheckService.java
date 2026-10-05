@@ -23,32 +23,24 @@ public class HealthCheckService implements CheckHealthUseCase {
 
 	private final DataSource dataSource;
 	private final LoadTransitMasterPort loadTransitMasterPort;
-	private final PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase;
+	private PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase;
 
 	@Autowired
 	public HealthCheckService(
 		ObjectProvider<DataSource> dataSourceProvider,
-		ObjectProvider<LoadTransitMasterPort> loadTransitMasterPortProvider,
-		ObjectProvider<PushDeliveryAvailabilityUseCase> pushDeliveryAvailabilityProvider
+		ObjectProvider<LoadTransitMasterPort> loadTransitMasterPortProvider
 	) {
-		this(
-			dataSourceProvider.getIfAvailable(),
-			loadTransitMasterPortProvider.getIfAvailable(),
-			pushDeliveryAvailabilityProvider.getIfAvailable()
-		);
+		this(dataSourceProvider.getIfAvailable(), loadTransitMasterPortProvider.getIfAvailable());
 	}
 
 	public HealthCheckService(DataSource dataSource, LoadTransitMasterPort loadTransitMasterPort) {
-		this(dataSource, loadTransitMasterPort, (PushDeliveryAvailabilityUseCase) null);
-	}
-
-	public HealthCheckService(
-		DataSource dataSource,
-		LoadTransitMasterPort loadTransitMasterPort,
-		PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase
-	) {
 		this.dataSource = dataSource;
 		this.loadTransitMasterPort = loadTransitMasterPort;
+	}
+
+	// 푸시 발송 가능 여부 판정은 선택 협력자다. 없으면 pushOutbox를 UNKNOWN으로 드러낸다.
+	@Autowired(required = false)
+	public void setPushDeliveryAvailabilityUseCase(PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase) {
 		this.pushDeliveryAvailabilityUseCase = pushDeliveryAvailabilityUseCase;
 	}
 

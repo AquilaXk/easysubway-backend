@@ -59,11 +59,9 @@ class HealthCheckServiceTest {
 	@Test
 	@DisplayName("푸시 발송이 불가하면 pushOutbox를 UNAVAILABLE과 사유로 보여 주고 전체 상태는 유지한다")
 	void checkHealthReportsPushOutboxUnavailable() throws Exception {
-		HealthStatus status = new HealthCheckService(
-			availableDataSource(),
-			new InMemoryTransitMasterRepository(),
-			() -> new PushDeliveryAvailability(false, List.of("푸시 자동 발송이 꺼져 있습니다."))
-		).checkHealth();
+		HealthCheckService service = new HealthCheckService(availableDataSource(), new InMemoryTransitMasterRepository());
+		service.setPushDeliveryAvailabilityUseCase(() -> new PushDeliveryAvailability(false, List.of("푸시 자동 발송이 꺼져 있습니다.")));
+		HealthStatus status = service.checkHealth();
 
 		assertThat(status.status()).isEqualTo("UP");
 		assertThat(status.components())
@@ -78,11 +76,9 @@ class HealthCheckServiceTest {
 	@Test
 	@DisplayName("푸시 발송이 가능하면 pushOutbox는 UP이다")
 	void checkHealthReportsPushOutboxUp() throws Exception {
-		HealthStatus status = new HealthCheckService(
-			availableDataSource(),
-			new InMemoryTransitMasterRepository(),
-			() -> new PushDeliveryAvailability(true, List.of())
-		).checkHealth();
+		HealthCheckService service = new HealthCheckService(availableDataSource(), new InMemoryTransitMasterRepository());
+		service.setPushDeliveryAvailabilityUseCase(() -> new PushDeliveryAvailability(true, List.of()));
+		HealthStatus status = service.checkHealth();
 
 		assertThat(status.components())
 			.filteredOn(component -> component.name().equals("pushOutbox"))
