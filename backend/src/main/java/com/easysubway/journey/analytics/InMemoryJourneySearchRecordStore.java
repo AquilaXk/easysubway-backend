@@ -36,7 +36,7 @@ public class InMemoryJourneySearchRecordStore implements JourneySearchRecordStor
 	}
 
 	@Override
-	public synchronized int deleteRecordedBefore(LocalDate cutoff) {
+	public synchronized int purgeRecordedBefore(LocalDate cutoff) {
 		int before = records.size();
 		records.removeIf(record -> record.recordedOn().isBefore(cutoff));
 		return before - records.size();

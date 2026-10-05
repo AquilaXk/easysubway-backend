@@ -11,5 +11,5 @@ public interface JourneySearchRecordStore {
 	List<JourneySearchAggregateRow> aggregate(LocalDate fromInclusive, LocalDate toInclusive);
 
 	/** {@code recordedOn}이 cutoff보다 이전인 기록을 지우고 지운 건수를 돌려준다. */
-	int deleteRecordedBefore(LocalDate cutoff);
+	int purgeRecordedBefore(LocalDate cutoff);
 }

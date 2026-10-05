@@ -68,7 +68,7 @@ class JourneySearchRecordRetentionSchedulerTest {
 		}
 
 		@Override
-		public int deleteRecordedBefore(LocalDate cutoff) {
+		public int purgeRecordedBefore(LocalDate cutoff) {
 			cutoffs.add(cutoff);
 			if (fail) throw new IllegalStateException("database unavailable");
 			return 0;

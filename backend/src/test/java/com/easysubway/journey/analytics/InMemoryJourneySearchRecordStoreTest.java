@@ -39,7 +39,7 @@ class InMemoryJourneySearchRecordStoreTest {
 				"UNKNOWN", "STEP_FREE", List.of(), "INCLUDED"));
 		}
 
-		int deleted = store.deleteRecordedBefore(LocalDate.parse("2026-07-02"));
+		int deleted = store.purgeRecordedBefore(LocalDate.parse("2026-07-02"));
 
 		assertThat(deleted).isEqualTo(1);
 		assertThat(store.aggregate(LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31")))

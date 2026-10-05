@@ -47,7 +47,7 @@ public class JourneySearchRecordRetentionScheduler {
 	void purgeExpiredRecords() {
 		LocalDate cutoff = LocalDate.now(clock.withZone(SERVICE_ZONE)).minusDays(RETENTION_DAYS);
 		try {
-			int deleted = store.deleteRecordedBefore(cutoff);
+			int deleted = store.purgeRecordedBefore(cutoff);
 			LOG.info("Journey V3 검색 기록 보존 삭제를 마쳤습니다. deletedRows={} cutoff={}", deleted, cutoff);
 		} catch (RuntimeException exception) {
 			failures.increment();

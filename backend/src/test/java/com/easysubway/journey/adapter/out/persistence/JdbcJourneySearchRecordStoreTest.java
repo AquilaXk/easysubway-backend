@@ -109,7 +109,7 @@ class JdbcJourneySearchRecordStoreTest {
 		store.save(record("2026-07-02", JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, "UNKNOWN", "UNKNOWN", List.of()));
 		store.save(record("2026-07-03", JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, "UNKNOWN", "UNKNOWN", List.of()));
 
-		int deleted = store.deleteRecordedBefore(LocalDate.parse("2026-07-02"));
+		int deleted = store.purgeRecordedBefore(LocalDate.parse("2026-07-02"));
 
 		assertThat(deleted).isEqualTo(1);
 		assertThat(store.aggregate(LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31")))

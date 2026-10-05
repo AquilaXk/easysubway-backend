@@ -60,7 +60,7 @@ public class JdbcJourneySearchRecordStore implements JourneySearchRecordStore {
 	}
 
 	@Override
-	public int deleteRecordedBefore(LocalDate cutoff) {
+	public int purgeRecordedBefore(LocalDate cutoff) {
 		return jdbcTemplate.update("DELETE FROM journey_v3_search_records WHERE recorded_on < ?", Date.valueOf(cutoff));
 	}
 }

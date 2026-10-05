@@ -186,7 +186,7 @@ class JourneySearchRecorderTest {
 			}
 
 			@Override
-			public int deleteRecordedBefore(LocalDate cutoff) {
+			public int purgeRecordedBefore(LocalDate cutoff) {
 				throw new UnsupportedOperationException();
 			}
 		};
@@ -228,7 +228,7 @@ class JourneySearchRecorderTest {
 		}
 
 		@Override
-		public int deleteRecordedBefore(LocalDate cutoff) {
+		public int purgeRecordedBefore(LocalDate cutoff) {
 			throw new UnsupportedOperationException();
 		}
 	}
