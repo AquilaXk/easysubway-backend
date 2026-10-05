@@ -92,4 +92,19 @@ class JdbcJourneySearchRecordStoreTest {
 			VALUES ('x', CURRENT_TIMESTAMP, CURRENT_DATE, 'DEPART_AT', 'SUCCESS_MAYBE', 200, NULL, 'UNKNOWN', 'STEP_FREE', '', 'UNKNOWN')
 			""")).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 	}
+
+	@Test
+	@DisplayName("기준일보다 이전 날짜의 기록만 지우고 기준일 이후 기록은 남긴다")
+	void deletesOnlyRecordsBeforeCutoff() {
+		store.save(record("2026-07-01", JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, "UNKNOWN", "UNKNOWN", List.of()));
+		store.save(record("2026-07-02", JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, "UNKNOWN", "UNKNOWN", List.of()));
+		store.save(record("2026-07-03", JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, "UNKNOWN", "UNKNOWN", List.of()));
+
+		int deleted = store.deleteRecordedBefore(LocalDate.parse("2026-07-02"));
+
+		assertThat(deleted).isEqualTo(1);
+		assertThat(store.aggregate(LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31")))
+			.extracting(JourneySearchAggregateRow::day)
+			.containsExactlyInAnyOrder(LocalDate.parse("2026-07-02"), LocalDate.parse("2026-07-03"));
+	}
 }

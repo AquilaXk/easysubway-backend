@@ -166,5 +166,10 @@ class JourneySearchRecorderTest {
 		public List<JourneySearchAggregateRow> aggregate(LocalDate fromInclusive, LocalDate toInclusive) {
 			throw new UnsupportedOperationException();
 		}
+
+		@Override
+		public int deleteRecordedBefore(LocalDate cutoff) {
+			throw new UnsupportedOperationException();
+		}
 	}
 }

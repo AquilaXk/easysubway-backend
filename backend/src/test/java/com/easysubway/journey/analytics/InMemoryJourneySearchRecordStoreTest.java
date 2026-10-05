@@ -29,4 +29,22 @@ class InMemoryJourneySearchRecordStoreTest {
 			assertThat(row.day()).isEqualTo(LocalDate.parse("2026-10-01"));
 		});
 	}
+
+	@Test
+	@DisplayName("기준일보다 이전 날짜의 기록만 지운다")
+	void deletesOnlyRecordsBeforeCutoff() {
+		var store = new InMemoryJourneySearchRecordStore();
+		for (String day : List.of("2026-07-01", "2026-07-02", "2026-07-03")) {
+			store.save(new JourneySearchRecord(day, Instant.parse(day + "T03:00:00Z"),
+				LocalDate.parse(day), JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND, 200, null,
+				"UNKNOWN", "STEP_FREE", List.of(), "INCLUDED"));
+		}
+
+		int deleted = store.deleteRecordedBefore(LocalDate.parse("2026-07-02"));
+
+		assertThat(deleted).isEqualTo(1);
+		assertThat(store.aggregate(LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31")))
+			.extracting(JourneySearchAggregateRow::day)
+			.containsExactlyInAnyOrder(LocalDate.parse("2026-07-02"), LocalDate.parse("2026-07-03"));
+	}
 }

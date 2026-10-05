@@ -59,4 +59,9 @@ public class JdbcJourneySearchRecordStore implements JourneySearchRecordStore {
 				rs.getLong("record_count")),
 			Date.valueOf(fromInclusive), Date.valueOf(toInclusive));
 	}
+
+	@Override
+	public int deleteRecordedBefore(LocalDate cutoff) {
+		return jdbcTemplate.update("DELETE FROM journey_v3_search_records WHERE recorded_on < ?", Date.valueOf(cutoff));
+	}
 }

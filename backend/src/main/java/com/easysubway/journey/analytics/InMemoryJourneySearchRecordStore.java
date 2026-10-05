@@ -34,4 +34,11 @@ public class InMemoryJourneySearchRecordStore implements JourneySearchRecordStor
 				(String) key.get(6), entry.getValue());
 		}).toList();
 	}
+
+	@Override
+	public synchronized int deleteRecordedBefore(LocalDate cutoff) {
+		int before = records.size();
+		records.removeIf(record -> record.recordedOn().isBefore(cutoff));
+		return before - records.size();
+	}
 }
