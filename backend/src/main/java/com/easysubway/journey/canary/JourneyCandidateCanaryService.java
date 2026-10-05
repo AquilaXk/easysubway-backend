@@ -27,6 +27,8 @@ import org.slf4j.LoggerFactory;
  * {@link #REPRESENTATIVE_DEPARTURE_LOCAL_TIME}(KST)이다. 그래서 같은 번들·probe는 막차 이후 심야에 실행해도 주간과 같은
  * 판정을 받고, 항상 번들이 서비스하는 시각을 조회한다. 유효 구간 안에 그 시각이 없으면 {@code WINDOW_MISMATCH}다.
  * 번들 유효 구간 자체는 여전히 실제 실행 시각으로 검증한다.</p>
+ *
+ * <p>단일 대표 시각 smoke다. 다른 시간대(출퇴근·심야 등)의 시간표 결함은 이 canary로 잡지 못한다.</p>
  */
 public final class JourneyCandidateCanaryService {
 
