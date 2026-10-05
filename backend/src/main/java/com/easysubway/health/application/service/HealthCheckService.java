@@ -3,6 +3,8 @@ package com.easysubway.health.application.service;
 import com.easysubway.health.application.port.in.CheckHealthUseCase;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
+import com.easysubway.notification.application.port.in.PushDeliveryAvailabilityUseCase;
+import com.easysubway.notification.domain.PushDeliveryAvailability;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.MasterDataCapability;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
@@ -21,18 +23,33 @@ public class HealthCheckService implements CheckHealthUseCase {
 
 	private final DataSource dataSource;
 	private final LoadTransitMasterPort loadTransitMasterPort;
+	private final PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase;
 
 	@Autowired
 	public HealthCheckService(
 		ObjectProvider<DataSource> dataSourceProvider,
-		ObjectProvider<LoadTransitMasterPort> loadTransitMasterPortProvider
+		ObjectProvider<LoadTransitMasterPort> loadTransitMasterPortProvider,
+		ObjectProvider<PushDeliveryAvailabilityUseCase> pushDeliveryAvailabilityProvider
 	) {
-		this(dataSourceProvider.getIfAvailable(), loadTransitMasterPortProvider.getIfAvailable());
+		this(
+			dataSourceProvider.getIfAvailable(),
+			loadTransitMasterPortProvider.getIfAvailable(),
+			pushDeliveryAvailabilityProvider.getIfAvailable()
+		);
 	}
 
 	public HealthCheckService(DataSource dataSource, LoadTransitMasterPort loadTransitMasterPort) {
+		this(dataSource, loadTransitMasterPort, (PushDeliveryAvailabilityUseCase) null);
+	}
+
+	public HealthCheckService(
+		DataSource dataSource,
+		LoadTransitMasterPort loadTransitMasterPort,
+		PushDeliveryAvailabilityUseCase pushDeliveryAvailabilityUseCase
+	) {
 		this.dataSource = dataSource;
 		this.loadTransitMasterPort = loadTransitMasterPort;
+		this.pushDeliveryAvailabilityUseCase = pushDeliveryAvailabilityUseCase;
 	}
 
 	@Override
@@ -49,9 +66,29 @@ public class HealthCheckService implements CheckHealthUseCase {
 		components.add(unknown("flyway", "Flyway", "마이그레이션 상태는 actuator DB/readiness와 배포 로그에서 확인합니다."));
 		components.add(unknown("objectStorage", "객체 저장소", "신고 사진 저장소 실시간 점검은 아직 구성되지 않았습니다."));
 		components.add(unknown("batch", "배치", "최근 실행 이력은 관리자 수집 화면에서 확인합니다."));
-		components.add(unknown("pushOutbox", "푸시 outbox", "대기/실패 수는 관리자 시스템 화면의 푸시 지표에서 확인합니다."));
+		components.add(pushOutboxHealth());
 		components.add(unknown("backup", "백업", "백업 리허설 상태는 배포/운영 run 증거에서 확인합니다."));
 		return HealthStatus.of(summaryStatus(components), SERVICE_NAME, components);
+	}
+
+	private HealthComponent pushOutboxHealth() {
+		if (pushDeliveryAvailabilityUseCase == null) {
+			return unknown("pushOutbox", "푸시 outbox", "푸시 발송 가능 여부를 확인할 수 없습니다.");
+		}
+		try {
+			PushDeliveryAvailability availability = pushDeliveryAvailabilityUseCase.check();
+			if (availability.available()) {
+				return new HealthComponent("pushOutbox", "UP", "푸시 outbox", "푸시 발송이 가능합니다.");
+			}
+			return new HealthComponent(
+				"pushOutbox",
+				"UNAVAILABLE",
+				"푸시 outbox",
+				"푸시 발송 불가: " + String.join(" ", availability.reasons())
+			);
+		} catch (Exception exception) {
+			return unknown("pushOutbox", "푸시 outbox", "푸시 발송 가능 여부를 확인할 수 없습니다.");
+		}
 	}
 
 	private HealthComponent databaseHealth() {

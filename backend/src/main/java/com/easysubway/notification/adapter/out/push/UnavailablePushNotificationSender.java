@@ -13,4 +13,9 @@ class UnavailablePushNotificationSender implements PushNotificationSenderPort {
 		// 실제 FCM/APNs 어댑터가 붙기 전에는 성공으로 오인하지 않도록 명확히 실패로 기록한다.
 		return PushNotificationSendResult.failed("외부 푸시 발송 어댑터가 설정되지 않았습니다.");
 	}
+
+	@Override
+	public boolean isConfigured() {
+		return false;
+	}
 }

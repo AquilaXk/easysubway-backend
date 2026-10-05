@@ -1,5 +1,6 @@
 package com.easysubway.notification.adapter.in.web;
 
+import com.easysubway.notification.domain.PushDeliveryAvailability;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import java.util.List;
 import java.util.Locale;
@@ -20,6 +21,15 @@ record PushNotificationDashboardView(
 ) {
 
 	static PushNotificationDashboardView from(PushNotificationDashboardSummary summary) {
+		return from(summary, null);
+	}
+
+	// availability가 발송 불가면 PENDING 건을 일반 대기가 아니라 "발송 불가"와 사유로 표시한다.
+	// null이면(API 등 가용성 판정을 쓰지 않는 호출) 기존 표시를 그대로 유지한다.
+	static PushNotificationDashboardView from(
+		PushNotificationDashboardSummary summary,
+		PushDeliveryAvailability availability
+	) {
 		long deliveryAttemptCount = summary.sentCount() + summary.failedCount();
 		return new PushNotificationDashboardView(
 			summary.totalCount(),
@@ -34,10 +44,21 @@ record PushNotificationDashboardView(
 			failureAlertClass(summary.failedCount(), deliveryAttemptCount),
 			summary.latestFailureReason(),
 			List.of(
-				new StatusCountRow("대기 중", "아직 발송 처리 전", summary.pendingCount()),
+				pendingRow(summary.pendingCount(), availability),
 				new StatusCountRow("발송 완료", "외부 발송 성공", summary.sentCount()),
 				new StatusCountRow("발송 실패", failedDescription(summary.latestFailureReason()), summary.failedCount())
 			)
+		);
+	}
+
+	private static StatusCountRow pendingRow(long pendingCount, PushDeliveryAvailability availability) {
+		if (availability == null || availability.available()) {
+			return new StatusCountRow("대기 중", "아직 발송 처리 전", pendingCount);
+		}
+		return new StatusCountRow(
+			PushNotificationHistoryRow.PENDING_UNAVAILABLE_LABEL,
+			"처리할 수 없어 쌓여 있습니다 · " + String.join(" ", availability.reasons()),
+			pendingCount
 		);
 	}
 

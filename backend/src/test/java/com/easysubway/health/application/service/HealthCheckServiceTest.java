@@ -8,7 +8,9 @@ import com.easysubway.health.domain.HealthStatus;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.notification.domain.PushDeliveryAvailability;
 import java.sql.Connection;
+import java.util.List;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,40 @@ class HealthCheckServiceTest {
 				assertThat(component.status()).isEqualTo("READ_ONLY");
 				assertThat(component.reason()).isEqualTo("마스터 데이터가 읽기 전용입니다.");
 			});
+	}
+
+	@Test
+	@DisplayName("푸시 발송이 불가하면 pushOutbox를 UNAVAILABLE과 사유로 보여 주고 전체 상태는 유지한다")
+	void checkHealthReportsPushOutboxUnavailable() throws Exception {
+		HealthStatus status = new HealthCheckService(
+			availableDataSource(),
+			new InMemoryTransitMasterRepository(),
+			() -> new PushDeliveryAvailability(false, List.of("푸시 자동 발송이 꺼져 있습니다."))
+		).checkHealth();
+
+		assertThat(status.status()).isEqualTo("UP");
+		assertThat(status.components())
+			.filteredOn(component -> component.name().equals("pushOutbox"))
+			.singleElement()
+			.satisfies(component -> {
+				assertThat(component.status()).isEqualTo("UNAVAILABLE");
+				assertThat(component.reason()).contains("푸시 자동 발송이 꺼져 있습니다.");
+			});
+	}
+
+	@Test
+	@DisplayName("푸시 발송이 가능하면 pushOutbox는 UP이다")
+	void checkHealthReportsPushOutboxUp() throws Exception {
+		HealthStatus status = new HealthCheckService(
+			availableDataSource(),
+			new InMemoryTransitMasterRepository(),
+			() -> new PushDeliveryAvailability(true, List.of())
+		).checkHealth();
+
+		assertThat(status.components())
+			.filteredOn(component -> component.name().equals("pushOutbox"))
+			.extracting("status")
+			.containsExactly("UP");
 	}
 
 	@Test

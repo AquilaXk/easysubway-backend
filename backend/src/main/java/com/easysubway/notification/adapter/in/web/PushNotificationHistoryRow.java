@@ -22,14 +22,22 @@ record PushNotificationHistoryRow(
 	LocalDateTime createdAt
 ) {
 
+	static final String PENDING_UNAVAILABLE_LABEL = "발송 불가";
+
 	static PushNotificationHistoryRow from(PushNotification notification) {
+		return from(notification, true);
+	}
+
+	// 발송 불가 상태에서 PENDING 건은 일반 대기가 아니라 "발송 불가"로 표시한다(실제 상태값은 바꾸지 않는다).
+	static PushNotificationHistoryRow from(PushNotification notification, boolean deliveryAvailable) {
+		boolean stuck = !deliveryAvailable && notification.status() == PushNotificationStatus.PENDING;
 		return new PushNotificationHistoryRow(
 			notification.notificationId(),
 			PushRecipientMask.maskUserId(notification.userId()),
 			PushRecipientMask.maskDeviceToken(notification.deviceToken()),
 			platformLabel(notification.platform().name()),
 			typeLabel(notification.type()),
-			statusLabel(notification.status()),
+			stuck ? PENDING_UNAVAILABLE_LABEL : statusLabel(notification.status()),
 			statusTone(notification.status()),
 			notification.title(),
 			notification.failureReason(),

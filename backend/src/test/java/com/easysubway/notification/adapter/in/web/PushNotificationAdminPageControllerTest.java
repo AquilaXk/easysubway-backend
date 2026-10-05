@@ -72,11 +72,38 @@ class PushNotificationAdminPageControllerTest {
 			.contains("0.0%")
 			.contains("100.0%")
 			.contains("점검 필요")
-			.contains("아직 발송 처리 전")
+			.contains("발송 불가")
 			.contains("외부 발송 성공")
 			.contains("발송 어댑터 실패 또는 예외")
 			.contains("최근 실패: 외부 푸시 발송 어댑터가 설정되지 않았습니다.")
 			.doesNotContain("secret-device-token");
+	}
+
+	@Test
+	@DisplayName("푸시를 보낼 수 없는 상태면 상단에 사유를 밝히고 PENDING 건을 발송 불가로 구분한다")
+	void pushPageShowsDeliveryUnavailableForPendingRows() throws Exception {
+		registerDevice();
+		dispatchNotification("REPORT_STATUS", "신고 처리 알림");
+
+		String html = mockMvc.perform(get("/admin/notifications/push/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("id=\"push-delivery-unavailable\"")
+			.contains("푸시 발송 불가")
+			.contains("푸시 자동 발송이 꺼져 있습니다.")
+			.contains("외부 푸시 발송 어댑터가 설정되지 않았습니다.")
+			.contains("처리할 수 없어 쌓여 있습니다")
+			.doesNotContain("아직 발송 처리 전");
+		// 이력 행의 PENDING 상태 배지는 일반 대기가 아니라 발송 불가로 표시된다.
+		assertThat(html)
+			.contains("<span class=\"admin-status  warn\">발송 불가</span>")
+			.doesNotContain("<span class=\"admin-status  warn\">대기 중</span>")
+			.doesNotContain("<span>대기 중</span>");
 	}
 
 	@Test
