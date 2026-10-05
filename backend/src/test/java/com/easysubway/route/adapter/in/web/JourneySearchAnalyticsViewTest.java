@@ -59,5 +59,7 @@ class JourneySearchAnalyticsViewTest {
 		assertThat(JourneySearchAnalyticsView.engineRow("UNKNOWN", 1).label()).isEqualTo("확인되지 않음");
 		assertThat(JourneySearchAnalyticsView.engineRow("UNKNOWN", 1).detail()).isNull();
 		assertThat(JourneySearchAnalyticsView.engineRow("weird", 1).label()).isEqualTo("기타");
+		assertThat(JourneySearchAnalyticsView.engineRow("suite/algorithm/ ", 1).label()).isEqualTo("기타");
+		assertThat(JourneySearchAnalyticsView.engineRow("weird", 1).detail()).isNull();
 	}
 }

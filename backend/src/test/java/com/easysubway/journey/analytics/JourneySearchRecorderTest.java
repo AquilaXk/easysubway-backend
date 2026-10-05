@@ -205,6 +205,49 @@ class JourneySearchRecorderTest {
 		}
 	}
 
+	@Test
+	@DisplayName("기본 생성자의 전용 실행기가 저장하고 종료 때 대기 기록을 비운다")
+	@SuppressWarnings("unchecked")
+	void defaultExecutorSavesOnItsOwnThreadAndDrainsAtShutdown() {
+		org.springframework.beans.factory.ObjectProvider<Clock> clockProvider =
+			org.mockito.Mockito.mock(org.springframework.beans.factory.ObjectProvider.class);
+		org.mockito.Mockito.when(clockProvider.getIfAvailable(org.mockito.ArgumentMatchers.any())).thenReturn(CLOCK);
+		var threadNames = new java.util.concurrent.CopyOnWriteArrayList<String>();
+		var namingStore = new InMemoryStore() {
+			@Override
+			public void save(JourneySearchRecord record) {
+				threadNames.add(Thread.currentThread().getName());
+				super.save(record);
+			}
+		};
+		var recorder = new JourneySearchRecorder(namingStore, clockProvider, meters);
+
+		recorder.recordPointFailure(pointRequest(), 422, "ROUTE_NOT_FOUND");
+		recorder.shutdown();
+
+		assertThat(namingStore.saved).hasSize(1);
+		assertThat(threadNames).containsExactly("journey-search-recorder");
+		assertThat(recorder.failureCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("종료 대기 중 인터럽트되어도 실행기를 멈추고 인터럽트 상태를 유지한다")
+	void shutdownKeepsInterruptStatus() {
+		var pool = new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+			new java.util.concurrent.LinkedBlockingQueue<>(10));
+		var recorder = new JourneySearchRecorder(store, pool, CLOCK, meters);
+
+		Thread.currentThread().interrupt();
+		try {
+			recorder.shutdown(java.time.Duration.ofSeconds(5));
+
+			assertThat(Thread.currentThread().isInterrupted()).isTrue();
+			assertThat(pool.isShutdown()).isTrue();
+		} finally {
+			Thread.interrupted();
+		}
+	}
+
 	private static JourneyRequest pointRequest() {
 		return new JourneyRequest(REQUEST_ID, "origin", "destination", new JourneyRequest.Departure.Now(),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
