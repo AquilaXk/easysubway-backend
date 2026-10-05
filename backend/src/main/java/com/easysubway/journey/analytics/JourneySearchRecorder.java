@@ -11,6 +11,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -44,6 +45,7 @@ public class JourneySearchRecorder {
 	private static final Logger LOG = LoggerFactory.getLogger(JourneySearchRecorder.class);
 	private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 	private static final int QUEUE_CAPACITY = 1_000;
+	private static final Duration SHUTDOWN_WAIT = Duration.ofSeconds(5);
 
 	private final JourneySearchRecordStore store;
 	private final Executor executor;
@@ -82,7 +84,21 @@ public class JourneySearchRecorder {
 
 	@PreDestroy
 	void shutdown() {
-		if (ownedExecutor != null) ownedExecutor.shutdown();
+		shutdown(SHUTDOWN_WAIT);
+	}
+
+	/** 대기 중인 기록을 제한 시간 동안 저장하고, 끝내지 못해 버려진 기록은 실패 건수로 센다. */
+	void shutdown(Duration wait) {
+		if (ownedExecutor == null) return;
+		ownedExecutor.shutdown();
+		try {
+			if (ownedExecutor.awaitTermination(wait.toNanos(), TimeUnit.NANOSECONDS)) return;
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		List<Runnable> dropped = ownedExecutor.shutdownNow();
+		dropped.forEach(task -> failures.increment());
+		LOG.warn("Journey V3 검색 분석 기록 {}건을 종료 시점까지 저장하지 못했습니다.", dropped.size());
 	}
 
 	/** 서버 시작 이후 기록에 실패한 건수. */

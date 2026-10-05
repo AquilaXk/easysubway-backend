@@ -144,6 +144,67 @@ class JourneySearchRecorderTest {
 		assertThat(recorder.failureCount()).isEqualTo(1);
 	}
 
+	@Test
+	@DisplayName("종료 시 대기 중인 기록을 제한 시간 안에 모두 저장하고 실패로 세지 않는다")
+	void shutdownDrainsQueuedRecordsWithinBound() {
+		var pool = new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+			new java.util.concurrent.LinkedBlockingQueue<>(10));
+		var recorder = new JourneySearchRecorder(store, pool, CLOCK, meters);
+		for (int i = 0; i < 3; i++) recorder.recordPointFailure(pointRequest(), 422, "ROUTE_NOT_FOUND");
+
+		recorder.shutdown(java.time.Duration.ofSeconds(5));
+
+		assertThat(pool.isTerminated()).isTrue();
+		assertThat(store.saved).hasSize(3);
+		assertThat(recorder.failureCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("종료 대기 시간이 지나면 저장하지 못한 대기 기록을 실패로 센다")
+	void shutdownCountsUndrainedRecordsAsFailures() throws Exception {
+		var pool = new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+			new java.util.concurrent.LinkedBlockingQueue<>(10));
+		var started = new java.util.concurrent.CountDownLatch(1);
+		var release = new java.util.concurrent.CountDownLatch(1);
+		var blockingStore = new JourneySearchRecordStore() {
+			@Override
+			public void save(JourneySearchRecord record) {
+				started.countDown();
+				while (true) {
+					try {
+						release.await();
+						return;
+					} catch (InterruptedException ignored) {
+						// 종료 시 인터럽트에도 저장을 끝내지 못하는 느린 저장소를 흉내 낸다.
+					}
+				}
+			}
+
+			@Override
+			public List<JourneySearchAggregateRow> aggregate(LocalDate from, LocalDate to) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public int deleteRecordedBefore(LocalDate cutoff) {
+				throw new UnsupportedOperationException();
+			}
+		};
+		var recorder = new JourneySearchRecorder(blockingStore, pool, CLOCK, meters);
+		for (int i = 0; i < 3; i++) recorder.recordPointFailure(pointRequest(), 422, "ROUTE_NOT_FOUND");
+		assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+		try {
+			recorder.shutdown(java.time.Duration.ofMillis(50));
+
+			// 진행 중 1건은 계속 처리하고, 대기 중이던 2건은 버려졌으므로 실패로 센다.
+			assertThat(recorder.failureCount()).isEqualTo(2);
+			assertThat(meters.get(JourneySearchRecorder.FAILURE_METRIC).counter().count()).isEqualTo(2.0);
+		} finally {
+			release.countDown();
+		}
+	}
+
 	private static JourneyRequest pointRequest() {
 		return new JourneyRequest(REQUEST_ID, "origin", "destination", new JourneyRequest.Departure.Now(),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
