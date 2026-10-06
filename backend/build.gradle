@@ -59,10 +59,14 @@ dependencyManagement {
 	imports {
 		mavenBom 'org.egovframe.boot:egovframe-boot-starter-parent:5.0.0'
 		mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
-		// Jackson 2.21.5 — GHSA-5jmj-h7xm-6q6v(CVE-2026-54515) 패치(#2459).
-		mavenBom 'com.fasterxml.jackson:jackson-bom:2.21.5'
+		// Jackson 2.21.6 — GHSA-5jmj-h7xm-6q6v(CVE-2026-54515) 패치(#2459), CVE-2026-68497·83557·19032 패치(#488).
+		mavenBom 'com.fasterxml.jackson:jackson-bom:2.21.6'
 	}
 	dependencies {
+		// Tomcat 10.1.60 — CVE-2026-65905·65182·68525 패치(#488). 수정 버전 10.1.58은 Maven Central 미게시라 이후 최초 게시 라인을 사용한다.
+		dependency 'org.apache.tomcat.embed:tomcat-embed-core:10.1.60'
+		dependency 'org.apache.tomcat.embed:tomcat-embed-el:10.1.60'
+		dependency 'org.apache.tomcat.embed:tomcat-embed-websocket:10.1.60'
 		// PostgreSQL JDBC 42.7.12 — OSV advisory 패치(#2459).
 		dependency 'org.postgresql:postgresql:42.7.12'
 		// Spring Boot BOM이 더 낮게 고정하는 공통 라이브러리는 기존 eGovFrame 기준 보안 패치 버전을 유지한다.

@@ -42,12 +42,12 @@ const REVIEW_ISSUE_URL = /^https:\/\/github\.com\/AquilaXk\/easysubway-backend\/
 const POLICY_PATH = 'backend/quality/spotbugs-suppression-policy.json';
 const REVIEWED_ENGINE_DIGEST = 'c97898ba01f21977e5301dfecb5a1b46c7f5e65548028d1b49b7bcb86ef547ee';
 const FOUNDATION_IDENTITIES_DIGEST = '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0';
-const REVIEWED_INPUT_DIGESTS = { engineClasspathDigest: '3e7e6a2c1cae35e8e755d359ee41a78fe06f421a2484c574489f3f0c23012974', javaLauncherDigest: 'b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2', classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6', pluginClasspathDigest: '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570' };
+const REVIEWED_INPUT_DIGESTS = { engineClasspathDigest: '3e7e6a2c1cae35e8e755d359ee41a78fe06f421a2484c574489f3f0c23012974', javaLauncherDigest: 'b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2', classpathDigest: 'd5ad1730f49008d12fc1ede030d407c6d9e005a295fcd40317b4c4713b439e75', pluginClasspathDigest: '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570' };
 const FINDING_REASON = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
 const FINDING_REMOVAL = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
 const FINDING_TRIGGER = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
 const ISSUE4_TITLE = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
-const BUILD_SCRIPT_DIGEST = 'c1ab7630c46046db2d4954266effd8b90b0734adb80068453b51caefa0f936be';
+const BUILD_SCRIPT_DIGEST = 'ef3080cc90ffd2580bcd815324394d717e9141c8aaaf200cfc55d46dcfceb3bd';
 const SPOTBUGS_TEST_TRIGGERS = ['test output becomes packaged/runtime', 'custom source set mixes test and production outputs', 'bootJar or image admits test classes', 'Gradle source-set/classpath semantics change'];
 const EXCLUSION_TRIGGERS = ['source byte change', 'class/member/annotation or responsibility change', 'plugin/JDK/task/source-set change', 'broader class/package Match', 'Backend #4 remediation'];
 const FINAL_REQUIREMENTS = ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'];
