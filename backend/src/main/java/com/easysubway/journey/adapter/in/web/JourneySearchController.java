@@ -99,11 +99,11 @@ final class JourneySearchController {
 		long startedNanos = latency.start();
 		sessionService.authorize(requireBearerToken(authorization), resourcePolicy.pointSearchCostUnits());
 		JourneyRequest request = decodeRequest(readRequest(servletRequest));
-		Outcome outcome;
+		Outcome outcome = null;
 		try {
 			outcome = deadlineExecutor.execute(request);
 		} catch (RuntimeException exception) {
-			throw recorded(request, startedNanos, serviceUnavailable(request.requestId()));
+			// 실행 실패와 null 결과는 같은 503으로 닫고 같은 방식으로 기록한다.
 		}
 		if (outcome == null) throw recorded(request, startedNanos, serviceUnavailable(request.requestId()));
 
