@@ -196,6 +196,7 @@ public final class JourneyEndpointLatencyMeasurement {
 	public static void main(String[] args) throws Exception {
 		int rounds = args.length > 0 ? Integer.parseInt(args[0]) : 5;
 		int concurrency = args.length > 1 ? Integer.parseInt(args[1]) : 1;
+		reportRecordingCost();
 		System.setProperty("server.port", "0");
 		var context = new AnnotationConfigServletWebServerApplicationContext(Wiring.class);
 		try {
@@ -315,6 +316,27 @@ public final class JourneyEndpointLatencyMeasurement {
 		id[0] = '0';
 		for (int index = 1; index < id.length; index += 1) id[index] = CROCKFORD.charAt(random.nextInt(32));
 		return new String(id);
+	}
+
+	/** 요청당 계측 비용: start() + recordSuccess()를 Prometheus 레지스트리에서 반복해 한 번당 나노초를 잰다. */
+	private static void reportRecordingCost() throws Exception {
+		var metrics = new JourneySearchLatencyMetrics(new PrometheusMeterRegistry(PrometheusConfig.DEFAULT));
+		var kind = com.easysubway.journey.analytics.JourneySearchKind.DEPART_AT;
+		for (int index = 0; index < 500_000; index += 1) metrics.recordSuccess(kind, metrics.start());
+		for (int threads : new int[] {1, 8}) {
+			int perThread = 2_000_000;
+			var pool = Executors.newFixedThreadPool(threads);
+			long started = System.nanoTime();
+			List<Future<?>> futures = new ArrayList<>();
+			for (int thread = 0; thread < threads; thread += 1) {
+				futures.add(pool.submit(() -> { for (int index = 0; index < perThread; index += 1) metrics.recordSuccess(kind, metrics.start()); }));
+			}
+			for (Future<?> future : futures) future.get();
+			long elapsed = System.nanoTime() - started;
+			pool.shutdown();
+			System.out.printf(Locale.ROOT, "계측 비용: 스레드 %d, 같은 시계열에 %d회 -> 호출당 %.0f ns(스레드당 처리 시간 기준)%n",
+				threads, (long) perThread * threads, elapsed / (double) perThread);
+		}
 	}
 
 	private static void report(List<Sample> samples, int concurrency) {

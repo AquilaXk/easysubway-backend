@@ -35,17 +35,18 @@ public class JourneySearchLatencyMetrics {
 	 * 쓰므로 바꾸면 platform 경보 규칙과 테스트도 함께 바꾼다.
 	 *
 	 * <p>SLO는 "모드별로 28일 동안 ok·no_route 요청의 99%가 아래 시간 안에 끝난다"이다. 임계값은 수도권 실데이터
-	 * fixture에 운영 컨트롤러·엔진을 내장 Tomcat으로 묶어 루프백 HTTP로 잰 서버 처리 지연의 p99 최댓값(순차·동시 8 두 조건
-	 * 중 큰 값)에 5배 여유를 곱한 값 이상인 가장 작은 버킷 경계다. 5배는 운영 노드가 측정 장비(Apple M4 Pro)보다 느린 정도(가정
-	 * 3배 이하)와 동시 부하·GC·배포 직후 JIT 미적중(가정 1.7배 이하)을 합친 값이며, 운영 히스토그램이 쌓이면 다시 확인한다.</p>
+	 * fixture에 운영 컨트롤러·엔진을 내장 Tomcat으로 묶어 루프백 HTTP로 잰 서버 처리 지연의 p99 최댓값(엔진 #493 전후, 순차·
+	 * 동시 8 두 조건, 모두 4회 측정 중 큰 값)에 5배 여유를 곱한 값 이상인 가장 작은 버킷 경계다. 5배는 운영 노드가 측정 장비
+	 * (Apple M4 Pro)보다 느린 정도(가정 3배 이하)와 동시 부하·GC·배포 직후 JIT 미적중(가정 1.7배 이하)을 합친 값이며,
+	 * 운영 히스토그램이 쌓이면 다시 확인한다.</p>
 	 *
 	 * <table>
 	 *   <caption>모드별 측정 p99와 SLO 임계값</caption>
-	 *   <tr><th>mode</th><th>측정 p99(ms)</th><th>x5(ms)</th><th>SLO 임계값(ms)</th></tr>
-	 *   <tr><td>depart_at</td><td>2.3 ~ 3.9</td><td>19.5</td><td>25</td></tr>
-	 *   <tr><td>arrive_by</td><td>22.8 ~ 27.2</td><td>136</td><td>250</td></tr>
-	 *   <tr><td>last_connection</td><td>38.7 ~ 40.6</td><td>203</td><td>250</td></tr>
-	 *   <tr><td>depart_between</td><td>58.8 ~ 63.3</td><td>316</td><td>500</td></tr>
+	 *   <tr><th>mode</th><th>측정 p99(ms)</th><th>최댓값 x5(ms)</th><th>SLO 임계값(ms)</th></tr>
+	 *   <tr><td>depart_at</td><td>2.1 ~ 3.9</td><td>19.5</td><td>25</td></tr>
+	 *   <tr><td>arrive_by</td><td>22.8 ~ 29.2</td><td>146</td><td>250</td></tr>
+	 *   <tr><td>last_connection</td><td>38.7 ~ 40.9</td><td>205</td><td>250</td></tr>
+	 *   <tr><td>depart_between</td><td>58.8 ~ 66.7</td><td>334</td><td>500</td></tr>
 	 * </table>
 	 */
 	static final long[] SLO_BUCKET_BOUNDS_MILLIS = {10, 25, 50, 100, 250, 500, 1_000, 2_500};
