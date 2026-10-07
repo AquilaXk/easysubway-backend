@@ -54,6 +54,7 @@ import java.util.regex.Pattern;
 import java.util.function.BooleanSupplier;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Function;
 
 public final class RouteTimetableRaptorPlanner {
@@ -660,7 +661,7 @@ public final class RouteTimetableRaptorPlanner {
 			if (origin < 0 || destination < 0) {
 				return new ScanResult(input.serviceDay(), JourneyAlternatives.Selection.empty(), scanMetrics(workspace));
 			}
-			int[] lowerBounds = computeStationLowerBounds(timetable, destination);
+			int[] lowerBounds = timetable.destinationLowerBounds(destination);
 			workspace.setTargetStation(destination, lowerBounds);
 			workspace.improveOrigin(origin, input.readyAtSeconds());
 
@@ -2587,6 +2588,12 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[] stationLines;
 		private final int[] stationSlotOffsets;
 		private final int totalStationSlots;
+		/**
+		 * #492: 도착역별 목표 가지치기 하한(역 → 도착역 최소 시간) 캐시. 하한은 이 시간표와 도착역만의 함수라(날짜·실시간·프로필에
+		 * 무관) 런타임 세대 수명 동안 유효하다. 행은 처음 물을 때 한 번 계산해 게시하고 이후 읽기만 하며 바꾸지 않는다.
+		 * 세대 교체로 이 시간표를 놓으면 행도 함께 회수된다.
+		 */
+		private final AtomicReferenceArray<int[]> destinationLowerBounds;
 
 		private CompiledTimetable(RouteTimetable source) {
 			this(source, computeTimetableDigest(source), 1L);
@@ -2774,6 +2781,24 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			stationSlotOffsets[numStations] = totalSlots;
 			totalStationSlots = totalSlots;
+			destinationLowerBounds = new AtomicReferenceArray<>(numStations);
+		}
+
+		/**
+		 * #492: 도착역 {@code destination}의 하한 배열(각 역에서 도착역까지 노선 최소 주행 시간 합, 도달 불가는
+		 * {@code Integer.MAX_VALUE / 2}). {@code computeStationLowerBounds}를 처음 물을 때 한 번만 계산하고 같은 배열을
+		 * 돌려준다. 읽기 전용이라 호출자는 배열을 바꾸면 안 된다. 잠금 없이 게시하며, 같은 도착역을 동시에 처음 묻는
+		 * 스레드끼리는 각자 계산하되(결과가 같다) 먼저 게시된 행 하나만 남기고 모두 그 행을 받는다. 범위를 벗어난 도착역은
+		 * {@link IndexOutOfBoundsException}이다.
+		 */
+		int[] destinationLowerBounds(int destination) {
+			int[] row = destinationLowerBounds.get(destination);
+			if (row == null) {
+				// 먼저 게시된 행이 있으면 내 계산 결과는 버리고(값이 같다) 게시된 행을 읽는다.
+				destinationLowerBounds.compareAndSet(destination, null, computeStationLowerBounds(this, destination));
+				row = destinationLowerBounds.get(destination);
+			}
+			return row;
 		}
 
 		int[] stationLineOffsets() {
