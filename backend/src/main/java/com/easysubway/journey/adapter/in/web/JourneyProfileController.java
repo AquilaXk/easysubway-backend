@@ -1,5 +1,7 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.analytics.JourneySearchKind;
+import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
 import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
 import com.easysubway.journey.application.JourneyProfileExecutionDisposition;
@@ -36,6 +38,7 @@ final class JourneyProfileController {
 	private final JourneyProfileDeadlineExecutor deadlineExecutor;
 	private final JourneyProfileResourcePolicy resourcePolicy;
 	private final JourneySearchRecorder recorder;
+	private final JourneySearchLatencyMetrics latency;
 	private final int maxRequestBytes;
 
 	@Autowired
@@ -44,12 +47,14 @@ final class JourneyProfileController {
 		JourneyProfileDeadlineExecutor deadlineExecutor,
 		JourneyProfileResourcePolicy resourcePolicy,
 		@Value("${easysubway.journey.profile.max-request-bytes:65536}") int maxRequestBytes,
-		JourneySearchRecorder recorder
+		JourneySearchRecorder recorder,
+		JourneySearchLatencyMetrics latency
 	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
 		this.resourcePolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
 		this.recorder = Objects.requireNonNull(recorder, "recorder");
+		this.latency = Objects.requireNonNull(latency, "latency");
 		if (maxRequestBytes <= 0) throw new IllegalArgumentException("maxRequestBytes must be positive");
 		this.maxRequestBytes = maxRequestBytes;
 	}
@@ -59,9 +64,12 @@ final class JourneyProfileController {
 		@RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
 		HttpServletRequest servletRequest
 	) {
+		long startedNanos = latency.start();
 		String token = JourneySearchController.requireBearerToken(authorization);
 		JourneyRaptorQuery query = decode(readRequest(servletRequest));
 		sessionService.authorize(token, resourcePolicy.costUnitsFor(query.temporalQuery()));
+		// 모드는 요청을 해석한 직후 한 번만 정한다. 이후 모든 종료 지점이 같은 모드 태그를 쓴다.
+		JourneySearchKind kind = JourneySearchKind.of(query.temporalQuery());
 		JourneyProfileDeadlineExecutor.Outcome outcome = null;
 		try {
 			outcome = deadlineExecutor.execute(query, resourcePolicy);
@@ -69,31 +77,49 @@ final class JourneyProfileController {
 			// 실행 실패와 null 결과는 같은 503으로 닫고 같은 방식으로 기록한다.
 		}
 		if (outcome == null) {
-			throw recorded(query, null, serviceUnavailable(query.requestId()));
+			throw recorded(query, kind, startedNanos, null, serviceUnavailable(query.requestId()));
 		}
+		try {
+			return respond(query, kind, outcome, startedNanos);
+		} catch (RuntimeException exception) {
+			// recorded()가 던진 실패는 이미 기록했다. 그 밖의 예상하지 못한 예외는 error로 한 번만 센다.
+			if (!(exception instanceof JourneySearchController.JourneySearchWebException)) {
+				latency.recordError(kind, startedNanos);
+			}
+			throw exception;
+		}
+	}
+
+	private ResponseEntity<ObjectNode> respond(
+		JourneyRaptorQuery query, JourneySearchKind kind, JourneyProfileDeadlineExecutor.Outcome outcome, long startedNanos
+	) {
 		JourneyProfileExecutionResult result = switch (outcome) {
 			case JourneyProfileDeadlineExecutor.Completed completed -> completed.result();
-			case JourneyProfileDeadlineExecutor.TimedOut ignored -> throw recorded(query, null,
+			case JourneyProfileDeadlineExecutor.TimedOut ignored -> throw recorded(query, kind, startedNanos, null,
 				webFailure(query.requestId(), 504, "JOURNEY_PROFILE_TIMEOUT"));
 		};
 		return switch (result) {
 			case JourneyProfileExecutionResult.Success success -> {
-				ObjectNode body = map(query, success);
-				recorder.recordProfileSuccess(query, success, objectiveTags(body));
+				ObjectNode body = map(query, kind, success, startedNanos);
+				List<String> tags = objectiveTags(body);
+				latency.recordSuccess(kind, startedNanos);
+				recorder.recordProfileSuccess(query, success, tags);
 				yield ResponseEntity.ok()
 					.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
 					.body(body);
 			}
-			case JourneyProfileExecutionResult.Failure failure -> throw recorded(query, failure.countSnapshot(),
-				disposition(query.requestId(), failure));
+			case JourneyProfileExecutionResult.Failure failure -> throw recorded(query, kind, startedNanos,
+				failure.countSnapshot(), disposition(query.requestId(), failure));
 		};
 	}
 
-	private ObjectNode map(JourneyRaptorQuery query, JourneyProfileExecutionResult.Success success) {
+	private ObjectNode map(
+		JourneyRaptorQuery query, JourneySearchKind kind, JourneyProfileExecutionResult.Success success, long startedNanos
+	) {
 		try {
 			return JourneyProfileResponseMapper.map(query, success, resourcePolicy, UUID.randomUUID().toString());
 		} catch (JourneyProfileResponseMapper.MappingException exception) {
-			throw recorded(query, success.countSnapshot(),
+			throw recorded(query, kind, startedNanos, success.countSnapshot(),
 				disposition(query.requestId(), new JourneyProfileExecutionResult.Failure(exception.reason())));
 		}
 	}
@@ -108,9 +134,12 @@ final class JourneyProfileController {
 
 	private JourneySearchController.JourneySearchWebException recorded(
 		JourneyRaptorQuery query,
+		JourneySearchKind kind,
+		long startedNanos,
 		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
 		JourneySearchController.JourneySearchWebException exception
 	) {
+		latency.recordFailure(kind, startedNanos, exception.httpStatus(), exception.machineCode());
 		recorder.recordProfileFailure(query, exception.httpStatus(), exception.machineCode(), countSnapshot);
 		return exception;
 	}

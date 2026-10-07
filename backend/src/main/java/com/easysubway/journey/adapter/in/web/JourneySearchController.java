@@ -1,5 +1,7 @@
 package com.easysubway.journey.adapter.in.web;
 
+import com.easysubway.journey.analytics.JourneySearchKind;
+import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
 import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Completed;
@@ -58,15 +60,17 @@ final class JourneySearchController {
 	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
 	private final JourneyProfileResourcePolicy resourcePolicy;
 	private final JourneySearchRecorder recorder;
+	private final JourneySearchLatencyMetrics latency;
 	private final int maxRequestBytes;
 
 	JourneySearchController(
 		JourneySessionService sessionService,
 		JourneyApplicationDeadlineExecutor deadlineExecutor,
 		JourneyProfileResourcePolicy resourcePolicy,
-		JourneySearchRecorder recorder
+		JourneySearchRecorder recorder,
+		JourneySearchLatencyMetrics latency
 	) {
-		this(sessionService, deadlineExecutor, resourcePolicy, DEFAULT_MAX_REQUEST_BYTES, recorder);
+		this(sessionService, deadlineExecutor, resourcePolicy, DEFAULT_MAX_REQUEST_BYTES, recorder, latency);
 	}
 
 	@Autowired
@@ -75,12 +79,14 @@ final class JourneySearchController {
 		JourneyApplicationDeadlineExecutor deadlineExecutor,
 		JourneyProfileResourcePolicy resourcePolicy,
 		@Value("${easysubway.journey.search.max-request-bytes:65536}") int maxRequestBytes,
-		JourneySearchRecorder recorder
+		JourneySearchRecorder recorder,
+		JourneySearchLatencyMetrics latency
 	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
 		this.resourcePolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
 		this.recorder = Objects.requireNonNull(recorder, "recorder");
+		this.latency = Objects.requireNonNull(latency, "latency");
 		if (maxRequestBytes <= 0) throw new IllegalArgumentException("maxRequestBytes must be positive");
 		this.maxRequestBytes = maxRequestBytes;
 	}
@@ -90,19 +96,34 @@ final class JourneySearchController {
 		@RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
 		HttpServletRequest servletRequest
 	) {
+		long startedNanos = latency.start();
 		sessionService.authorize(requireBearerToken(authorization), resourcePolicy.pointSearchCostUnits());
 		JourneyRequest request = decodeRequest(readRequest(servletRequest));
-		Outcome outcome;
+		Outcome outcome = null;
 		try {
 			outcome = deadlineExecutor.execute(request);
 		} catch (RuntimeException exception) {
-			throw recorded(request, serviceUnavailable(request.requestId()));
+			// 실행 실패와 null 결과는 같은 503으로 닫고 같은 방식으로 기록한다.
 		}
-		if (outcome == null) throw recorded(request, serviceUnavailable(request.requestId()));
+		if (outcome == null) throw recorded(request, startedNanos, serviceUnavailable(request.requestId()));
 
+		try {
+			return respond(request, outcome, startedNanos);
+		} catch (RuntimeException exception) {
+			// recorded()가 던진 실패는 이미 기록했다. 그 밖의 예상하지 못한 예외는 error로 한 번만 센다.
+			if (!(exception instanceof JourneySearchWebException)) {
+				latency.recordError(JourneySearchKind.DEPART_AT, startedNanos);
+			}
+			throw exception;
+		}
+	}
+
+	private ResponseEntity<JourneySearchResponseMapper.JourneySearchResponse> respond(
+		JourneyRequest request, Outcome outcome, long startedNanos
+	) {
 		JourneyExecutionResult result = switch (outcome) {
 			case Completed completed -> completed.result();
-			case TimedOut ignored -> throw recorded(request, timeout(request.requestId()));
+			case TimedOut ignored -> throw recorded(request, startedNanos, timeout(request.requestId()));
 		};
 
 		return switch (result) {
@@ -110,14 +131,18 @@ final class JourneySearchController {
 				var response = ResponseEntity.ok()
 					.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
 					.body(JourneySearchResponseMapper.map(success));
+				latency.recordSuccess(JourneySearchKind.DEPART_AT, startedNanos);
 				recorder.recordPointSuccess(request, success);
 				yield response;
 			}
-			case JourneyExecutionFailure failure -> throw recorded(request, publicFailure(request.requestId(), failure));
+			case JourneyExecutionFailure failure -> throw recorded(request, startedNanos, publicFailure(request.requestId(), failure));
 		};
 	}
 
-	private JourneySearchWebException recorded(JourneyRequest request, JourneySearchWebException exception) {
+	private JourneySearchWebException recorded(
+		JourneyRequest request, long startedNanos, JourneySearchWebException exception
+	) {
+		latency.recordFailure(JourneySearchKind.DEPART_AT, startedNanos, exception.httpStatus(), exception.machineCode());
 		recorder.recordPointFailure(request, exception.httpStatus(), exception.machineCode());
 		return exception;
 	}
