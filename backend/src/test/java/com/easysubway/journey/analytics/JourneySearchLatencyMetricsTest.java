@@ -2,14 +2,19 @@ package com.easysubway.journey.analytics;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -71,6 +76,8 @@ class JourneySearchLatencyMetricsTest {
 	@DisplayName("실패 응답은 경로 없음·의도적 fail-closed·오류로 나뉘고, 알 수 없는 조합은 오류로 센다")
 	@CsvSource({
 		"422,ROUTE_NOT_FOUND,no_route",
+		"404,ROUTE_NOT_FOUND,error",
+		"404,NO_LAST_CONNECTION,error",
 		"422,ACCESSIBILITY_CONSTRAINT_UNSATISFIED,no_route",
 		"422,NO_SERVICE_IN_DEPARTURE_WINDOW,no_route",
 		"422,NO_ROUTE_ARRIVING_BY_DEADLINE,no_route",
@@ -102,6 +109,86 @@ class JourneySearchLatencyMetricsTest {
 			.tag("mode", "depart_between").tag("outcome", expected).timer().count()).isEqualTo(1);
 		assertThat(meters.find(JourneySearchLatencyMetrics.METER).timers().stream().mapToLong(Timer::count).sum())
 			.isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("예상하지 못한 예외는 error 시계열에 한 건만 더한다")
+	void recordsUnexpectedExceptionsAsError() {
+		var meters = new SimpleMeterRegistry();
+		var latency = new JourneySearchLatencyMetrics(meters);
+
+		latency.recordError(JourneySearchKind.LAST_CONNECTION, System.nanoTime());
+
+		assertThat(meters.get(JourneySearchLatencyMetrics.METER)
+			.tag("mode", "last_connection").tag("outcome", "error").timer().count()).isEqualTo(1);
+		assertThat(meters.find(JourneySearchLatencyMetrics.METER).timers().stream().mapToLong(Timer::count).sum())
+			.isEqualTo(1);
+	}
+
+	/**
+	 * 계약의 모든 (상태, 코드) 행은 이 표에 명시적으로 적혀 있어야 한다. 계약에 행이 늘거나 이름이 바뀌면 표와 어긋나 RED가
+	 * 되므로 새 코드가 분류 없이 error로 흘러 들어가지 못한다. 값은 기대 outcome 태그이고, 모드를 알기 전에 끝나 기록하지 않는
+	 * 요청 검증·인증·속도 제한 행은 {@value #UNRECORDED}다.
+	 */
+	private static final String UNRECORDED = "unrecorded";
+	private static final Map<String, String> EXPECTED_BY_CONTRACT_ROW = Map.ofEntries(
+		Map.entry("400 INVALID_JOURNEY_REQUEST", UNRECORDED),
+		Map.entry("400 INVALID_TEMPORAL_QUERY", UNRECORDED),
+		Map.entry("401 ROUTE_SESSION_REQUIRED", UNRECORDED),
+		Map.entry("429 ROUTE_RATE_LIMITED", UNRECORDED),
+		Map.entry("404 STATION_NOT_FOUND", "fail_closed"),
+		Map.entry("400 TEMPORAL_WINDOW_TOO_LARGE", "fail_closed"),
+		Map.entry("422 TEMPORAL_QUERY_TOO_COMPLEX", "fail_closed"),
+		Map.entry("422 REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY", "fail_closed"),
+		Map.entry("503 ROUTING_BUNDLE_UNAVAILABLE", "fail_closed"),
+		Map.entry("503 ROUTING_BUNDLE_STALE", "fail_closed"),
+		Map.entry("503 TIMETABLE_UNAVAILABLE", "fail_closed"),
+		Map.entry("503 TIMETABLE_STALE", "fail_closed"),
+		Map.entry("503 REALTIME_REQUIRED_UNAVAILABLE", "fail_closed"),
+		Map.entry("503 ROUTING_IDENTITY_MISMATCH", "fail_closed"),
+		Map.entry("503 FACILITY_STATUS_UNAVAILABLE", "fail_closed"),
+		Map.entry("422 ROUTE_NOT_FOUND", "no_route"),
+		Map.entry("422 ACCESSIBILITY_CONSTRAINT_UNSATISFIED", "no_route"),
+		Map.entry("422 NO_SERVICE_IN_DEPARTURE_WINDOW", "no_route"),
+		Map.entry("422 NO_ROUTE_ARRIVING_BY_DEADLINE", "no_route"),
+		Map.entry("422 NO_LAST_CONNECTION", "no_route"),
+		Map.entry("503 ROUTE_SERVICE_UNAVAILABLE", "error"),
+		Map.entry("503 RAPTOR_FRONTIER_CAPACITY_EXCEEDED", "error"),
+		Map.entry("504 JOURNEY_SEARCH_TIMEOUT", "error"),
+		Map.entry("504 JOURNEY_PROFILE_TIMEOUT", "error"));
+
+	@Test
+	@DisplayName("검색·프로필 오류 계약의 모든 행이 명시적으로 분류되고 미분류 코드는 0개이다")
+	void classifiesEveryRowOfTheErrorDispositionContract() throws Exception {
+		JsonNode contract = new ObjectMapper().readTree(
+			Path.of("..", "contracts", "api", "journey-v3-error-disposition.json").toFile());
+		Set<String> rows = new TreeSet<>();
+		for (JsonNode entry : contract.path("entries")) {
+			String operation = entry.path("operation").asText();
+			if (!operation.equals("searchJourneys") && !operation.equals("profileJourneys")) continue;
+			rows.add(entry.path("httpStatus").asInt() + " " + entry.path("machineCode").asText());
+		}
+
+		assertThat(EXPECTED_BY_CONTRACT_ROW.keySet()).as("분류 표에만 남은 낡은 행").isSubsetOf(rows);
+		assertThat(rows).as("분류 표에 없는 계약 행(미분류 코드)").isSubsetOf(EXPECTED_BY_CONTRACT_ROW.keySet());
+		assertThat(EXPECTED_BY_CONTRACT_ROW.values()).as("표의 기대 outcome")
+			.isSubsetOf("ok", "no_route", "fail_closed", "error", UNRECORDED);
+
+		for (String row : rows) {
+			String expected = EXPECTED_BY_CONTRACT_ROW.get(row);
+			int status = Integer.parseInt(row.substring(0, 3));
+			String code = row.substring(4);
+			if (expected.equals(UNRECORDED)) {
+				// 모드를 알기 전에 끝나는 행만 기록하지 않는다: 요청 검증(400 INVALID_*), 인증(401), 속도 제한(429).
+				assertThat(status == 401 || status == 429 || code.startsWith("INVALID_"))
+					.as("기록하지 않는 행 " + row).isTrue();
+				continue;
+			}
+			var meters = new SimpleMeterRegistry();
+			new JourneySearchLatencyMetrics(meters).recordFailure(JourneySearchKind.DEPART_AT, System.nanoTime(), status, code);
+			assertThat(meters.get(JourneySearchLatencyMetrics.METER)
+				.tag("mode", "depart_at").tag("outcome", expected).timer().count()).as(row).isEqualTo(1);
+		}
 	}
 
 	@Test

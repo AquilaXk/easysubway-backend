@@ -105,6 +105,11 @@ public class JourneySearchLatencyMetrics {
 		record(kind, classifyFailure(httpStatus, machineCode), startedNanos);
 	}
 
+	/** 응답을 만들다 예상하지 못한 예외가 난 요청을 error로 센다. 컨트롤러가 이미 기록한 실패에는 부르지 않는다. */
+	public void recordError(JourneySearchKind kind, long startedNanos) {
+		record(kind, Outcome.ERROR, startedNanos);
+	}
+
 	private void record(JourneySearchKind kind, Outcome outcome, long startedNanos) {
 		timers.get(Objects.requireNonNull(kind, "kind")).get(outcome)
 			.record(System.nanoTime() - startedNanos, TimeUnit.NANOSECONDS);
@@ -112,7 +117,7 @@ public class JourneySearchLatencyMetrics {
 
 	/** 알 수 없는 상태·코드는 성공이나 fail-closed로 흘리지 않고 error로 센다. */
 	private static Outcome classifyFailure(int httpStatus, String machineCode) {
-		if ((httpStatus == 422 || httpStatus == 404) && NO_ROUTE_CODES.contains(machineCode)) return Outcome.NO_ROUTE;
+		if (httpStatus == 422 && NO_ROUTE_CODES.contains(machineCode)) return Outcome.NO_ROUTE;
 		if (httpStatus == 503 && FAIL_CLOSED_UNAVAILABLE_CODES.contains(machineCode)) return Outcome.FAIL_CLOSED;
 		if ((httpStatus == 400 || httpStatus == 404 || httpStatus == 422) && REQUEST_REFUSAL_CODES.contains(machineCode)) {
 			return Outcome.FAIL_CLOSED;

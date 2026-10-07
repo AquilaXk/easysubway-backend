@@ -107,6 +107,20 @@ final class JourneySearchController {
 		}
 		if (outcome == null) throw recorded(request, startedNanos, serviceUnavailable(request.requestId()));
 
+		try {
+			return respond(request, outcome, startedNanos);
+		} catch (RuntimeException exception) {
+			// recorded()가 던진 실패는 이미 기록했다. 그 밖의 예상하지 못한 예외는 error로 한 번만 센다.
+			if (!(exception instanceof JourneySearchWebException)) {
+				latency.recordError(JourneySearchKind.DEPART_AT, startedNanos);
+			}
+			throw exception;
+		}
+	}
+
+	private ResponseEntity<JourneySearchResponseMapper.JourneySearchResponse> respond(
+		JourneyRequest request, Outcome outcome, long startedNanos
+	) {
 		JourneyExecutionResult result = switch (outcome) {
 			case Completed completed -> completed.result();
 			case TimedOut ignored -> throw recorded(request, startedNanos, timeout(request.requestId()));

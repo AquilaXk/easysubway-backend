@@ -234,17 +234,48 @@ class JourneyProfileControllerTest {
 		verifyNoInteractions(recordStore);
 	}
 
+	private static final String DEPART_BETWEEN = "{\"kind\":\"DEPART_BETWEEN\",\"earliestReadyAt\":\"2026-09-01T00:00:00Z\",\"latestReadyAt\":\"2026-09-01T00:01:00Z\"}";
+	private static final String LAST_CONNECTION = "{\"kind\":\"LAST_CONNECTION\",\"serviceDate\":\"2026-09-01\"}";
+	private static final java.time.Instant START = java.time.Instant.parse("2026-09-01T00:00:00Z");
+
+	private static JourneyProfileDeadlineExecutor.Outcome success(JourneyRaptorQuery query) {
+		JourneyProfileRaptorPort.TemporalPlan plan = switch (query.temporalQuery()) {
+			case JourneyRaptorQuery.DepartBetween window -> new JourneyProfileRaptorPort.DepartureWindowPlan(window,
+				List.of(new JourneyProfileRaptorPort.DeparturePoint(java.time.LocalDate.of(2026, 9, 1), START,
+					List.of(JourneyProfileResponseMapperTest.itinerary(true)),
+					new com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics(1, 1, 1))));
+			case JourneyRaptorQuery.ArriveBy arriveBy -> new JourneyProfileRaptorPort.ArriveByPlan(arriveBy,
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(true))));
+			case JourneyRaptorQuery.LastConnection last -> new JourneyProfileRaptorPort.LastConnectionPlan(last,
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(true))),
+				START.plusSeconds(600));
+			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException("not a profile query");
+		};
+		return new JourneyProfileDeadlineExecutor.Completed(JourneyProfileResponseMapperTest.success(query, plan));
+	}
+
+	private static JourneyProfileDeadlineExecutor.Outcome failure(JourneyProfileExecutionResult.Reason reason) {
+		return new JourneyProfileDeadlineExecutor.Completed(new JourneyProfileExecutionResult.Failure(reason));
+	}
+
 	@Test
-	void recordsLatencyPerTemporalModeAndOutcome() throws Exception {
-		var modes = java.util.Map.of(
-			"depart_between", "{\"kind\":\"DEPART_BETWEEN\",\"earliestReadyAt\":\"2026-09-01T00:00:00Z\",\"latestReadyAt\":\"2026-09-01T00:01:00Z\"}",
-			"arrive_by", ARRIVE_BY,
-			"last_connection", "{\"kind\":\"LAST_CONNECTION\",\"serviceDate\":\"2026-09-01\"}");
-		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.Completed(
-			new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE)));
+	void recordsEveryProfileExitArmUnderItsOwnModeTag() throws Exception {
+		// 모드마다 ok와 no_route, arrive_by는 시간 초과와 응답 매핑 실패(error 2건)를 한 번씩 돌리고 16개 시계열을 전부 대조한다.
+		var modes = new java.util.LinkedHashMap<String, String>();
+		modes.put("depart_between", DEPART_BETWEEN);
+		modes.put("arrive_by", ARRIVE_BY);
+		modes.put("last_connection", LAST_CONNECTION);
+		var noRoute = java.util.Map.of(
+			"depart_between", JourneyProfileExecutionResult.Reason.NO_SERVICE_IN_DEPARTURE_WINDOW,
+			"arrive_by", JourneyProfileExecutionResult.Reason.NO_ROUTE_ARRIVING_BY_DEADLINE,
+			"last_connection", JourneyProfileExecutionResult.Reason.NO_LAST_CONNECTION);
 		for (var mode : modes.entrySet()) {
+			when(executor.execute(any(), same(policy))).thenAnswer(invocation -> success(invocation.getArgument(0)));
 			mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(mode.getValue())))
-				.andExpect(status().isServiceUnavailable());
+				.andExpect(status().isOk());
+			when(executor.execute(any(), same(policy))).thenReturn(failure(noRoute.get(mode.getKey())));
+			mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(mode.getValue())))
+				.andExpect(status().isUnprocessableEntity());
 		}
 		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.TimedOut());
 		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
@@ -252,16 +283,77 @@ class JourneyProfileControllerTest {
 		when(executor.execute(any(), same(policy))).thenAnswer(invocation -> {
 			JourneyRaptorQuery query = invocation.getArgument(0);
 			var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
-				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(true))));
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(false))));
 			return new JourneyProfileDeadlineExecutor.Completed(JourneyProfileResponseMapperTest.success(query, plan));
 		});
 		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
-			.andExpect(status().isOk());
+			.andExpect(status().isServiceUnavailable());
 
-		for (String mode : modes.keySet()) assertThat(timerCount(mode, "fail_closed")).isEqualTo(1);
-		assertThat(timerCount("arrive_by", "error")).isEqualTo(1);
-		assertThat(timerCount("arrive_by", "ok")).isEqualTo(1);
-		assertThat(timerCount("depart_at", "ok")).isZero();
+		var expected = new java.util.HashMap<String, Long>();
+		for (String mode : modes.keySet()) {
+			expected.put(mode + "/ok", 1L);
+			expected.put(mode + "/no_route", 1L);
+		}
+		expected.put("arrive_by/error", 2L);
+		assertAllSeries(expected);
+	}
+
+	@Test
+	void recordsFailClosedUnderEachProfileMode() throws Exception {
+		when(executor.execute(any(), same(policy))).thenReturn(failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE));
+		for (String temporal : List.of(DEPART_BETWEEN, ARRIVE_BY, LAST_CONNECTION)) {
+			mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(temporal)))
+				.andExpect(status().isServiceUnavailable());
+		}
+
+		assertAllSeries(java.util.Map.of("depart_between/fail_closed", 1L, "arrive_by/fail_closed", 1L,
+			"last_connection/fail_closed", 1L));
+	}
+
+	@Test
+	void recordsAnUnexpectedMapperExceptionAsErrorExactlyOnce() throws Exception {
+		when(executor.execute(any(), same(policy))).thenAnswer(invocation -> success(invocation.getArgument(0)));
+		var failure = new IllegalStateException("mapper exploded");
+
+		try (var mapper = org.mockito.Mockito.mockStatic(JourneyProfileResponseMapper.class)) {
+			mapper.when(() -> JourneyProfileResponseMapper.map(any(), any(), any(), any())).thenThrow(failure);
+
+			org.assertj.core.api.Assertions.assertThatThrownBy(() -> mvc(4096).perform(post(PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(LAST_CONNECTION)))).hasRootCause(failure);
+		}
+
+		assertAllSeries(java.util.Map.of("last_connection/error", 1L));
+		verifyNoInteractions(recordStore);
+	}
+
+	@Test
+	void recordsAnObjectiveTagExtractionExceptionAsErrorExactlyOnce() throws Exception {
+		when(executor.execute(any(), same(policy))).thenAnswer(invocation -> success(invocation.getArgument(0)));
+		var failure = new IllegalStateException("tags exploded");
+		var body = mock(com.fasterxml.jackson.databind.node.ObjectNode.class);
+		when(body.path("journeys")).thenThrow(failure);
+
+		try (var mapper = org.mockito.Mockito.mockStatic(JourneyProfileResponseMapper.class)) {
+			mapper.when(() -> JourneyProfileResponseMapper.map(any(), any(), any(), any())).thenReturn(body);
+
+			org.assertj.core.api.Assertions.assertThatThrownBy(() -> mvc(4096).perform(post(PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(DEPART_BETWEEN)))).hasRootCause(failure);
+		}
+
+		assertAllSeries(java.util.Map.of("depart_between/error", 1L));
+	}
+
+	/** 16개 시계열 전부를 대조한다. expected에 없는 시계열은 0건이어야 한다. */
+	private void assertAllSeries(java.util.Map<String, Long> expected) {
+		var actual = new java.util.TreeMap<String, Long>();
+		for (var timer : meters.find(JourneySearchLatencyMetrics.METER).timers()) {
+			actual.put(timer.getId().getTag("mode") + "/" + timer.getId().getTag("outcome"), timer.count());
+		}
+		assertThat(actual).hasSize(16);
+		var wanted = new java.util.TreeMap<String, Long>();
+		actual.keySet().forEach(key -> wanted.put(key, expected.getOrDefault(key, 0L)));
+		assertThat(actual).isEqualTo(wanted);
+		assertThat(expected.keySet()).isSubsetOf(actual.keySet());
 	}
 
 	@Test
@@ -270,10 +362,6 @@ class JourneyProfileControllerTest {
 			.andExpect(status().isBadRequest());
 		assertThat(meters.find(JourneySearchLatencyMetrics.METER).timers())
 			.allSatisfy(timer -> assertThat(timer.count()).isZero());
-	}
-
-	private long timerCount(String mode, String outcome) {
-		return meters.get(JourneySearchLatencyMetrics.METER).tag("mode", mode).tag("outcome", outcome).timer().count();
 	}
 
 	private MockMvc mvc(int maxBytes) {

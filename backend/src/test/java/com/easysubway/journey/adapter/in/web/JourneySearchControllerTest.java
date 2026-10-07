@@ -757,6 +757,27 @@ class JourneySearchControllerTest {
 	}
 
 	@Test
+	@DisplayName("응답을 만들다 예외가 나면 error로 한 번만 기록하고 예외는 그대로 전파한다")
+	void recordsUnexpectedMappingExceptionAsErrorExactlyOnce() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
+		var failure = new IllegalStateException("mapper exploded");
+
+		try (var mapper = org.mockito.Mockito.mockStatic(JourneySearchResponseMapper.class)) {
+			mapper.when(() -> JourneySearchResponseMapper.map(any())).thenThrow(failure);
+
+			org.assertj.core.api.Assertions.assertThatThrownBy(() -> perform(validRequest("{\"mode\":\"NOW\"}")))
+				.hasRootCause(failure);
+		}
+
+		assertThat(searchTimerCount("depart_at", "error")).isEqualTo(1);
+		assertThat(searchTimerCount("depart_at", "ok")).isZero();
+		assertThat(meters.find(JourneySearchLatencyMetrics.METER).timers().stream()
+			.mapToLong(io.micrometer.core.instrument.Timer::count).sum()).isEqualTo(1);
+		verifyNoInteractions(recordStore);
+	}
+
+	@Test
 	@DisplayName("요청 검증·인증 실패는 지연 지표에 섞이지 않는다")
 	void doesNotRecordLatencyForInvalidOrUnauthorizedRequests() throws Exception {
 		allowSession();
