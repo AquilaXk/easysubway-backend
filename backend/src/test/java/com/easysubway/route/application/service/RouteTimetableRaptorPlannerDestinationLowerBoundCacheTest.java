@@ -3,10 +3,16 @@ package com.easysubway.route.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.route.application.service.JourneyEngineDifferentialHarness.Mobility;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.CompiledTimetable;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,6 +54,39 @@ class RouteTimetableRaptorPlannerDestinationLowerBoundCacheTest {
 		assertThat(compiled.destinationLowerBounds(0)).isSameAs(first);
 		assertThat(compiled.destinationLowerBounds(1)).isNotSameAs(first);
 		assertThat(compiled.destinationLowerBounds(0)).isSameAs(first);
+	}
+
+	@Test
+	@DisplayName("출발 시각 고정 질의를 여러 번(캐시 적중 포함) 돌려도 캐시한 행이 새로 계산한 행과 같다")
+	void scansDoNotModifyCachedRows() {
+		CompiledTimetable compiled = planner.compile(CapitalRealDerivedFixture.load());
+		List<String> stations = CapitalRealDerivedFixture.stations();
+		Instant day = CapitalRealDerivedFixture.SERVICE_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant();
+		Random random = new Random(492L);
+		// 앞쪽 도착역은 질의 전에 행을 미리 채워 처음부터 적중하게 하고, 나머지는 첫 질의가 행을 만든다.
+		java.util.Set<Integer> destinations = new java.util.TreeSet<>();
+		for (int index = 0; index < 60; index += 1) {
+			String origin = stations.get(random.nextInt(stations.size()));
+			String destination;
+			do destination = stations.get(random.nextInt(stations.size())); while (destination.equals(origin));
+			int destinationIndex = compiled.stationIndex(destination);
+			if (index % 2 == 0) compiled.destinationLowerBounds(destinationIndex);
+			destinations.add(destinationIndex);
+			var temporal = new JourneyRaptorQuery.DepartAt(day.plusSeconds(23_400 + random.nextInt(55_800)));
+			Mobility mobility = Mobility.ALL.get(index % Mobility.ALL.size());
+			JourneyRaptorQuery query = new JourneyRaptorQuery(
+				JourneyProfileFullCorpusRunner.requestId("cache-" + index, origin, destination, temporal), origin, destination,
+				temporal, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+				mobility.profile(), mobility.constraint(), 3, 3, () -> false);
+			planner.journeyItineraries(query, compiled);
+			planner.journeyItineraries(query, compiled);
+		}
+		assertThat(destinations).hasSizeGreaterThan(30);
+		for (int destination : destinations) {
+			assertThat(compiled.destinationLowerBounds(destination))
+				.as("질의 뒤 destination %d", destination)
+				.containsExactly(RouteTimetableRaptorPlanner.computeStationLowerBounds(compiled, destination));
+		}
 	}
 
 	@Test
