@@ -566,7 +566,9 @@ class JourneyV3RuntimeParityTest {
 				JourneyProfileResponseMapperTest.policy(),
 				new com.easysubway.journey.analytics.JourneySearchRecorder(
 					new com.easysubway.journey.analytics.InMemoryJourneySearchRecordStore(), Runnable::run,
-					Clock.fixed(NOW, ZoneOffset.UTC), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+					Clock.fixed(NOW, ZoneOffset.UTC), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
+				new com.easysubway.journey.analytics.JourneySearchLatencyMetrics(
+					new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 		}
 
 		@Bean

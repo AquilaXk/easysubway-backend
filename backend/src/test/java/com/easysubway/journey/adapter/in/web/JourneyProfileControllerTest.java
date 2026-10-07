@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
+import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
 import com.easysubway.journey.analytics.JourneySearchRecordStore;
 import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
@@ -47,6 +48,8 @@ class JourneyProfileControllerTest {
 	private final JourneyProfileDeadlineExecutor executor = mock(JourneyProfileDeadlineExecutor.class);
 	private final JourneyProfileResourcePolicy policy = JourneyProfileResponseMapperTest.policy();
 	private final JourneySearchRecordStore recordStore = mock(JourneySearchRecordStore.class);
+	private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+	private final JourneySearchLatencyMetrics latency = new JourneySearchLatencyMetrics(meters);
 	private final JourneySearchRecorder recorder = new JourneySearchRecorder(
 		recordStore, Runnable::run, java.time.Clock.fixed(java.time.Instant.parse("2026-09-01T00:00:00Z"), java.time.ZoneOffset.UTC),
 		new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
@@ -231,8 +234,50 @@ class JourneyProfileControllerTest {
 		verifyNoInteractions(recordStore);
 	}
 
+	@Test
+	void recordsLatencyPerTemporalModeAndOutcome() throws Exception {
+		var modes = java.util.Map.of(
+			"depart_between", "{\"kind\":\"DEPART_BETWEEN\",\"earliestReadyAt\":\"2026-09-01T00:00:00Z\",\"latestReadyAt\":\"2026-09-01T00:01:00Z\"}",
+			"arrive_by", ARRIVE_BY,
+			"last_connection", "{\"kind\":\"LAST_CONNECTION\",\"serviceDate\":\"2026-09-01\"}");
+		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.Completed(
+			new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE)));
+		for (var mode : modes.entrySet()) {
+			mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(mode.getValue())))
+				.andExpect(status().isServiceUnavailable());
+		}
+		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.TimedOut());
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isGatewayTimeout());
+		when(executor.execute(any(), same(policy))).thenAnswer(invocation -> {
+			JourneyRaptorQuery query = invocation.getArgument(0);
+			var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(JourneyProfileResponseMapperTest.itinerary(true))));
+			return new JourneyProfileDeadlineExecutor.Completed(JourneyProfileResponseMapperTest.success(query, plan));
+		});
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isOk());
+
+		for (String mode : modes.keySet()) assertThat(timerCount(mode, "fail_closed")).isEqualTo(1);
+		assertThat(timerCount("arrive_by", "error")).isEqualTo(1);
+		assertThat(timerCount("arrive_by", "ok")).isEqualTo(1);
+		assertThat(timerCount("depart_at", "ok")).isZero();
+	}
+
+	@Test
+	void doesNotRecordLatencyWhenTheTemporalQueryIsInvalid() throws Exception {
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content("{}"))
+			.andExpect(status().isBadRequest());
+		assertThat(meters.find(JourneySearchLatencyMetrics.METER).timers())
+			.allSatisfy(timer -> assertThat(timer.count()).isZero());
+	}
+
+	private long timerCount(String mode, String outcome) {
+		return meters.get(JourneySearchLatencyMetrics.METER).tag("mode", mode).tag("outcome", outcome).timer().count();
+	}
+
 	private MockMvc mvc(int maxBytes) {
-		return MockMvcBuilders.standaloneSetup(new JourneyProfileController(sessions, executor, policy, maxBytes, recorder))
+		return MockMvcBuilders.standaloneSetup(new JourneyProfileController(sessions, executor, policy, maxBytes, recorder, latency))
 			.setControllerAdvice(new JourneySearchExceptionHandler()).build();
 	}
 
@@ -248,7 +293,7 @@ class JourneyProfileControllerTest {
 	void requiresAPositiveBoundedRequestSize() {
 		assertThatThrownBy(() -> new JourneyProfileController(
 			mock(JourneySessionService.class), mock(JourneyProfileDeadlineExecutor.class),
-			mock(JourneyProfileResourcePolicy.class), 0, recorder))
+			mock(JourneyProfileResourcePolicy.class), 0, recorder, latency))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("maxRequestBytes must be positive");
 	}
@@ -259,6 +304,7 @@ class JourneyProfileControllerTest {
 		var runner = new ApplicationContextRunner()
 			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
 			.withBean(JourneySearchRecorder.class, () -> recorder)
+			.withBean(JourneySearchLatencyMetrics.class, () -> latency)
 			.withBean(JourneyProfileDeadlineExecutor.class, () -> mock(JourneyProfileDeadlineExecutor.class))
 			.withBean(JourneyProfileResourcePolicy.class, () -> policy)
 			.withUserConfiguration(ProfileWebConfiguration.class)
