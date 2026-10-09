@@ -485,6 +485,12 @@
  *   운영과 같은 컴파일러·플래너로 돈다)가 시드 20261008 무작위 OD 1,000건(평일 2026-10-08 06~21시 출발, 대안 3·환승 3)을
  *   seq126과 seq128에 똑같이 돌렸다. 경로를 찾은 480건 중 표준·무단차 선호의 INCLUDED는 42건(모두 직행)에서 364건으로,
  *   UNDETERMINED는 438건에서 116건으로 바뀌었다. 엄격 무단차 경로는 42건에서 364건이고 그중 환승이 든 질의가 325건이다.
+ *   측정 번들 식별(하네스 첫 줄 출력과 같다, 둘 다 bundleId nationwide-route-bundle-1·역 943개·stationSetSha256
+ *   bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c): seq126은 data candidate run 37109648483,
+ *   manifest.json sha256 965da321acdfa0dd3a99b4dc79d821ed6d857d31fe23c1ca75b33a12db285e2b, payloadSha256
+ *   0a6a38a8fb7e28f3aac9909b3befe04fb02e3617e5240ccc57c3395e4e73f799(같은 payload의 다른 서명본이 run 37104103749에 있다)이고,
+ *   seq128은 run 37404627861, manifest.json sha256 5617e41fc24c7de5b5727c6e165e54ab2382a48051e43658a0813db4b7202ec1,
+ *   payloadSha256 4e3b2bdf59ab90f93a20b6586857a117bec75f09471824bde424958dc5118ca2다.
  *   경로 없음 520건은 두 번들이 같다. 이 OD 집합은 2026-10-04 기록과 달라(경로 490건이 아니라 480건) 수치를 이어 읽지 않는다.
  *   남은 UNDETERMINED 116건에서 가장 빠른 여정이 지난 미확정 환승은 83개이고, data 커버리지 CLI가 밝힌 사유별 간선 수는 원천 경로 없음 27, 방면
  *   집합 미확정(종착·분기) 25, 원천 문구가 계단 없음이 아니거나 모호함 22, 일부 방면 조합 경로 없음 9다. 계단 없음은 원천이

@@ -29,7 +29,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  *
  * <p>실행: {@code EASYSUBWAY_STEP_FREE_COVERAGE_BUNDLE=<server-route-bundle 디렉터리> ./gradlew test --tests
  * 'com.easysubway.route.application.service.StepFreeTransferCoverageProbeTest'}. 원본은 data 레포 Datapack candidate
- * 산출물의 {@code server-route-bundle} 디렉터리다. 운영과 같은 번들 컴파일러와 플래너를 거친다. 무작위 OD는 시드 고정
+ * 산출물의 {@code server-route-bundle} 디렉터리다. 운영과 같은 번들 컴파일러와 플래너를 거친다. 출력의 첫 줄(번들 식별)과
+ * 모드별 분포를 읽는 측정 도구이고, 모드마다 경로가 있는 OD가 하나 이상인지만 단언한다. 무작위 OD는 시드 고정
  * (기본 1,000건, 평일 06~21시 출발, 대안 3, 환승 3)이다.</p>
  */
 @EnabledIfEnvironmentVariable(named = "EASYSUBWAY_STEP_FREE_COVERAGE_BUNDLE", matches = ".+")
@@ -55,15 +56,19 @@ class StepFreeTransferCoverageProbeTest {
 			payloads.put(name, bytes);
 			digests.put(name, sha256(bytes));
 		}
+		String manifestSha256 = sha256(Files.readAllBytes(root.resolve("manifest.json")));
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(new RouteBundleSqliteRuntimeCompiler.Input(
-			sha256(Files.readAllBytes(root.resolve("manifest.json"))), 1, manifest.get("bundleId").asText(),
+			manifestSha256, 1, manifest.get("bundleId").asText(),
 			manifest.get("releaseSequence").asLong(), manifest.get("stationSetSha256").asText(), digests, payloads));
 		var timetable = runtime.compiledTimetable();
 		var planner = new RouteTimetableRaptorPlanner();
 		TreeSet<String> stations = new TreeSet<>();
 		runtime.canonicalStationLines().forEach(stationLine -> stations.add(stationLine.stationId()));
 		List<String> stationList = new ArrayList<>(stations);
-		System.out.printf("bundle seq %d stations %d%n", manifest.get("releaseSequence").asLong(), stationList.size());
+		// 재실행이 같은 번들을 썼는지 확인할 수 있도록 번들 식별을 남긴다. manifestSha256은 manifest.json 파일 바이트의 해시다.
+		System.out.printf("bundle seq %d id %s manifestSha256 %s payloadSha256 %s stationSetSha256 %s stations %d%n",
+			manifest.get("releaseSequence").asLong(), manifest.get("bundleId").asText(), manifestSha256,
+			manifest.get("payloadSha256").asText(), manifest.get("stationSetSha256").asText(), stationList.size());
 
 		List<Mode> modes = List.of(
 			new Mode("STANDARD", JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE),
@@ -128,7 +133,9 @@ class StepFreeTransferCoverageProbeTest {
 		}
 		blockers.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(500)
 			.forEach(entry -> System.out.println("UNDETERMINED_BLOCKER " + entry.getValue() + " " + entry.getKey()));
-		assertThat(summary).isNotEmpty();
+		// 번들을 읽었는데 어느 모드에서도 경로가 하나도 없으면 측정 입력이 잘못된 것이다(날짜 밖 달력, 빈 시간표 등).
+		summary.forEach((mode, counts) -> assertThat(counts.getOrDefault("ROUTE", 0))
+			.as("%s 모드에서 경로가 있는 OD 수", mode).isPositive());
 	}
 
 	private static String requestId(int index) {
