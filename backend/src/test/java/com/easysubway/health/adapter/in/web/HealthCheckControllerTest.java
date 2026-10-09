@@ -186,12 +186,38 @@ class HealthCheckControllerTest {
 						"외부 지도 도보 길안내",
 						"카카오맵 앱",
 						"카카오맵 웹",
-						"Journey V3 서버 경로 검색",
+						"서버 경로 검색",
 						"별도 검색 이력으로 저장하지 않습니다",
 						"이용자 및 법정대리인의 권리",
 						"개인정보 보호책임자",
-						"privacy@aquilaxk.site"
-					));
+						"privacy@aquilaxk.site",
+						"Google(Firebase Crashlytics)",
+						"익명 설치 식별자",
+						"광고나 이용자 추적에는 사용하지 않습니다",
+						"개인정보 보호법 제28조의8",
+						"Google LLC (미국)",
+						"앱 안에는 충돌 진단 전송을 끄는 설정이 없습니다",
+						"앱이 비정상 종료되거나 처리된 오류가 발생할 때",
+						"HTTP 상태 코드",
+						"치명 여부",
+						"세션 식별자",
+						"수집일부터 90일 보관",
+						"개인정보 보호법 제28조의8 제1항 제3호에 따라 이 처리방침에 공개합니다",
+						"이전받는 자: Cloudflare, Inc. (미국)",
+						"접속 IP 주소, 요청 정보(요청 경로, 시각, 기기·브라우저 정보)",
+						"앱이 서비스 서버에 요청할 때마다 HTTPS로 Cloudflare를 거쳐 중계",
+						"서비스 이용에 필수여서 거부할 수 없으며",
+						"구체적인 보관 기간을 공개하지 않으며",
+						"서울 리전(ap-seoul-1)",
+						"Google Play Integrity 서비스 운영 사업자",
+						"경로 검색 요청을 확인하기 위한 값",
+						"Google이 발급한 무결성 확인 결과",
+						"서비스 서버와 저장소는 모두 서울 리전(ap-seoul-1)에 있어 국외 이전에 해당하지 않습니다",
+						"개정 공고일: 2026년 10월 9일 · 시행일: 2026년 10월 16일"
+					))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.doesNotContain("010-5855-0105", "tel:")
+					.doesNotContain("Journey V3", "Route V2", "backend", "requestHash", "integrityToken", "decode"));
 		}
 	}
 
@@ -204,7 +230,9 @@ class HealthCheckControllerTest {
 				.andExpect(result -> assertThat(result.getResponse().getContentType())
 					.contains("text/html", "UTF-8"))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
-					.contains("쉬운 지하철 서비스 이용약관", "서비스의 내용", "현장 안내를 우선"));
+					.contains("쉬운 지하철 서비스 이용약관", "서비스의 내용", "현장 안내를 우선"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.doesNotContain("010-5855-0105", "tel:"));
 		}
 	}
 
@@ -217,7 +245,9 @@ class HealthCheckControllerTest {
 				.andExpect(result -> assertThat(result.getResponse().getContentType())
 					.contains("text/html", "UTF-8"))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
-					.contains("쉬운 지하철 위치정보 이용약관", "제 4 조 (위치기반서비스의 내용)", "카카오맵 앱", "카카오맵 웹"));
+					.contains("쉬운 지하철 위치정보 이용약관", "제 4 조 (위치기반서비스의 내용)", "카카오맵 앱", "카카오맵 웹"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.doesNotContain("010-5855-0105", "tel:"));
 		}
 	}
 
