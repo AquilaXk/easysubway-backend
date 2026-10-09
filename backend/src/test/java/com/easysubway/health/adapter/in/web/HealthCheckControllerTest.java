@@ -193,7 +193,10 @@ class HealthCheckControllerTest {
 						"privacy@aquilaxk.site",
 						"Google(Firebase Crashlytics)",
 						"익명 설치 식별자",
-						"광고나 이용자 추적에는 사용하지 않습니다"
+						"광고나 이용자 추적에는 사용하지 않습니다",
+						"개인정보 보호법 제28조의8",
+						"Google LLC (미국)",
+						"앱 안에는 충돌 진단 전송을 끄는 설정이 없습니다"
 					))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
 					.doesNotContain("010-5855-0105", "tel:"));
