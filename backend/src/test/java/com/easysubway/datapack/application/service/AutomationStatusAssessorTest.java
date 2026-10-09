@@ -134,6 +134,10 @@ class AutomationStatusAssessorTest {
 		assertThat(timedOut.level()).isEqualTo(Level.FAILURE);
 		assertThat(timedOut.findings()).hasSize(2).allSatisfy((finding) -> assertThat(finding.level()).isEqualTo(Level.FAILURE));
 
+		AutomationAssessment noConclusion = assessStages(AutomationStatusFixtures.stagesJson(Map.of("candidate", "completed-without-conclusion")));
+		assertThat(noConclusion.level()).isEqualTo(Level.FAILURE);
+		assertThat(noConclusion.findings().get(0).message()).contains("후보 갱신").contains("결과 없음");
+
 		AutomationAssessment cancelled = assessStages(AutomationStatusFixtures.stagesJson(Map.of("promotion", "cancelled")));
 		assertThat(cancelled.level()).isEqualTo(Level.WARNING);
 		assertThat(cancelled.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("STAGE_FAILED");

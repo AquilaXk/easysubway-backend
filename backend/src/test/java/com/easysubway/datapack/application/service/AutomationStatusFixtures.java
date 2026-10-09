@@ -73,7 +73,8 @@ public final class AutomationStatusFixtures {
 			return "{\"id\": \"%s\", \"label\": \"%s\", \"latest\": null, \"lastSuccessAt\": null, \"inFlight\": false}".formatted(id, label);
 		}
 		boolean running = state.equals("running");
-		String conclusion = running ? "null" : "\"" + state + "\"";
+		boolean noConclusion = running || state.equals("completed-without-conclusion");
+		String conclusion = noConclusion ? "null" : "\"" + state + "\"";
 		String status = running ? "in_progress" : "completed";
 		String lastSuccess = state.equals("success") ? "\"2026-10-10T01:05:00Z\"" : "null";
 		boolean deploy = id.equals("deploy");
