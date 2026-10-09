@@ -12,8 +12,12 @@ import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
+import com.easysubway.datapack.application.port.in.AutomationStatusUseCase;
+import com.easysubway.datapack.application.port.in.AutomationStatusUseCase.Reading;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase.DatapackReleaseBlockerSummary;
+import com.easysubway.datapack.domain.AutomationAssessment;
+import com.easysubway.datapack.domain.AutomationAssessment.Level;
 import com.easysubway.notification.application.port.in.PushNotificationDashboardUseCase;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
@@ -23,6 +27,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -38,8 +44,53 @@ class AdminAlertServiceTest {
 	private final DatapackReleaseBlockerSummaryUseCase datapackUseCase =
 		mock(DatapackReleaseBlockerSummaryUseCase.class);
 	private final AdminMetricSnapshotStatusHolder metricStatusHolder = new AdminMetricSnapshotStatusHolder();
+	private final AutomationStatusUseCase automationUseCase = mock(AutomationStatusUseCase.class);
 	private final AdminAlertService service = new AdminAlertService(
-		reportUseCase, pushUseCase, collectionUseCase, datapackUseCase, metricStatusHolder, fixedClock());
+		reportUseCase, pushUseCase, collectionUseCase, datapackUseCase, metricStatusHolder, automationUseCase, fixedClock());
+
+	@BeforeEach
+	void healthyAutomationByDefault() {
+		when(automationUseCase.read()).thenReturn(automation(Level.OK, "정상: 모든 자동화 단계가 정상입니다"));
+		// DATAPACK_READ 권한은 후보 화면(릴리즈 blocker 알림)도 함께 보이게 한다.
+		when(datapackUseCase.summarize()).thenReturn(blockerSummary(0));
+	}
+
+	private static Reading automation(Level level, String headline) {
+		Instant now = Instant.parse("2026-10-10T03:00:00Z");
+		return new Reading(Optional.empty(), now, now,
+			new AutomationAssessment(level, headline, List.of(), true, null, null));
+	}
+
+	@Test
+	@DisplayName("자동화 이상(이상·주의)이 있으면 자동화 상태 화면으로 딥링크하는 알림을 준다")
+	void automationAnomalyAlert() {
+		when(automationUseCase.read()).thenReturn(automation(Level.FAILURE, "열린 자동화 실패 이슈 2건"));
+		AdminAlertSummary failure = service.summarize(authWith(AdminPermission.DATAPACK_READ));
+		assertThat(failure.items()).singleElement().satisfies(item -> {
+			assertThat(item.id()).isEqualTo("automation-status");
+			assertThat(item.tone()).isEqualTo("failure");
+			assertThat(item.detail()).isEqualTo("열린 자동화 실패 이슈 2건");
+			assertThat(item.href()).isEqualTo("/admin/datapack/automation/page");
+		});
+
+		when(automationUseCase.read()).thenReturn(automation(Level.WARNING, "막힌 자동화 1건"));
+		assertThat(service.summarize(authWith(AdminPermission.DATAPACK_READ)).items()).singleElement()
+			.satisfies(item -> assertThat(item.tone()).isEqualTo("warning"));
+	}
+
+	@Test
+	@DisplayName("정상이거나 아직 수신 전이면 자동화 알림을 만들지 않고, 화면 권한이 없으면 조회하지 않는다")
+	void noAutomationAlertWhenHealthyUnknownOrNotPermitted() {
+		assertThat(service.summarize(authWith(AdminPermission.DATAPACK_READ)).items()).isEmpty();
+
+		when(automationUseCase.read()).thenReturn(automation(Level.UNKNOWN, "자동화 상태를 아직 받지 못했습니다(수신 전)"));
+		assertThat(service.summarize(authWith(AdminPermission.DATAPACK_READ)).items()).isEmpty();
+
+		org.mockito.Mockito.clearInvocations(automationUseCase);
+		when(automationUseCase.read()).thenReturn(automation(Level.FAILURE, "이상"));
+		assertThat(service.summarize(authWith(AdminPermission.REPORT_REVIEW)).items()).noneMatch(item -> "automation-status".equals(item.id()));
+		org.mockito.Mockito.verifyNoInteractions(automationUseCase);
+	}
 
 	@Test
 	@DisplayName("24시간 신고가 임계값 이상이면 신고 급증 알림을 딥링크와 함께 준다")

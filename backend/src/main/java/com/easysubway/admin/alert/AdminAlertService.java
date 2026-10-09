@@ -5,7 +5,9 @@ import com.easysubway.admin.navigation.AdminProgram;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionStatus;
+import com.easysubway.datapack.application.port.in.AutomationStatusUseCase;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
+import com.easysubway.datapack.domain.AutomationAssessment;
 import com.easysubway.notification.application.port.in.PushNotificationDashboardUseCase;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import java.time.Clock;
@@ -21,7 +23,8 @@ import org.springframework.stereotype.Service;
  * 관리자 알림 센터(#1738). 흩어진 운영 신호 4종을 한곳에 집약해 topbar 벨로 노출한다.
  *
  * <p>신호원: ① 신고 급증(24시간 신규 신고 임계값 이상) ② 푸시 발송 실패(outbox failed)
- * ③ 배치 실패(최근 수집 실행 중 FAILED) ④ 데이터팩 릴리즈 blocker(&gt;0).
+ * ③ 배치 실패(최근 수집 실행 중 FAILED) ④ 데이터팩 릴리즈 blocker(&gt;0)
+ * ⑤ 데이터팩 자동화 이상(자동화 상태 화면의 판정이 주의·이상일 때, backend#500).
  *
  * <p>RBAC가 핵심이다: 각 신호는 대응 화면({@link AdminProgram})이 보이는 계정에만 노출한다.
  * 화면이 안 보이면 조회 자체를 건너뛰어 권한 없는 데이터가 새지 않게 하고 폴링 질의도 아낀다.
@@ -39,6 +42,7 @@ public class AdminAlertService {
 	private final DataCollectionUseCase dataCollectionUseCase;
 	private final DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase;
 	private final AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder;
+	private final AutomationStatusUseCase automationStatusUseCase;
 	private final Clock clock;
 
 	// Clock은 전역 빈이 아니라서(코드베이스 규약) 있으면 쓰고 없으면 시스템 기본으로 폴백한다.
@@ -49,6 +53,7 @@ public class AdminAlertService {
 		DataCollectionUseCase dataCollectionUseCase,
 		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase,
 		AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder,
+		AutomationStatusUseCase automationStatusUseCase,
 		ObjectProvider<Clock> clockProvider
 	) {
 		this(
@@ -57,6 +62,7 @@ public class AdminAlertService {
 			dataCollectionUseCase,
 			datapackReleaseBlockerSummaryUseCase,
 			metricSnapshotStatusHolder,
+			automationStatusUseCase,
 			clockProvider.getIfAvailable(Clock::systemDefaultZone));
 	}
 
@@ -66,6 +72,7 @@ public class AdminAlertService {
 		DataCollectionUseCase dataCollectionUseCase,
 		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase,
 		AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder,
+		AutomationStatusUseCase automationStatusUseCase,
 		Clock clock
 	) {
 		this.facilityReportUseCase = facilityReportUseCase;
@@ -73,6 +80,7 @@ public class AdminAlertService {
 		this.dataCollectionUseCase = dataCollectionUseCase;
 		this.datapackReleaseBlockerSummaryUseCase = datapackReleaseBlockerSummaryUseCase;
 		this.metricSnapshotStatusHolder = metricSnapshotStatusHolder;
+		this.automationStatusUseCase = automationStatusUseCase;
 		this.clock = clock;
 	}
 
@@ -84,6 +92,7 @@ public class AdminAlertService {
 		addBatchFailure(items, visible);
 		addDatapackBlocker(items, visible);
 		addMetricSnapshotFailure(items, visible);
+		addAutomationAnomaly(items, visible);
 		return new AdminAlertSummary(items);
 	}
 
@@ -165,5 +174,22 @@ public class AdminAlertService {
 				"failure",
 				AdminProgram.DASHBOARD.path()));
 		}
+	}
+
+	// 데이터팩 자동화(backend#500): 판정이 주의·이상일 때만 알린다. 수신 전(UNKNOWN)은 화면에서만 보이고 벨을 울리지 않는다.
+	private void addAutomationAnomaly(List<AdminAlertItem> items, List<AdminProgram> visible) {
+		if (!visible.contains(AdminProgram.DATAPACK_AUTOMATION)) {
+			return;
+		}
+		AutomationAssessment assessment = automationStatusUseCase.read().assessment();
+		if (assessment.level() == AutomationAssessment.Level.OK || assessment.level() == AutomationAssessment.Level.UNKNOWN) {
+			return;
+		}
+		items.add(new AdminAlertItem(
+			"automation-status",
+			"데이터팩 자동화",
+			assessment.headline(),
+			assessment.level() == AutomationAssessment.Level.FAILURE ? "failure" : "warning",
+			AdminProgram.DATAPACK_AUTOMATION.path()));
 	}
 }

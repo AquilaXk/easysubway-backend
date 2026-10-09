@@ -46,6 +46,7 @@ public enum AdminProgram {
 	DATAPACK_CANDIDATES("a-datapack-candidates", "데이터팩", "후보 팩", "/admin/datapack/candidates/page", AdminPermission.DATAPACK_READ, AdminWorkspace.DATAPACK),
 	DATAPACK_RELEASE_CHANNELS("a-datapack-release-channels", "데이터팩", "배포 채널", "/admin/datapack/release-channels/page", AdminPermission.DATAPACK_READ, AdminWorkspace.DATAPACK),
 	DATAPACK_RELEASE_REQUESTS("a-datapack-release-requests", "데이터팩", "릴리스 요청", "/admin/datapack/release-requests/page", AdminPermission.DATAPACK_READ, AdminWorkspace.DATAPACK),
+	DATAPACK_AUTOMATION("a-datapack-automation", "데이터팩", "자동화 상태", "/admin/datapack/automation/page", AdminPermission.DATAPACK_READ, AdminWorkspace.DATAPACK),
 	PUSH("a-push", "운영·분석", "푸시 알림", "/admin/notifications/push/page", AdminPermission.DATA_OPERATE, AdminWorkspace.COMMUNICATIONS),
 	USAGE("a-usage", "운영·분석", "사용 현황", "/admin/usage/activity/page", AdminPermission.SECURITY_AUDIT, AdminWorkspace.ANALYTICS),
 	SYSTEM("a-system", "운영·분석", "시스템 상태", "/admin/system/page", AdminPermission.SECURITY_AUDIT, AdminWorkspace.SYSTEM_AUDIT),

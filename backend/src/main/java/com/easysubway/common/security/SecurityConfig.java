@@ -135,7 +135,9 @@ public class SecurityConfig {
 			.securityMatcher(
 				"/admin/api/datapack/release-requests/**",
 				"/admin/api/datapack/rollback-approvals/**",
-				"/admin/api/datapack/release-callbacks"
+				"/admin/api/datapack/release-callbacks",
+				// data#1084/backend#500: data 레포 workflow가 게시하는 자동화 상태 snapshot(같은 서비스 토큰)
+				"/admin/api/datapack/automation-status"
 			)
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(sm -> sm.sessionCreationPolicy(
