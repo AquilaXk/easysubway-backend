@@ -168,8 +168,8 @@
 		</p>
 		<p>
 			경로 검색을 시작할 때 앱은 Google Play Integrity에 경로 검색 요청을 확인하기 위한 값을 보내고,
-			Google은 무결성 확인을 위해 앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태와
-			기기 attestation 정보를 암호화해 처리합니다.
+			Google은 무결성 확인을 위해 앱 패키지 이름·버전·서명 인증서, 기기에 로그인된 Google Play 계정의 앱 구매(이용 권한) 상태와
+			기기 무결성 정보를 암호화해 처리합니다.
 			이 정보는 Google의 Play Integrity 고정 보관 정책을 따르며 Google이 제3자에게 전송하지 않습니다.
 			그 뒤 앱은 Google이 발급한 무결성 확인 결과와 128비트 임의 값을 서비스 서버로 전송하고,
 			서비스 서버는 검증을 위해 그 확인 결과를 Google에 확인을 요청합니다.
@@ -264,7 +264,7 @@
 		<h4>Google Play Integrity (경로 검색 시작 시)</h4>
 		<ul>
 			<li>이전받는 자: Google LLC (미국), Google Play Integrity 서비스 운영 사업자</li>
-			<li>이전되는 항목: 경로 검색 요청을 확인하기 위한 값, 앱 무결성 확인에 필요한 정보(앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태, 기기 attestation 정보), 그리고 서비스 서버가 검증을 위해 Google에 보내는 Google이 발급한 무결성 확인 결과</li>
+			<li>이전되는 항목: 경로 검색 요청을 확인하기 위한 값, 앱 무결성 확인에 필요한 정보(앱 패키지 이름·버전·서명 인증서, 기기에 로그인된 Google Play 계정의 앱 구매(이용 권한) 상태, 기기 무결성 정보), 그리고 서비스 서버가 검증을 위해 Google에 보내는 Google이 발급한 무결성 확인 결과</li>
 			<li>이전 일시와 방법: 경로 검색을 시작할 때 앱이 Google Play Integrity에 HTTPS로 전송하고, 서비스 서버가 같은 시점에 Google이 발급한 무결성 확인 결과를 Google에 보내 확인을 요청</li>
 			<li>이용 목적과 보유 기간: 앱·기기 무결성과 라이선스 확인. Google은 이 정보를 암호화해 처리하며 제3자에게 전송하지 않고, Google의 고정 보관 정책에 따라 보관 후 삭제합니다(보관 기간 길이는 Google이 공개하지 않음).</li>
 			<li>거부 방법과 거부 시 불이익: 경로 검색은 이 확인이 필요한 기능이므로 거부할 수 없으며, 확인 없이는 서버 경로 검색을 이용할 수 없습니다. 문의는 <a href="mailto:privacy@aquilaxk.site">privacy@aquilaxk.site</a>로 할 수 있습니다.</li>
