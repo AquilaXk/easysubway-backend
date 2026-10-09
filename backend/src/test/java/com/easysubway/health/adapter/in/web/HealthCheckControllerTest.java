@@ -186,7 +186,7 @@ class HealthCheckControllerTest {
 						"외부 지도 도보 길안내",
 						"카카오맵 앱",
 						"카카오맵 웹",
-						"Journey V3 서버 경로 검색",
+						"서버 경로 검색",
 						"별도 검색 이력으로 저장하지 않습니다",
 						"이용자 및 법정대리인의 권리",
 						"개인정보 보호책임자",
@@ -205,11 +205,14 @@ class HealthCheckControllerTest {
 						"Cloudflare, Inc.(미국)",
 						"서울 리전(ap-seoul-1)",
 						"Google Play Integrity 서비스 운영 사업자",
-						"integrityToken",
+						"경로 검색 요청을 확인하기 위한 값",
+						"Google이 발급한 무결성 확인 결과",
+						"서비스 서버와 저장소는 모두 서울 리전(ap-seoul-1)에 있어 국외 이전에 해당하지 않습니다",
 						"개정 공고일: 2026년 10월 9일 · 시행일: 2026년 10월 16일"
 					))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
-					.doesNotContain("010-5855-0105", "tel:"));
+					.doesNotContain("010-5855-0105", "tel:")
+					.doesNotContain("Journey V3", "Route V2", "backend", "requestHash", "integrityToken", "decode"));
 		}
 	}
 

@@ -127,7 +127,7 @@
 			</tr>
 			<tr>
 				<td>경로 요청 식별자, 출발·도착역 ID, 출발 기준, 시간·실시간 정책, 이동 조건, 환승·대안 수 제한</td>
-				<td>Journey V3 서버 경로 검색</td>
+				<td>서버 경로 검색</td>
 				<td>요청과 계산 결과는 별도 검색 이력으로 저장하지 않습니다. 세션 검증용 해시 상태는 제4항의 기준을 따릅니다.</td>
 			</tr>
 			<tr>
@@ -151,61 +151,59 @@
 
 	<section>
 		<h2>3. 개인정보를 처리하는 방법</h2>
-		<p>앱 설정과 최근 검색처럼 기기 안에서 처리하는 정보는 이용자의 기기에 저장됩니다. 시설 신고 제출, Journey V3 서버 경로 검색, 선택형 ITX-청춘 경로 검색, 데이터 삭제 요청처럼 네트워크가 필요한 기능은 이용자가 해당 기능을 실행할 때 HTTPS로 전송됩니다.</p>
+		<p>앱 설정과 최근 검색처럼 기기 안에서 처리하는 정보는 이용자의 기기에 저장됩니다. 시설 신고 제출, 서버 경로 검색, 선택형 ITX-청춘 경로 검색, 데이터 삭제 요청처럼 네트워크가 필요한 기능은 이용자가 해당 기능을 실행할 때 HTTPS로 전송됩니다.</p>
 	</section>
 
 	<section>
-		<h2>4. Journey V3 서버 경로 검색</h2>
+		<h2>4. 서버 경로 검색</h2>
 		<p>
-			배포 환경의 정본 지하철 경로 검색은 Journey V3 서버에서 수행합니다.
-			앱은 requestId, 출발·도착역 ID, 즉시 또는 예약 출발 기준, timetable 또는 realtime 정책,
-			mobility profile, constraint mode, 최대 환승 수와 대안 수를 HTTPS 요청으로 보냅니다.
-			서버는 검증된 active route-bundle과 RAPTOR로 경로를 계산하며 필요한 데이터나 실시간 정보가 없거나 만료·불일치하면 이전·로컬 경로로 대체하지 않습니다.
+			배포 환경의 정본 지하철 경로 검색은 서비스 서버에서 수행합니다.
+			앱은 요청 식별자, 출발·도착역, 즉시 또는 예약 출발 기준, 시간표 또는 실시간 정보 사용 방식,
+			이동 조건, 최대 환승 수와 대안 수를 HTTPS 요청으로 보냅니다.
+			서버는 검증된 경로 데이터로 경로를 계산하며 필요한 데이터나 실시간 정보가 없거나 만료·불일치하면 이전·로컬 경로로 대체하지 않습니다.
 		</p>
 		<p>
-			Journey V3 요청 본문과 계산 결과는 요청 처리 중에만 사용하며 별도 검색 이력으로 저장하지 않습니다.
-			응답에는 <code>private, no-store</code> cache 정책을 적용하고 request를 사용자·기기·계정 ID와 연결하지 않습니다.
+			경로 검색 요청 내용과 계산 결과는 요청 처리 중에만 사용하며 별도 검색 이력으로 저장하지 않습니다.
+			응답은 기기나 중간 서버에 저장되지 않도록 설정하며 요청을 이용자·기기·계정 정보와 연결하지 않습니다.
 		</p>
 		<p>
-			Journey V3 또는 기존 Route V2 경로 세션을 만들 때 앱은 Google Play Integrity에 requestHash를 보내고,
+			경로 검색을 시작할 때 앱은 Google Play Integrity에 경로 검색 요청을 확인하기 위한 값을 보내고,
 			Google은 무결성 확인을 위해 앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태와
 			기기 attestation 정보를 암호화해 처리합니다.
 			이 정보는 Google의 Play Integrity 고정 보관 정책을 따르며 Google이 제3자에게 전송하지 않습니다.
-			그 뒤 앱은 integrityToken과 128-bit clientNonce를 쉬운 지하철 backend로 전송하고,
-			backend는 검증을 위해 raw integrityToken을 Google Play Integrity decode API로 전송합니다.
-			쉬운 지하철 backend의 경로 세션·상태는 사용자·기기·계정 ID와 연결하지 않지만, 위 Google 처리 범위는 이 backend 비연결 경계와 구분됩니다.
+			그 뒤 앱은 Google이 발급한 무결성 확인 결과와 128비트 임의 값을 서비스 서버로 전송하고,
+			서비스 서버는 검증을 위해 그 확인 결과를 Google에 확인을 요청합니다.
+			서비스 서버의 경로 세션·상태는 사용자·기기·계정 ID와 연결하지 않지만, 위 Google 처리 범위는 이 비연결 경계와 구분됩니다.
 		</p>
 		<p>
-			Journey V3 backend는 raw integrityToken, raw nonce와 raw bearer token을 저장하지 않습니다.
-			검증 후 token SHA-256, <code>journey:v3</code> scope, issuedAt, expiresAt, requestCount를 논리적으로 10분 동안,
-			nonce SHA-256, claimedAt, expiresAt을 논리적으로 2분 동안 저장합니다.
-			만료된 Journey V3 행은 이후 새 세션 발급 시 같은 transaction의 cleanup 단계에서 물리 삭제하며 별도 고정 주기 purge를 사용하지 않습니다.
+			서비스 서버는 Google이 발급한 무결성 확인 결과 원본, 임의 값 원본, 세션 인증값 원본을 저장하지 않습니다.
+			검증 뒤 세션 인증값의 해시와 사용 범위, 발급·만료 시각, 요청 횟수를 논리적으로 10분 동안,
+			임의 값의 해시와 사용 시각·만료 시각을 논리적으로 2분 동안 저장합니다.
+			만료된 행은 이후 새 세션을 발급할 때 함께 물리 삭제하며 별도 고정 주기 삭제는 쓰지 않습니다.
 		</p>
 		<p>
-			기존 Route V2 backend도 raw integrityToken을 저장하지 않고, 검증 후 발급한 세션 token의 SHA-256, scope, issuedAt, expiresAt, requestCount를 논리적으로 10분 동안,
-			raw nonce 대신 nonce SHA-256을 논리적으로 2분 동안 저장합니다.
-			정상 동작 중 Route V2 만료 데이터는 기본 5분 주기 purge로 물리 삭제하므로 세션은 발급 후 약 15분 이내,
-			nonce 해시는 수신 후 약 7분 이내 삭제됩니다.
-			ITX 경로 요청의 실제 JSON에는 originStationId, destinationStationId, departureTime,
-			mobilityType, mobilityPreset, constraintMode, useRealtime, maxTransfers, alternativeCount가 포함됩니다.
+			선택형 ITX-청춘 경로 검색도 무결성 확인 결과 원본을 저장하지 않고, 검증 뒤 발급한 세션 인증값의 해시, 사용 범위, 발급·만료 시각, 요청 횟수를 논리적으로 10분 동안,
+			임의 값 원본 대신 그 해시를 논리적으로 2분 동안 저장합니다.
+			정상 동작 중 만료 데이터는 기본 5분 주기로 물리 삭제하므로 세션은 발급 후 약 15분 이내,
+			임의 값 해시는 수신 후 약 7분 이내 삭제됩니다.
+			ITX-청춘 경로 요청에는 출발·도착역 ID, 출발 시각, 이동 유형과 이동 조건, 제약 방식, 실시간 사용 여부, 최대 환승 수, 대안 수가 포함됩니다.
 		</p>
 		<p>
-			경로 상태 DB에는 routeStateId, 출발역·도착역 ID, backend가 정한 transport scope, 요청 출발 시각,
-			계산된 itinerary JSON, timetable artifact ID, createdAt, plannedArrivalAt, expiresAt을 저장합니다.
-			mobilityPreset은 itinerary JSON의 보행 구간 appliedPreset에도 포함되므로 이 이동 조건 처리는 ephemeral로 표시하지 않습니다.
-			논리 보관 기간은 <code>min(createdAt+6h, max(createdAt+30m, plannedArrivalAt+30m))</code>로
-			생성 시각부터 최소 30분, 최대 6시간이며, 정상 동작 중 물리 삭제는 expiresAt 뒤 5분 이내입니다.
+			경로 상태 저장소에는 경로 상태 식별자, 출발역·도착역 ID, 서버가 정한 운송 범위, 요청 출발 시각,
+			계산된 경로 결과, 시간표 데이터 식별자, 생성·도착 예정·만료 시각을 저장합니다.
+			이동 조건은 경로 결과의 보행 구간에도 포함되므로 일시 처리 정보로 분류하지 않습니다.
+			논리 보관 기간은 생성 시각부터 최소 30분, 최대 6시간(도착 예정 시각 30분 뒤까지)이며,
+			정상 동작 중 물리 삭제는 만료 뒤 5분 이내입니다.
 		</p>
 		<p>
-			backend는 Route V2와 Journey V3의 raw integrityToken, raw nonce, Integrity payload·verdict를 DB에 저장하거나 로그에 남기지 않으며,
-			Journey V3 요청·응답을 별도 검색 이력으로 저장하지 않습니다. Route V2는 raw 검색어와 좌표를 요청으로 보내거나 저장하지 않습니다.
-			별도로 gateway는 요청 제한을 위해 IP의 이진 표현인 <code>$binary_remote_addr</code>와
-			Bearer 세션 token이 든 <code>$http_authorization</code>을 Nginx shared memory key로 처리합니다.
-			이 상태는 요청이 끝난 뒤에도 shared memory에 남을 수 있어 ephemeral 처리로 분류하지 않습니다.
-			고정 TTL은 없으며, zone 메모리가 부족할 때 LRU 방식으로 퇴출되고
-			최종적으로 gateway process 또는 shared-memory zone 수명 종료 시 삭제됩니다. 설정의 <code>10m</code>은 보관 기간이 아니라 zone 용량입니다.
-			이 key 값은 DB나 access log에는 저장하지 않습니다. 제한 응답 로그에는 고정 event·scope·status만 남고 key 값은 포함하지 않습니다.
-			세션과 경로 응답에는 <code>private, no-store</code> cache 정책을 적용합니다.
+			서비스 서버는 위 경로 검색의 무결성 확인 결과 원본, 임의 값 원본, Google의 검증 응답 내용을 DB에 저장하거나 로그에 남기지 않으며,
+			서버 경로 검색 요청·응답을 별도 검색 이력으로 저장하지 않습니다. 선택형 ITX-청춘 경로 검색은 검색어 원문과 좌표를 요청으로 보내거나 저장하지 않습니다.
+			별도로 요청 제한용 게이트웨이는 접속 IP 주소(이진 표현)와 세션 인증값을 메모리에서 요청 횟수 계산용 키로만 처리합니다.
+			이 상태는 요청이 끝난 뒤에도 메모리에 남을 수 있어 일시 처리로 분류하지 않습니다.
+			고정 보관 기간은 없으며, 메모리가 부족하면 오래된 것부터 제거되고
+			최종적으로 게이트웨이 프로세스 종료 시 삭제됩니다. 설정값 10m은 보관 기간이 아니라 메모리 용량입니다.
+			이 키 값은 DB나 접속 로그에 저장하지 않습니다. 제한 응답 로그에는 고정 이벤트·범위·상태만 남고 키 값은 포함하지 않습니다.
+			세션과 경로 응답은 기기나 중간 서버에 저장되지 않도록 설정합니다.
 		</p>
 	</section>
 
@@ -221,7 +219,7 @@
 		<h2>6. 보관, 전송 및 파기</h2>
 		<p>
 				즐겨찾기, 최근 검색, 앱 설정, 신고 초안, 설치된 이동 정보 기록은 기본적으로 사용자 기기에 보관됩니다.
-			신고 제출, Journey V3 서버 경로 검색, 선택형 ITX-청춘 경로 검색, 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
+			신고 제출, 서버 경로 검색, 선택형 ITX-청춘 경로 검색, 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
 			보관 목적이 끝나거나 삭제 요청 처리가 완료된 개인정보는 복구하기 어렵게 삭제하거나 식별 가능성을 줄입니다.
 		</p>
 		<p>
@@ -261,17 +259,18 @@
 			<li>이용 목적과 보유 기간: 앱 오류 원인 분석과 안정성 개선, 수집일부터 90일 보관 후 삭제 절차 시작</li>
 			<li>거부 방법과 거부 시 불이익: 현재 앱 안에는 충돌 진단 전송을 끄는 설정이 없습니다. 전송 중단이나 삭제를 원하면 <a href="mailto:privacy@aquilaxk.site">privacy@aquilaxk.site</a>로 요청할 수 있습니다. 앱을 삭제하면 이후 전송이 이루어지지 않습니다. 전송 여부는 앱 기능 이용에 영향을 주지 않습니다.</li>
 		</ul>
+		<h4>Google Play Integrity (경로 검색 시작 시)</h4>
 		<ul>
 			<li>이전받는 자: Google LLC (미국), Google Play Integrity 서비스 운영 사업자</li>
-			<li>이전되는 항목: 경로 세션 요청의 <code>requestHash</code>와 앱 무결성 확인에 필요한 정보(앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태, 기기 attestation 정보), 그리고 backend가 검증을 위해 전송하는 <code>integrityToken</code></li>
-			<li>이전 일시와 방법: Journey V3 또는 Route V2 경로 세션을 만들 때 앱이 Google Play Integrity에 HTTPS로 전송하고, backend가 같은 시점에 integrityToken을 Google Play Integrity decode API로 전송</li>
+			<li>이전되는 항목: 경로 검색 요청을 확인하기 위한 값, 앱 무결성 확인에 필요한 정보(앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태, 기기 attestation 정보), 그리고 서비스 서버가 검증을 위해 Google에 보내는 Google이 발급한 무결성 확인 결과</li>
+			<li>이전 일시와 방법: 경로 검색을 시작할 때 앱이 Google Play Integrity에 HTTPS로 전송하고, 서비스 서버가 같은 시점에 Google이 발급한 무결성 확인 결과를 Google에 보내 확인을 요청</li>
 			<li>이용 목적과 보유 기간: 앱·기기 무결성과 라이선스 확인. Google은 이 정보를 암호화해 처리하며 제3자에게 전송하지 않고, Google의 고정 보관 정책에 따라 보관 후 삭제합니다(보관 기간 길이는 Google이 공개하지 않음).</li>
 			<li>거부 방법과 거부 시 불이익: 경로 검색은 이 확인이 필요한 기능이므로 거부할 수 없으며, 확인 없이는 서버 경로 검색을 이용할 수 없습니다. 문의는 <a href="mailto:privacy@aquilaxk.site">privacy@aquilaxk.site</a>로 할 수 있습니다.</li>
 		</ul>
 		<p>
 			Cloudflare, Inc.(미국)는 서비스 요청을 안정적으로 중계하고 보안 위협을 차단하기 위해 앱과 서버 사이의 HTTPS 요청을 처리하며,
 			이 과정에서 요청에 담긴 IP 주소와 요청 정보가 국외에서 처리될 수 있습니다. 이용 목적은 서비스 전달과 보안이며 보유 기간은 Cloudflare의 운영 정책을 따릅니다.
-			Oracle Cloud Infrastructure는 서울 리전(ap-seoul-1)에 두는 저장소를 사용하므로 별도 국외 이전에 해당하지 않는 것으로 봅니다.
+			Oracle Cloud Infrastructure의 서비스 서버와 저장소는 모두 서울 리전(ap-seoul-1)에 있어 국외 이전에 해당하지 않습니다.
 		</p>
 	</section>
 
