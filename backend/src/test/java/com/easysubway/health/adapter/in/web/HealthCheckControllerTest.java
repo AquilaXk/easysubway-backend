@@ -196,7 +196,17 @@ class HealthCheckControllerTest {
 						"광고나 이용자 추적에는 사용하지 않습니다",
 						"개인정보 보호법 제28조의8",
 						"Google LLC (미국)",
-						"앱 안에는 충돌 진단 전송을 끄는 설정이 없습니다"
+						"앱 안에는 충돌 진단 전송을 끄는 설정이 없습니다",
+						"앱이 비정상 종료되거나 처리된 오류가 발생할 때",
+						"HTTP 상태 코드",
+						"치명 여부",
+						"세션 식별자",
+						"수집일부터 90일 보관",
+						"Cloudflare, Inc.(미국)",
+						"서울 리전(ap-seoul-1)",
+						"Google Play Integrity 서비스 운영 사업자",
+						"integrityToken",
+						"개정 공고일: 2026년 10월 9일 · 시행일: 2026년 10월 16일"
 					))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
 					.doesNotContain("010-5855-0105", "tel:"));
