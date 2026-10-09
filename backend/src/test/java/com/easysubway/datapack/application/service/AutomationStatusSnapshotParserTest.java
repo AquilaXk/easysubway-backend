@@ -23,11 +23,11 @@ class AutomationStatusSnapshotParserTest {
 		assertThat(snapshot.generatedAt()).isEqualTo(Instant.parse("2026-10-10T03:00:00Z"));
 		assertThat(snapshot.activeDatapack().releaseSequence()).isEqualTo(129);
 		assertThat(snapshot.activeDatapack().expiresAt()).isEqualTo(Instant.parse("2026-10-11T15:00:00Z"));
-		assertThat(snapshot.stages()).extracting(AutomationStatusSnapshot.Stage::id).containsExactly("refresh", "publish", "deploy");
+		assertThat(snapshot.stages()).extracting(AutomationStatusSnapshot.Stage::id).containsExactly("refresh", "registration", "reverification", "candidate", "rc", "compat", "promotion", "publish", "deploy");
 		assertThat(snapshot.stages().get(0).latest().conclusion()).isEqualTo("success");
-		assertThat(snapshot.stages().get(1).latest()).isNull();
-		assertThat(snapshot.stages().get(2).latest().conclusion()).isNull();
-		assertThat(snapshot.stages().get(2).inFlight()).isTrue();
+		assertThat(snapshot.stages().get(7).latest()).isNull();
+		assertThat(snapshot.stages().get(8).latest().conclusion()).isNull();
+		assertThat(snapshot.stages().get(8).inFlight()).isTrue();
 		assertThat(snapshot.failureIssues()).isEmpty();
 		assertThat(snapshot.candidateInFlight()).isFalse();
 	}
@@ -89,5 +89,16 @@ class AutomationStatusSnapshotParserTest {
 		assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJson(
 			"2026-10-10T03:00:00Z", "2026-10-11T15:00:00.000Z", manyIssues, "[]", "false")))
 			.isInstanceOf(InvalidAutomationStatusException.class);
+	}
+
+	@Test
+	@DisplayName("양방향 제어·서식 문자와 줄·문단 구분 문자가 든 문구는 화면 라벨을 속일 수 있어 거부한다")
+	void rejectsBidirectionalAndFormatCharacters() {
+		String valid = AutomationStatusFixtures.validJson();
+		for (String hidden : new String[] {"\\u202E", "\\u202A", "\\u2066", "\\u2069", "\\u200F", "\\u200B", "\\u2028", "\\u2029"}) {
+			assertThatThrownBy(() -> parser.parse(valid.replace("원천 갱신", "원천" + hidden + "갱신")), hidden)
+				.isInstanceOf(InvalidAutomationStatusException.class);
+		}
+		assertThat(parser.parse(valid.replace("원천 갱신", "원천 갱신 (a-b) 2026")).stages().get(0).label()).isEqualTo("원천 갱신 (a-b) 2026");
 	}
 }

@@ -57,7 +57,8 @@
 
 	<section class="admin-panel">
 		<h2>단계별 최근 실행</h2>
-		<p th:unless="${automation.received and !automation.stages.isEmpty()}" class="meta">수신 전</p>
+		<p th:unless="${automation.received}" class="meta">수신 전</p>
+		<p th:if="${automation.received and automation.stages.isEmpty()}" class="meta">받은 단계 정보가 없습니다.</p>
 		<div class="admin-table-scroll" tabindex="0" role="group" aria-label="가로로 스크롤 가능한 데이터 표"
 		     th:if="${automation.received and !automation.stages.isEmpty()}">
 		<table class="static-table">

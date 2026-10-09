@@ -29,6 +29,8 @@ public class AutomationStatusService implements AutomationStatusUseCase {
 	private final AutomationStatusSnapshotParser parser;
 	private final AutomationStatusAssessor assessor;
 	private final Clock clock;
+	/** 이 서버가 snapshot 수신을 기다리기 시작한 시각. 아무것도 받지 못한 채 오래 지나면 조용히 두지 않는다. */
+	private final Instant observingSince;
 
 	@Autowired
 	public AutomationStatusService(
@@ -50,6 +52,7 @@ public class AutomationStatusService implements AutomationStatusUseCase {
 		this.parser = parser;
 		this.assessor = assessor;
 		this.clock = clock;
+		this.observingSince = clock.instant();
 	}
 
 	@Override
@@ -67,12 +70,12 @@ public class AutomationStatusService implements AutomationStatusUseCase {
 		Instant now = clock.instant();
 		Optional<StoredPayload> stored = repository.findLatest();
 		if (stored.isEmpty()) {
-			return new Reading(Optional.empty(), null, now, assessor.assess(Optional.empty(), now));
+			return new Reading(Optional.empty(), null, now, assessor.assess(Optional.empty(), now, observingSince));
 		}
 		try {
 			AutomationStatusSnapshot snapshot = parser.parse(stored.get().payloadJson());
 			AutomationAssessment assessment = assessor.assess(
-				Optional.of(new StoredAutomationStatus(snapshot, stored.get().receivedAt())), now);
+				Optional.of(new StoredAutomationStatus(snapshot, stored.get().receivedAt())), now, observingSince);
 			return new Reading(Optional.of(snapshot), stored.get().receivedAt(), now, assessment);
 		} catch (InvalidAutomationStatusException invalid) {
 			LOGGER.error("저장된 자동화 상태가 검증을 통과하지 못했습니다: {}", invalid.getMessage());

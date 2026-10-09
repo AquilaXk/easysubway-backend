@@ -191,10 +191,16 @@ public class AutomationStatusSnapshotParser {
 			throw invalid(key + "는 문자열이어야 합니다");
 		}
 		String text = value.asText();
-		if (text.isEmpty() || text.length() > max || text.chars().anyMatch(Character::isISOControl)) {
+		if (text.isEmpty() || text.length() > max || text.chars().anyMatch(AutomationStatusSnapshotParser::isHiddenOrControl)) {
 			throw invalid(key + " 값이 맞지 않습니다");
 		}
 		return text;
+	}
+
+	/** 제어 문자에 더해 양방향 제어·서식 문자(U+202E 등)와 줄·문단 구분 문자도 거부한다: 공개 저장소의 제목이 화면 라벨 순서를 바꾸지 못하게 한다. */
+	private static boolean isHiddenOrControl(int codePoint) {
+		int type = Character.getType(codePoint);
+		return Character.isISOControl(codePoint) || type == Character.FORMAT || type == Character.LINE_SEPARATOR || type == Character.PARAGRAPH_SEPARATOR;
 	}
 
 	private static String githubUrl(JsonNode node, String key) {

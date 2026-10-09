@@ -2,13 +2,14 @@ package com.easysubway.datapack.adapter.in.web;
 
 import com.easysubway.datapack.application.port.in.AutomationStatusUseCase;
 import com.easysubway.datapack.domain.InvalidAutomationStatusException;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -28,12 +29,21 @@ public class AutomationStatusApiController {
 	}
 
 	@PostMapping(path = "/admin/api/datapack/automation-status", consumes = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<Map<String, String>> receive(@RequestBody byte[] body) {
+	public ResponseEntity<Map<String, String>> receive(HttpServletRequest request) throws IOException {
+		// 상한을 넘는 본문은 메모리에 올리지 않는다: 선언된 길이로 먼저 거르고, 선언이 없거나 거짓이어도 상한 + 1바이트까지만 읽는다.
+		if (request.getContentLengthLong() > MAX_BODY_BYTES) {
+			return tooLarge();
+		}
+		byte[] body = request.getInputStream().readNBytes(MAX_BODY_BYTES + 1);
 		if (body.length > MAX_BODY_BYTES) {
-			return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("status", "TOO_LARGE"));
+			return tooLarge();
 		}
 		var result = useCase.receive(new String(body, java.nio.charset.StandardCharsets.UTF_8));
 		return ResponseEntity.ok(Map.of("status", result.name()));
+	}
+
+	private static ResponseEntity<Map<String, String>> tooLarge() {
+		return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("status", "TOO_LARGE"));
 	}
 
 	@ExceptionHandler(InvalidAutomationStatusException.class)

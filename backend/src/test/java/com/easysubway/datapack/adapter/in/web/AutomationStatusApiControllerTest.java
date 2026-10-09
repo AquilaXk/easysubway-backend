@@ -1,12 +1,18 @@
 package com.easysubway.datapack.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.datapack.application.service.AutomationStatusFixtures;
+import com.easysubway.datapack.application.port.in.AutomationStatusUseCase;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +21,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -84,5 +91,50 @@ class AutomationStatusApiControllerTest {
 				.contentType(MediaType.APPLICATION_JSON).content(huge))
 			.andExpect(status().isPayloadTooLarge());
 		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();
+	}
+
+	@Test
+	@DisplayName("선언된 길이가 없거나 거짓이어도 상한을 넘는 본문은 상한 + 1바이트까지만 읽고 거부한다")
+	void oversizedBodyIsNotReadBeyondTheCap() throws Exception {
+		AtomicLong bytesRead = new AtomicLong();
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", PATH) {
+			@Override
+			public ServletInputStream getInputStream() {
+				return new ServletInputStream() {
+					@Override
+					public int read() {
+						bytesRead.incrementAndGet();
+						return 'x';
+					}
+
+					@Override
+					public boolean isFinished() {
+						return false;
+					}
+
+					@Override
+					public boolean isReady() {
+						return true;
+					}
+
+					@Override
+					public void setReadListener(ReadListener listener) {
+					}
+				};
+			}
+		};
+		AutomationStatusUseCase useCase = mock(AutomationStatusUseCase.class);
+		AutomationStatusApiController controller = new AutomationStatusApiController(useCase);
+
+		var response = controller.receive(request);
+
+		assertThat(response.getStatusCode().value()).isEqualTo(413);
+		assertThat(bytesRead.get()).isEqualTo(AutomationStatusApiController.MAX_BODY_BYTES + 1L);
+		verifyNoInteractions(useCase);
+
+		MockHttpServletRequest declared = new MockHttpServletRequest("POST", PATH);
+		declared.setContent(new byte[AutomationStatusApiController.MAX_BODY_BYTES + 1]);
+		assertThat(controller.receive(declared).getStatusCode().value()).isEqualTo(413);
+		verifyNoInteractions(useCase);
 	}
 }

@@ -7,6 +7,7 @@ import com.easysubway.datapack.domain.AutomationAssessment.Level;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,13 @@ class AutomationStatusAssessorTest {
 
 	private AutomationAssessment assess(String json, Instant receivedAt) {
 		AutomationStatusSnapshot snapshot = parser.parse(json);
-		return assessor.assess(Optional.of(new StoredAutomationStatus(snapshot, receivedAt)), NOW);
+		return assessor.assess(Optional.of(new StoredAutomationStatus(snapshot, receivedAt)), NOW, NOW.minus(Duration.ofDays(3)));
+	}
+
+	private AutomationAssessment assessStages(String stagesJson) {
+		AutomationStatusSnapshot snapshot = parser.parse(AutomationStatusFixtures.validJsonWithStages(
+			"2026-10-10T03:00:00Z", "2026-10-12T15:00:00.000Z", stagesJson, "[]", "[]", "false"));
+		return assessor.assess(Optional.of(new StoredAutomationStatus(snapshot, Instant.parse("2026-10-10T03:05:00Z"))), NOW, NOW.minus(Duration.ofDays(3)));
 	}
 
 	private String json(String expiresAt, String issues, String pulls, String inFlight) {
@@ -30,7 +37,7 @@ class AutomationStatusAssessorTest {
 	@Test
 	@DisplayName("아직 받은 snapshot이 없으면 정상으로 채우지 않고 수신 전으로 판정한다")
 	void nothingReceivedIsUnknownNotOk() {
-		AutomationAssessment assessment = assessor.assess(Optional.empty(), NOW);
+		AutomationAssessment assessment = assessor.assess(Optional.empty(), NOW, NOW.minus(Duration.ofMinutes(5)));
 
 		assertThat(assessment.level()).isEqualTo(Level.UNKNOWN);
 		assertThat(assessment.received()).isFalse();
@@ -100,5 +107,65 @@ class AutomationStatusAssessorTest {
 		assertThat(assessment.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("FAILURE_ISSUES", "STUCK_AUTOMATION");
 		assertThat(assessment.findings().get(0).message()).contains("1건");
 		assertThat(assessment.findings().get(1).level()).isEqualTo(Level.WARNING);
+	}
+
+	@Test
+	@DisplayName("수신 전 상태가 서버 기동 뒤 1시간을 넘기면 조용히 두지 않고 이상으로 판정한다")
+	void notReceivedForTooLongIsFailure() {
+		AutomationAssessment justAtLimit = assessor.assess(Optional.empty(), NOW, NOW.minus(Duration.ofHours(1)));
+		assertThat(justAtLimit.level()).isEqualTo(Level.UNKNOWN);
+
+		AutomationAssessment tooLong = assessor.assess(Optional.empty(), NOW, NOW.minus(Duration.ofHours(1)).minusSeconds(1));
+		assertThat(tooLong.level()).isEqualTo(Level.FAILURE);
+		assertThat(tooLong.received()).isFalse();
+		assertThat(tooLong.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("NOT_RECEIVED_LONG");
+		assertThat(tooLong.headline()).contains("1시간").contains("받지 못했습니다");
+	}
+
+	@Test
+	@DisplayName("단계의 최근 run이 실패했으면 정상이 아니다: 실패·시간 초과는 이상, 취소는 경고, 성공·건너뜀은 정상")
+	void failedLatestRunOfAStageIsAnAnomaly() {
+		AutomationAssessment failed = assessStages(AutomationStatusFixtures.stagesJson(Map.of("publish", "failure")));
+		assertThat(failed.level()).isEqualTo(Level.FAILURE);
+		assertThat(failed.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("STAGE_FAILED");
+		assertThat(failed.headline()).contains("발행").contains("실패");
+
+		AutomationAssessment timedOut = assessStages(AutomationStatusFixtures.stagesJson(Map.of("deploy", "timed_out", "compat", "startup_failure")));
+		assertThat(timedOut.level()).isEqualTo(Level.FAILURE);
+		assertThat(timedOut.findings()).hasSize(2).allSatisfy((finding) -> assertThat(finding.level()).isEqualTo(Level.FAILURE));
+
+		AutomationAssessment cancelled = assessStages(AutomationStatusFixtures.stagesJson(Map.of("promotion", "cancelled")));
+		assertThat(cancelled.level()).isEqualTo(Level.WARNING);
+		assertThat(cancelled.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("STAGE_FAILED");
+
+		AutomationAssessment skipped = assessStages(AutomationStatusFixtures.stagesJson(Map.of("registration", "skipped")));
+		assertThat(skipped.level()).isEqualTo(Level.OK);
+	}
+
+	@Test
+	@DisplayName("단계 목록에서 빠진 단계나 빈 목록은 정상으로 보지 않고 누락된 단계를 이름으로 드러낸다")
+	void missingStagesAreAnAnomaly() {
+		AutomationAssessment missing = assessStages(AutomationStatusFixtures.stagesJsonOnly("refresh", "registration", "reverification", "candidate", "rc", "compat", "promotion", "publish"));
+		assertThat(missing.level()).isEqualTo(Level.FAILURE);
+		assertThat(missing.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("STAGES_MISSING");
+		assertThat(missing.headline()).contains("배포");
+
+		AutomationAssessment empty = assessStages("[]");
+		assertThat(empty.level()).isEqualTo(Level.FAILURE);
+		assertThat(empty.findings()).extracting(AutomationAssessment.Finding::code).containsExactly("STAGES_MISSING");
+		assertThat(empty.findings().get(0).message()).contains("원천 갱신").contains("배포");
+	}
+
+	@Test
+	@DisplayName("기록이 없는 단계는 이상은 아니지만 정상 문구가 모든 단계를 확인한 것처럼 읽히지 않는다")
+	void stageWithoutRecordIsNotClaimedAsChecked() {
+		AutomationAssessment healthy = assessStages(AutomationStatusFixtures.healthyStagesJson());
+		assertThat(healthy.level()).isEqualTo(Level.OK);
+		assertThat(healthy.headline()).contains("정상").contains("실행 기록이 없는 단계").contains("발행");
+		assertThat(healthy.headline()).doesNotContain("모든 자동화 단계가 정상");
+
+		AutomationAssessment allRecorded = assessStages(AutomationStatusFixtures.stagesJson(Map.of("publish", "success")));
+		assertThat(allRecorded.level()).isEqualTo(Level.OK);
+		assertThat(allRecorded.headline()).isEqualTo("정상: 모든 자동화 단계의 최근 실행이 정상입니다");
 	}
 }

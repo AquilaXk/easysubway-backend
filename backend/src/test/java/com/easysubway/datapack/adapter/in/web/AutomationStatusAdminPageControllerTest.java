@@ -78,7 +78,7 @@ class AutomationStatusAdminPageControllerTest {
 		String html = page("admin.datapack.read");
 
 		assertThat(html)
-			.contains("모든 자동화 단계가 정상")
+			.contains("실행 기록이 있는 단계에 이상이 없습니다")
 			.contains("활성 데이터팩")
 			.contains(">129<")
 			.contains("단계별 최근 실행")
@@ -123,5 +123,22 @@ class AutomationStatusAdminPageControllerTest {
 		jdbcTemplate.update("DELETE FROM datapack_automation_status");
 		store(json, now.minusSeconds(7200), now.minus(2, ChronoUnit.HOURS));
 		assertThat(page("admin.datapack.read")).contains("게시가 멈췄습니다");
+	}
+
+	@Test
+	@DisplayName("단계의 최근 실행이 실패했거나 단계 목록이 비어 있으면 정상 요약 대신 그 단계가 이상으로 보인다")
+	void showsStageFailureAndMissingStages() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		String expires = now.plus(90, ChronoUnit.HOURS).toString();
+		String failed = AutomationStatusFixtures.validJsonWithStages(now.minusSeconds(120).toString(), expires,
+			AutomationStatusFixtures.stagesJson(java.util.Map.of("publish", "failure")), "[]", "[]", "false");
+		store(failed, now.minusSeconds(120), now.minusSeconds(60));
+		String failedHtml = page("admin.datapack.read");
+		assertThat(failedHtml).contains("발행 단계의 마지막 실행이 실패했습니다(failure)").doesNotContain("실행 기록이 있는 단계에 이상이 없습니다");
+
+		jdbcTemplate.update("DELETE FROM datapack_automation_status");
+		String empty = AutomationStatusFixtures.validJsonWithStages(now.minusSeconds(120).toString(), expires, "[]", "[]", "[]", "false");
+		store(empty, now.minusSeconds(120), now.minusSeconds(60));
+		assertThat(page("admin.datapack.read")).contains("자동화 단계 정보가 빠져 있습니다").contains("원천 갱신").contains("받은 단계 정보가 없습니다").doesNotContain("이상이 없습니다");
 	}
 }
