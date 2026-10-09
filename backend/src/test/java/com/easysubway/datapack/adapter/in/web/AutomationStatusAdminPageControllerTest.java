@@ -107,6 +107,9 @@ class AutomationStatusAdminPageControllerTest {
 			.contains("https://github.com/AquilaXk/easysubway-data/issues/55")
 			.contains("https://github.com/AquilaXk/easysubway-data/pull/7")
 			.contains("뒤처짐");
+		// 가장 심한 이상은 요약 한 줄이고, 목록은 나머지만 보여 같은 문장이 두 번 나오지 않는다.
+		assertThat(html.split("열린 자동화 실패 이슈 1건", -1)).hasSize(2);
+		assertThat(html).contains("막힌 자동화 1건");
 	}
 
 	@Test

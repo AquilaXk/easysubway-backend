@@ -28,7 +28,7 @@
 			<strong th:text="${automation.headline}">정상: 모든 자동화 단계가 정상입니다</strong>
 		</p>
 		<ul th:if="${automation.findings.size() > 1}">
-			<li th:each="finding : ${automation.findings}">
+			<li th:each="finding, stat : ${automation.findings}" th:if="${stat.index > 0}">
 				<span th:replace="~{admin/fragments/shell :: status(${finding.tone == 'bad' ? '이상' : (finding.tone == 'warn' ? '주의' : '확인')}, ${finding.tone})}">이상</span>
 				<span th:text="${finding.message}">내용</span>
 			</li>
