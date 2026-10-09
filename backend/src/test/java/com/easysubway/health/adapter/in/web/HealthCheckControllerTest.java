@@ -190,8 +190,13 @@ class HealthCheckControllerTest {
 						"별도 검색 이력으로 저장하지 않습니다",
 						"이용자 및 법정대리인의 권리",
 						"개인정보 보호책임자",
-						"privacy@aquilaxk.site"
-					));
+						"privacy@aquilaxk.site",
+						"Google(Firebase Crashlytics)",
+						"익명 설치 식별자",
+						"광고나 이용자 추적에는 사용하지 않습니다"
+					))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.doesNotContain("010-5855-0105", "tel:"));
 		}
 	}
 
@@ -204,7 +209,9 @@ class HealthCheckControllerTest {
 				.andExpect(result -> assertThat(result.getResponse().getContentType())
 					.contains("text/html", "UTF-8"))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
-					.contains("쉬운 지하철 서비스 이용약관", "서비스의 내용", "현장 안내를 우선"));
+					.contains("쉬운 지하철 서비스 이용약관", "서비스의 내용", "현장 안내를 우선"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.doesNotContain("010-5855-0105", "tel:"));
 		}
 	}
 
@@ -217,7 +224,9 @@ class HealthCheckControllerTest {
 				.andExpect(result -> assertThat(result.getResponse().getContentType())
 					.contains("text/html", "UTF-8"))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
-					.contains("쉬운 지하철 위치정보 이용약관", "제 4 조 (위치기반서비스의 내용)", "카카오맵 앱", "카카오맵 웹"));
+					.contains("쉬운 지하철 위치정보 이용약관", "제 4 조 (위치기반서비스의 내용)", "카카오맵 앱", "카카오맵 웹"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.doesNotContain("010-5855-0105", "tel:"));
 		}
 	}
 
