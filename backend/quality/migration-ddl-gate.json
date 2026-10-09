@@ -63,6 +63,10 @@
     {
       "file": "V78__journey_v3_search_records.sql",
       "sha256": "ce333f3a6aacfcfc40426014f18f7f4f9a34d9e91f396f503a626f69c8f231f4"
+    },
+    {
+      "file": "V79__datapack_automation_status.sql",
+      "sha256": "8a47852f23fd188d3f1a077bbe75660b5d7467536a65928f52faf93a862da54f"
     }
   ],
   "allowlist": [

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>자동화 상태</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-automation')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>자동화 상태</h1>
+			<p>데이터팩 갱신·검증·발행·배포 자동화의 현재 상태입니다. 이상이 있을 때만 확인하고 조치하면 됩니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel" aria-label="자동화 요약">
+		<h2>요약</h2>
+		<p>
+			<span th:replace="~{admin/fragments/shell :: status(${automation.levelLabel}, ${automation.tone})}">정상</span>
+			<strong th:text="${automation.headline}">정상: 모든 자동화 단계가 정상입니다</strong>
+		</p>
+		<ul th:if="${automation.findings.size() > 1}">
+			<li th:each="finding, stat : ${automation.findings}" th:if="${stat.index > 0}">
+				<span th:replace="~{admin/fragments/shell :: status(${finding.tone == 'bad' ? '이상' : (finding.tone == 'warn' ? '주의' : '확인')}, ${finding.tone})}">이상</span>
+				<span th:text="${finding.message}">내용</span>
+			</li>
+		</ul>
+		<p class="meta">마지막 수신: <span th:text="${automation.receivedText}">수신 전</span></p>
+	</section>
+
+	<section class="admin-panel" th:if="${automation.received and automation.datapack != null}">
+		<h2>활성 데이터팩</h2>
+		<div class="metric-grid" aria-label="활성 데이터팩 요약">
+			<div class="metric metric-cell">
+				<span>릴리스 순번</span>
+				<strong class="cell-num" th:text="${automation.datapack.releaseSequence}">129</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발행 시각</span>
+				<strong th:text="${automation.datapack.publishedText}">2026-10-09 19:29</strong>
+			</div>
+			<div class="metric metric-cell" th:classappend="${automation.datapack.remainingTone == 'bad'} ? ' tone-bad'">
+				<span>만료 시각</span>
+				<strong th:text="${automation.datapack.expiresText}">2026-10-12 00:00</strong>
+				<em th:text="${automation.datapack.remainingText}">52시간 남음</em>
+			</div>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>단계별 최근 실행</h2>
+		<p th:unless="${automation.received}" class="meta">수신 전</p>
+		<p th:if="${automation.received and automation.stages.isEmpty()}" class="meta">받은 단계 정보가 없습니다.</p>
+		<div class="admin-table-scroll" tabindex="0" role="group" aria-label="가로로 스크롤 가능한 데이터 표"
+		     th:if="${automation.received and !automation.stages.isEmpty()}">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">단계</th>
+				<th scope="col">최근 결과</th>
+				<th scope="col">최근 시작</th>
+				<th scope="col">마지막 성공</th>
+				<th scope="col">실행 기록</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="stage : ${automation.stages}">
+				<td th:text="${stage.label}">단계</td>
+				<td><span th:replace="~{admin/fragments/shell :: status(${stage.resultText}, ${stage.tone})}">성공</span></td>
+				<td th:text="${stage.startedText}">—</td>
+				<td th:text="${stage.lastSuccessText}">—</td>
+				<td>
+					<a th:if="${stage.url != null}" th:href="${stage.url}" target="_blank" rel="noopener noreferrer">열기</a>
+					<span th:if="${stage.url == null}">—</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>열린 자동화 실패 이슈</h2>
+		<p th:unless="${automation.received}" class="meta">수신 전</p>
+		<p th:if="${automation.received and automation.issues.isEmpty()}" class="meta">열린 실패 이슈가 없습니다.</p>
+		<ul th:if="${!automation.issues.isEmpty()}">
+			<li th:each="issue : ${automation.issues}">
+				<a th:href="${issue.url}" target="_blank" rel="noopener noreferrer" th:text="${'#' + issue.number + ' ' + issue.title}">이슈</a>
+				<span class="meta" th:text="${issue.createdText}">시각</span>
+			</li>
+		</ul>
+	</section>
+
+	<section class="admin-panel">
+		<h2>막힌 자동화</h2>
+		<p th:unless="${automation.received}" class="meta">수신 전</p>
+		<p th:if="${automation.received and automation.stuck.isEmpty()}" class="meta">막힌 항목이 없습니다.</p>
+		<ul th:if="${!automation.stuck.isEmpty()}">
+			<li th:each="row : ${automation.stuck}">
+				<span th:replace="~{admin/fragments/shell :: status(${row.kind}, 'warn')}">뒤처짐</span>
+				<a th:if="${row.link != null}" th:href="${row.link}" target="_blank" rel="noopener noreferrer" th:text="${row.title}">대상</a>
+				<span th:if="${row.link == null}" th:text="${row.title}">대상</span>
+				<span class="meta" th:text="${row.detail}">상세</span>
+			</li>
+		</ul>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>
