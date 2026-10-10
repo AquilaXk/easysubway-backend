@@ -180,6 +180,7 @@ final class JourneyProfileResponseMapper {
 		long distance = 0;
 		int transfers = 0;
 		boolean stairs = false;
+		boolean unconfirmed = false;
 		// #454: 출발역 승강장 → 승차 → [환승 → 승차]* → 도착역 승강장. 진입·하차 구간은 없다.
 		// stage 1 = 승차 대기, stage 2 = 승차 직후.
 		String last = query.originStationId();
@@ -194,6 +195,7 @@ final class JourneyProfileResponseMapper {
 				}
 				distance += access.distanceMeters();
 				stairs |= access.includesStairs();
+				unconfirmed |= access.stairAccessUnconfirmed();
 				if (stage != 2 || !access.fromStationId().equals(last)) {
 					throw invalid();
 				}
@@ -226,7 +228,7 @@ final class JourneyProfileResponseMapper {
 		}
 		return new JourneyCandidate(candidate.candidateId(), candidate.readyAt(), candidate.arrivalAtDestination(), null, null,
 			Duration.between(candidate.readyAt(), candidate.arrivalAtDestination()).toSeconds(), transfers, distance,
-			JourneyCandidate.TimeSource.TIMETABLE, new JourneyCandidate.Accessibility(!stairs, List.of("ACCESSIBILITY_VERIFIED")),
+			JourneyCandidate.TimeSource.TIMETABLE, JourneyCandidate.Accessibility.ofStairAccess(stairs, unconfirmed),
 			itinerary.fare(), legs, List.of());
 	}
 

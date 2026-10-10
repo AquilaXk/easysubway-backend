@@ -113,6 +113,24 @@ public record JourneyCandidate(
 			}
 		}
 
+		public static final String REASON_VERIFIED = "ACCESSIBILITY_VERIFIED";
+		public static final String REASON_STAIRS_INCLUDED = "ACCESSIBILITY_STAIRS_INCLUDED";
+		public static final String REASON_UNDETERMINED = "ACCESSIBILITY_UNDETERMINED";
+
+		/**
+		 * #503: 여정의 계단 판정 3상태를 reasonCodes로 낸다. 모든 환승이 계단 없음 확정이면 VERIFIED, 계단 미확정 환승이
+		 * 하나라도 있으면 UNDETERMINED(확정 계단이 함께 있어도), 미확정 없이 확정 계단이 있으면 STAIRS_INCLUDED다.
+		 * 미확정 환승은 계단 쪽으로 다루므로 {@code anyStairsOrUnconfirmed}에 포함된다.
+		 */
+		public static Accessibility ofStairAccess(boolean anyStairsOrUnconfirmed, boolean anyUnconfirmed) {
+			if (anyUnconfirmed && !anyStairsOrUnconfirmed) {
+				throw new IllegalArgumentException("unconfirmed stair access must be counted as stairs");
+			}
+			String reason = anyUnconfirmed ? REASON_UNDETERMINED
+				: anyStairsOrUnconfirmed ? REASON_STAIRS_INCLUDED : REASON_VERIFIED;
+			return new Accessibility(!anyStairsOrUnconfirmed, List.of(reason));
+		}
+
 		public AccessibilityResult result() {
 			return AccessibilityResult.VERIFIED;
 		}

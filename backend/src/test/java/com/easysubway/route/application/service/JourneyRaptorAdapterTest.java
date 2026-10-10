@@ -428,6 +428,37 @@ class JourneyRaptorAdapterTest {
 		}
 	}
 
+	@Test
+	void reasonCodesReflectConfirmedStairsAndConfirmedStairFreeCandidates() {
+		// #503: 확정 계단 포함 여정은 STAIRS_INCLUDED, 계단 없음이 확정된 여정은 VERIFIED다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false, true));
+
+		var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+			snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates())
+			.extracting(candidate -> candidate.accessibility().stairFree(), candidate -> candidate.accessibility().reasonCodes())
+			.containsExactly(
+				org.assertj.core.groups.Tuple.tuple(false, List.of("ACCESSIBILITY_STAIRS_INCLUDED")),
+				org.assertj.core.groups.Tuple.tuple(true, List.of("ACCESSIBILITY_VERIFIED")));
+	}
+
+	@Test
+	void reasonCodesReportUndeterminedWhenATransferStairStateIsUnconfirmed() {
+		// #503: 계단 상태가 UNKNOWN이거나 없는 환승을 지난 여정은 VERIFIED를 받지 않고 UNDETERMINED를 받는다.
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable(state));
+
+			var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+				snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+			assertThat(result.candidates()).as("stair state %s", state).isNotEmpty().allSatisfy(candidate ->
+				assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_UNDETERMINED"));
+		}
+	}
+
 	private static JourneyRequest viaRequest(JourneyRequest.MobilityProfile profile) {
 		return new JourneyRequest(
 			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,

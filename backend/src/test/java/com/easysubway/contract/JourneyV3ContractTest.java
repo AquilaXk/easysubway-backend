@@ -359,6 +359,10 @@ class JourneyV3ContractTest {
 		assertClosedSchema(document, "JourneyAccessibility",
 			Set.of("result", "stairFree", "reasonCodes"), Set.of("result", "stairFree", "reasonCodes"));
 		assertEnum(property(document, "JourneyAccessibility", "result"), "VERIFIED");
+		// #503: reasonCodes는 열린 문자열 집합이다(N-1 소비자가 새 코드를 거부하지 않도록 enum으로 닫지 않는다). 값은 설명으로 고정한다.
+		assertThat(((Map<?, ?>) property(document, "JourneyAccessibility", "reasonCodes").get("items")).containsKey("enum")).isFalse();
+		assertThat(String.valueOf(schema(document, "JourneyAccessibility").get("description"))).contains(
+			"ACCESSIBILITY_VERIFIED", "ACCESSIBILITY_STAIRS_INCLUDED", "ACCESSIBILITY_UNDETERMINED");
 
 		assertThat(references(schema(document, "JourneyLeg").get("oneOf"))).containsExactly(
 			"#/components/schemas/JourneyEntryLeg", "#/components/schemas/JourneyRideLeg",

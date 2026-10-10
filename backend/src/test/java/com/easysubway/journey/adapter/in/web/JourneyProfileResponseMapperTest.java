@@ -211,6 +211,38 @@ class JourneyProfileResponseMapperTest {
 		}
 	}
 
+	@Test
+	void mapsReasonCodesFromTheThreeStairAccessStates() {
+		// #503: 계단 없음 확정 / 계단 확정 / 계단 미확정 환승이 각각 다른 reasonCodes를 낸다.
+		var temporal = new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(600));
+		var query = new JourneyRaptorQuery("01ARZ3NDEKTSV4RRFFQ69G5FAV", "origin", "destination", temporal,
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1,
+			(BooleanSupplier) () -> false);
+		var base = itinerary(true);
+		var cases = java.util.Map.of(
+			"ACCESSIBILITY_VERIFIED", transfer(false, false),
+			"ACCESSIBILITY_STAIRS_INCLUDED", transfer(true, false),
+			"ACCESSIBILITY_UNDETERMINED", transfer(true, true));
+		cases.forEach((expected, leg) -> {
+			var legs = new java.util.ArrayList<>(base.legs());
+			legs.set(1, leg);
+			var itinerary = new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(540), null, null,
+				base.metrics(), base.fare(), legs);
+			var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+				new JourneyProfileRaptorPort.ReversePlan.Found(java.util.List.of(itinerary)));
+			var accessibility = JourneyProfileResponseMapper.map(query, success(query, plan), policy(), "reason")
+				.path("journeys").get(0).path("journey").path("accessibility");
+			assertThat(accessibility.path("reasonCodes")).extracting(node -> node.asText()).containsExactly(expected);
+			assertThat(accessibility.path("stairFree").asBoolean()).isEqualTo(expected.equals("ACCESSIBILITY_VERIFIED"));
+		});
+	}
+
+	private static JourneyProfileRaptorPort.AccessLeg transfer(boolean stairs, boolean unconfirmed) {
+		return new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER, "interchange",
+			"interchange", 60, 10, stairs, true, "VERIFIED", null, null, null, unconfirmed);
+	}
+
 	private static final Instant START = Instant.parse("2026-09-01T00:00:00Z");
 
 	@Test

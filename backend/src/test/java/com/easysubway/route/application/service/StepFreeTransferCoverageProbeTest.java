@@ -122,6 +122,16 @@ class StepFreeTransferCoverageProbeTest {
 						}
 					}
 				}
+				// #503: 응답 reasonCodes(어댑터와 같은 accessibilityOf)가 판정과 맞는지. 여정별 분포와 OD별 (판정, 코드 집합) 교차표를 센다.
+				TreeSet<String> odCodes = new TreeSet<>();
+				for (var itinerary : plan.itineraries()) {
+					var accessibility = JourneyRaptorAdapter.accessibilityOf(itinerary);
+					assertThat(accessibility.stairFree()).isEqualTo(itinerary.stairFree());
+					String code = accessibility.reasonCodes().getFirst();
+					counts.merge("reason." + code, 1, Integer::sum);
+					odCodes.add(code.replace("ACCESSIBILITY_", ""));
+				}
+				counts.merge("od." + status + "|" + String.join("+", odCodes), 1, Integer::sum);
 				if (stepFreeWithTransfer) counts.merge("stepFreeWithTransfer", 1, Integer::sum);
 				if (stepFreeDirect) counts.merge("stepFreeDirect", 1, Integer::sum);
 				if (plan.itineraries().stream().anyMatch(it -> it.metrics().transfersUsed() > 0)) {

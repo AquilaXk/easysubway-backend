@@ -315,6 +315,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Boolean farePenaltyApplies = null;
 		Integer transferLimitMinutes = null;
 		boolean junctionUnconfirmedStairFree = false;
+		boolean junctionStairAccessUnconfirmed = false;
 
 		int fromLine = timetable.lineIndex(lastRide1.lineId());
 		int toLine = timetable.lineIndex(firstRide2.lineId());
@@ -334,6 +335,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			includesStairs = timetable.transitionIncludesStairs(transition);
 			verified = timetable.transitionVerified(transition);
 			status = timetable.transitionVerificationStatus(transition);
+			junctionStairAccessUnconfirmed = timetable.transitionStairAccess(transition)
+				== RouteTimetableRaptorPlanner.STAIR_ACCESS_UNCONFIRMED;
 			if (includesStairs) {
 				// #469 F1: 경유역 접속 환승의 계단 상태가 미확정이거나 근거 없는 계단 없는 동선이 있으면 확정할 수 없다.
 				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.unconfirmedStairFreeTransfer(
@@ -372,7 +375,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				status,
 				transferType,
 				farePenaltyApplies,
-				transferLimitMinutes
+				transferLimitMinutes,
+				junctionStairAccessUnconfirmed
 			);
 
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();
@@ -574,7 +578,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		List<JourneyCandidate.Leg> legs = new ArrayList<>(itinerary.legs().size());
 		long walkingDistanceMeters = 0;
 		int transferCount = 0;
-		boolean stairFree = true;
 		int rideCount = 0;
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection projection : itinerary.legs()) {
 			if (projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access) {
@@ -585,7 +588,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 					&& access.includesStairs()) {
 					throw new IllegalArgumentException("Journey accessibility transition includes stairs");
 				}
-				stairFree &= !access.includesStairs();
 				walkingDistanceMeters = Math.addExact(walkingDistanceMeters, access.distanceMeters());
 				// #454: 이동 구간은 승차 사이 환승뿐이다. 진입·하차(Entry/Exit) 구간은 만들지 않는다.
 				transferCount = Math.addExact(transferCount, 1);
@@ -652,11 +654,24 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			transferCount,
 			walkingDistanceMeters,
 			realtime ? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE,
-			new JourneyCandidate.Accessibility(stairFree, List.of("ACCESSIBILITY_VERIFIED")),
+			accessibilityOf(itinerary),
 			fare,
 			legs,
 			List.of()
 		);
+	}
+
+	/** #503: 여정 환승들의 계단 접근 상태(계단 없음 확정 / 확정 계단 / 미확정)에서 stairFree와 reasonCodes를 만든다. */
+	static JourneyCandidate.Accessibility accessibilityOf(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		boolean anyStairs = false;
+		boolean anyUnconfirmed = false;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access) {
+				anyStairs |= access.includesStairs();
+				anyUnconfirmed |= access.stairAccessUnconfirmed();
+			}
+		}
+		return JourneyCandidate.Accessibility.ofStairAccess(anyStairs, anyUnconfirmed);
 	}
 
 	/**

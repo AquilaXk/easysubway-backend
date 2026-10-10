@@ -1335,7 +1335,9 @@ final class ReverseTimetableRaptorPlanner {
 					timetable.transitionVerificationStatus(access.transition()),
 					transferType,
 					farePenaltyApplies,
-					transferLimitMinutes
+					transferLimitMinutes,
+					timetable.transitionStairAccess(access.transition())
+						== RouteTimetableRaptorPlanner.STAIR_ACCESS_UNCONFIRMED
 				));
 			} else {
 				TraceRide ride = (TraceRide) leg;
