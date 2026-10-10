@@ -385,6 +385,23 @@ class JourneyCandidateTest {
 		implements JourneyRaptorRuntimeView {
 	}
 
+	@Test
+	void ofStairAccessMapsTheThreeStatesAndRejectsUnconfirmedWithoutStairs() {
+		// #503: 확정 계단 없음 / 확정 계단 / 미확정(미확정은 계단 쪽으로 센다).
+		var verified = JourneyCandidate.Accessibility.ofStairAccess(false, false);
+		assertThat(verified.stairFree()).isTrue();
+		assertThat(verified.reasonCodes()).containsExactly("ACCESSIBILITY_VERIFIED");
+		var stairs = JourneyCandidate.Accessibility.ofStairAccess(true, false);
+		assertThat(stairs.stairFree()).isFalse();
+		assertThat(stairs.reasonCodes()).containsExactly("ACCESSIBILITY_STAIRS_INCLUDED");
+		var undetermined = JourneyCandidate.Accessibility.ofStairAccess(true, true);
+		assertThat(undetermined.stairFree()).isFalse();
+		assertThat(undetermined.reasonCodes()).containsExactly("ACCESSIBILITY_UNDETERMINED");
+		assertThatThrownBy(() -> JourneyCandidate.Accessibility.ofStairAccess(false, true))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("unconfirmed stair access must be counted as stairs");
+	}
+
 	private record TestRealtimeView(String identity, String routeBundleSha256, long generation)
 		implements JourneyRaptorRealtimeView {
 	}
