@@ -424,6 +424,34 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 			List.of(), List.of(), null, new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence));
 	}
 
+	/** #453: 같은 (역, L1, L2) 쌍에 더 짧은 비검증 후보를 앞에, 검증 후보를 뒤에 둔 경유 시간표. */
+	static RouteTimetable viaTimetableUnverifiedFirst() {
+		List<LoadRouteTimetablePort.PathwayNode> nodes = List.of(
+			new LoadRouteTimetablePort.PathwayNode("p-v-L1", "v", "L1", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("p-v-L2", "v", "L2", "PLATFORM"));
+		var unverified = new LoadRouteTimetablePort.PathwayEdge("e-v-unverified", "p-v-L1", "p-v-L2", 30, 600,
+			false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "UNVERIFIED").withStairAccessState("STEP_FREE");
+		var verified = new LoadRouteTimetablePort.PathwayEdge("e-v-verified", "p-v-L1", "p-v-L2", 60, 700,
+			false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
+		var rules = List.of(
+			new LoadRouteTimetablePort.TransferRule("rule-v-unverified", "v", "L1", "v", "L2", "IN_STATION",
+				30, unverified.id(), null, "UNVERIFIED"),
+			new LoadRouteTimetablePort.TransferRule("rule-v-verified", "v", "L1", "v", "L2", "IN_STATION",
+				60, verified.id(), null, "VERIFIED"));
+		var evidence = List.of(
+			evidence("ev-v-unverified", "v", "L2", unverified.id()),
+			evidence("ev-v-verified", "v", "L2", verified.id()));
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar("daily", true, true, true, true, true, true, true,
+			SERVICE_DATE.minusDays(2), SERVICE_DATE.plusDays(2), "Asia/Seoul");
+		return new RouteTimetable(List.of(calendar), List.of(), List.of(route("L1"), route("L2")),
+			List.of(trip("v1", "L1"), trip("w1", "L2")),
+			List.of(
+				stop("v1", 1, ORIGIN, "L1", 29_400), stop("v1", 2, "v", "L1", 30_000),
+				stop("w1", 1, "v", "L2", 30_600), stop("w1", 2, DESTINATION, "L2", 31_200)),
+			List.of(), List.of(), null,
+			new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(unverified, verified), rules, evidence));
+	}
+
 	private static LoadRouteTimetablePort.PathwayEdge edge(
 		String id, String from, String to, int distanceMeters, boolean includesStairs
 	) {

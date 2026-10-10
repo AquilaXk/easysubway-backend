@@ -392,6 +392,22 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void viaSearchUsesVerifiedJunctionTransferEvenWhenUnverifiedCandidateComesFirst() {
+		// #453: 같은 (역, 출발 노선, 도착 노선) 쌍에 비검증 후보가 앞서도 검증 후보로 경유 여정이 나온다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetableUnverifiedFirst());
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).hasSize(1);
+		assertThat(result.candidates().get(0).legs())
+			.filteredOn(JourneyCandidate.Transfer.class::isInstance)
+			.singleElement()
+			.isEqualTo(new JourneyCandidate.Transfer("v", "v", 60));
+	}
+
+	@Test
 	void viaSearchWithVerifiedStepFreeJunctionIncludesStairFreeJourneyForStepFreePreference() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
 			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetable(

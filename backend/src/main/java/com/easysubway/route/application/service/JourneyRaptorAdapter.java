@@ -321,8 +321,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		int toLine = timetable.lineIndex(firstRide2.lineId());
 		if (fromLine != toLine) {
 			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
-			int transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false);
-			if (transition < 0 || !timetable.transitionVerified(transition)) {
+			// #453: 같은 환승 쌍에 비검증 후보가 앞서도 검증 후보를 먼저 고른다. 검증 후보가 없으면 역 밖 보행을 보고, 그래도 없으면 버린다.
+			int transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false, true);
+			if (transition < 0) {
 				transition = resolveFootpathTransition(timetable.footpathsFromStation(station), fromLine, toLine, profileBit, timetable);
 			}
 
