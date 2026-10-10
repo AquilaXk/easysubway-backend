@@ -76,6 +76,42 @@ class AutomationStatusApiControllerTest {
 	}
 
 	@Test
+	@DisplayName("원천 근거 만료 목록(expiringSources)이 든 snapshot도 받고 저장하며, 모르는 키가 든 항목은 400으로 거부한다(backend#507)")
+	void acceptsExpiringSourcesAndRejectsMalformedOnes() throws Exception {
+		String item = AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천 1호선 열차 시간표",
+			"2026-10-10T07:22:23.648Z", "capital-topology-refresh", "BLOCKED");
+		String withSources = AutomationStatusFixtures.validJsonWithStagesAndSources(Instant.now().minusSeconds(30).toString(), "2026-10-31T00:00:00.000Z",
+			AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", "[" + item + "]");
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+				.contentType(MediaType.APPLICATION_JSON).content(withSources))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("ACCEPTED"));
+		assertThat(jdbcTemplate.queryForObject("SELECT payload_json FROM datapack_automation_status", String.class))
+			.contains("\"expiringSources\"").contains("incheon-line1-train-timetable");
+
+		jdbcTemplate.update("DELETE FROM datapack_automation_status");
+		String unknownKey = withSources.replace("\"refreshState\"", "\"extra\": 1, \"refreshState\"");
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+				.contentType(MediaType.APPLICATION_JSON).content(unknownKey))
+			.andExpect(status().isBadRequest());
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();
+	}
+
+	@Test
+	@DisplayName("범위를 벗어난 freshUntil(2000-01-01 ~ 2100-12-31 밖)이 든 snapshot은 400으로 거부하고 저장하지 않는다")
+	void rejectsOutOfRangeFreshUntil() throws Exception {
+		for (String freshUntil : new String[] {"+999999999-12-31T23:59:59Z", "1999-12-31T23:59:59Z", "2101-01-01T00:00:00Z"}) {
+			String item = AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천 1호선 열차 시간표", freshUntil, null, "NONE");
+			String body = AutomationStatusFixtures.validJsonWithStagesAndSources(Instant.now().minusSeconds(30).toString(), "2026-10-31T00:00:00.000Z",
+				AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", "[" + item + "]");
+			mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+					.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isBadRequest());
+		}
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();
+	}
+
+	@Test
 	@DisplayName("형식이 어긋난 본문과 미래 시각, 과대 본문은 거부하고 저장하지 않는다")
 	void rejectsMalformedFutureAndOversizedBodies() throws Exception {
 		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")

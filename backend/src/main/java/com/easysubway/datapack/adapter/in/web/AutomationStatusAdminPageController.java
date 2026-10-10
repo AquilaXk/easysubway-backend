@@ -6,10 +6,13 @@ import com.easysubway.datapack.application.service.AutomationStatusAssessor;
 import com.easysubway.datapack.domain.AutomationAssessment;
 import com.easysubway.datapack.domain.AutomationAssessment.Level;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot;
+import com.easysubway.datapack.domain.AutomationStatusSnapshot.ExpiringSource;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.RunSummary;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -18,7 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 /**
  * 데이터팩 자동화 상태(backend#500, data#1084). 사람은 이상이 날 때만 이 화면을 보고 개입한다: 상단은 가장 심한 이상 하나,
- * 아래는 활성 데이터팩, 단계별 최근 실행, 열린 실패 이슈, 막힌 자동화다. 값이 없으면 정상으로 채우지 않고 수신 전으로 보인다.
+ * 아래는 활성 데이터팩, 곧 만료되는 원천 근거, 단계별 최근 실행, 열린 실패 이슈, 막힌 자동화다. 값이 없으면 정상으로 채우지 않고 수신 전으로 보인다.
  */
 @Controller
 class AutomationStatusAdminPageController {
@@ -46,6 +49,9 @@ class AutomationStatusAdminPageController {
 		boolean received,
 		String receivedText,
 		DatapackView datapack,
+		boolean sourcesReported,
+		List<SourceView> sources,
+		String sourcesLeftOutText,
 		List<StageView> stages,
 		List<IssueView> issues,
 		List<StuckView> stuck
@@ -61,13 +67,31 @@ class AutomationStatusAdminPageController {
 					? Duration.ZERO : assessment.receivedAge()) + " 전)";
 			if (snapshot == null) {
 				return new AutomationView(levelLabel(assessment.level()), tone(assessment.level()), assessment.headline(), findings,
-					assessment.received(), receivedText, null, List.of(), List.of(), List.of());
+					assessment.received(), receivedText, null, false, List.of(), null, List.of(), List.of(), List.of());
 			}
 			return new AutomationView(levelLabel(assessment.level()), tone(assessment.level()), assessment.headline(), findings,
 				true, receivedText, DatapackView.of(snapshot, assessment),
+				snapshot.reportsExpiringSources(), sources(snapshot, reading.now()), leftOut(snapshot),
 				snapshot.stages().stream().map(StageView::of).toList(),
 				snapshot.failureIssues().stream().map((issue) -> new IssueView(issue.number(), issue.title(), issue.url(), TIME.format(issue.createdAt()))).toList(),
 				stuck(snapshot));
+		}
+
+		private static List<SourceView> sources(AutomationStatusSnapshot snapshot, Instant now) {
+			if (!snapshot.reportsExpiringSources()) {
+				return List.of();
+			}
+			return snapshot.expiringSources().stream()
+				.sorted(Comparator.comparing(ExpiringSource::freshUntil).thenComparing(ExpiringSource::sourceId))
+				.map((source) -> SourceView.of(source, now)).toList();
+		}
+
+		/** 자르기 전 후보가 목록보다 많으면 남은 개수를 "외 N건"으로 보인다. */
+		private static String leftOut(AutomationStatusSnapshot snapshot) {
+			if (!snapshot.reportsExpiringSources() || snapshot.expiringSourcesTotalCount() <= snapshot.expiringSources().size()) {
+				return null;
+			}
+			return "외 " + (snapshot.expiringSourcesTotalCount() - snapshot.expiringSources().size()) + "건";
 		}
 
 		private static List<StuckView> stuck(AutomationStatusSnapshot snapshot) {
@@ -114,6 +138,41 @@ class AutomationStatusAdminPageController {
 			String tone = expired ? "bad" : remaining.compareTo(AutomationStatusAssessor.EXPIRY_WARNING) < 0 ? "warn" : "good";
 			return new DatapackView(snapshot.activeDatapack().releaseSequence(),
 				TIME.format(snapshot.activeDatapack().publishedAt()), TIME.format(snapshot.activeDatapack().expiresAt()), remainingText, tone);
+		}
+	}
+
+	record SourceView(String name, String expiresText, String remainingText, String tone, String refreshText, String refreshTone) {
+
+		static SourceView of(ExpiringSource source, Instant now) {
+			Duration remaining = Duration.between(now, source.freshUntil());
+			boolean expired = !remaining.isPositive();
+			String remainingText = expired ? "만료됨 (" + AutomationStatusAssessor.describe(remaining) + " 지남)" : AutomationStatusAssessor.describe(remaining) + " 남음";
+			String tone = switch (AutomationStatusAssessor.sourceLevel(source, now)) {
+				case FAILURE -> "bad";
+				case WARNING -> "warn";
+				default -> "good";
+			};
+			String refreshText;
+			String refreshTone;
+			switch (source.refreshState()) {
+				case OK -> {
+					refreshText = "갱신 작업 정상";
+					refreshTone = "good";
+				}
+				case FAILED -> {
+					refreshText = "갱신 작업이 실패했습니다";
+					refreshTone = "bad";
+				}
+				case BLOCKED -> {
+					refreshText = "갱신 작업이 막혀 있습니다";
+					refreshTone = "bad";
+				}
+				default -> {
+					refreshText = "자동 갱신 없음";
+					refreshTone = "info";
+				}
+			}
+			return new SourceView(source.name(), TIME.format(source.freshUntil()), remainingText, tone, refreshText, refreshTone);
 		}
 	}
 

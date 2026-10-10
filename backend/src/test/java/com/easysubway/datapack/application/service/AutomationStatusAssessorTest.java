@@ -7,6 +7,7 @@ import com.easysubway.datapack.domain.AutomationAssessment.Level;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -171,5 +172,137 @@ class AutomationStatusAssessorTest {
 		AutomationAssessment allRecorded = assessStages(AutomationStatusFixtures.stagesJson(Map.of("publish", "success")));
 		assertThat(allRecorded.level()).isEqualTo(Level.OK);
 		assertThat(allRecorded.headline()).isEqualTo("정상: 모든 자동화 단계의 최근 실행이 정상입니다");
+	}
+
+	private static String source(String id, String name, Instant freshUntil, String stage, String state) {
+		return AutomationStatusFixtures.expiringSourceJson(id, name, freshUntil.toString(), stage, state);
+	}
+
+	private AutomationAssessment assessSources(String... items) {
+		return assess(AutomationStatusFixtures.validJsonWithExpiringSources("[" + String.join(",", items) + "]"), Instant.parse("2026-10-10T03:05:00Z"));
+	}
+
+	private List<String> codes(AutomationAssessment assessment) {
+		return assessment.findings().stream().map(AutomationAssessment.Finding::code).toList();
+	}
+
+	@Test
+	@DisplayName("원천 근거 만료 정보를 보내지 않는 snapshot은 지금처럼 판정하고 근거 판정은 하지 않는다")
+	void withoutExpiringSourcesNothingIsAssessedAboutSources() {
+		AutomationAssessment assessment = assess(json("2026-10-14T15:00:00.000Z", "[]", "[]", "false"), Instant.parse("2026-10-10T03:05:00Z"));
+
+		assertThat(assessment.level()).isEqualTo(Level.OK);
+		assertThat(assessment.findings()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("12시간보다 많이 남은 근거는 판정에 영향이 없다")
+	void sourcesFarFromExpiryAreIgnored() {
+		AutomationAssessment assessment = assessSources(
+			source("busan-a", "부산 시간표", NOW.plus(Duration.ofHours(12)).plusSeconds(60), "capital-topology-refresh", "BLOCKED"),
+			source("daegu-a", "대구 시간표", NOW.plus(Duration.ofDays(5)), null, "NONE"));
+
+		assertThat(assessment.level()).isEqualTo(Level.OK);
+		assertThat(assessment.findings()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없으면 이상이다(2026-10-10 인천 시간표 사례)")
+	void soonExpiringSourceWithBrokenRefreshIsFailure() {
+		AutomationAssessment blocked = assessSources(source("incheon-line1-train-timetable", "인천 1호선 열차 시간표",
+			Instant.parse("2026-10-10T07:22:23.648Z"), "capital-topology-refresh", "BLOCKED"));
+
+		assertThat(blocked.level()).isEqualTo(Level.FAILURE);
+		assertThat(codes(blocked)).containsExactly("SOURCE_EXPIRY_BLOCKED");
+		assertThat(blocked.headline()).isEqualTo("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 인천 1호선 열차 시간표(4시간 12분 남음)");
+
+		for (String state : List.of("FAILED", "BLOCKED")) {
+			AutomationAssessment broken = assessSources(source("incheon-line1-train-timetable", "인천 1호선 열차 시간표", NOW.plus(Duration.ofHours(1)), "capital-topology-refresh", state));
+			assertThat(broken.level()).as(state).isEqualTo(Level.FAILURE);
+			assertThat(codes(broken)).containsExactly("SOURCE_EXPIRY_BLOCKED");
+		}
+		// NONE은 사람 없이는 복구되지 않으므로 6시간 안이면 이상이고 그렇다고 적는다.
+		AutomationAssessment none = assessSources(source("b", "부산 시간표", NOW.plus(Duration.ofHours(2)), null, "NONE"));
+		assertThat(none.level()).isEqualTo(Level.FAILURE);
+		assertThat(none.headline()).isEqualTo("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 부산 시간표(2시간 0분 남음, 자동 갱신 없음)");
+	}
+
+	@Test
+	@DisplayName("경계: 정확히 6시간 남으면 이상, 6시간 1분이면 주의, 정확히 12시간이면 주의, 12시간 1분이면 영향 없음 (NONE·FAILED·BLOCKED 모두)")
+	void thresholdsAreInclusive() {
+		for (String state : List.of("NONE", "FAILED", "BLOCKED")) {
+			String stage = state.equals("NONE") ? null : "s";
+			assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(6)), stage, state)).level()).as(state).isEqualTo(Level.FAILURE);
+			AutomationAssessment justOver = assessSources(source("a", "자료", NOW.plus(Duration.ofHours(6)).plusSeconds(60), stage, state));
+			assertThat(justOver.level()).as(state).isEqualTo(Level.WARNING);
+			assertThat(codes(justOver)).containsExactly("SOURCE_EXPIRY_SOON");
+			assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)), stage, state)).level()).as(state).isEqualTo(Level.WARNING);
+			assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)).plusSeconds(60), stage, state)).level()).as(state).isEqualTo(Level.OK);
+		}
+		assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)), "s", "OK")).level()).isEqualTo(Level.WARNING);
+		assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)).plusSeconds(60), "s", "OK")).level()).isEqualTo(Level.OK);
+	}
+
+	@Test
+	@DisplayName("갱신 작업이 정상(OK)이면 6시간 안이어도 주의일 뿐이다")
+	void healthyRefreshIsOnlyAWarning() {
+		AutomationAssessment healthy = assessSources(source("a", "대구 1호선 시간표", NOW.plus(Duration.ofHours(1)), "source-reverification", "OK"));
+		assertThat(healthy.level()).isEqualTo(Level.WARNING);
+		assertThat(codes(healthy)).containsExactly("SOURCE_EXPIRY_SOON");
+		assertThat(healthy.headline()).isEqualTo("원천 자료 1건이 12시간 안에 만료됩니다: 대구 1호선 시간표(1시간 0분 남음)");
+	}
+
+	@Test
+	@DisplayName("이미 만료된 근거는 갱신 상태와 관계없이 이상이다: OK·NONE·FAILED·BLOCKED 모두, 얼마나 오래 지났든")
+	void expiredSourcesAreAlwaysFailure() {
+		for (String state : List.of("OK", "NONE", "FAILED", "BLOCKED")) {
+			String stage = state.equals("NONE") ? null : "capital-topology-refresh";
+			AutomationAssessment expired = assessSources(source("a", "인천 시간표", NOW.minus(Duration.ofMinutes(45)), stage, state));
+			assertThat(expired.level()).as(state).isEqualTo(Level.FAILURE);
+			assertThat(codes(expired)).as(state).containsExactly("SOURCE_EXPIRED");
+			assertThat(expired.headline()).as(state).startsWith("원천 자료 1건이 이미 만료되었습니다: 인천 시간표(만료됨, 45분 지남");
+		}
+		assertThat(assessSources(source("a", "부산 시간표", NOW, null, "NONE")).level()).as("정확히 만료 시각").isEqualTo(Level.FAILURE);
+		AutomationAssessment longAgo = assessSources(source("a", "부산 시간표", Instant.parse("2026-10-03T06:09:43Z"), null, "NONE"));
+		assertThat(longAgo.level()).isEqualTo(Level.FAILURE);
+		assertThat(longAgo.headline()).isEqualTo("원천 자료 1건이 이미 만료되었습니다: 부산 시간표(만료됨, 6일 21시간 0분 지남, 자동 갱신 없음)");
+	}
+
+	@Test
+	@DisplayName("만료, 6시간 안의 이상, 12시간 안의 주의를 각각 하나씩 요약하고 이상이 먼저 온다. 이름은 만료가 이른 순서로 세 개까지 적고 나머지는 건수로 적는다")
+	void expiredFailureAndWarningAreSummarizedSeparately() {
+		AutomationAssessment assessment = assessSources(
+			source("w1", "주의 자료 1", NOW.plus(Duration.ofHours(10)), "s", "OK"),
+			source("e1", "만료 자료 1", NOW.minus(Duration.ofHours(2)), "s", "OK"),
+			source("f2", "이상 자료 2", NOW.plus(Duration.ofHours(2)), "s", "FAILED"),
+			source("f1", "이상 자료 1", NOW.plus(Duration.ofHours(1)), "s", "BLOCKED"),
+			source("f4", "이상 자료 4", NOW.plus(Duration.ofHours(4)), null, "NONE"),
+			source("f3", "이상 자료 3", NOW.plus(Duration.ofHours(3)), "s", "BLOCKED"),
+			source("w2", "주의 자료 2", NOW.plus(Duration.ofHours(8)), "s", "OK"));
+
+		assertThat(assessment.level()).isEqualTo(Level.FAILURE);
+		assertThat(codes(assessment)).containsExactly("SOURCE_EXPIRED", "SOURCE_EXPIRY_BLOCKED", "SOURCE_EXPIRY_SOON");
+		assertThat(assessment.findings().get(0).message()).isEqualTo("원천 자료 1건이 이미 만료되었습니다: 만료 자료 1(만료됨, 2시간 0분 지남)");
+		assertThat(assessment.findings().get(1).message())
+			.isEqualTo("원천 자료 4건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 이상 자료 1(1시간 0분 남음), 이상 자료 2(2시간 0분 남음), 이상 자료 3(3시간 0분 남음) 외 1건");
+		assertThat(assessment.findings().get(2).level()).isEqualTo(Level.WARNING);
+		assertThat(assessment.findings().get(2).message()).isEqualTo("원천 자료 2건이 12시간 안에 만료됩니다: 주의 자료 2(8시간 0분 남음), 주의 자료 1(10시간 0분 남음)");
+	}
+
+	@Test
+	@DisplayName("근거 판정은 렌더 시각으로 계산한다: 같은 snapshot이 12시간 밖에서는 정상, 안에서는 주의, 6시간 안에서는 이상이다")
+	void assessmentFollowsTheRenderClock() {
+		AutomationStatusSnapshot snapshot = parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("[" + source(
+			"a", "인천 시간표", Instant.parse("2026-10-10T15:00:00Z"), "capital-topology-refresh", "BLOCKED") + "]"));
+
+		for (String[] row : new String[][] {{"2026-10-10T02:55:00Z", "OK"}, {"2026-10-10T03:00:00Z", "WARNING"}, {"2026-10-10T08:59:00Z", "WARNING"}, {"2026-10-10T09:00:00Z", "FAILURE"}}) {
+			Instant renderedAt = Instant.parse(row[0]);
+			StoredAutomationStatus stored = new StoredAutomationStatus(snapshot, renderedAt.minus(Duration.ofMinutes(1)));
+			AutomationAssessment assessment = assessor.assess(Optional.of(stored), renderedAt, renderedAt.minus(Duration.ofDays(3)));
+			assertThat(assessment.level()).as(row[0]).isEqualTo(Level.valueOf(row[1]));
+			if (!row[1].equals("OK")) {
+				assertThat(codes(assessment)).as(row[0]).hasSize(1).first().asString().startsWith("SOURCE_EXPIRY");
+			}
+		}
 	}
 }

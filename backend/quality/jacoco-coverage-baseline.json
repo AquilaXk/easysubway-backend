@@ -123,7 +123,7 @@
     {"path":"backend/src/main/java/com/easysubway/datapack/application/service/DatapackSourceSnapshotCommandService.java","sha256":"fa43a758e4822b7623d3011c53fe5b46088792ccfd072206f302f15643776aeb","packageName":"com.easysubway.datapack.application.service","sourceFileName":"DatapackSourceSnapshotCommandService.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":10,"covered":141,"total":151,"basisPoints":9337},"branch":{"missed":40,"covered":62,"total":102,"basisPoints":6078}},
     {"path":"backend/src/main/java/com/easysubway/datapack/application/service/StoredAutomationStatus.java","sha256":"de11cbb91c4f77f5f9407a7d643924c937f3362e0d4051d4d9c751df18b415fe","packageName":"com.easysubway.datapack.application.service","sourceFileName":"StoredAutomationStatus.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/datapack/domain/AutomationAssessment.java","sha256":"9d40492971e0a82b198a0bdd2d77a5355d0b7b4caefa26679e1539ee9df0b3b5","packageName":"com.easysubway.datapack.domain","sourceFileName":"AutomationAssessment.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":5,"total":5,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
-    {"path":"backend/src/main/java/com/easysubway/datapack/domain/AutomationStatusSnapshot.java","sha256":"7c45fb383e3102b67df34924cc456b9426b323536f0f2c1b6f20f06c07d9831b","packageName":"com.easysubway.datapack.domain","sourceFileName":"AutomationStatusSnapshot.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":2,"covered":15,"total":17,"basisPoints":8823},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
+    {"path":"backend/src/main/java/com/easysubway/datapack/domain/AutomationStatusSnapshot.java","sha256":"7c45fb383e3102b67df34924cc456b9426b323536f0f2c1b6f20f06c07d9831b","packageName":"com.easysubway.datapack.domain","sourceFileName":"AutomationStatusSnapshot.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":2,"covered":19,"total":21,"basisPoints":9047},"branch":{"missed":0,"covered":4,"total":4,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/datapack/domain/DatapackFreshness.java","sha256":"b6517405226cd5df724338f3d8406bc0e0e7c4fe48db3c74ef74c1a51f136ff2","packageName":"com.easysubway.datapack.domain","sourceFileName":"DatapackFreshness.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":2,"total":2,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/datapack/domain/DatapackReleaseDelivery.java","sha256":"8120100f0ad6891192da97d81d45d8e4e0732185fd3caf57ed8ffd7fbffe6cb2","packageName":"com.easysubway.datapack.domain","sourceFileName":"DatapackReleaseDelivery.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":3,"covered":25,"total":28,"basisPoints":8928},"branch":{"missed":9,"covered":11,"total":20,"basisPoints":5500}},
     {"path":"backend/src/main/java/com/easysubway/datapack/domain/DatapackReleaseRequest.java","sha256":"e97425cdb6bd9e9f05d264bdefbef7e7dbb91a0443d63dd9b17bc25d5b7b06d6","packageName":"com.easysubway.datapack.domain","sourceFileName":"DatapackReleaseRequest.java","boundaryIds":["ARTIFACT_RELEASE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":4,"covered":20,"total":24,"basisPoints":8333},"branch":{"missed":6,"covered":10,"total":16,"basisPoints":6250}},
@@ -558,15 +558,15 @@
       "missingSourceCount": 0,
       "line": {
         "missed": 314,
-        "covered": 3140,
-        "total": 3454,
-        "basisPoints": 9090
+        "covered": 3144,
+        "total": 3458,
+        "basisPoints": 9091
       },
       "branch": {
         "missed": 574,
-        "covered": 1078,
-        "total": 1652,
-        "basisPoints": 6525
+        "covered": 1082,
+        "total": 1656,
+        "basisPoints": 6533
       }
     },
     {

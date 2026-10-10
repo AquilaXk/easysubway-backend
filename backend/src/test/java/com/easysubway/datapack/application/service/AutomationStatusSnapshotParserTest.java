@@ -101,4 +101,124 @@ class AutomationStatusSnapshotParserTest {
 		}
 		assertThat(parser.parse(valid.replace("원천 갱신", "원천 갱신 (a-b) 2026")).stages().get(0).label()).isEqualTo("원천 갱신 (a-b) 2026");
 	}
+
+	private static final String INCHEON = AutomationStatusFixtures.expiringSourceJson(
+		"incheon-line1-train-timetable", "인천 1호선 열차 시간표", "2026-10-10T07:22:23.648Z", "capital-topology-refresh", "BLOCKED");
+	private static final String BUSAN = AutomationStatusFixtures.expiringSourceJson(
+		"busan-transportation-timetable", "부산 도시철도 시간표", "2026-10-11T06:09:43.513Z", null, "NONE");
+
+	@Test
+	@DisplayName("expiringSources가 없는 옛 snapshot도 그대로 받고 보고되지 않음으로 둔다(정상으로 채우지 않는다)")
+	void snapshotWithoutExpiringSourcesIsStillAccepted() {
+		AutomationStatusSnapshot snapshot = parser.parse(AutomationStatusFixtures.validJson());
+
+		assertThat(snapshot.reportsExpiringSources()).isFalse();
+		assertThat(snapshot.expiringSources()).isNull();
+	}
+
+	@Test
+	@DisplayName("expiringSources가 있으면 항목을 그대로 읽고, 빈 배열은 보고되었지만 없음으로 읽는다")
+	void parsesExpiringSources() {
+		AutomationStatusSnapshot snapshot = parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("[" + INCHEON + "," + BUSAN + "]"));
+
+		assertThat(snapshot.reportsExpiringSources()).isTrue();
+		assertThat(snapshot.expiringSources()).hasSize(2);
+		AutomationStatusSnapshot.ExpiringSource first = snapshot.expiringSources().get(0);
+		assertThat(first.sourceId()).isEqualTo("incheon-line1-train-timetable");
+		assertThat(first.name()).isEqualTo("인천 1호선 열차 시간표");
+		assertThat(first.evidence()).isEqualTo("scheduleAdmissionEvidence");
+		assertThat(first.freshUntil()).isEqualTo(Instant.parse("2026-10-10T07:22:23.648Z"));
+		assertThat(first.refreshStage()).isEqualTo("capital-topology-refresh");
+		assertThat(first.refreshState()).isEqualTo(AutomationStatusSnapshot.RefreshState.BLOCKED);
+		assertThat(snapshot.expiringSources().get(1).refreshStage()).isNull();
+		assertThat(snapshot.expiringSources().get(1).refreshState()).isEqualTo(AutomationStatusSnapshot.RefreshState.NONE);
+
+		AutomationStatusSnapshot none = parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("[]"));
+		assertThat(none.reportsExpiringSources()).isTrue();
+		assertThat(none.expiringSources()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("expiringSources의 모르는 키·빠진 키·잘못된 값·짝이 맞지 않는 갱신 단계와 상태·중복은 거부한다")
+	void rejectsMalformedExpiringSources() {
+		for (String broken : List.of(
+			INCHEON.replace("\"evidence\"", "\"extra\": 1, \"evidence\""),
+			INCHEON.replace("\"name\": \"인천 1호선 열차 시간표\", ", ""),
+			INCHEON.replace("\"BLOCKED\"", "\"STUCK\""),
+			INCHEON.replace("\"BLOCKED\"", "\"NONE\""),
+			BUSAN.replace("\"refreshState\": \"NONE\"", "\"refreshState\": \"OK\""),
+			INCHEON.replace("incheon-line1-train-timetable", "Incheon Line1"),
+			INCHEON.replace("incheon-line1-train-timetable", "x".repeat(101)),
+			INCHEON.replace("scheduleAdmissionEvidence", "schedule-admission"),
+			INCHEON.replace("2026-10-10T07:22:23.648Z", "2026-10-10"),
+			INCHEON.replace("인천 1호선 열차 시간표", "인천\\u202e시간표"),
+			INCHEON.replace("인천 1호선 열차 시간표", ""),
+			INCHEON.replace("인천 1호선 열차 시간표", "가".repeat(201)),
+			INCHEON.replace("\"capital-topology-refresh\"", "\"Capital Refresh\""))) {
+			assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("[" + broken + "]")))
+				.as(broken).isInstanceOf(InvalidAutomationStatusException.class);
+		}
+		assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("[" + INCHEON + "," + INCHEON + "]")))
+			.isInstanceOf(InvalidAutomationStatusException.class).hasMessageContaining("중복");
+		assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("{}")))
+			.isInstanceOf(InvalidAutomationStatusException.class);
+		assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("null")))
+			.isInstanceOf(InvalidAutomationStatusException.class);
+	}
+
+	@Test
+	@DisplayName("expiringSources는 50개까지만 받는다")
+	void limitsExpiringSourcesCount() {
+		java.util.function.IntFunction<String> sources = (count) -> "[" + java.util.stream.IntStream.range(0, count)
+			.mapToObj((index) -> AutomationStatusFixtures.expiringSourceJson("source-" + index, "자료 " + index, "2026-10-12T00:00:00Z", null, "NONE"))
+			.collect(java.util.stream.Collectors.joining(",")) + "]";
+
+		assertThat(parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources(sources.apply(50))).expiringSources()).hasSize(50);
+		assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources(sources.apply(51))))
+			.isInstanceOf(InvalidAutomationStatusException.class);
+	}
+
+	private static String withTotalCount(String json, String total) {
+		return json.replace("\"expiringSources\":", "\"expiringSourcesTotalCount\": " + total + ", \"expiringSources\":");
+	}
+
+	@Test
+	@DisplayName("expiringSourcesTotalCount(자르기 전 개수)는 목록 개수 이상이어야 하고, 없으면 목록 개수를 총수로 본다")
+	void parsesExpiringSourcesTotalCount() {
+		String list = "[" + INCHEON + "," + BUSAN + "]";
+		String base = AutomationStatusFixtures.validJsonWithExpiringSources(list);
+
+		assertThat(parser.parse(base).expiringSourcesTotalCount()).isEqualTo(2);
+		assertThat(parser.parse(withTotalCount(base, "42")).expiringSourcesTotalCount()).isEqualTo(42);
+		assertThat(parser.parse(withTotalCount(base, "2")).expiringSourcesTotalCount()).isEqualTo(2);
+		assertThat(parser.parse(AutomationStatusFixtures.validJson()).expiringSourcesTotalCount()).isZero();
+
+		for (String broken : List.of(withTotalCount(base, "1"), withTotalCount(base, "-1"), withTotalCount(base, "2.5"), withTotalCount(base, "\"2\""),
+			withTotalCount(base, "null"), withTotalCount(base, "100001"))) {
+			assertThatThrownBy(() -> parser.parse(broken)).as(broken).isInstanceOf(InvalidAutomationStatusException.class);
+		}
+		// 목록 없이 총수만 오는 것은 거부한다.
+		String noList = AutomationStatusFixtures.validJson().replace("\"candidateInFlight\": false", "\"candidateInFlight\": false, \"expiringSourcesTotalCount\": 3");
+		assertThatThrownBy(() -> parser.parse(noList)).isInstanceOf(InvalidAutomationStatusException.class);
+	}
+
+	@Test
+	@DisplayName("시각은 2000-01-01부터 2100-12-31까지만 받는다: 경계는 받고 범위 밖과 터무니없는 연도는 거부한다")
+	void instantsAreLimitedToAPlausibleWindow() {
+		String low = "2000-01-01T00:00:00Z";
+		String high = "2100-12-31T23:59:59Z";
+		for (String accepted : List.of(low, high, "2026-10-10T07:22:23.648Z")) {
+			assertThat(parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("["
+				+ AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천", accepted, null, "NONE") + "]")).expiringSources()).hasSize(1);
+		}
+		for (String rejected : List.of("1999-12-31T23:59:59Z", "2101-01-01T00:00:00Z", "+999999999-12-31T23:59:59Z", "-999999999-01-01T00:00:00Z", "0001-01-01T00:00:00Z")) {
+			assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("["
+				+ AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천", rejected, null, "NONE") + "]")))
+				.as(rejected).isInstanceOf(InvalidAutomationStatusException.class).hasMessageContaining("범위");
+		}
+		// 다른 시각 필드에도 같은 범위가 적용된다.
+		String valid = AutomationStatusFixtures.validJson();
+		assertThatThrownBy(() -> parser.parse(valid.replace("2026-10-11T15:00:00.000Z", "+999999999-12-31T23:59:59Z"))).isInstanceOf(InvalidAutomationStatusException.class);
+		assertThatThrownBy(() -> parser.parse(valid.replace("\"publishedAt\": \"2026-10-09T10:29:36.200Z\"", "\"publishedAt\": \"1970-01-01T00:00:00Z\""))).isInstanceOf(InvalidAutomationStatusException.class);
+	}
 }

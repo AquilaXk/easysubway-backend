@@ -141,4 +141,118 @@ class AutomationStatusAdminPageControllerTest {
 		store(empty, now.minusSeconds(120), now.minusSeconds(60));
 		assertThat(page("admin.datapack.read")).contains("자동화 단계 정보가 빠져 있습니다").contains("원천 갱신").contains("받은 단계 정보가 없습니다").doesNotContain("이상이 없습니다");
 	}
+
+	private void storeWithSources(Instant now, String sources) {
+		store(AutomationStatusFixtures.validJsonWithStagesAndSources(now.minusSeconds(120).toString(), now.plus(90, ChronoUnit.HOURS).toString(),
+			AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", sources), now.minusSeconds(120), now.minusSeconds(60));
+	}
+
+	@Test
+	@DisplayName("원천 근거 만료 정보를 보내지 않는 snapshot에서는 표 대신 아직 받지 못했다고 보이고 정상 문구로 채우지 않는다")
+	void showsSourceExpiryNotReportedForOldSnapshots() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		storeWithSources(now, null);
+
+		String html = page("admin.datapack.read");
+
+		assertThat(html).contains("곧 만료되는 원천 근거").contains("원천 근거 만료 정보를 아직 받지 못했습니다");
+		assertThat(html).doesNotContain("곧 만료되는 원천 근거가 없습니다").doesNotContain("남은 시간");
+		assertThat(html).contains("실행 기록이 있는 단계에 이상이 없습니다");
+	}
+
+	@Test
+	@DisplayName("원천 근거 목록이 비어 있으면 곧 만료되는 근거가 없다고 보인다")
+	void showsNoExpiringSources() throws Exception {
+		storeWithSources(Instant.now().truncatedTo(ChronoUnit.SECONDS), "[]");
+
+		assertThat(page("admin.datapack.read")).contains("곧 만료되는 원천 근거가 없습니다").doesNotContain("원천 근거 만료 정보를 아직 받지 못했습니다");
+	}
+
+	@Test
+	@DisplayName("12시간 안에 만료되는 근거는 주의로 보이고 자동 갱신 경로가 없으면 그렇다고 적는다")
+	void showsExpiringSourceWarning() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		storeWithSources(now, "[" + AutomationStatusFixtures.expiringSourceJson("busan-transportation-timetable", "부산 도시철도 시간표",
+			now.plus(8, ChronoUnit.HOURS).plusSeconds(30).toString(), null, "NONE") + ","
+			+ AutomationStatusFixtures.expiringSourceJson("daegu-line1-train-timetable", "대구 1호선 열차 시간표",
+			now.plus(3, ChronoUnit.DAYS).toString(), "source-reverification", "OK") + "]");
+
+		String html = page("admin.datapack.read");
+
+		assertThat(html)
+			.contains("원천 자료 1건이 12시간 안에 만료됩니다: 부산 도시철도 시간표(8시간 0분 남음, 자동 갱신 없음)")
+			.contains("부산 도시철도 시간표").contains("8시간 0분 남음").contains("자동 갱신 없음")
+			.contains("대구 1호선 열차 시간표").contains("갱신 작업 정상");
+		assertThat(html).doesNotContain("실행 기록이 있는 단계에 이상이 없습니다");
+	}
+
+	@Test
+	@DisplayName("6시간 안에 만료되는데 갱신 작업이 막혀 있으면 이상으로 보인다")
+	void showsExpiringSourceFailure() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		storeWithSources(now, "[" + AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천 1호선 열차 시간표",
+			now.plus(2, ChronoUnit.HOURS).plusSeconds(30).toString(), "capital-topology-refresh", "BLOCKED") + ","
+			+ AutomationStatusFixtures.expiringSourceJson("incheon-line2-train-timetable", "인천 2호선 열차 시간표",
+			now.minus(20, ChronoUnit.MINUTES).toString(), "capital-topology-refresh", "FAILED") + "]");
+
+		String html = page("admin.datapack.read");
+
+		assertThat(html)
+			.contains("원천 자료 1건이 이미 만료되었습니다: 인천 2호선 열차 시간표(만료됨, 20분 지남)")
+			.contains("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 인천 1호선 열차 시간표(2시간 0분 남음)")
+			.contains("갱신 작업이 막혀 있습니다").contains("갱신 작업이 실패했습니다").contains("만료됨 (20분 지남)").contains("2시간 0분 남음");
+		// 표는 보낸 순서가 아니라 만료가 이른 순서다.
+		String table = html.substring(html.indexOf("<th scope=\"col\">자료</th>"));
+		assertThat(table.indexOf("인천 2호선 열차 시간표")).isPositive().isLessThan(table.indexOf("인천 1호선 열차 시간표"));
+	}
+
+	@Test
+	@DisplayName("이미 만료된 근거는 갱신 상태가 정상이어도 이상으로 보이고, 자동 갱신 경로가 없는 근거는 6시간 안이면 이상이다")
+	void showsExpiredAndNoRefreshAsFailure() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		storeWithSources(now, "[" + AutomationStatusFixtures.expiringSourceJson("busan-transportation-timetable", "부산 도시철도 시간표",
+			now.minus(7, ChronoUnit.DAYS).toString(), null, "NONE") + ","
+			+ AutomationStatusFixtures.expiringSourceJson("daegu-line1-train-timetable", "대구 1호선 열차 시간표",
+			now.minus(5, ChronoUnit.MINUTES).toString(), "source-reverification", "OK") + ","
+			+ AutomationStatusFixtures.expiringSourceJson("daejeon-train-timetable", "대전 열차 시간표",
+			now.plus(3, ChronoUnit.HOURS).plusSeconds(30).toString(), null, "NONE") + "]");
+
+		String html = page("admin.datapack.read");
+
+		assertThat(html)
+			.contains("원천 자료 2건이 이미 만료되었습니다: 부산 도시철도 시간표(만료됨, 7일 0시간 0분 지남, 자동 갱신 없음), 대구 1호선 열차 시간표(만료됨, 5분 지남)")
+			.contains("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 대전 열차 시간표(3시간 0분 남음, 자동 갱신 없음)")
+			.contains("만료됨 (5분 지남)").contains("자동 갱신 없음");
+	}
+
+	@Test
+	@DisplayName("목록이 잘렸으면 표 아래에 외 N건으로 남은 개수를 보인다. 잘리지 않았으면 보이지 않는다")
+	void showsHowManySourcesWereLeftOutOfTheList() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		String item = AutomationStatusFixtures.expiringSourceJson("daegu-line1-train-timetable", "대구 1호선 열차 시간표", now.plus(3, ChronoUnit.DAYS).toString(), "source-reverification", "OK");
+		storeWithSources(now, "[" + item + "]");
+		assertThat(page("admin.datapack.read")).doesNotContain("외 ").doesNotContain("건이 더 있습니다");
+
+		jdbcTemplate.update("DELETE FROM datapack_automation_status");
+		String json = AutomationStatusFixtures.validJsonWithStagesAndSources(now.minusSeconds(120).toString(), now.plus(90, ChronoUnit.HOURS).toString(),
+			AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", "[" + item + "]")
+			.replace("\"expiringSources\":", "\"expiringSourcesTotalCount\": 42, \"expiringSources\":");
+		store(json, now.minusSeconds(120), now.minusSeconds(60));
+		assertThat(page("admin.datapack.read")).contains("외 41건");
+	}
+
+	@Test
+	@DisplayName("범위 밖 시각이 든 payload가 이미 저장돼 있어도 페이지는 깨지지 않고 읽을 수 없음으로 드러난다. 범위 안 가장 먼 시각(KST로는 2101-01-01)은 그대로 보인다")
+	void storedPayloadWithAnOutOfRangeInstantDoesNotBreakThePage() throws Exception {
+		Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+		String farItem = AutomationStatusFixtures.expiringSourceJson("daegu-line1-train-timetable", "대구 1호선 열차 시간표", "+999999999-12-31T23:59:59Z", "source-reverification", "OK");
+		storeWithSources(now, "[" + farItem + "]");
+		String broken = page("admin.datapack.read");
+		assertThat(broken).contains("저장된 자동화 상태를 읽을 수 없습니다").doesNotContain("곧 만료되는 원천 근거가 없습니다");
+
+		jdbcTemplate.update("DELETE FROM datapack_automation_status");
+		String limit = AutomationStatusFixtures.expiringSourceJson("daegu-line1-train-timetable", "대구 1호선 열차 시간표", "2100-12-31T23:59:59Z", "source-reverification", "OK");
+		storeWithSources(now, "[" + limit + "]");
+		assertThat(page("admin.datapack.read")).contains("2101-01-01 08:59").contains("대구 1호선 열차 시간표").doesNotContain("저장된 자동화 상태를 읽을 수 없습니다");
+	}
 }
