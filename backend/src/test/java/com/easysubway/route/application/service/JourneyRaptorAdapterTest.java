@@ -408,6 +408,69 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void viaSearchDropsJourneyWhenOnlyUnverifiedJunctionCandidateExists() {
+		// #453 F2: 비검증 후보 하나뿐이면 여정을 버린다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetableWithJunctionEdges(List.of(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaJunctionEdge("e-v-only", 60, 600, "UNVERIFIED"))));
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void viaSearchDropsJourneyWhenOnlyVerifiedJunctionCandidateHasNoMeasurement() {
+		// #453 F2: 거리·소요시간 근거가 없는 검증 후보는 환승 시간을 계산할 수 없어 쓰지 않는다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetableWithJunctionEdges(List.of(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaJunctionEdge("e-v-only", 0, 0, "VERIFIED"))));
+
+		var result = new JourneyRaptorAdapter().plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void viaSearchDropsJourneyWhenOnlyJunctionCandidateIsBlockedByFacility() {
+		// #453 F1: 고장이 확정된 환승만 있는 경유역이면 여정을 버린다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetableWithJunctionEdges(List.of(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaJunctionEdge("e-v-only", 60, 600, "VERIFIED"))));
+		Instant readyAt = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.blocked(readyAt, Set.of("e-v-only")),
+			false, Clock.fixed(readyAt, ServiceDayResolver.ZONE));
+
+		var result = adapter.plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			readyAt, null, measurement());
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void viaSearchUsesHealthyJunctionAlternativeWhenPreferredCandidateIsBlockedByFacility() {
+		// #453 F1: 거리가 더 짧은 환승이 고장이면 정상 대안 환승을 쓴다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetableWithJunctionEdges(List.of(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaJunctionEdge("e-v-broken", 30, 600, "VERIFIED"),
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaJunctionEdge("e-v-ok", 60, 700, "VERIFIED"))));
+		Instant readyAt = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.blocked(readyAt, Set.of("e-v-broken")),
+			false, Clock.fixed(readyAt, ServiceDayResolver.ZONE));
+
+		var result = adapter.plan(viaRequest(JourneyRequest.MobilityProfile.STANDARD), snapshot(runtime),
+			readyAt, null, measurement());
+
+		assertThat(result.candidates()).hasSize(1);
+		assertThat(result.candidates().get(0).legs())
+			.filteredOn(JourneyCandidate.Transfer.class::isInstance)
+			.singleElement()
+			.isEqualTo(new JourneyCandidate.Transfer("v", "v", 60));
+	}
+
+	@Test
 	void viaSearchWithVerifiedStepFreeJunctionIncludesStairFreeJourneyForStepFreePreference() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
 			RouteTimetableRaptorPlannerAccessibleAlternativesTest.viaTimetable(

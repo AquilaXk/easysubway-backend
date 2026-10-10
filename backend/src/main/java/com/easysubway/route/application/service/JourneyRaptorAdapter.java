@@ -322,9 +322,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		if (fromLine != toLine) {
 			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
 			// #453: 같은 환승 쌍에 비검증 후보가 앞서도 검증 후보를 먼저 고른다. 검증 후보가 없으면 역 밖 보행을 보고, 그래도 없으면 버린다.
-			int transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false, true);
+			int transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false, true, facilityOverlay);
 			if (transition < 0) {
-				transition = resolveFootpathTransition(timetable.footpathsFromStation(station), fromLine, toLine, profileBit, timetable);
+				transition = resolveFootpathTransition(timetable.footpathsFromStation(station), fromLine, toLine, profileBit, timetable, facilityOverlay);
 			}
 
 			if (transition < 0) {
@@ -446,12 +446,24 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		int profileBit,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable
 	) {
+		return resolveFootpathTransition(footpaths, fromLine, toLine, profileBit, timetable, null);
+	}
+
+	/** #453: 확인된 시설 고장(overlay)으로 막힌 역 밖 보행 후보는 고르지 않는다. */
+	static int resolveFootpathTransition(
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
+		int fromLine,
+		int toLine,
+		int profileBit,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
 		if (footpaths == null) {
 			return -1;
 		}
 		for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
 			if (fp.fromLine() == fromLine && fp.toLine() == toLine) {
-				int t = timetable.selectTransition(fp.candidateTransitions(), profileBit, false, true);
+				int t = timetable.selectTransition(fp.candidateTransitions(), profileBit, false, true, facilityOverlay);
 				if (t >= 0) {
 					return t;
 				}
