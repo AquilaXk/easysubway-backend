@@ -327,16 +327,38 @@ public interface JourneyProfileRaptorPort {
 		String verificationStatus,
 		String transferType,
 		Boolean farePenaltyApplies,
-		Integer transferLimitMinutes
+		Integer transferLimitMinutes,
+		boolean stairAccessUnconfirmed
 	) implements Leg {
 		public AccessLeg {
 			kind = Objects.requireNonNull(kind, "kind");
+			if (stairAccessUnconfirmed && !includesStairs) {
+				throw new IllegalArgumentException("unconfirmed stair access must be reported as includesStairs");
+			}
 			fromStationId = requireText(fromStationId, "fromStationId");
 			toStationId = requireText(toStationId, "toStationId");
 			if (durationSeconds < 0 || distanceMeters < 0) {
 				throw new IllegalArgumentException("access duration and distance must not be negative");
 			}
 			verificationStatus = requireText(verificationStatus, "verificationStatus");
+		}
+
+		/** 계단 접근 상태를 확정으로 다루는 생성자(계단 없음 확정 또는 계단 확정). 미확정 동선은 마지막 인자로 명시한다. */
+		public AccessLeg(
+			AccessKind kind,
+			String fromStationId,
+			String toStationId,
+			int durationSeconds,
+			int distanceMeters,
+			boolean includesStairs,
+			boolean verified,
+			String verificationStatus,
+			String transferType,
+			Boolean farePenaltyApplies,
+			Integer transferLimitMinutes
+		) {
+			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified,
+				verificationStatus, transferType, farePenaltyApplies, transferLimitMinutes, false);
 		}
 
 		public AccessLeg(
@@ -350,7 +372,7 @@ public interface JourneyProfileRaptorPort {
 			String verificationStatus
 		) {
 			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified,
-				verificationStatus, null, null, null);
+				verificationStatus, null, null, null, false);
 		}
 	}
 

@@ -1637,6 +1637,12 @@ components:
         stairFree is true only when every transfer of the journey uses a confirmed stair-free pathway (source
         stair access state STEP_FREE and no stairs flag). A pathway whose stair access state is UNKNOWN or missing
         makes stairFree false; it is never assumed stair-free.
+
+        reasonCodes carries exactly one stair-access reason per journey. ACCESSIBILITY_VERIFIED: every transfer is
+        confirmed stair-free (a journey without transfers is included). ACCESSIBILITY_STAIRS_INCLUDED: no transfer is
+        unconfirmed and at least one transfer is confirmed to include stairs. ACCESSIBILITY_UNDETERMINED: at least one
+        transfer has an unconfirmed stair access state (UNKNOWN or missing). Consumers must treat reasonCodes as an open
+        set and must not reject values they do not recognize.
       required: [result, stairFree, reasonCodes]
       properties:
         result:

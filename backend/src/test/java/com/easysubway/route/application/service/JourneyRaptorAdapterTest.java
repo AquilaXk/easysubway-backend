@@ -428,6 +428,37 @@ class JourneyRaptorAdapterTest {
 		}
 	}
 
+	@Test
+	void reasonCodesReflectConfirmedStairsAndConfirmedStairFreeCandidates() {
+		// #503: 확정 계단 포함 여정은 STAIRS_INCLUDED, 계단 없음이 확정된 여정은 VERIFIED다.
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.timetable(false, true));
+
+		var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+			snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+		assertThat(result.candidates())
+			.extracting(candidate -> candidate.accessibility().stairFree(), candidate -> candidate.accessibility().reasonCodes())
+			.containsExactly(
+				org.assertj.core.groups.Tuple.tuple(false, List.of("ACCESSIBILITY_STAIRS_INCLUDED")),
+				org.assertj.core.groups.Tuple.tuple(true, List.of("ACCESSIBILITY_VERIFIED")));
+	}
+
+	@Test
+	void reasonCodesReportUndeterminedWhenATransferStairStateIsUnconfirmed() {
+		// #503: 계단 상태가 UNKNOWN이거나 없는 환승을 지난 여정은 VERIFIED를 받지 않고 UNDETERMINED를 받는다.
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable(state));
+
+			var result = new JourneyRaptorAdapter().plan(accessibleAlternativesRequest(JourneyRequest.MobilityProfile.STANDARD, 1, 3),
+				snapshot(runtime), RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT, null, measurement());
+
+			assertThat(result.candidates()).as("stair state %s", state).isNotEmpty().allSatisfy(candidate ->
+				assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_UNDETERMINED"));
+		}
+	}
+
 	private static JourneyRequest viaRequest(JourneyRequest.MobilityProfile profile) {
 		return new JourneyRequest(
 			REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
@@ -972,6 +1003,26 @@ class JourneyRaptorAdapterTest {
 		assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Transfer("station-t", "station-t", 80));
 		assertThat(candidate.legs().get(3)).isEqualTo(new JourneyCandidate.Transfer("station-via", "station-via", 0));
 		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:50:00Z"));
+	}
+
+	@Test
+	void waypointJunctionWithUnconfirmedStairStateReportsUndetermined() {
+		// #503: 경유역 접속 환승의 계단 상태가 미확정이면 연결 후보도 UNDETERMINED를 받는다.
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+				waypointTimetable("IN_STATION", 120, 34_200, true, state));
+
+			var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime), EFFECTIVE, null, measurement());
+
+			assertThat(result.candidates()).as("stair state %s", state).isNotEmpty().allSatisfy(candidate -> {
+				assertThat(candidate.accessibility().stairFree()).isFalse();
+				assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_UNDETERMINED");
+			});
+		}
 	}
 
 	@Test
@@ -1796,6 +1847,12 @@ class JourneyRaptorAdapterTest {
 	}
 
 	private static RouteTimetable waypointTimetable(String transferType, int transferDuration, int tripSecondDeparture, boolean hasTransferRule) {
+		return waypointTimetable(transferType, transferDuration, tripSecondDeparture, hasTransferRule, "STEP_FREE");
+	}
+
+	private static RouteTimetable waypointTimetable(
+		String transferType, int transferDuration, int tripSecondDeparture, boolean hasTransferRule, String transferStairState
+	) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -1822,7 +1879,7 @@ class JourneyRaptorAdapterTest {
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(transferStairState),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
