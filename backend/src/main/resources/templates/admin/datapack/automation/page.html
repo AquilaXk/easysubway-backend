@@ -55,6 +55,34 @@
 		</div>
 	</section>
 
+	<section class="admin-panel" aria-label="곧 만료되는 원천 근거">
+		<h2>곧 만료되는 원천 근거</h2>
+		<p th:unless="${automation.received}" class="meta">수신 전</p>
+		<p th:if="${automation.received and !automation.sourcesReported}" class="meta">원천 근거 만료 정보를 아직 받지 못했습니다.</p>
+		<p th:if="${automation.received and automation.sourcesReported and automation.sources.isEmpty()}" class="meta">곧 만료되는 원천 근거가 없습니다.</p>
+		<div class="admin-table-scroll" tabindex="0" role="group" aria-label="가로로 스크롤 가능한 데이터 표"
+		     th:if="${automation.received and automation.sourcesReported and !automation.sources.isEmpty()}">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">자료</th>
+				<th scope="col">만료 시각</th>
+				<th scope="col">남은 시간</th>
+				<th scope="col">갱신 상태</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="source : ${automation.sources}">
+				<td th:text="${source.name}">자료</td>
+				<td th:text="${source.expiresText}">2026-10-10 16:22</td>
+				<td><span th:replace="~{admin/fragments/shell :: status(${source.remainingText}, ${source.tone})}">4시간 12분 남음</span></td>
+				<td><span th:replace="~{admin/fragments/shell :: status(${source.refreshText}, ${source.refreshTone})}">갱신 작업 정상</span></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
 	<section class="admin-panel">
 		<h2>단계별 최근 실행</h2>
 		<p th:unless="${automation.received}" class="meta">수신 전</p>

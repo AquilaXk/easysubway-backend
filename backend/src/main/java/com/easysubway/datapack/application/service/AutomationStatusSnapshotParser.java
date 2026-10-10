@@ -3,7 +3,9 @@ package com.easysubway.datapack.application.service;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.ActiveDatapack;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.BehindCap;
+import com.easysubway.datapack.domain.AutomationStatusSnapshot.ExpiringSource;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.FailureIssue;
+import com.easysubway.datapack.domain.AutomationStatusSnapshot.RefreshState;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.RunSummary;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.StaleClaim;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.Stage;
@@ -19,6 +21,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -28,6 +31,7 @@ import org.springframework.stereotype.Component;
 /**
  * data 레포가 게시하는 자동화 상태 snapshot(v1)을 엄격하게 읽는다. 알려지지 않은 필드·중복 키·잘못된 형식·github.com 밖의 링크·
  * 과대 목록은 모두 거부한다(외부 입력이므로 화면에 그대로 렌더되기 전에 닫는다).
+ * 선택 필드 {@code expiringSources}(곧 만료되는 원천 근거, backend#507)는 없어도 받는다: 없으면 "보고되지 않음"이고 정상으로 채우지 않는다.
  */
 @Component
 public class AutomationStatusSnapshotParser {
@@ -43,6 +47,9 @@ public class AutomationStatusSnapshotParser {
 	private static final Set<String> RUN_CONCLUSIONS = Set.of(
 		"success", "failure", "cancelled", "skipped", "timed_out", "action_required", "neutral", "stale", "startup_failure");
 	private static final Set<String> STUCK_REASONS = Set.of("BEHIND", "OLD");
+	private static final Pattern SOURCE_ID = Pattern.compile("[a-z0-9][a-z0-9-]{0,99}");
+	private static final Pattern EVIDENCE_KEY = Pattern.compile("[A-Za-z][A-Za-z0-9]{0,63}");
+	private static final Pattern REFRESH_STAGE = Pattern.compile("[a-z][a-z0-9-]{0,63}");
 
 	private final ObjectMapper mapper = JsonMapper.builder()
 		.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
@@ -59,7 +66,8 @@ public class AutomationStatusSnapshotParser {
 		} catch (JsonProcessingException failure) {
 			throw invalid("JSON 형식이 아닙니다");
 		}
-		object(root, Set.of("schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight"), "snapshot");
+		object(root, Set.of("schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight"),
+			Set.of("expiringSources"), "snapshot");
 		if (!root.get("schemaVersion").isIntegralNumber() || root.get("schemaVersion").asInt() != 1) {
 			throw invalid("지원하지 않는 schemaVersion입니다");
 		}
@@ -72,7 +80,49 @@ public class AutomationStatusSnapshotParser {
 			stages(root),
 			failureIssues(root),
 			stuck(root.get("stuck")),
-			bool(root, "candidateInFlight"));
+			bool(root, "candidateInFlight"),
+			root.has("expiringSources") ? expiringSources(root) : null);
+	}
+
+	private List<ExpiringSource> expiringSources(JsonNode root) {
+		List<ExpiringSource> sources = new ArrayList<>();
+		Set<String> seen = new HashSet<>();
+		for (JsonNode item : array(root, "expiringSources", MAX_LIST)) {
+			object(item, Set.of("sourceId", "name", "evidence", "freshUntil", "refreshStage", "refreshState"), "expiringSource");
+			String sourceId = text(item, "sourceId", 100);
+			if (!SOURCE_ID.matcher(sourceId).matches()) {
+				throw invalid("sourceId 형식이 맞지 않습니다");
+			}
+			if (!seen.add(sourceId)) {
+				throw invalid("expiringSources에 같은 sourceId가 중복되어 있습니다");
+			}
+			String evidence = text(item, "evidence", 64);
+			if (!EVIDENCE_KEY.matcher(evidence).matches()) {
+				throw invalid("evidence 형식이 맞지 않습니다");
+			}
+			String refreshStage = null;
+			if (!item.get("refreshStage").isNull()) {
+				refreshStage = text(item, "refreshStage", 64);
+				if (!REFRESH_STAGE.matcher(refreshStage).matches()) {
+					throw invalid("refreshStage 형식이 맞지 않습니다");
+				}
+			}
+			RefreshState state = refreshState(item);
+			if ((state == RefreshState.NONE) != (refreshStage == null)) {
+				throw invalid("refreshState와 refreshStage가 맞지 않습니다(자동 갱신 경로가 없을 때만 NONE이고 단계가 없습니다)");
+			}
+			sources.add(new ExpiringSource(sourceId, text(item, "name", MAX_TEXT), evidence, instant(item, "freshUntil"), refreshStage, state));
+		}
+		return List.copyOf(sources);
+	}
+
+	private static RefreshState refreshState(JsonNode item) {
+		String value = text(item, "refreshState", 16);
+		try {
+			return RefreshState.valueOf(value);
+		} catch (IllegalArgumentException failure) {
+			throw invalid("refreshState 값이 맞지 않습니다");
+		}
 	}
 
 	private ActiveDatapack activeDatapack(JsonNode node) {
@@ -156,18 +206,25 @@ public class AutomationStatusSnapshotParser {
 	// ---------- 필드 검증 도구 ----------
 
 	private static void object(JsonNode node, Set<String> keys, String label) {
+		object(node, keys, Set.of(), label);
+	}
+
+	/** keys는 모두 있어야 하고 optional은 있어도 없어도 된다. 그 밖의 이름은 거부한다. */
+	private static void object(JsonNode node, Set<String> keys, Set<String> optional, String label) {
 		if (node == null || !node.isObject()) {
 			throw invalid(label + "는 객체여야 합니다");
 		}
 		Iterator<String> names = node.fieldNames();
-		int count = 0;
+		int required = 0;
 		while (names.hasNext()) {
-			if (!keys.contains(names.next())) {
+			String name = names.next();
+			if (keys.contains(name)) {
+				required++;
+			} else if (!optional.contains(name)) {
 				throw invalid(label + "에 알 수 없는 필드가 있습니다");
 			}
-			count++;
 		}
-		if (count != keys.size()) {
+		if (required != keys.size()) {
 			throw invalid(label + "의 필드가 모자랍니다");
 		}
 	}

@@ -22,6 +22,13 @@ public final class AutomationStatusFixtures {
 	}
 
 	public static String validJsonWithStages(String generatedAt, String expiresAt, String stages, String failureIssues, String stuckPulls, String candidateInFlight) {
+		return validJsonWithStagesAndSources(generatedAt, expiresAt, stages, failureIssues, stuckPulls, candidateInFlight, null);
+	}
+
+	/** expiringSources가 null이면 선택 필드를 싣지 않는다(옛 snapshot). */
+	public static String validJsonWithStagesAndSources(String generatedAt, String expiresAt, String stages, String failureIssues, String stuckPulls,
+		String candidateInFlight, String expiringSources) {
+		String optional = expiringSources == null ? "" : ",\n\t\t\t  \"expiringSources\": " + expiringSources;
 		return """
 			{
 			  "schemaVersion": 1,
@@ -31,9 +38,20 @@ public final class AutomationStatusFixtures {
 			  "stages": %s,
 			  "failureIssues": %s,
 			  "stuck": {"pulls": %s, "claims": [], "behindCap": []},
-			  "candidateInFlight": %s
+			  "candidateInFlight": %s%s
 			}
-			""".formatted(generatedAt, expiresAt, stages, failureIssues, stuckPulls, candidateInFlight);
+			""".formatted(generatedAt, expiresAt, stages, failureIssues, stuckPulls, candidateInFlight, optional);
+	}
+
+	/** 데이터팩 만료가 멀고 나머지는 정상인 snapshot에 원천 근거 만료 목록(JSON 배열 원문)만 더한다. */
+	public static String validJsonWithExpiringSources(String expiringSources) {
+		return validJsonWithStagesAndSources(GENERATED_AT.toString(), "2026-10-14T15:00:00.000Z", healthyStagesJson(), "[]", "[]", "false", expiringSources);
+	}
+
+	/** data 레포 build-automation-status.mjs가 싣는 expiringSources 항목 하나. stage가 null이면 자동 갱신 경로가 없다. */
+	public static String expiringSourceJson(String sourceId, String name, String freshUntil, String stage, String state) {
+		return "{\"sourceId\": \"%s\", \"name\": \"%s\", \"evidence\": \"scheduleAdmissionEvidence\", \"freshUntil\": \"%s\", \"refreshStage\": %s, \"refreshState\": \"%s\"}"
+			.formatted(sourceId, name, freshUntil, stage == null ? "null" : "\"" + stage + "\"", state);
 	}
 
 	private static final String[][] STAGES = {
