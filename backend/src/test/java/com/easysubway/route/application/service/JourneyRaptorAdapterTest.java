@@ -1006,6 +1006,26 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void waypointJunctionWithUnconfirmedStairStateReportsUndetermined() {
+		// #503: 경유역 접속 환승의 계단 상태가 미확정이면 연결 후보도 UNDETERMINED를 받는다.
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+				waypointTimetable("IN_STATION", 120, 34_200, true, state));
+
+			var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime), EFFECTIVE, null, measurement());
+
+			assertThat(result.candidates()).as("stair state %s", state).isNotEmpty().allSatisfy(candidate -> {
+				assertThat(candidate.accessibility().stairFree()).isFalse();
+				assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_UNDETERMINED");
+			});
+		}
+	}
+
+	@Test
 	void plansOutOfStationWaypointTransferWithinTimeLimitWithoutPenalty() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
 			waypointTimetable("OUT_OF_STATION", 120, 34_200, true)); // 1,200s elapsed < 1,800s limit
@@ -1827,6 +1847,12 @@ class JourneyRaptorAdapterTest {
 	}
 
 	private static RouteTimetable waypointTimetable(String transferType, int transferDuration, int tripSecondDeparture, boolean hasTransferRule) {
+		return waypointTimetable(transferType, transferDuration, tripSecondDeparture, hasTransferRule, "STEP_FREE");
+	}
+
+	private static RouteTimetable waypointTimetable(
+		String transferType, int transferDuration, int tripSecondDeparture, boolean hasTransferRule, String transferStairState
+	) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -1853,7 +1879,7 @@ class JourneyRaptorAdapterTest {
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(transferStairState),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),

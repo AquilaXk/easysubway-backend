@@ -621,6 +621,26 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("#503: 역방향 여정은 계단 상태가 미확정인 환승을 stairAccessUnconfirmed로 전달한다")
+	void marksUnconfirmedStairAccessTransferInReverseItinerary() {
+		for (String state : java.util.Arrays.asList("UNKNOWN", null)) {
+			var compiled = forward.compile(
+				RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable(state, SERVICE_DATE));
+
+			var result = arriveBy(compiled, "o", "d", 30_480, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+			assertThat(result.outcome()).as("stair state %s", state).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+			assertThat(result.itineraries()).isNotEmpty().allSatisfy(itinerary -> assertThat(itinerary.legs())
+				.filteredOn(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
+				.singleElement().satisfies(leg -> {
+					var access = (RouteTimetableRaptorPlanner.JourneyAccessProjection) leg;
+					assertThat(access.includesStairs()).isTrue();
+					assertThat(access.stairAccessUnconfirmed()).isTrue();
+				}));
+		}
+	}
+
+	@Test
 	@DisplayName("finds reverse arrive-by when first footpath candidate is unverified but second is verified")
 	void findsReverseArriveByWhenFirstFootpathCandidateIsUnverified() {
 		var compiled = forward.compile(multiCandidateOutOfStationTimetable(true));

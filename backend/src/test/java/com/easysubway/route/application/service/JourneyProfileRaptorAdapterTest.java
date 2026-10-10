@@ -491,7 +491,11 @@ class JourneyProfileRaptorAdapterTest {
 			.allSatisfy(itinerary -> {
 				assertThat(itinerary.metrics().accessibilityBurden()).isEqualTo(1);
 				assertThat(itinerary.legs()).filteredOn(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
-					.allSatisfy(leg -> assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).includesStairs()).isTrue());
+					.allSatisfy(leg -> {
+						assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).includesStairs()).isTrue();
+						// #503: 미확정 상태가 프로필 응답 단계까지 전달돼야 reasonCodes가 UNDETERMINED가 된다.
+						assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).stairAccessUnconfirmed()).isTrue();
+					});
 			}));
 	}
 

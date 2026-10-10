@@ -256,6 +256,10 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 	 * 지정한다. 08:28 도착 여정 하나가 있다.
 	 */
 	static RouteTimetable unconfirmedStairStateTimetable(String stairAccessState) {
+		return unconfirmedStairStateTimetable(stairAccessState, SERVICE_DATE);
+	}
+
+	static RouteTimetable unconfirmedStairStateTimetable(String stairAccessState, LocalDate serviceDate) {
 		var edge = new LoadRouteTimetablePort.PathwayEdge("e-h-transfer", "p-h-L1", "p-h-L2", 60, 30, false, false, 100,
 			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(stairAccessState);
 		var access = new LoadRouteTimetablePort.RouteAccessData(
@@ -266,7 +270,7 @@ class RouteTimetableRaptorPlannerAccessibleAlternativesTest {
 				edge.id(), edge.id(), "VERIFIED")),
 			List.of(evidence("ev-h-transfer", "h", "L2", edge.id())));
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar("daily", true, true, true, true, true, true, true,
-			SERVICE_DATE.minusDays(2), SERVICE_DATE.plusDays(2), "Asia/Seoul");
+			serviceDate.minusDays(2), serviceDate.plusDays(2), "Asia/Seoul");
 		return new RouteTimetable(List.of(calendar), List.of(), List.of(route("L1"), route("L2")),
 			List.of(trip("feeder", "L1"), trip("l2-fast", "L2")),
 			List.of(stop("feeder", 1, ORIGIN, "L1", 29_400), stop("feeder", 2, "h", "L1", 29_700),
