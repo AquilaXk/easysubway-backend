@@ -21,7 +21,8 @@ import org.springframework.stereotype.Component;
  * 자동화 상태 판정(순수 함수). 가장 심한 항목이 앞에 오고, 값이 없으면 정상으로 채우지 않는다.
  * 만료 임박(36시간 미만 + 진행 중 후보 없음)과 게시 중단(마지막 수신 45분 초과)은 시간이 지나며 변하므로 렌더 시각으로 계산한다.
  * 원천 근거 만료(backend#507)도 같다: snapshot은 만료 시각만 싣고, 남은 시간과 이상·주의는 렌더 시각으로 계산한다.
- * 6시간 이하(이미 만료 포함)이고 근거를 갱신하는 작업이 실패했거나 막혀 있으면 이상, 그 밖에 12시간 이하이면 주의다.
+ * 이미 만료된 근거는 갱신 상태와 관계없이 이상이고, 6시간 이하이고 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없으면(사람 없이는 복구되지 않는다) 이상이며,
+ * 그 밖에 12시간 이하이면 주의다.
  */
 @Component
 public class AutomationStatusAssessor {
@@ -29,7 +30,7 @@ public class AutomationStatusAssessor {
 	public static final Duration EXPIRY_WARNING = Duration.ofHours(36);
 	public static final Duration PUBLISH_STALE_AFTER = Duration.ofMinutes(45);
 
-	/** 원천 근거가 이 시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있으면 이상이다. */
+	/** 원천 근거가 이 시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없으면 이상이다. */
 	public static final Duration SOURCE_EXPIRY_FAILURE = Duration.ofHours(6);
 
 	/** 원천 근거가 이 시간 안에 만료되면 주의다. */
@@ -101,8 +102,11 @@ public class AutomationStatusAssessor {
 	/** 원천 근거 하나의 판정. 12시간 밖이면 OK다(표에는 보이지만 판정에는 영향이 없다). */
 	public static Level sourceLevel(ExpiringSource source, Instant now) {
 		Duration remaining = Duration.between(now, source.freshUntil());
-		boolean refreshBroken = source.refreshState() == RefreshState.FAILED || source.refreshState() == RefreshState.BLOCKED;
-		if (remaining.compareTo(SOURCE_EXPIRY_FAILURE) <= 0 && refreshBroken) {
+		if (!remaining.isPositive()) {
+			return Level.FAILURE;
+		}
+		boolean refreshNotHealthy = source.refreshState() != RefreshState.OK;
+		if (remaining.compareTo(SOURCE_EXPIRY_FAILURE) <= 0 && refreshNotHealthy) {
 			return Level.FAILURE;
 		}
 		return remaining.compareTo(SOURCE_EXPIRY_WARNING) <= 0 ? Level.WARNING : Level.OK;
@@ -113,10 +117,15 @@ public class AutomationStatusAssessor {
 	}
 
 	private static void addSourceFailure(List<ExpiringSource> sources, Instant now, List<Finding> findings) {
-		List<ExpiringSource> failing = sources.stream().filter((source) -> sourceLevel(source, now) == Level.FAILURE).toList();
+		List<ExpiringSource> expired = sources.stream().filter((source) -> !Duration.between(now, source.freshUntil()).isPositive()).toList();
+		if (!expired.isEmpty()) {
+			findings.add(new Finding(Level.FAILURE, "SOURCE_EXPIRED", "원천 자료 " + expired.size() + "건이 이미 만료되었습니다: " + sourceList(expired, now)));
+		}
+		List<ExpiringSource> failing = sources.stream()
+			.filter((source) -> Duration.between(now, source.freshUntil()).isPositive() && sourceLevel(source, now) == Level.FAILURE).toList();
 		if (!failing.isEmpty()) {
 			findings.add(new Finding(Level.FAILURE, "SOURCE_EXPIRY_BLOCKED", "원천 자료 " + failing.size()
-				+ "건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있습니다: " + sourceList(failing, now)));
+				+ "건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: " + sourceList(failing, now)));
 		}
 	}
 

@@ -47,6 +47,10 @@ public class AutomationStatusSnapshotParser {
 	private static final Set<String> RUN_CONCLUSIONS = Set.of(
 		"success", "failure", "cancelled", "skipped", "timed_out", "action_required", "neutral", "stale", "startup_failure");
 	private static final Set<String> STUCK_REASONS = Set.of("BEHIND", "OLD");
+	private static final int MAX_TOTAL_COUNT = 100_000;
+	/** 받는 시각의 범위. 범위 밖 값(예: +999999999년)은 화면 포맷에서 예외를 내 페이지 전체를 깨므로 읽는 순간 거부한다. */
+	private static final Instant EARLIEST_INSTANT = Instant.parse("2000-01-01T00:00:00Z");
+	private static final Instant LATEST_INSTANT = Instant.parse("2100-12-31T23:59:59Z");
 	private static final Pattern SOURCE_ID = Pattern.compile("[a-z0-9][a-z0-9-]{0,99}");
 	private static final Pattern EVIDENCE_KEY = Pattern.compile("[A-Za-z][A-Za-z0-9]{0,63}");
 	private static final Pattern REFRESH_STAGE = Pattern.compile("[a-z][a-z0-9-]{0,63}");
@@ -67,13 +71,17 @@ public class AutomationStatusSnapshotParser {
 			throw invalid("JSON 형식이 아닙니다");
 		}
 		object(root, Set.of("schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight"),
-			Set.of("expiringSources"), "snapshot");
+			Set.of("expiringSources", "expiringSourcesTotalCount"), "snapshot");
+		if (root.has("expiringSourcesTotalCount") && !root.has("expiringSources")) {
+			throw invalid("expiringSourcesTotalCount는 expiringSources와 함께 와야 합니다");
+		}
 		if (!root.get("schemaVersion").isIntegralNumber() || root.get("schemaVersion").asInt() != 1) {
 			throw invalid("지원하지 않는 schemaVersion입니다");
 		}
 		if (!"automation-status-snapshot".equals(text(root, "artifactKind", MAX_TEXT))) {
 			throw invalid("artifactKind가 맞지 않습니다");
 		}
+		List<ExpiringSource> expiringSources = root.has("expiringSources") ? expiringSources(root) : null;
 		return new AutomationStatusSnapshot(
 			instant(root, "generatedAt"),
 			activeDatapack(root.get("activeDatapack")),
@@ -81,7 +89,23 @@ public class AutomationStatusSnapshotParser {
 			failureIssues(root),
 			stuck(root.get("stuck")),
 			bool(root, "candidateInFlight"),
-			root.has("expiringSources") ? expiringSources(root) : null);
+			expiringSources,
+			totalCount(root, expiringSources));
+	}
+
+	/** 자르기 전 개수. 없으면 목록 개수이고, 목록 개수보다 작을 수 없다. 목록이 보고되지 않았으면 0이다. */
+	private static int totalCount(JsonNode root, List<ExpiringSource> expiringSources) {
+		if (expiringSources == null) {
+			return 0;
+		}
+		if (!root.has("expiringSourcesTotalCount")) {
+			return expiringSources.size();
+		}
+		JsonNode value = root.get("expiringSourcesTotalCount");
+		if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < expiringSources.size() || value.asInt() > MAX_TOTAL_COUNT) {
+			throw invalid("expiringSourcesTotalCount는 목록 개수 이상의 정수여야 합니다");
+		}
+		return value.asInt();
 	}
 
 	private List<ExpiringSource> expiringSources(JsonNode root) {
@@ -269,11 +293,16 @@ public class AutomationStatusSnapshotParser {
 	}
 
 	private static Instant instant(JsonNode node, String key) {
+		Instant instant;
 		try {
-			return Instant.parse(text(node, key, 40));
+			instant = Instant.parse(text(node, key, 40));
 		} catch (DateTimeParseException failure) {
 			throw invalid(key + "는 UTC 시각이어야 합니다");
 		}
+		if (instant.isBefore(EARLIEST_INSTANT) || instant.isAfter(LATEST_INSTANT)) {
+			throw invalid(key + "가 허용 범위(2000-01-01 ~ 2100-12-31)를 벗어났습니다");
+		}
+		return instant;
 	}
 
 	private static Instant nullableInstant(JsonNode node, String key) {

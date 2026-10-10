@@ -81,6 +81,7 @@
 			</tbody>
 		</table>
 		</div>
+		<p th:if="${automation.received and automation.sourcesLeftOutText != null}" class="meta" th:text="${automation.sourcesLeftOutText}">외 3건</p>
 	</section>
 
 	<section class="admin-panel">

@@ -51,6 +51,7 @@ class AutomationStatusAdminPageController {
 		DatapackView datapack,
 		boolean sourcesReported,
 		List<SourceView> sources,
+		String sourcesLeftOutText,
 		List<StageView> stages,
 		List<IssueView> issues,
 		List<StuckView> stuck
@@ -66,11 +67,11 @@ class AutomationStatusAdminPageController {
 					? Duration.ZERO : assessment.receivedAge()) + " 전)";
 			if (snapshot == null) {
 				return new AutomationView(levelLabel(assessment.level()), tone(assessment.level()), assessment.headline(), findings,
-					assessment.received(), receivedText, null, false, List.of(), List.of(), List.of(), List.of());
+					assessment.received(), receivedText, null, false, List.of(), null, List.of(), List.of(), List.of());
 			}
 			return new AutomationView(levelLabel(assessment.level()), tone(assessment.level()), assessment.headline(), findings,
 				true, receivedText, DatapackView.of(snapshot, assessment),
-				snapshot.reportsExpiringSources(), sources(snapshot, reading.now()),
+				snapshot.reportsExpiringSources(), sources(snapshot, reading.now()), leftOut(snapshot),
 				snapshot.stages().stream().map(StageView::of).toList(),
 				snapshot.failureIssues().stream().map((issue) -> new IssueView(issue.number(), issue.title(), issue.url(), TIME.format(issue.createdAt()))).toList(),
 				stuck(snapshot));
@@ -83,6 +84,14 @@ class AutomationStatusAdminPageController {
 			return snapshot.expiringSources().stream()
 				.sorted(Comparator.comparing(ExpiringSource::freshUntil).thenComparing(ExpiringSource::sourceId))
 				.map((source) -> SourceView.of(source, now)).toList();
+		}
+
+		/** 자르기 전 후보가 목록보다 많으면 남은 개수를 "외 N건"으로 보인다. */
+		private static String leftOut(AutomationStatusSnapshot snapshot) {
+			if (!snapshot.reportsExpiringSources() || snapshot.expiringSourcesTotalCount() <= snapshot.expiringSources().size()) {
+				return null;
+			}
+			return "외 " + (snapshot.expiringSourcesTotalCount() - snapshot.expiringSources().size()) + "건";
 		}
 
 		private static List<StuckView> stuck(AutomationStatusSnapshot snapshot) {

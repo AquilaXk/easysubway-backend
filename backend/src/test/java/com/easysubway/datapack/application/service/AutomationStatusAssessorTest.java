@@ -207,76 +207,86 @@ class AutomationStatusAssessorTest {
 	}
 
 	@Test
-	@DisplayName("6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있으면 이상이다(2026-10-10 인천 시간표 사례)")
-	void soonExpiringSourceWithBlockedRefreshIsFailure() {
+	@DisplayName("6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없으면 이상이다(2026-10-10 인천 시간표 사례)")
+	void soonExpiringSourceWithBrokenRefreshIsFailure() {
 		AutomationAssessment blocked = assessSources(source("incheon-line1-train-timetable", "인천 1호선 열차 시간표",
 			Instant.parse("2026-10-10T07:22:23.648Z"), "capital-topology-refresh", "BLOCKED"));
 
 		assertThat(blocked.level()).isEqualTo(Level.FAILURE);
 		assertThat(codes(blocked)).containsExactly("SOURCE_EXPIRY_BLOCKED");
-		assertThat(blocked.headline()).isEqualTo("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있습니다: 인천 1호선 열차 시간표(4시간 12분 남음)");
+		assertThat(blocked.headline()).isEqualTo("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 인천 1호선 열차 시간표(4시간 12분 남음)");
 
-		AutomationAssessment failed = assessSources(source("incheon-line1-train-timetable", "인천 1호선 열차 시간표",
-			NOW.plus(Duration.ofHours(1)), "capital-topology-refresh", "FAILED"));
-		assertThat(failed.level()).isEqualTo(Level.FAILURE);
-		assertThat(codes(failed)).containsExactly("SOURCE_EXPIRY_BLOCKED");
+		for (String state : List.of("FAILED", "BLOCKED")) {
+			AutomationAssessment broken = assessSources(source("incheon-line1-train-timetable", "인천 1호선 열차 시간표", NOW.plus(Duration.ofHours(1)), "capital-topology-refresh", state));
+			assertThat(broken.level()).as(state).isEqualTo(Level.FAILURE);
+			assertThat(codes(broken)).containsExactly("SOURCE_EXPIRY_BLOCKED");
+		}
+		// NONE은 사람 없이는 복구되지 않으므로 6시간 안이면 이상이고 그렇다고 적는다.
+		AutomationAssessment none = assessSources(source("b", "부산 시간표", NOW.plus(Duration.ofHours(2)), null, "NONE"));
+		assertThat(none.level()).isEqualTo(Level.FAILURE);
+		assertThat(none.headline()).isEqualTo("원천 자료 1건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 부산 시간표(2시간 0분 남음, 자동 갱신 없음)");
 	}
 
 	@Test
-	@DisplayName("경계: 정확히 6시간 남으면 이상, 6시간 1분이면 주의, 정확히 12시간이면 주의, 12시간 1분이면 영향 없음")
+	@DisplayName("경계: 정확히 6시간 남으면 이상, 6시간 1분이면 주의, 정확히 12시간이면 주의, 12시간 1분이면 영향 없음 (NONE·FAILED·BLOCKED 모두)")
 	void thresholdsAreInclusive() {
-		assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(6)), "s", "BLOCKED")).level()).isEqualTo(Level.FAILURE);
-		AutomationAssessment justOver = assessSources(source("a", "자료", NOW.plus(Duration.ofHours(6)).plusSeconds(60), "s", "BLOCKED"));
-		assertThat(justOver.level()).isEqualTo(Level.WARNING);
-		assertThat(codes(justOver)).containsExactly("SOURCE_EXPIRY_SOON");
+		for (String state : List.of("NONE", "FAILED", "BLOCKED")) {
+			String stage = state.equals("NONE") ? null : "s";
+			assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(6)), stage, state)).level()).as(state).isEqualTo(Level.FAILURE);
+			AutomationAssessment justOver = assessSources(source("a", "자료", NOW.plus(Duration.ofHours(6)).plusSeconds(60), stage, state));
+			assertThat(justOver.level()).as(state).isEqualTo(Level.WARNING);
+			assertThat(codes(justOver)).containsExactly("SOURCE_EXPIRY_SOON");
+			assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)), stage, state)).level()).as(state).isEqualTo(Level.WARNING);
+			assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)).plusSeconds(60), stage, state)).level()).as(state).isEqualTo(Level.OK);
+		}
 		assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)), "s", "OK")).level()).isEqualTo(Level.WARNING);
 		assertThat(assessSources(source("a", "자료", NOW.plus(Duration.ofHours(12)).plusSeconds(60), "s", "OK")).level()).isEqualTo(Level.OK);
 	}
 
 	@Test
-	@DisplayName("갱신 작업이 정상이면 6시간 안이어도 주의일 뿐이고, 자동 갱신 경로가 없으면 그렇다고 적는다")
-	void healthyRefreshOrNoRefreshIsOnlyAWarning() {
+	@DisplayName("갱신 작업이 정상(OK)이면 6시간 안이어도 주의일 뿐이다")
+	void healthyRefreshIsOnlyAWarning() {
 		AutomationAssessment healthy = assessSources(source("a", "대구 1호선 시간표", NOW.plus(Duration.ofHours(1)), "source-reverification", "OK"));
 		assertThat(healthy.level()).isEqualTo(Level.WARNING);
 		assertThat(codes(healthy)).containsExactly("SOURCE_EXPIRY_SOON");
 		assertThat(healthy.headline()).isEqualTo("원천 자료 1건이 12시간 안에 만료됩니다: 대구 1호선 시간표(1시간 0분 남음)");
-
-		AutomationAssessment none = assessSources(source("b", "부산 시간표", NOW.plus(Duration.ofHours(2)), null, "NONE"));
-		assertThat(none.level()).isEqualTo(Level.WARNING);
-		assertThat(none.headline()).isEqualTo("원천 자료 1건이 12시간 안에 만료됩니다: 부산 시간표(2시간 0분 남음, 자동 갱신 없음)");
 	}
 
 	@Test
-	@DisplayName("이미 만료된 근거도 같은 규칙으로 판정하고 만료됨과 지난 시간을 적는다")
-	void alreadyExpiredSourcesFollowTheSameRule() {
-		AutomationAssessment stuck = assessSources(source("a", "인천 시간표", NOW.minus(Duration.ofMinutes(45)), "capital-topology-refresh", "BLOCKED"));
-		assertThat(stuck.level()).isEqualTo(Level.FAILURE);
-		assertThat(stuck.headline()).contains("인천 시간표(만료됨, 45분 지남)");
-
-		AutomationAssessment healthy = assessSources(source("a", "인천 시간표", NOW.minus(Duration.ofMinutes(45)), "capital-topology-refresh", "OK"));
-		assertThat(healthy.level()).isEqualTo(Level.WARNING);
-		assertThat(healthy.headline()).contains("인천 시간표(만료됨, 45분 지남)");
+	@DisplayName("이미 만료된 근거는 갱신 상태와 관계없이 이상이다: OK·NONE·FAILED·BLOCKED 모두, 얼마나 오래 지났든")
+	void expiredSourcesAreAlwaysFailure() {
+		for (String state : List.of("OK", "NONE", "FAILED", "BLOCKED")) {
+			String stage = state.equals("NONE") ? null : "capital-topology-refresh";
+			AutomationAssessment expired = assessSources(source("a", "인천 시간표", NOW.minus(Duration.ofMinutes(45)), stage, state));
+			assertThat(expired.level()).as(state).isEqualTo(Level.FAILURE);
+			assertThat(codes(expired)).as(state).containsExactly("SOURCE_EXPIRED");
+			assertThat(expired.headline()).as(state).startsWith("원천 자료 1건이 이미 만료되었습니다: 인천 시간표(만료됨, 45분 지남");
+		}
+		assertThat(assessSources(source("a", "부산 시간표", NOW, null, "NONE")).level()).as("정확히 만료 시각").isEqualTo(Level.FAILURE);
+		AutomationAssessment longAgo = assessSources(source("a", "부산 시간표", Instant.parse("2026-10-03T06:09:43Z"), null, "NONE"));
+		assertThat(longAgo.level()).isEqualTo(Level.FAILURE);
+		assertThat(longAgo.headline()).isEqualTo("원천 자료 1건이 이미 만료되었습니다: 부산 시간표(만료됨, 6일 21시간 0분 지남, 자동 갱신 없음)");
 	}
 
 	@Test
-	@DisplayName("이상과 주의가 섞이면 각각 하나씩 요약하고 이상이 먼저 온다. 이름은 만료가 이른 순서로 세 개까지 적고 나머지는 건수로 적는다")
-	void failureAndWarningAreSummarizedSeparately() {
+	@DisplayName("만료, 6시간 안의 이상, 12시간 안의 주의를 각각 하나씩 요약하고 이상이 먼저 온다. 이름은 만료가 이른 순서로 세 개까지 적고 나머지는 건수로 적는다")
+	void expiredFailureAndWarningAreSummarizedSeparately() {
 		AutomationAssessment assessment = assessSources(
 			source("w1", "주의 자료 1", NOW.plus(Duration.ofHours(10)), "s", "OK"),
+			source("e1", "만료 자료 1", NOW.minus(Duration.ofHours(2)), "s", "OK"),
 			source("f2", "이상 자료 2", NOW.plus(Duration.ofHours(2)), "s", "FAILED"),
 			source("f1", "이상 자료 1", NOW.plus(Duration.ofHours(1)), "s", "BLOCKED"),
-			source("f4", "이상 자료 4", NOW.plus(Duration.ofHours(4)), "s", "BLOCKED"),
+			source("f4", "이상 자료 4", NOW.plus(Duration.ofHours(4)), null, "NONE"),
 			source("f3", "이상 자료 3", NOW.plus(Duration.ofHours(3)), "s", "BLOCKED"),
-			source("w2", "주의 자료 2", NOW.plus(Duration.ofHours(8)), null, "NONE"));
+			source("w2", "주의 자료 2", NOW.plus(Duration.ofHours(8)), "s", "OK"));
 
 		assertThat(assessment.level()).isEqualTo(Level.FAILURE);
-		assertThat(codes(assessment)).containsExactly("SOURCE_EXPIRY_BLOCKED", "SOURCE_EXPIRY_SOON");
-		assertThat(assessment.findings().get(0).level()).isEqualTo(Level.FAILURE);
-		assertThat(assessment.findings().get(0).message())
-			.isEqualTo("원천 자료 4건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있습니다: 이상 자료 1(1시간 0분 남음), 이상 자료 2(2시간 0분 남음), 이상 자료 3(3시간 0분 남음) 외 1건");
-		assertThat(assessment.findings().get(1).level()).isEqualTo(Level.WARNING);
+		assertThat(codes(assessment)).containsExactly("SOURCE_EXPIRED", "SOURCE_EXPIRY_BLOCKED", "SOURCE_EXPIRY_SOON");
+		assertThat(assessment.findings().get(0).message()).isEqualTo("원천 자료 1건이 이미 만료되었습니다: 만료 자료 1(만료됨, 2시간 0분 지남)");
 		assertThat(assessment.findings().get(1).message())
-			.isEqualTo("원천 자료 2건이 12시간 안에 만료됩니다: 주의 자료 2(8시간 0분 남음, 자동 갱신 없음), 주의 자료 1(10시간 0분 남음)");
+			.isEqualTo("원천 자료 4건이 6시간 안에 만료되는데 갱신 작업이 실패했거나 막혀 있거나 자동 갱신 경로가 없습니다: 이상 자료 1(1시간 0분 남음), 이상 자료 2(2시간 0분 남음), 이상 자료 3(3시간 0분 남음) 외 1건");
+		assertThat(assessment.findings().get(2).level()).isEqualTo(Level.WARNING);
+		assertThat(assessment.findings().get(2).message()).isEqualTo("원천 자료 2건이 12시간 안에 만료됩니다: 주의 자료 2(8시간 0분 남음), 주의 자료 1(10시간 0분 남음)");
 	}
 
 	@Test

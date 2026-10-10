@@ -177,4 +177,48 @@ class AutomationStatusSnapshotParserTest {
 		assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources(sources.apply(51))))
 			.isInstanceOf(InvalidAutomationStatusException.class);
 	}
+
+	private static String withTotalCount(String json, String total) {
+		return json.replace("\"expiringSources\":", "\"expiringSourcesTotalCount\": " + total + ", \"expiringSources\":");
+	}
+
+	@Test
+	@DisplayName("expiringSourcesTotalCount(자르기 전 개수)는 목록 개수 이상이어야 하고, 없으면 목록 개수를 총수로 본다")
+	void parsesExpiringSourcesTotalCount() {
+		String list = "[" + INCHEON + "," + BUSAN + "]";
+		String base = AutomationStatusFixtures.validJsonWithExpiringSources(list);
+
+		assertThat(parser.parse(base).expiringSourcesTotalCount()).isEqualTo(2);
+		assertThat(parser.parse(withTotalCount(base, "42")).expiringSourcesTotalCount()).isEqualTo(42);
+		assertThat(parser.parse(withTotalCount(base, "2")).expiringSourcesTotalCount()).isEqualTo(2);
+		assertThat(parser.parse(AutomationStatusFixtures.validJson()).expiringSourcesTotalCount()).isZero();
+
+		for (String broken : List.of(withTotalCount(base, "1"), withTotalCount(base, "-1"), withTotalCount(base, "2.5"), withTotalCount(base, "\"2\""),
+			withTotalCount(base, "null"), withTotalCount(base, "100001"))) {
+			assertThatThrownBy(() -> parser.parse(broken)).as(broken).isInstanceOf(InvalidAutomationStatusException.class);
+		}
+		// 목록 없이 총수만 오는 것은 거부한다.
+		String noList = AutomationStatusFixtures.validJson().replace("\"candidateInFlight\": false", "\"candidateInFlight\": false, \"expiringSourcesTotalCount\": 3");
+		assertThatThrownBy(() -> parser.parse(noList)).isInstanceOf(InvalidAutomationStatusException.class);
+	}
+
+	@Test
+	@DisplayName("시각은 2000-01-01부터 2100-12-31까지만 받는다: 경계는 받고 범위 밖과 터무니없는 연도는 거부한다")
+	void instantsAreLimitedToAPlausibleWindow() {
+		String low = "2000-01-01T00:00:00Z";
+		String high = "2100-12-31T23:59:59Z";
+		for (String accepted : List.of(low, high, "2026-10-10T07:22:23.648Z")) {
+			assertThat(parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("["
+				+ AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천", accepted, null, "NONE") + "]")).expiringSources()).hasSize(1);
+		}
+		for (String rejected : List.of("1999-12-31T23:59:59Z", "2101-01-01T00:00:00Z", "+999999999-12-31T23:59:59Z", "-999999999-01-01T00:00:00Z", "0001-01-01T00:00:00Z")) {
+			assertThatThrownBy(() -> parser.parse(AutomationStatusFixtures.validJsonWithExpiringSources("["
+				+ AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천", rejected, null, "NONE") + "]")))
+				.as(rejected).isInstanceOf(InvalidAutomationStatusException.class).hasMessageContaining("범위");
+		}
+		// 다른 시각 필드에도 같은 범위가 적용된다.
+		String valid = AutomationStatusFixtures.validJson();
+		assertThatThrownBy(() -> parser.parse(valid.replace("2026-10-11T15:00:00.000Z", "+999999999-12-31T23:59:59Z"))).isInstanceOf(InvalidAutomationStatusException.class);
+		assertThatThrownBy(() -> parser.parse(valid.replace("\"publishedAt\": \"2026-10-09T10:29:36.200Z\"", "\"publishedAt\": \"1970-01-01T00:00:00Z\""))).isInstanceOf(InvalidAutomationStatusException.class);
+	}
 }

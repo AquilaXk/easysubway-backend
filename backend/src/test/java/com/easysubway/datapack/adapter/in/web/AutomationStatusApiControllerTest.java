@@ -98,6 +98,20 @@ class AutomationStatusApiControllerTest {
 	}
 
 	@Test
+	@DisplayName("범위를 벗어난 freshUntil(2000-01-01 ~ 2100-12-31 밖)이 든 snapshot은 400으로 거부하고 저장하지 않는다")
+	void rejectsOutOfRangeFreshUntil() throws Exception {
+		for (String freshUntil : new String[] {"+999999999-12-31T23:59:59Z", "1999-12-31T23:59:59Z", "2101-01-01T00:00:00Z"}) {
+			String item = AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천 1호선 열차 시간표", freshUntil, null, "NONE");
+			String body = AutomationStatusFixtures.validJsonWithStagesAndSources(Instant.now().minusSeconds(30).toString(), "2026-10-31T00:00:00.000Z",
+				AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", "[" + item + "]");
+			mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+					.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isBadRequest());
+		}
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();
+	}
+
+	@Test
 	@DisplayName("형식이 어긋난 본문과 미래 시각, 과대 본문은 거부하고 저장하지 않는다")
 	void rejectsMalformedFutureAndOversizedBodies() throws Exception {
 		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")

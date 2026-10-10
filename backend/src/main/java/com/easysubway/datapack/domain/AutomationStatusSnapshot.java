@@ -14,7 +14,8 @@ public record AutomationStatusSnapshot(
 	List<FailureIssue> failureIssues,
 	Stuck stuck,
 	boolean candidateInFlight,
-	List<ExpiringSource> expiringSources
+	List<ExpiringSource> expiringSources,
+	int expiringSourcesTotalCount
 ) {
 
 	public AutomationStatusSnapshot {
@@ -23,6 +24,9 @@ public record AutomationStatusSnapshot(
 		expiringSources = expiringSources == null ? null : List.copyOf(expiringSources);
 	}
 
+	/**
+	 * @param expiringSourcesTotalCount 자르기 전 후보 개수(목록 개수 이상). 목록이 보고되지 않았으면 0이다
+	 */
 	/** data 레포가 원천 근거 만료 목록을 보냈는가. 보내지 않은 옛 snapshot은 정상으로 채우지 않고 "보고되지 않음"으로 둔다. */
 	public boolean reportsExpiringSources() {
 		return expiringSources != null;
