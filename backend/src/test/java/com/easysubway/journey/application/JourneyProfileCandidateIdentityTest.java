@@ -43,9 +43,19 @@ class JourneyProfileCandidateIdentityTest {
 		assertThat(JourneyProfileCandidateIdentity.physicalItineraryId(
 			"station-a", "station-b", itinerary(READY_AT, null, "trip-1", 121, false)))
 			.isNotEqualTo(originalId);
-		assertThat(JourneyProfileCandidateIdentity.physicalItineraryId(
-			"station-a", "station-b", itinerary(READY_AT, null, "trip-1", 120, true)))
-			.isNotEqualTo(originalId);
+		var confirmedStairs = itinerary(READY_AT, null, "trip-1", 120, true, false);
+		var unconfirmedStairs = itinerary(READY_AT, null, "trip-1", 120, true, true);
+		String confirmedStairsId = JourneyProfileCandidateIdentity.physicalItineraryId(
+			"station-a", "station-b", confirmedStairs);
+		String unconfirmedStairsId = JourneyProfileCandidateIdentity.physicalItineraryId(
+			"station-a", "station-b", unconfirmedStairs);
+
+		assertThat(confirmedStairsId).isNotEqualTo(originalId);
+		assertThat(unconfirmedStairsId)
+			.isNotEqualTo(originalId)
+			.isNotEqualTo(confirmedStairsId);
+		assertThat(JourneyProfileCandidateIdentity.candidateId(unconfirmedStairsId, READY_AT))
+			.isNotEqualTo(JourneyProfileCandidateIdentity.candidateId(confirmedStairsId, READY_AT));
 	}
 
 	/** #454: 승강장 기준 여정 — 승차, 환승(시간·계단이 식별자에 묶이는지 확인), 승차. */
@@ -55,6 +65,18 @@ class JourneyProfileCandidateIdentityTest {
 		String tripId,
 		int transferDurationSeconds,
 		boolean transferIncludesStairs
+	) {
+		return itinerary(readyAt, realtimeReadyAt, tripId, transferDurationSeconds, transferIncludesStairs, false);
+	}
+
+	/** #505: 확정 계단과 계단 미확정 동선이 서로 다른 물리 여정·후보 식별자를 받는지 검증한다. */
+	private static JourneyProfileRaptorPort.Itinerary itinerary(
+		Instant readyAt,
+		Instant realtimeReadyAt,
+		String tripId,
+		int transferDurationSeconds,
+		boolean transferIncludesStairs,
+		boolean transferStairAccessUnconfirmed
 	) {
 		Instant firstDeparture = Instant.parse("2026-09-02T00:10:00Z");
 		Instant firstArrival = Instant.parse("2026-09-02T00:20:00Z");
@@ -80,7 +102,8 @@ class JourneyProfileCandidateIdentityTest {
 				new JourneyProfileRaptorPort.AccessLeg(
 					JourneyProfileRaptorPort.AccessKind.TRANSFER,
 					"station-x", "station-x", transferDurationSeconds, 50,
-					transferIncludesStairs, true, "VERIFIED"),
+					transferIncludesStairs, true, "VERIFIED",
+					null, null, null, transferStairAccessUnconfirmed),
 				TestRides.profileRide(
 					"line-2", "trip-second", "terminal", "station-x", "station-b",
 					secondDeparture, secondArrival,

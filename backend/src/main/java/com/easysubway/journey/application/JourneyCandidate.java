@@ -91,6 +91,10 @@ public record JourneyCandidate(
 		REALTIME
 	}
 
+	/**
+	 * #505: 서버가 활성 접근성 스냅샷 기준으로 여정의 접근성 평가를 수행해 응답 생성 검증을 통과했음을 나타내는 닫힌 envelope 상태.
+	 * 실제 계단 유무 및 확정 여부는 {@link Accessibility#stairFree()}와 {@link Accessibility#reasonCodes()}로 표현한다.
+	 */
 	public enum AccessibilityResult {
 		VERIFIED
 	}
@@ -131,6 +135,11 @@ public record JourneyCandidate(
 			return new Accessibility(!anyStairsOrUnconfirmed, List.of(reason));
 		}
 
+		/**
+		 * #505: 서버가 활성 접근성 스냅샷 기준으로 여정의 접근성 평가를 수행해 응답 생성 검증을 통과했음을 반환한다.
+		 * N/N-1 클라이언트 호환을 위해 닫힌 enum({@link AccessibilityResult#VERIFIED})을 유지하며, 실제 계단 유무와
+		 * 미확정 여부는 {@link #stairFree()} 및 {@link #reasonCodes()}로 판정한다.
+		 */
 		public AccessibilityResult result() {
 			return AccessibilityResult.VERIFIED;
 		}

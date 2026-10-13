@@ -64,6 +64,7 @@ public final class JourneyProfileCandidateIdentity {
 		append(canonical, Boolean.toString(access.includesStairs()));
 		append(canonical, Boolean.toString(access.verified()));
 		append(canonical, access.verificationStatus());
+		append(canonical, Boolean.toString(access.stairAccessUnconfirmed()));
 	}
 
 	private static void appendRide(StringBuilder canonical, JourneyProfileRaptorPort.RideLeg ride) {

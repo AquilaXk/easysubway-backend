@@ -1634,6 +1634,10 @@ components:
       type: object
       additionalProperties: false
       description: >-
+        result is the closed response-envelope evaluation status ([VERIFIED]): the server evaluated this journey against
+        the active accessibility snapshot and passed response-generation verification. Actual stair presence and
+        confirmation state are expressed by stairFree and reasonCodes, not by result.
+
         stairFree is true only when every transfer of the journey uses a confirmed stair-free pathway (source
         stair access state STEP_FREE and no stairs flag). A pathway whose stair access state is UNKNOWN or missing
         makes stairFree false; it is never assumed stair-free.
@@ -1648,6 +1652,10 @@ components:
         result:
           type: string
           enum: [VERIFIED]
+          description: >-
+            Closed response-envelope evaluation status confirming that the server evaluated the journey against the
+            active accessibility snapshot and passed response-generation verification. Does not indicate whether the
+            journey is stair-free or confirmed; clients must read stairFree and reasonCodes for stair-access judgment.
         stairFree:
           type: boolean
         reasonCodes:

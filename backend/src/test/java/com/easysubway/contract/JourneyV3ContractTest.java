@@ -359,6 +359,15 @@ class JourneyV3ContractTest {
 		assertClosedSchema(document, "JourneyAccessibility",
 			Set.of("result", "stairFree", "reasonCodes"), Set.of("result", "stairFree", "reasonCodes"));
 		assertEnum(property(document, "JourneyAccessibility", "result"), "VERIFIED");
+		// #505: result([VERIFIED] 닫힌 enum)는 응답 생성 검증(접근성 평가 envelope 완료) 의미이며 실제 계단 유무·확정 여부는 stairFree와 reasonCodes로 표현함을 고정한다.
+		assertThat(String.valueOf(schema(document, "JourneyAccessibility").get("description"))).contains(
+			"response-envelope evaluation status",
+			"active accessibility snapshot",
+			"stairFree and reasonCodes, not by result");
+		assertThat(String.valueOf(property(document, "JourneyAccessibility", "result").get("description"))).contains(
+			"response-envelope evaluation status",
+			"active accessibility snapshot",
+			"stairFree and reasonCodes");
 		// #503: reasonCodes는 열린 문자열 집합이다(N-1 소비자가 새 코드를 거부하지 않도록 enum으로 닫지 않는다). 값은 설명으로 고정한다.
 		assertThat(((Map<?, ?>) property(document, "JourneyAccessibility", "reasonCodes").get("items")).containsKey("enum")).isFalse();
 		assertThat(String.valueOf(schema(document, "JourneyAccessibility").get("description"))).contains(

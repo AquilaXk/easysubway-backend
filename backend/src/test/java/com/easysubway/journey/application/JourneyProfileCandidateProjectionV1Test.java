@@ -117,6 +117,35 @@ class JourneyProfileCandidateProjectionV1Test {
 	}
 
 	@Test
+	void distinguishesConfirmedStairsFromUnconfirmedStairAccessInProjectedCandidateIdentities() {
+		var temporal = new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(700));
+		var query = query(temporal, 2);
+		var confirmedStairs = transferItinerary(START, false);
+		var unconfirmedStairs = transferItinerary(START, true);
+
+		var confirmedResult = (JourneyProfileCandidateProjectionV1.ArriveByProjected)
+			JourneyProfileCandidateProjectionV1.projectArriveBy(query,
+				new JourneyProfileRaptorPort.ArriveByPlan(temporal,
+					new JourneyProfileRaptorPort.ReversePlan.Found(List.of(confirmedStairs))), 3);
+		var unconfirmedResult = (JourneyProfileCandidateProjectionV1.ArriveByProjected)
+			JourneyProfileCandidateProjectionV1.projectArriveBy(query,
+				new JourneyProfileRaptorPort.ArriveByPlan(temporal,
+					new JourneyProfileRaptorPort.ReversePlan.Found(List.of(unconfirmedStairs))), 3);
+
+		var confirmedCandidate = confirmedResult.projection().candidates().getFirst();
+		var unconfirmedCandidate = unconfirmedResult.projection().candidates().getFirst();
+		assertThat(unconfirmedCandidate.physicalItineraryId())
+			.isNotEqualTo(confirmedCandidate.physicalItineraryId());
+		assertThat(unconfirmedCandidate.candidateId())
+			.isNotEqualTo(confirmedCandidate.candidateId());
+
+		assertThat(JourneyProfileCandidateProjectionV1.projectArriveBy(query,
+			new JourneyProfileRaptorPort.ArriveByPlan(temporal,
+				new JourneyProfileRaptorPort.ReversePlan.Found(List.of(confirmedStairs, unconfirmedStairs))), 3))
+			.isInstanceOf(JourneyProfileCandidateProjectionV1.ArriveByProjected.class);
+	}
+
+	@Test
 	void rejectsAReadinessQualifiedCandidateWhoseJourneyStartsAtAnotherInstant() {
 		var query = query(START, START.plusSeconds(20), 1);
 
@@ -309,5 +338,29 @@ class JourneyProfileCandidateProjectionV1Test {
 			List.of(
 				TestRides.profileRide("line-a", tripId, "terminal", "origin", "destination",
 					rideDeparture, rideArrival, null, null)));
+	}
+
+	private static JourneyProfileRaptorPort.Itinerary transferItinerary(
+		Instant readyAt,
+		boolean stairAccessUnconfirmed
+	) {
+		Instant firstDeparture = readyAt.plusSeconds(60);
+		Instant firstArrival = readyAt.plusSeconds(240);
+		Instant secondDeparture = readyAt.plusSeconds(420);
+		Instant secondArrival = readyAt.plusSeconds(600);
+		return new JourneyProfileRaptorPort.Itinerary(LocalDate.of(2026, 9, 2), readyAt, secondArrival, null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(1, 120, 80, 1,
+				new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
+			JourneyCandidate.Fare.unavailable(),
+			List.of(
+				TestRides.profileRide("line-a", "trip-a", "terminal-a", "origin", "transfer",
+					firstDeparture, firstArrival, null, null),
+				new JourneyProfileRaptorPort.AccessLeg(
+					JourneyProfileRaptorPort.AccessKind.TRANSFER,
+					"transfer", "transfer", 120, 80,
+					true, true, "VERIFIED",
+					null, null, null, stairAccessUnconfirmed),
+				TestRides.profileRide("line-b", "trip-b", "terminal-b", "transfer", "destination",
+					secondDeparture, secondArrival, null, null)));
 	}
 }
