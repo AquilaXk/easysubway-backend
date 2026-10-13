@@ -309,7 +309,7 @@ export function validateBaseline(baseline, policy) {
 
 const decodeEntities = (value) => {
   if (/&(?!lt;|gt;|amp;|quot;|apos;)/.test(value)) fail('XML entity is invalid');
-  return value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&').replaceAll('&quot;', '"').replaceAll('&apos;', "'");
+  return value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&apos;', "'").replaceAll('&amp;', '&');
 };
 const tokenizeXml = (xml) => {
   const declaration = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';

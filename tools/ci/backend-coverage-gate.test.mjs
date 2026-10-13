@@ -171,6 +171,14 @@ test('report grammar and counter relationships reject ambiguity', () => {
     jacocoXml.replace('</sourcefile>', '<line nr="1" mi="0" ci="1" mb="0" cb="0"/></sourcefile>'),
     jacocoXml.replace('</report>', '<!ENTITY unsafe "value"></report>'),
   ]) assert.throws(() => parseJacocoReport(invalid));
+  const entityEscapedMethodsXml = jacocoXml.replace(
+    '<method name="run" desc="()V" line="1"><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/></method>',
+    [
+      '<method name="q&quot;s&apos;x" desc="()V" line="1"><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/></method>',
+      '<method name="q&amp;quot;s&amp;apos;x" desc="()V" line="1"><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/></method>',
+    ].join(''),
+  );
+  assert.equal(parseJacocoReport(entityEscapedMethodsXml).sources.length, 1);
 });
 
 test('tracked build, exclusion, static gate, workflow and source inventory agree', () => {

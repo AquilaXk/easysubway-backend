@@ -21,6 +21,7 @@ import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import jakarta.servlet.http.HttpSession;
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -34,6 +35,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.annotation.DirtiesContext;
@@ -245,11 +247,13 @@ class FieldVerificationAdminControllerTest {
 			}
 		});
 
-		var response = controller.stationFieldVerificationCsv("station\r\nid", null, null);
+		ResponseEntity<byte[]> response = controller.stationFieldVerificationCsv("station\r\nid", null, null);
 
+		assertThat(response.getHeaders().getContentType())
+			.isEqualTo(new MediaType("text", "csv", StandardCharsets.UTF_8));
 		assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
 			.isEqualTo("attachment; filename=\"easysubway-field-verification-station__id.csv\"");
-		assertThat(response.getBody())
+		assertThat(new String(response.getBody(), StandardCharsets.UTF_8))
 			.contains("\"station\r\nid\",\"상록수,검증\",2026-06-19,\"field\"\"team\",IN_PROGRESS,EXIT,출구,'=cmd,VERIFIED,\"쉼표, 따옴표\"\" 개행\n수식 +1\"");
 	}
 
