@@ -14,15 +14,18 @@ import com.easysubway.field.domain.FieldVerificationStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -33,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class FieldVerificationAdminController {
 
-	private static final String TEXT_CSV_UTF8 = "text/csv;charset=UTF-8";
+	private static final MediaType TEXT_CSV_UTF8 = new MediaType("text", "csv", StandardCharsets.UTF_8);
 	private static final String XLSX_CONTENT_TYPE =
 		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 	private static final String CSV_HEADER = "sessionId,stationId,stationName,verifiedAt,verifiedBy,sessionStatus,itemType,itemLabel,targetName,itemStatus,note";
@@ -96,7 +99,7 @@ class FieldVerificationAdminController {
 	}
 
 	@GetMapping("/admin/field-verifications/stations/{stationId}/export.csv")
-	ResponseEntity<String> stationFieldVerificationCsv(
+	ResponseEntity<byte[]> stationFieldVerificationCsv(
 		@PathVariable String stationId,
 		Authentication authentication,
 		HttpServletRequest request
@@ -110,13 +113,15 @@ class FieldVerificationAdminController {
 			"EXPORT_FIELD_VERIFICATION_CSV",
 			"업무 맥락: 현장 확인 CSV export"
 		);
+		byte[] body = toCsv(session).getBytes(StandardCharsets.UTF_8);
 		HttpHeaders headers = new HttpHeaders();
-		headers.add(HttpHeaders.CONTENT_TYPE, TEXT_CSV_UTF8);
-		headers.add(
-			HttpHeaders.CONTENT_DISPOSITION,
-			"attachment; filename=\"easysubway-field-verification-" + safeFilenameStationId(stationId) + ".csv\""
+		headers.setContentType(TEXT_CSV_UTF8);
+		headers.setContentDisposition(
+			ContentDisposition.attachment()
+				.filename("easysubway-field-verification-" + safeFilenameStationId(stationId) + ".csv")
+				.build()
 		);
-		return new ResponseEntity<>(toCsv(session), headers, HttpStatus.OK);
+		return ResponseEntity.ok().headers(headers).body(body);
 	}
 
 	@GetMapping("/admin/field-verifications/stations/{stationId}/export.xlsx")
