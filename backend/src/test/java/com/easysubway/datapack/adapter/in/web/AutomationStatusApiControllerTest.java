@@ -27,7 +27,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = "easysubway.datapack.workflow-token=test-workflow-token")
+@TestPropertySource(properties = {
+	"easysubway.datapack.workflow-token=test-workflow-token",
+	"easysubway.datapack.automation-status-token=test-automation-status-token"
+})
 @DisplayName("자동화 상태 snapshot 수신 API")
 class AutomationStatusApiControllerTest {
 
@@ -49,19 +52,52 @@ class AutomationStatusApiControllerTest {
 	}
 
 	@Test
-	@DisplayName("서비스 토큰 없이는 snapshot을 받지 않는다")
-	void rejectsRequestsWithoutTheWorkflowToken() throws Exception {
+	@DisplayName("전용 자동화 상태 토큰 없이는 snapshot을 받지 않고 기존 워크플로 토큰도 거부한다")
+	void rejectsRequestsWithoutTheAutomationStatusTokenOrWithWorkflowToken() throws Exception {
 		mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(freshJson()))
 			.andExpect(status().isForbidden());
 		mockMvc.perform(post(PATH).header("Authorization", "Bearer wrong").contentType(MediaType.APPLICATION_JSON).content(freshJson()))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token").contentType(MediaType.APPLICATION_JSON).content(freshJson()))
 			.andExpect(status().isForbidden());
 		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();
 	}
 
 	@Test
+	@DisplayName("전용 자동화 상태 토큰으로는 릴리스 요청·콜백·롤백 경로를 호출할 수 없다")
+	void rejectsAutomationStatusTokenOnReleaseWorkflowEndpoints() throws Exception {
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/api/datapack/release-requests/req-1")
+				.header("Authorization", "Bearer test-automation-status-token"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/admin/api/datapack/release-callbacks")
+				.header("Authorization", "Bearer test-automation-status-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/api/datapack/rollback-approvals/ev-1")
+				.header("Authorization", "Bearer test-automation-status-token"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/admin/api/datapack/releases/request")
+				.header("Authorization", "Bearer test-automation-status-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/admin/api/datapack/releases/1/callback")
+				.header("Authorization", "Bearer test-automation-status-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/admin/api/datapack/releases/1/rollback/approve")
+				.header("Authorization", "Bearer test-automation-status-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
 	@DisplayName("유효한 snapshot은 저장하고 더 오래된 snapshot은 무시한다")
 	void acceptsAValidSnapshotAndIgnoresAnOlderOne() throws Exception {
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content(freshJson()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("ACCEPTED"));
@@ -69,7 +105,7 @@ class AutomationStatusApiControllerTest {
 
 		String older = AutomationStatusFixtures.validJson(
 			Instant.now().minusSeconds(3600).toString(), "2026-10-31T00:00:00.000Z", "[]", "[]", "false");
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content(older))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("STALE"));
@@ -82,7 +118,7 @@ class AutomationStatusApiControllerTest {
 			"2026-10-10T07:22:23.648Z", "capital-topology-refresh", "BLOCKED");
 		String withSources = AutomationStatusFixtures.validJsonWithStagesAndSources(Instant.now().minusSeconds(30).toString(), "2026-10-31T00:00:00.000Z",
 			AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", "[" + item + "]");
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content(withSources))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("ACCEPTED"));
@@ -91,7 +127,7 @@ class AutomationStatusApiControllerTest {
 
 		jdbcTemplate.update("DELETE FROM datapack_automation_status");
 		String unknownKey = withSources.replace("\"refreshState\"", "\"extra\": 1, \"refreshState\"");
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content(unknownKey))
 			.andExpect(status().isBadRequest());
 		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();
@@ -104,7 +140,7 @@ class AutomationStatusApiControllerTest {
 			String item = AutomationStatusFixtures.expiringSourceJson("incheon-line1-train-timetable", "인천 1호선 열차 시간표", freshUntil, null, "NONE");
 			String body = AutomationStatusFixtures.validJsonWithStagesAndSources(Instant.now().minusSeconds(30).toString(), "2026-10-31T00:00:00.000Z",
 				AutomationStatusFixtures.healthyStagesJson(), "[]", "[]", "false", "[" + item + "]");
-			mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+			mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 					.contentType(MediaType.APPLICATION_JSON).content(body))
 				.andExpect(status().isBadRequest());
 		}
@@ -114,16 +150,16 @@ class AutomationStatusApiControllerTest {
 	@Test
 	@DisplayName("형식이 어긋난 본문과 미래 시각, 과대 본문은 거부하고 저장하지 않는다")
 	void rejectsMalformedFutureAndOversizedBodies() throws Exception {
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content("{\"hello\":1}"))
 			.andExpect(status().isBadRequest());
 		String future = AutomationStatusFixtures.validJson(
 			Instant.now().plusSeconds(3600).toString(), "2026-10-31T00:00:00.000Z", "[]", "[]", "false");
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content(future))
 			.andExpect(status().isBadRequest());
 		String huge = "{\"padding\":\"" + "x".repeat(70_000) + "\"}";
-		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-workflow-token")
+		mockMvc.perform(post(PATH).header("Authorization", "Bearer test-automation-status-token")
 				.contentType(MediaType.APPLICATION_JSON).content(huge))
 			.andExpect(status().isPayloadTooLarge());
 		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM datapack_automation_status", Integer.class)).isZero();

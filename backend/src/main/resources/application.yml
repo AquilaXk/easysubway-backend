@@ -49,6 +49,8 @@ easysubway:
   datapack:
     # 워크플로 전용 서비스 토큰. 미설정이면 조회/콜백 API 체인이 전면 거부(자동화 dormant = 안전 기본값).
     workflow-token: ${EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN:}
+    # 자동화 상태 snapshot 게시 전용 서비스 토큰. 릴리스/콜백/롤백 워크플로 토큰과 분리하며 미설정이면 전면 거부한다.
+    automation-status-token: ${EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN:}
     # 워크플로→backend 콜백 payload HMAC 서명 키. 미설정이면 빈 키로 초기화해 모든 콜백이 거부된다(안전 기본값).
     callback-hmac-key: ${EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY:}
     catalog-base-url: ${EASYSUBWAY_DATAPACK_CATALOG_BASE_URL:}

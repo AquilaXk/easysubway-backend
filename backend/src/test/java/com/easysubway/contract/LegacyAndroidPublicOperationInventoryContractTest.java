@@ -32,16 +32,7 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		entry("PUT", "/api/v1/report-uploads/{uploadId}", "report-upload-by-intent", "REPORT", "MOBILE_CONDITIONAL_BACKEND_EXPOSED", "RETAIN_NON_ROUTE", "apps/mobile/lib/facility_report.dart#_facilityReportErrorMessage"),
 		entry("POST", "/api/v1/reports", "report-create", "REPORT", "MOBILE_CONSUMED_BACKEND_EXPOSED", "RETAIN_NON_ROUTE", "apps/mobile/lib/facility_report.dart#_facilityReportErrorMessage"),
 		entry("GET", "/api/v1/reports/{reportId}", "report-get", "REPORT", "MOBILE_CONSUMED_BACKEND_EXPOSED", "RETAIN_NON_ROUTE", "apps/mobile/lib/facility_report.dart#_facilityReportStatusErrorMessage"),
-		entry("POST", "/api/v1/reports/{reportId}/confirm", "report-confirm", "REPORT", "BACKEND_EXPOSED_MOBILE_UNCONSUMED", "RETAIN_NON_ROUTE", null),
-		entry("GET", "/api/v1/me/favorites/routes", "favorite-route-list", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/route_search.dart#_favoriteRouteLoadErrorMessage"),
-		entry("POST", "/api/v1/me/favorites/routes", "favorite-route-save", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/route_search.dart#_favoriteRouteErrorMessage"),
-		entry("DELETE", "/api/v1/me/favorites/routes/{favoriteRouteId}", "favorite-route-delete", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/route_search.dart#_favoriteRouteErrorMessage"),
-		entry("GET", "/api/v1/me/favorites/facilities", "favorite-facility-list", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/favorite_facility.dart#_favoriteFacilityLoadErrorMessage"),
-		entry("PUT", "/api/v1/me/favorites/facilities/{facilityId}", "favorite-facility-save", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/favorite_facility.dart#_favoriteFacilityChangeErrorMessage"),
-		entry("DELETE", "/api/v1/me/favorites/facilities/{facilityId}", "favorite-facility-delete", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/favorite_facility.dart#_favoriteFacilityChangeErrorMessage"),
-		entry("GET", "/api/v1/me/favorites/stations", "favorite-station-list", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/features/stations/data/station_api_repository.dart#_favoriteStationLoadErrorMessage"),
-		entry("PUT", "/api/v1/me/favorites/stations/{stationId}", "favorite-station-save", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/features/stations/data/station_api_repository.dart#_favoriteStationChangeErrorMessage"),
-		entry("DELETE", "/api/v1/me/favorites/stations/{stationId}", "favorite-station-delete", "FAVORITES", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/features/stations/data/station_api_repository.dart#_favoriteStationChangeErrorMessage")
+		entry("POST", "/api/v1/reports/{reportId}/confirm", "report-confirm", "REPORT", "BACKEND_EXPOSED_MOBILE_UNCONSUMED", "RETAIN_NON_ROUTE", null)
 	);
 
 	@Test
@@ -65,9 +56,9 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		assertThat(scope.path("domains").isArray()).isTrue();
 		assertThat(scope.path("backendPublicPathPrefixes").isArray()).isTrue();
 		assertThat(scope.path("domains")).extracting(JsonNode::asText)
-			.containsExactly("ROUTE", "REALTIME", "REPORT", "FAVORITES");
+			.containsExactly("ROUTE", "REALTIME", "REPORT");
 		assertThat(scope.path("backendPublicPathPrefixes")).extracting(JsonNode::asText)
-			.containsExactly("/api/v1/routes/", "/api/v2/routes/", "/api/v1/realtime/", "/api/v1/report", "/api/v1/me/favorites/");
+			.containsExactly("/api/v1/routes/", "/api/v2/routes/", "/api/v1/realtime/", "/api/v1/report");
 		assertThat(inventory.path("entries").isArray()).isTrue();
 
 		List<ExpectedEntry> actual = new ArrayList<>();
@@ -91,7 +82,7 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 			actual.add(expected);
 			assertThat(operationNames.add(expected.operation())).isTrue();
 			assertThat(methodPaths.add(expected.methodPath())).isTrue();
-			assertThat(expected.domain()).isIn("ROUTE", "REALTIME", "REPORT", "FAVORITES");
+			assertThat(expected.domain()).isIn("ROUTE", "REALTIME", "REPORT");
 			assertThat(expected.currentBinding()).isIn(
 				"MOBILE_CONSUMED_BACKEND_EXPOSED", "MOBILE_CONSUMED_BACKEND_UNMAPPED",
 				"MOBILE_CONDITIONAL_BACKEND_EXPOSED", "BACKEND_EXPOSED_MOBILE_UNCONSUMED");

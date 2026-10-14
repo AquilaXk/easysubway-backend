@@ -19,10 +19,18 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class WorkflowServiceTokenFilter extends OncePerRequestFilter {
 
+	private static final String DEFAULT_ROLE = "ROLE_DATAPACK_WORKFLOW";
+
 	private final String expectedToken;
+	private final String role;
 
 	public WorkflowServiceTokenFilter(String expectedToken) {
+		this(expectedToken, DEFAULT_ROLE);
+	}
+
+	public WorkflowServiceTokenFilter(String expectedToken, String role) {
 		this.expectedToken = expectedToken;
+		this.role = role;
 	}
 
 	@Override
@@ -33,7 +41,7 @@ public class WorkflowServiceTokenFilter extends OncePerRequestFilter {
 			&& header != null && header.startsWith("Bearer ")
 			&& constantTimeEquals(header.substring(7), expectedToken)) {
 			var auth = new UsernamePasswordAuthenticationToken(
-				"datapack-workflow", null, List.of(new SimpleGrantedAuthority("ROLE_DATAPACK_WORKFLOW")));
+				"datapack-workflow", null, List.of(new SimpleGrantedAuthority(role)));
 			SecurityContextHolder.getContext().setAuthentication(auth);
 		}
 		chain.doFilter(request, response);
