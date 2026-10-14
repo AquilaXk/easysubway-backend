@@ -3,6 +3,11 @@ package com.easysubway.common.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
 import com.easysubway.admin.authorization.adapter.out.persistence.InMemoryAdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.adapter.out.persistence.InMemoryAdminIdentityRepository;
@@ -35,6 +40,11 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @DisplayName("보안 설정")
 class SecurityConfigTest {
@@ -838,6 +848,119 @@ class SecurityConfigTest {
 					.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
 					.doesNotContain("admin.security.admin");
 			}
+		}
+	}
+
+	@Test
+	@DisplayName("자동화 상태 게시 경로는 전용 서비스 토큰만 허용하고 릴리스 워크플로 토큰과 상호 분리된다")
+	void datapackAutomationStatusChainUsesDedicatedTokenIsolatedFromWorkflowToken() {
+		contextRunner
+			.withUserConfiguration(DatapackProbeController.class)
+			.withPropertyValues(
+				"easysubway.datapack.workflow-token=workflow-secret",
+				"easysubway.datapack.automation-status-token=automation-status-secret"
+			)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(context)
+					.apply(springSecurity())
+					.build();
+
+				// 워크플로 토큰으로 자동화 상태 게시 경로 접근 시 403 거부
+				mockMvc.perform(post("/admin/api/datapack/automation-status")
+						.header("Authorization", "Bearer workflow-secret"))
+					.andExpect(status().isForbidden());
+
+				// 전용 자동화 상태 토큰으로 자동화 상태 POST 요청 시 200 통과, GET 등 다른 메서드는 403 거부
+				mockMvc.perform(post("/admin/api/datapack/automation-status")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isOk());
+				mockMvc.perform(get("/admin/api/datapack/automation-status")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+
+				// 전용 자동화 상태 토큰으로 릴리스 요청·콜백·롤백 경로 접근 시 모두 403 거부
+				mockMvc.perform(get("/admin/api/datapack/release-requests/req-1")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+				mockMvc.perform(post("/admin/api/datapack/release-callbacks")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+				mockMvc.perform(get("/admin/api/datapack/rollback-approvals/ev-1")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+				mockMvc.perform(post("/admin/api/datapack/releases/request")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+				mockMvc.perform(post("/admin/api/datapack/releases/1/callback")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+				mockMvc.perform(post("/admin/api/datapack/releases/1/rollback/approve")
+						.header("Authorization", "Bearer automation-status-secret"))
+					.andExpect(status().isForbidden());
+
+				// 워크플로 토큰은 기존 릴리스 조회/콜백 경로에서 정상 동작
+				mockMvc.perform(get("/admin/api/datapack/release-requests/req-1")
+						.header("Authorization", "Bearer workflow-secret"))
+					.andExpect(status().isOk());
+				mockMvc.perform(post("/admin/api/datapack/release-callbacks")
+						.header("Authorization", "Bearer workflow-secret"))
+					.andExpect(status().isOk());
+				mockMvc.perform(get("/admin/api/datapack/rollback-approvals/ev-1")
+						.header("Authorization", "Bearer workflow-secret"))
+					.andExpect(status().isOk());
+			});
+	}
+
+	@Test
+	@DisplayName("전용 자동화 상태 토큰이 미설정이면 Bearer 토큰 유무와 무관하게 자동화 상태 게시 경로를 전면 거부한다")
+	void datapackAutomationStatusChainFailsClosedWhenDedicatedTokenIsBlank() {
+		for (String blankToken : List.of("", "   ")) {
+			contextRunner
+				.withUserConfiguration(DatapackProbeController.class)
+				.withPropertyValues(
+					"easysubway.datapack.workflow-token=workflow-secret",
+					"easysubway.datapack.automation-status-token=" + blankToken
+				)
+				.run(context -> {
+					assertThat(context).hasNotFailed();
+					MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(context)
+						.apply(springSecurity())
+						.build();
+
+					mockMvc.perform(post("/admin/api/datapack/automation-status"))
+						.andExpect(status().isForbidden());
+					mockMvc.perform(post("/admin/api/datapack/automation-status")
+							.header("Authorization", "Bearer workflow-secret"))
+						.andExpect(status().isForbidden());
+					mockMvc.perform(post("/admin/api/datapack/automation-status")
+							.header("Authorization", "Bearer any-token"))
+						.andExpect(status().isForbidden());
+				});
+		}
+	}
+
+	@RestController
+	static class DatapackProbeController {
+
+		@PostMapping("/admin/api/datapack/automation-status")
+		String automationStatus() {
+			return "ok";
+		}
+
+		@GetMapping("/admin/api/datapack/release-requests/{approvalId}")
+		String releaseRequest() {
+			return "ok";
+		}
+
+		@PostMapping("/admin/api/datapack/release-callbacks")
+		String releaseCallback() {
+			return "ok";
+		}
+
+		@GetMapping("/admin/api/datapack/rollback-approvals/{eventId}")
+		String rollbackApproval() {
+			return "ok";
 		}
 	}
 
