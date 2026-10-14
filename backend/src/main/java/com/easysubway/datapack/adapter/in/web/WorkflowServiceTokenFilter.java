@@ -11,6 +11,8 @@ import java.util.List;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -19,23 +21,25 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class WorkflowServiceTokenFilter extends OncePerRequestFilter {
 
-	private static final String DEFAULT_ROLE = "ROLE_DATAPACK_WORKFLOW";
+	private static final RequestMatcher AUTOMATION_STATUS_MATCHER =
+		PathPatternRequestMatcher.withDefaults().matcher("/admin/api/datapack/automation-status");
+	private static final String WORKFLOW_ROLE = "ROLE_DATAPACK_WORKFLOW";
+	private static final String AUTOMATION_STATUS_ROLE = "ROLE_DATAPACK_AUTOMATION_STATUS";
 
-	private final String expectedToken;
-	private final String role;
+	private final String workflowToken;
+	private final String automationStatusToken;
 
-	public WorkflowServiceTokenFilter(String expectedToken) {
-		this(expectedToken, DEFAULT_ROLE);
-	}
-
-	public WorkflowServiceTokenFilter(String expectedToken, String role) {
-		this.expectedToken = expectedToken;
-		this.role = role;
+	public WorkflowServiceTokenFilter(String workflowToken, String automationStatusToken) {
+		this.workflowToken = workflowToken;
+		this.automationStatusToken = automationStatusToken;
 	}
 
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 		throws ServletException, IOException {
+		boolean automationStatusRequest = AUTOMATION_STATUS_MATCHER.matches(request);
+		String expectedToken = automationStatusRequest ? automationStatusToken : workflowToken;
+		String role = automationStatusRequest ? AUTOMATION_STATUS_ROLE : WORKFLOW_ROLE;
 		String header = request.getHeader("Authorization");
 		if (expectedToken != null && !expectedToken.isBlank()
 			&& header != null && header.startsWith("Bearer ")

@@ -123,52 +123,42 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	@Order(-1)
+	@Order(0)
 	SecurityFilterChain datapackWorkflowApiSecurityFilterChain(
 		HttpSecurity http,
-		@Value("${easysubway.datapack.workflow-token:}") String workflowToken
+		@Value("${easysubway.datapack.workflow-token:}") String workflowToken,
+		@Value("${easysubway.datapack.automation-status-token:}") String automationStatusToken
 	) throws Exception {
-		// 워크플로 전용 조회/콜백 API는 admin(/admin/** @Order 1)보다 먼저 평가되도록 @Order(-1).
+		// 워크플로 전용 조회/콜백 API는 admin(/admin/** @Order 1)보다 먼저 평가되도록 @Order(0).
 		// 서비스 토큰(Bearer)만 인증하고 stateless·CSRF off. 토큰 미설정이면 인증이 주입되지
 		// 않아 전면 거부(자동화 dormant = 안전 기본값). admin 세션은 이 체인에 닿지 못한다.
+		// data#1084/backend#500/backend#502: 자동화 상태 snapshot 게시 경로는 전용 서비스 토큰
+		// (ROLE_DATAPACK_AUTOMATION_STATUS)과 릴리스 워크플로 토큰(ROLE_DATAPACK_WORKFLOW)을 상호 분리한다.
 		return http
 			.securityMatcher(
 				"/admin/api/datapack/release-requests/**",
 				"/admin/api/datapack/rollback-approvals/**",
-				"/admin/api/datapack/release-callbacks"
+				"/admin/api/datapack/release-callbacks",
+				"/admin/api/datapack/automation-status"
 			)
-			.csrf(csrf -> csrf.disable())
-			.sessionManagement(sm -> sm.sessionCreationPolicy(
-				org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
-			.authorizeHttpRequests(authorize -> authorize.anyRequest().hasRole("DATAPACK_WORKFLOW"))
-			.addFilterBefore(
-				new com.easysubway.datapack.adapter.in.web.WorkflowServiceTokenFilter(workflowToken),
-				org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
-			.build();
-	}
-
-	@Bean
-	@Order(0)
-	SecurityFilterChain datapackAutomationStatusApiSecurityFilterChain(
-		HttpSecurity http,
-		@Value("${easysubway.datapack.automation-status-token:}") String automationStatusToken
-	) throws Exception {
-		// data#1084/backend#500/backend#502: data 레포 workflow가 게시하는 자동화 상태 snapshot은
-		// 릴리스/콜백/롤백 워크플로 토큰과 분리된 전용 서비스 토큰(ROLE_DATAPACK_AUTOMATION_STATUS)만 허용한다.
-		return http
-			.securityMatcher("/admin/api/datapack/automation-status")
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(sm -> sm.sessionCreationPolicy(
 				org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.POST, "/admin/api/datapack/automation-status")
 				.hasRole("DATAPACK_AUTOMATION_STATUS")
+				.requestMatchers(
+					"/admin/api/datapack/release-requests/**",
+					"/admin/api/datapack/rollback-approvals/**",
+					"/admin/api/datapack/release-callbacks"
+				)
+				.hasRole("DATAPACK_WORKFLOW")
 				.anyRequest().denyAll()
 			)
 			.addFilterBefore(
 				new com.easysubway.datapack.adapter.in.web.WorkflowServiceTokenFilter(
-					automationStatusToken,
-					"ROLE_DATAPACK_AUTOMATION_STATUS"
+					workflowToken,
+					automationStatusToken
 				),
 				org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
 			.build();
