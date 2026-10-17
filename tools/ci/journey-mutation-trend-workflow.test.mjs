@@ -64,8 +64,8 @@ test('Backend #523 serializes runs without cancelling a measurement in progress'
   assert.match(workflow, /^concurrency:\n  group: journey-mutation-trend\n  cancel-in-progress: false\n/m);
 });
 
-test('Backend #523 steps run in order from setup to PIT, summary, upload and comparison', () => {
-  assert.deepEqual(stepNamesOf(workflow), [...SETUP_STEPS, 'Scan the PIT toolchain with OSV', 'Run PIT on the routing classes', 'Summarize the PIT report', 'Upload the mutation result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
+test('Backend #523 steps run in order from setup to PIT, raw report upload, summary, upload and comparison', () => {
+  assert.deepEqual(stepNamesOf(workflow), [...SETUP_STEPS, 'Scan the PIT toolchain with OSV', 'Run PIT on the routing classes', 'Upload the raw PIT report', 'Summarize the PIT report', 'Upload the mutation result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
 });
 
 test('Backend #523 setup steps are byte-identical to the Backend CI test shard setup, except that this job never uses the Gradle cache', () => {
@@ -177,4 +177,16 @@ test('Backend #523 the init script verifies the toolchain jars before they run a
   assert.match(initScript, /throw new GradleException\("PIT toolchain/, 'a mismatch fails the build');
   assert.match(initScript, /-PmutationToolchainRecord=/, 'the update procedure names the record command');
   assert.match(initScript, /버전을 올리는 절차/);
+});
+
+test('Backend #523 keeps the raw PIT report even when the summary fails, under a name the previous-run lookup does not match', () => {
+  const raw = step(workflow, 'Upload the raw PIT report');
+  assert.match(raw, /if: always\(\)/);
+  assert.match(raw, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
+  assert.match(raw, new RegExp(`path: ${REPORT_DIRECTORY}/`));
+  assert.match(raw, /retention-days: 30/);
+  assert.match(raw, /if-no-files-found: ignore/);
+  const name = /^ {10}name: (.+)$/m.exec(raw)[1];
+  assert.ok(!name.startsWith(ARTIFACT_PREFIX), 'a raw report must not be taken for a previous result');
+  assert.ok(name.endsWith('${{ github.sha }}'));
 });

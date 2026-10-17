@@ -24,7 +24,8 @@ const XML_ENTITIES = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
 const CLASS_NAME = /^[A-Za-z_][A-Za-z0-9_$.]{0,199}$/;
 const CLASS_PATTERN = /^[A-Za-z_][A-Za-z0-9_$.*]{0,199}$/;
 const METHOD_NAME = /^[A-Za-z0-9_$<>]{1,100}$/;
-const MUTATOR_NAME = /^[A-Za-z0-9]{1,80}$/;
+// PIT mutator 클래스의 마지막 이름. RemoveConditionalMutator만 `_<EQUAL|ORDER>_<IF|ELSE>` 꼬리가 붙는다(PIT 1.30.0 RemoveConditionalMutator.getGloballyUniqueId). summary에 그대로 쓰이므로 이 형식 밖은 거부한다.
+const MUTATOR_NAME = /^[A-Za-z0-9]{1,80}(?:_(?:EQUAL|ORDER)_(?:IF|ELSE))?$/;
 const VERSION = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const DESCRIPTION_LIMIT = 300;

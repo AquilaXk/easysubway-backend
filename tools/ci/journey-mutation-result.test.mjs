@@ -133,3 +133,32 @@ test('a mutations.xml written by PIT 1.30.0 for the real target classes parses t
   assert.deepEqual(survivors.map(({ className, line }) => `${className.split('.').at(-1)}:${line}`), ['JourneyAlternatives:120', 'JourneyFacilityBlockOverlay:89', 'JourneyFacilityBlockOverlay:91', 'JourneyFacilityBlockOverlay:92', 'JourneyFacilityBlockOverlay:93']);
   assert.ok(survivors.every(({ method }) => METHOD_PATTERN.test(method)));
 });
+
+// PIT 1.30.0 StandardMutatorGroups의 DEFAULTS 묶음(pitest-1.30.0.jar 바이트코드로 확인). RemoveConditional은 입력 이름에 `_<EQUAL|ORDER>_<IF|ELSE>`가 붙는다.
+const PIT_1_30_DEFAULT_MUTATORS = [
+  ['InvertNegsMutator', ''], ['MathMutator', ''], ['VoidMethodCallMutator', ''],
+  ['RemoveConditionalMutator_ORDER_ELSE', ''], ['RemoveConditionalMutator_EQUAL_ELSE', ''],
+  ['ConditionalsBoundaryMutator', ''], ['IncrementsMutator', ''],
+  ['BooleanTrueReturnValsMutator', 'returns.'], ['BooleanFalseReturnValsMutator', 'returns.'], ['PrimitiveReturnsMutator', 'returns.'],
+  ['EmptyObjectReturnValsMutator', 'returns.'], ['NullReturnValsMutator', 'returns.'],
+];
+
+test('every PIT 1.30 DEFAULTS mutator name is accepted in a survivor', () => {
+  const mutants = PIT_1_30_DEFAULT_MUTATORS.map(([name, subpackage], index) => ({
+    status: 'SURVIVED', line: index + 1, mutator: `org.pitest.mutationtest.engine.gregor.mutators.${subpackage}${name}`,
+  }));
+  const { survivors } = buildMutationResult({ mutants: parse(mutants), run: RUN, context: context() });
+  assert.deepEqual(survivors.map(({ mutator }) => mutator).sort(), PIT_1_30_DEFAULT_MUTATORS.map(([name]) => name).sort());
+});
+
+test('a survivor mutator name that is not a PIT class name is rejected before it reaches the summary', () => {
+  for (const mutator of ['Bad_Name', 'RemoveConditionalMutator_EQUAL', 'RemoveConditionalMutator_EQUAL_ELSE_X', 'Mutator|x', 'Mutator&lt;b&gt;', '_ELSE', '_EQUAL_ELSE', 'RemoveConditionalMutator_EQUAL_IF_ORDER_ELSE', 'A'.repeat(81)]) {
+    assert.throws(() => buildMutationResult({ mutants: parse([{ status: 'SURVIVED', mutator }]), run: RUN, context: context() }), /survivor\.mutator is invalid/, mutator);
+  }
+});
+
+test('the IF variants of RemoveConditionalMutator, which the STRONGER group adds, are accepted as well', () => {
+  const mutants = ['EQUAL_IF', 'ORDER_IF'].map((kind, index) => ({ status: 'SURVIVED', line: index + 1, mutator: `org.pitest.mutationtest.engine.gregor.mutators.RemoveConditionalMutator_${kind}` }));
+  const { survivors } = buildMutationResult({ mutants: parse(mutants), run: RUN, context: context() });
+  assert.deepEqual(survivors.map(({ mutator }) => mutator), ['RemoveConditionalMutator_EQUAL_IF', 'RemoveConditionalMutator_ORDER_IF']);
+});

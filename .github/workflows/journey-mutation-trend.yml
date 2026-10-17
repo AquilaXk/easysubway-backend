@@ -92,6 +92,16 @@ jobs:
           set -euo pipefail
           ./gradlew --init-script ../tools/ci/gradle/journey-mutation.init.gradle pitest --no-daemon
 
+      # 요약 단계가 실패해도 PIT 원본(mutations.xml·HTML)을 원인 분석에 쓸 수 있게 먼저 올린다. 이전 결과 조회가 쓰는 접두사와 다른 이름이라 기준선에 섞이지 않는다.
+      - name: Upload the raw PIT report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: journey-pit-report-${{ github.sha }}
+          path: backend/build/reports/pitest/
+          retention-days: 30
+          if-no-files-found: ignore
+
       - name: Summarize the PIT report
         shell: bash
         run: |
