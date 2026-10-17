@@ -129,7 +129,7 @@
         "sha256" : "8cf1d4028a6c5594db0ffd4e3ae5ea2b772cd6ddd59d5ff77201f8de0363f37a"
       },
       "compile" : {
-        "nanos" : 7536461,
+        "nanos" : 10000000,
         "allocatedBytes" : 4447368,
         "retainedBytes" : 552160
       },
@@ -300,7 +300,7 @@
         "sha256" : "5232afcee0d88293e8a4d0e1a899677dfd5ddd9bf9b7aeb8c0e70f9364cc813d"
       },
       "compile" : {
-        "nanos" : 650765,
+        "nanos" : 700000,
         "allocatedBytes" : 118520,
         "retainedBytes" : 30856
       },

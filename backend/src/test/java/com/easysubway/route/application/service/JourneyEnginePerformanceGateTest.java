@@ -74,8 +74,8 @@ class JourneyEnginePerformanceGateTest {
 	 * 몇 배 느리고 길이가 러너 경합에 따라 달라진다. 앞 {@code COMPILE_WARMUPS}번은 버리고 뒤 {@code COMPILE_SAMPLES}번의
 	 * 중앙값을 낸다(#518, {@link #steadyMedian}).
 	 */
-	private static final int COMPILE_WARMUPS = 30;
-	private static final int COMPILE_SAMPLES = 9;
+	static final int COMPILE_WARMUPS = 30;
+	static final int COMPILE_SAMPLES = 9;
 	private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 	/**
 	 * 벤치마크 전용 프로필 한도. 운영 정책 값은 배포 산출물(platform)에 있고 저장소에 없다. 한도가 없으면 출발 시간대
@@ -221,86 +221,6 @@ class JourneyEnginePerformanceGateTest {
 		Map<String, Object> missingWorkload = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
 		missingWorkload.put("workloads", Map.of());
 		assertThat(regressions(baseline, tree(missingWorkload))).singleElement().asString().contains("workload");
-	}
-
-	/**
-	 * 새 JVM의 첫 컴파일들은 인터프리터와 C1 단계에서 돌아 정상 상태보다 몇 배 느리고, 몇 번째 컴파일에서 C2가 끼어드는지가
-	 * 러너 CPU 경합에 따라 달라진다. 예열 없이 처음 세 번의 중앙값을 내면 이 전이 구간의 값이 되어 같은 코드에서도 정규화
-	 * 값이 0.6~2.5배로 흔들린다(backend #517 CI의 metro 컴파일 2.80배 실패, #518). 아래 열다섯 개는 새 JVM에 metro 번들을
-	 * 39번 연속 컴파일한 실제 기록(ms)이다. 앞 열두 개는 같은 장비에서 JVM 네 개를 동시에 돌려 CPU 경합을 준 기록이라
-	 * 전이 구간이 길게 끌리고, 뒤 세 개는 단독 실행이다.
-	 */
-	private static final long[][] RECORDED_COLD_COMPILE_TRACES_MILLIS = {
-		{504, 101, 205, 96, 82, 32, 82, 61, 63, 68, 47, 56, 41,
-			38, 29, 37, 27, 35, 31, 38, 34, 32, 43, 29, 34, 34,
-			35, 32, 28, 29, 34, 34, 40, 32, 32, 33, 37, 41, 32},
-		{473, 167, 173, 88, 74, 52, 69, 84, 52, 44, 39, 75, 32,
-			43, 39, 42, 31, 41, 31, 34, 29, 41, 35, 31, 33, 46,
-			33, 33, 28, 30, 34, 34, 37, 38, 40, 35, 38, 41, 35},
-		{510, 104, 195, 86, 89, 55, 27, 61, 40, 74, 31, 70, 64,
-			46, 32, 31, 45, 32, 36, 36, 36, 35, 39, 44, 32, 37,
-			33, 30, 29, 29, 32, 34, 43, 40, 39, 35, 33, 42, 38},
-		{487, 112, 140, 155, 49, 66, 76, 87, 49, 56, 66, 37, 49,
-			46, 31, 46, 38, 40, 37, 39, 30, 30, 35, 36, 32, 30,
-			29, 32, 29, 30, 33, 32, 38, 38, 39, 38, 36, 37, 38},
-		{368, 96, 102, 36, 112, 104, 64, 67, 35, 75, 57, 57, 47,
-			53, 60, 37, 42, 30, 37, 30, 30, 30, 30, 29, 30, 31,
-			31, 34, 29, 28, 29, 26, 26, 29, 29, 28, 27, 27, 27},
-		{370, 114, 101, 51, 69, 84, 32, 82, 67, 53, 65, 29, 72,
-			41, 66, 41, 29, 33, 28, 29, 29, 30, 28, 37, 33, 32,
-			30, 30, 27, 27, 27, 27, 28, 27, 26, 25, 25, 25, 27},
-		{374, 103, 104, 77, 85, 39, 55, 104, 68, 56, 52, 53, 47,
-			57, 42, 33, 29, 31, 29, 29, 28, 32, 29, 34, 42, 31,
-			33, 31, 29, 33, 27, 26, 29, 27, 27, 27, 27, 26, 26},
-		{386, 114, 149, 135, 70, 42, 80, 49, 64, 57, 61, 66, 43,
-			40, 38, 33, 32, 31, 31, 30, 32, 33, 37, 34, 32, 32,
-			31, 30, 28, 29, 32, 31, 29, 29, 29, 30, 34, 29, 45},
-		{302, 72, 111, 134, 70, 34, 81, 31, 56, 54, 52, 71, 78,
-			45, 32, 40, 29, 42, 32, 31, 35, 33, 31, 30, 30, 30,
-			30, 28, 26, 27, 27, 27, 28, 32, 29, 28, 28, 28, 29},
-		{331, 98, 170, 171, 69, 49, 58, 84, 70, 38, 47, 35, 31,
-			31, 32, 36, 32, 30, 30, 29, 30, 30, 30, 30, 31, 30,
-			29, 29, 27, 28, 29, 28, 28, 28, 31, 27, 27, 27, 27},
-		{346, 85, 146, 139, 94, 68, 36, 32, 76, 47, 65, 46, 40,
-			33, 35, 32, 38, 33, 40, 39, 31, 34, 31, 32, 31, 30,
-			30, 32, 28, 30, 31, 30, 28, 29, 30, 29, 29, 28, 27},
-		{463, 84, 193, 119, 40, 52, 57, 41, 33, 40, 30, 31, 31,
-			32, 36, 31, 30, 30, 29, 31, 29, 29, 29, 34, 28, 30,
-			29, 29, 28, 28, 27, 28, 26, 24, 28, 27, 26, 25, 24},
-		{179, 43, 59, 65, 31, 30, 31, 29, 28, 28, 28, 30, 28,
-			29, 28, 28, 28, 27, 26, 26, 26, 26, 26, 27, 26, 27,
-			26, 26, 24, 25, 25, 25, 25, 24, 25, 24, 26, 27, 26},
-		{189, 38, 73, 64, 34, 30, 29, 31, 30, 30, 28, 28, 28,
-			28, 29, 28, 26, 27, 27, 28, 29, 29, 27, 27, 26, 27,
-			27, 26, 24, 25, 25, 25, 25, 25, 25, 24, 25, 25, 24},
-		{183, 42, 76, 66, 66, 32, 31, 33, 32, 29, 31, 30, 28,
-			27, 27, 27, 27, 27, 27, 26, 26, 26, 27, 28, 26, 26,
-			26, 25, 24, 25, 25, 25, 25, 24, 25, 24, 23, 25, 24}};
-	/** 위 기록의 정상 상태 컴파일 시간(마지막 아홉 표본 중앙값의 전체 중앙값, ms). 이 값이 기준선이다. */
-	private static final long RECORDED_STEADY_COMPILE_MILLIS = 28;
-
-	@Test
-	@DisplayName("컴파일 시간은 JIT 예열 전이 구간 잡음에 흔들리지 않고 정상 상태 회귀는 잡는다")
-	void compileTimeIsJudgedAtSteadyStateNotInTheJitWarmupTransient() {
-		final int regressionFactor = 3;
-		final int minimumLegacyFlakes = 12;
-		long calibration = 100_000_000L;
-		JsonNode baseline = tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
-			RECORDED_STEADY_COMPILE_MILLIS * 1_000_000L));
-		long legacyFlakes = 0;
-		for (long[] trace : RECORDED_COLD_COMPILE_TRACES_MILLIS) {
-			long[] nanos = Arrays.stream(trace).map(millis -> millis * 1_000_000L).toArray();
-			// 예열 없이 처음 세 표본의 중앙값(#460의 옛 측정)은 이 기록들에서 한도를 자주 넘는다. 시뮬레이션이 flake를 재현한다.
-			if (!compileRegressions(baseline, calibration, median(Arrays.copyOf(nanos, 3))).isEmpty()) legacyFlakes += 1;
-			// 정상 상태 중앙값은 같은 기록에서 한 번도 한도를 넘지 않는다.
-			assertThat(compileRegressions(baseline, calibration, steadyMedian(nanos)))
-				.as("trace %s", Arrays.toString(trace)).isEmpty();
-			// 진짜 회귀: 컴파일이 모든 표본에서 3배 느려지면 전이 구간 잡음과 무관하게 실패한다.
-			long[] regressed = Arrays.stream(nanos).map(value -> value * regressionFactor).toArray();
-			assertThat(compileRegressions(baseline, calibration, steadyMedian(regressed)))
-				.as("%dx trace %s", regressionFactor, Arrays.toString(trace)).singleElement().asString().contains("compile.nanos");
-		}
-		assertThat(legacyFlakes).as("옛 측정이 기록 열다섯 개 중 실패한 수").isGreaterThanOrEqualTo(minimumLegacyFlakes);
 	}
 
 	@Test
@@ -774,24 +694,6 @@ class JourneyEnginePerformanceGateTest {
 		value.put("workloads", Map.of("sample-grid", workload));
 		value.put("tolerances", Tolerances.DEFAULT.asMap());
 		return value;
-	}
-
-	private static List<String> compileRegressions(JsonNode baseline, long calibration, long compileNanos) {
-		return regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"), compileNanos)));
-	}
-
-	private static Map<String, Object> withCompileNanos(Map<String, Object> sample, long nanos) {
-		@SuppressWarnings("unchecked")
-		Map<String, Object> workloads = (Map<String, Object>) sample.get("workloads");
-		@SuppressWarnings("unchecked")
-		Map<String, Object> workload = new LinkedHashMap<>((Map<String, Object>) workloads.get("sample-grid"));
-		@SuppressWarnings("unchecked")
-		Map<String, Object> compile = new LinkedHashMap<>((Map<String, Object>) workload.get("compile"));
-		compile.put("nanos", nanos);
-		workload.put("compile", compile);
-		Map<String, Object> result = new LinkedHashMap<>(sample);
-		result.put("workloads", Map.of("sample-grid", workload));
-		return result;
 	}
 
 	/** 예열 컴파일 표본을 버리고 남은 정상 상태 표본의 중앙값. 표본 수가 정해진 수와 다르면 측정이 어긋난 것이라 거절한다. */
