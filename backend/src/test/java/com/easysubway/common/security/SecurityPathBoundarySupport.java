@@ -141,10 +141,11 @@ abstract class SecurityPathBoundarySupport {
 		return exchange(cookies, Case.of(SESSION_ONLY, method, path, 0)).status();
 	}
 
-	void loginOperatorWithForm(Map<String, String> cookies) throws IOException, InterruptedException {
-		String csrf = csrfTokenFor(cookies, "/operator/login");
-		String form = "username=boundary-operator&password=" + PASSWORD + "&_csrf=" + csrf;
-		HttpRequest.Builder request = HttpRequest.newBuilder(uri("/operator/login"))
+	void loginWithForm(Map<String, String> cookies, String loginPath, String username)
+		throws IOException, InterruptedException {
+		String csrf = csrfTokenFor(cookies, loginPath);
+		String form = "username=" + username + "&password=" + PASSWORD + "&_csrf=" + csrf;
+		HttpRequest.Builder request = HttpRequest.newBuilder(uri(loginPath))
 			.header("Content-Type", "application/x-www-form-urlencoded")
 			.POST(HttpRequest.BodyPublishers.ofString(form));
 		HttpResponse<Void> login = send(cookies, request);

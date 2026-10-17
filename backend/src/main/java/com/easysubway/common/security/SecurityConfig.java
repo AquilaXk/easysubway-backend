@@ -140,12 +140,13 @@ public class SecurityConfig {
 		"/admin/system/**",
 		"/admin/usage/**"
 	};
+	// {변수}는 빈 구간을 매칭하지 않는다. 와일드카드(*)는 /reports/ 같은 빈 구간까지 이 체인으로 끌어와 공개했다.
 	static final String[] REPORT_CHAIN_PATHS = {
 		"/api/v1/report-uploads",
-		"/api/v1/report-uploads/*",
+		"/api/v1/report-uploads/{uploadId}",
 		"/api/v1/reports",
-		"/api/v1/reports/*",
-		"/api/v1/reports/*/confirm"
+		"/api/v1/reports/{reportId}",
+		"/api/v1/reports/{reportId}/confirm"
 	};
 	static final String[] PUBLIC_TRAIN_PATHS = {
 		"/api/v1/trains/stations",
@@ -413,8 +414,9 @@ public class SecurityConfig {
 				.defaultSuccessUrl("/operator/accessibility-report/page", true)
 				.permitAll()
 			)
+			// 로그아웃은 POST(CSRF 토큰 필수)만 받는다. GET을 받으면 다른 사이트가 사용자를 강제 로그아웃시킨다.
 			.logout(logout -> logout
-				.logoutRequestMatcher(PATH_PATTERNS.matcher("/operator/logout"))
+				.logoutRequestMatcher(PATH_PATTERNS.matcher(HttpMethod.POST, "/operator/logout"))
 				.logoutSuccessHandler((request, response, authentication) ->
 					response.sendRedirect(request.getContextPath() + "/operator/login?logout"))
 				.permitAll()

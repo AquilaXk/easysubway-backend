@@ -252,53 +252,103 @@ class SecurityConfigPathBoundaryTest extends SecurityPathBoundarySupport {
 		assertOutcome(testCase);
 	}
 
-	// ---------------------------------------------------------------- operator 로그아웃 matcher
+	// ---------------------------------------------------------------- 로그아웃 matcher (#528)
 
-	/** 로그아웃으로 인정되는 요청(메서드 무관, 정확히 /operator/logout)과 인정되지 않는 변형. */
-	static Stream<Arguments> logoutCases() {
+	/** 로그아웃 화면 하나의 로그인 경로·세션 확인 경로·성공 이동 경로. */
+	private record LogoutPortal(String loginPath, String username, String sessionProbePath, String successPath) {
+	}
+
+	private static final LogoutPortal OPERATOR_PORTAL = new LogoutPortal(
+		"/operator/login", "boundary-operator", "/operator/accessibility-report/page", "/operator/login?logout");
+	private static final LogoutPortal ADMIN_PORTAL = new LogoutPortal(
+		"/admin/login", "boundary-super", "/admin/dashboard/page", "/admin/login?logout");
+
+	/**
+	 * 로그아웃으로 인정되는 요청(CSRF 토큰이 있는 POST, 정확히 /operator/logout)과 인정되지 않는 변형.
+	 * GET은 다른 사이트가 이미지 태그 등으로 사용자를 강제 로그아웃시킬 수 있어 세션을 끝내면 안 된다.
+	 */
+	static Stream<Arguments> operatorLogoutCases() {
 		return Stream.of(
-			Arguments.of("GET", "/operator/logout", true),
-			Arguments.of("GET", "/operator/logout?next=/admin", true),
-			Arguments.of("GET", "/operator/%6cogout", true),
-			Arguments.of("GET", "/operator/logou%74", true),
-			Arguments.of("POST", "/operator/logout", true),
-			Arguments.of("GET", "/operator/logout/", false),
-			Arguments.of("GET", "/operator/Logout", false),
-			Arguments.of("GET", "/operator/LOGOUT", false),
-			Arguments.of("GET", "/operator/logout.html", false),
-			Arguments.of("GET", "/operator/logout/x", false),
-			Arguments.of("GET", "/operator/logouts", false),
-			Arguments.of("GET", "/operator/x/logout", false),
-			Arguments.of("GET", "/operator/api/logout", false),
-			Arguments.of("GET", "/operator//logout", false),
-			Arguments.of("GET", "/operator/logout;x=1", false),
-			Arguments.of("GET", "/operator/logout%2f", false),
-			Arguments.of("GET", "/operator/%2e/logout", false),
-			Arguments.of("GET", "/OPERATOR/logout", false),
-			Arguments.of("GET", "/operator/login/logout", false)
+			Arguments.of("POST", "/operator/logout", true, true),
+			Arguments.of("POST", "/operator/logout?next=/admin", true, true),
+			Arguments.of("POST", "/operator/%6cogout", true, true),
+			Arguments.of("POST", "/operator/logou%74", true, true),
+			Arguments.of("POST", "/operator/logout", false, false),
+			Arguments.of("GET", "/operator/logout", true, false),
+			Arguments.of("GET", "/operator/logout?next=/admin", true, false),
+			Arguments.of("GET", "/operator/%6cogout", true, false),
+			Arguments.of("HEAD", "/operator/logout", true, false),
+			Arguments.of("PUT", "/operator/logout", true, false),
+			Arguments.of("DELETE", "/operator/logout", true, false),
+			Arguments.of("POST", "/operator/logout/", true, false),
+			Arguments.of("POST", "/operator/Logout", true, false),
+			Arguments.of("POST", "/operator/LOGOUT", true, false),
+			Arguments.of("POST", "/operator/logout.html", true, false),
+			Arguments.of("POST", "/operator/logout/x", true, false),
+			Arguments.of("POST", "/operator/logouts", true, false),
+			Arguments.of("POST", "/operator/x/logout", true, false),
+			Arguments.of("POST", "/operator/api/logout", true, false),
+			Arguments.of("POST", "/operator//logout", true, false),
+			Arguments.of("POST", "/operator/logout;x=1", true, false),
+			Arguments.of("POST", "/operator/logout%2f", true, false),
+			Arguments.of("POST", "/operator/%2e/logout", true, false),
+			Arguments.of("POST", "/OPERATOR/logout", true, false),
+			Arguments.of("POST", "/operator/login/logout", true, false)
 		);
 	}
 
-	@ParameterizedTest(name = "{0} {1} 로그아웃 처리={2}")
-	@MethodSource("logoutCases")
-	@DisplayName("operator 로그아웃은 정확한 경로에서만 세션을 종료한다")
-	void operatorLogoutEndsSessionOnlyOnExactPath(String method, String path, boolean endsSession) throws Exception {
+	@ParameterizedTest(name = "{0} {1} CSRF 토큰={2} 로그아웃 처리={3}")
+	@MethodSource("operatorLogoutCases")
+	@DisplayName("operator 로그아웃은 CSRF 토큰이 있는 POST로 정확한 경로에서만 세션을 종료한다")
+	void operatorLogoutEndsSessionOnlyOnCsrfPostToExactPath(
+		String method, String path, boolean sendsCsrfToken, boolean endsSession
+	) throws Exception {
+		assertLogoutOutcome(OPERATOR_PORTAL, method, path, sendsCsrfToken, endsSession);
+	}
+
+	/** admin 로그아웃도 같은 규칙이다. 기본 설정(CSRF 보호 + logoutUrl)이 POST만 받는다는 점을 고정한다. */
+	static Stream<Arguments> adminLogoutCases() {
+		return Stream.of(
+			Arguments.of("POST", "/admin/logout", true, true),
+			Arguments.of("POST", "/admin/logout", false, false),
+			Arguments.of("GET", "/admin/logout", true, false),
+			Arguments.of("GET", "/admin/logout?next=/admin", true, false),
+			Arguments.of("PUT", "/admin/logout", true, false),
+			Arguments.of("POST", "/admin/logout/", true, false),
+			Arguments.of("POST", "/admin/Logout", true, false),
+			Arguments.of("POST", "/ADMIN/logout", true, false)
+		);
+	}
+
+	@ParameterizedTest(name = "{0} {1} CSRF 토큰={2} 로그아웃 처리={3}")
+	@MethodSource("adminLogoutCases")
+	@DisplayName("admin 로그아웃은 CSRF 토큰이 있는 POST로 정확한 경로에서만 세션을 종료한다")
+	void adminLogoutEndsSessionOnlyOnCsrfPostToExactPath(
+		String method, String path, boolean sendsCsrfToken, boolean endsSession
+	) throws Exception {
+		assertLogoutOutcome(ADMIN_PORTAL, method, path, sendsCsrfToken, endsSession);
+	}
+
+	private void assertLogoutOutcome(
+		LogoutPortal portal, String method, String path, boolean sendsCsrfToken, boolean endsSession
+	) throws Exception {
 		Map<String, String> cookies = new HashMap<>();
-		loginOperatorWithForm(cookies);
-		assertThat(statusOf(cookies, "GET", "/operator/accessibility-report/page"))
+		loginWithForm(cookies, portal.loginPath(), portal.username());
+		assertThat(statusOf(cookies, "GET", portal.sessionProbePath()))
 			.as("로그인 직후 세션 인증").isEqualTo(200);
 
-		Exchange logout = exchange(cookies, Case.of(SESSION_ONLY, method, path, 0));
+		Case request = Case.of(SESSION_ONLY, method, path, 0);
+		Exchange logout = exchange(cookies, sendsCsrfToken ? request : request.withoutCsrfToken());
 
 		if (endsSession) {
 			assertThat(logout.status()).isEqualTo(302);
-			assertThat(logout.locationPath()).isEqualTo("/operator/login?logout");
-			assertThat(statusOf(cookies, "GET", "/operator/accessibility-report/page"))
-				.as("로그아웃 뒤 세션 인증 해제").isEqualTo(302);
+			assertThat(logout.locationPath()).isEqualTo(portal.successPath());
+			assertThat(statusOf(cookies, "GET", portal.sessionProbePath()))
+				.as("로그아웃 뒤 세션 인증 해제").isNotEqualTo(200);
 		} else {
 			assertThat(logout.locationPath()).as("로그아웃 성공 이동이 아니어야 한다")
-				.isNotEqualTo("/operator/login?logout");
-			assertThat(statusOf(cookies, "GET", "/operator/accessibility-report/page"))
+				.isNotEqualTo(portal.successPath());
+			assertThat(statusOf(cookies, "GET", portal.sessionProbePath()))
 				.as("로그아웃되지 않은 세션은 유지").isEqualTo(200);
 		}
 	}
@@ -319,7 +369,11 @@ class SecurityConfigPathBoundaryTest extends SecurityPathBoundarySupport {
 			Case.of(ANONYMOUS, "GET", "/api/v1/Reports/abc", 403),
 			Case.of(ANONYMOUS, "GET", "/API/v1/reports/abc", 403),
 			Case.of(ANONYMOUS, "GET", "/api/v1/reports/abc/", 403),
-			Case.of(ANONYMOUS, "GET", "/api/v1/reports/", 200),
+			// 빈 경로 구간은 체인에 매칭되지 않아 기본 차단 체인이 거부한다(#528). 신고 컨트롤러에도 이 경로는 없다.
+			Case.of(ANONYMOUS, "GET", "/api/v1/reports/", 403),
+			Case.of(ANONYMOUS, "POST", "/api/v1/reports/", 403),
+			Case.of(ANONYMOUS, "GET", "/api/v1/report-uploads/", 403),
+			Case.of(ANONYMOUS, "PUT", "/api/v1/report-uploads/", 403),
 			Case.of(ANONYMOUS, "GET", "/api/v1/%72eports/abc", 200),
 			Case.of(ANONYMOUS, "GET", "/api/v1/reports//abc", 400),
 			Case.of(ANONYMOUS, "GET", "/api/v1/reports/abc;x=1", 400),

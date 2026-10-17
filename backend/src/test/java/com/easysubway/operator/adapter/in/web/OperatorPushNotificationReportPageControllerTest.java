@@ -72,8 +72,8 @@ class OperatorPushNotificationReportPageControllerTest {
 			.doesNotContain("deviceToken")
 			.doesNotContain("secret-device-token")
 			.doesNotContain("외부 푸시 발송 어댑터가 설정되지 않았습니다.")
-			.doesNotContain("name=\"_csrf\"")
-			.doesNotContain("<form")
+			.containsOnlyOnce("name=\"_csrf\"")
+			.containsOnlyOnce("<form")
 			.doesNotContain("/admin/notifications");
 	}
 

@@ -20,7 +20,10 @@
 	<div class="desktop-user">
 		<div class="avatar">MO</div>
 		<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
-		<a class="operator-logout-btn" th:href="@{/operator/logout}" href="/operator/logout" aria-label="로그아웃">로그아웃</a>
+		<!--/* th:action이 POST 폼에 _csrf hidden 필드를 넣는다. */-->
+		<form class="operator-logout-form" th:action="@{/operator/logout}" action="/operator/logout" method="post">
+			<button type="submit" class="operator-logout-btn" aria-label="로그아웃">로그아웃</button>
+		</form>
 	</div>
 </aside>
 
