@@ -29,49 +29,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 24
-
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
-        with:
-          version: 1.3.3
-
-      - name: Set up Java
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
-        with:
-          distribution: temurin
-          java-version: "21.0.11"
-          cache: gradle
-
-      # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
-      - name: Stage pinned contracts
-        shell: bash
-        run: |
-          artifact_url="$(jq -er '.artifactUrl | select(. == "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json")' backend/contracts.lock.json)"
-          curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 2 --retry-all-errors \
-            --connect-timeout 10 --max-time 60 \
-            --output "${RUNNER_TEMP}/backend-contracts.json" \
-            "${artifact_url}"
-          node backend/tools/stage-contracts.mjs \
-            --lock backend/contracts.lock.json \
-            --input "${RUNNER_TEMP}/backend-contracts.json" \
-            --output backend/build/contracts-staging
-
-      - name: Stage pinned Journey contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          journey_contract_subject="$(jq -er '.artifact | if type == "object" and (.repository | type == "string") and (.manifestDigest | type == "string" and test("^sha256:[a-f0-9]{64}$")) then "\(.repository)@\(.manifestDigest)" else error("invalid Journey contract OCI subject") end' backend/journey-contracts.lock.json)"
-          [[ "${journey_contract_subject}" =~ ^ghcr\.io/aquilaxk/easysubway-backend-contracts@sha256:[a-f0-9]{64}$ ]]
-          oras pull "${journey_contract_subject}" --output "${RUNNER_TEMP}/journey-contract-pull"
-          node backend/tools/stage-journey-contracts.mjs \
-            --lock backend/journey-contracts.lock.json \
-            --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
-            --output backend/build/journey-contracts-staging
+      - name: Set up backend build environment
+        uses: ./.github/actions/backend-setup
 
       - name: Set up k6
         uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065
@@ -90,5 +49,5 @@ jobs:
         with:
           name: journey-load-${{ github.sha }}
           path: ${{ runner.temp }}/journey-load/
-          retention-days: 30
+          retention-days: 14
           if-no-files-found: error

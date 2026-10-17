@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import test from 'node:test';
 import { loadConfiguredOsvLockfiles, validateCiExecutionControl, validateOsvResultFile, validateOsvResults } from './backend-ci-lifecycle.mjs';
 
 const workflowUrl = new URL('../../.github/workflows/ci.yml', import.meta.url);
+const compositeUrl = new URL('../../.github/actions/backend-setup/action.yml', import.meta.url);
 const policyUrl = new URL('../../backend/quality/ci-execution-control.json', import.meta.url);
 const scanner = '8ac9e5ce44cc7178e0e04229a91bdcc003166e57';
 const countSetupJavaReferences = (workflow) => (
@@ -98,10 +99,11 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.equal((workflow.match(/continue-on-error: true/g) || []).length, 3);
   assert.equal((workflow.match(/^    name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length, 1);
   assert.doesNotMatch(workflow, /^  dependency-vulnerability-scan-dispatch:/m);
-  // Backend #416: Gradle을 쓰는 job은 SpotBugs·테스트 shard·집계 세 개이고 모두 같은 고정 Temurin 단계를 쓴다.
-  assert.equal(countSetupJavaReferences(workflow), 3, 'workflow must use setup-java only in the three Gradle jobs');
-  const setupJavaSteps = workflow.match(/      - name: Set up Java\n(?:        if: needs\.scope\.outputs\.heavy == 'true'\n)?        uses: actions\/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961\n        with:\n          distribution: temurin\n          java-version: "21\.0\.11"\n          cache: gradle\n/g) || [];
-  assert.equal(setupJavaSteps.length, 3, 'every setup-java step must be the pinned Temurin 21.0.11 step');
+  // Backend #416: Gradle을 쓰는 job의 Java 설정은 backend-setup composite 하나에만 있고, workflow는 직접 setup-java를 쓰지 않는다.
+  assert.equal(countSetupJavaReferences(workflow), 0, 'workflow must reach setup-java only through the backend-setup composite');
+  const composite = readFileSync(compositeUrl, 'utf8');
+  assert.equal(countSetupJavaReferences(composite), 1, 'the composite must hold the single setup-java reference');
+  assert.ok(composite.includes('      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961\n      with:\n        distribution: temurin\n        java-version: "21.0.11"\n'), 'the composite setup-java step must be the pinned Temurin 21.0.11 step');
 });
 
 test('setup-java reference count rejects an additional tag-based action', async () => {

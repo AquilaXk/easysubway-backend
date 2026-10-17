@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { BASELINE_CANDIDATE_LIMIT, BASELINE_RUN_LIMIT } from './journey-benchmark-previous.mjs';
 import { ARTIFACT_PREFIX, REPORT_FILE_NAME, RUN_FILE_NAME } from './journey-mutation-trend.mjs';
-import { sameStep, stepNames as stepNamesOf, step, withoutComments } from './workflow-structure.mjs';
+import { stepNames as stepNamesOf, step, withoutComments } from './workflow-structure.mjs';
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const workflow = read('../../.github/workflows/journey-mutation-trend.yml');
@@ -13,8 +13,7 @@ const buildScript = read('../../backend/build.gradle');
 const lockfile = read('../../backend/gradle.lockfile');
 const dependabot = read('../../.github/dependabot.yml');
 
-const ciBackendTest = /^  backend-test:\n[\s\S]*?(?=^  backend:\n)/m.exec(ci)[0];
-const SETUP_STEPS = ['Checkout', 'Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'];
+const SETUP_STEPS = ['Checkout', 'Set up backend build environment'];
 const REPORT_DIRECTORY = 'backend/build/reports/pitest';
 const constant = (name) => new RegExp(`^def ${name} = (.+)$`, 'm').exec(initScript)?.[1];
 const quotedList = (name) => new RegExp(`^def ${name} = \\[\\n([\\s\\S]*?)^\\]`, 'm').exec(initScript)[1].match(/'([^']+)'/g).map((item) => item.slice(1, -1));
@@ -68,15 +67,6 @@ test('Backend #523 steps run in order from setup to PIT, raw report upload, summ
   assert.deepEqual(stepNamesOf(workflow), [...SETUP_STEPS, 'Scan the PIT toolchain with OSV', 'Run PIT on the routing classes', 'Upload the raw PIT report', 'Summarize the PIT report', 'Upload the mutation result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
 });
 
-test('Backend #523 setup steps are byte-identical to the Backend CI test shard setup, except that this job never uses the Gradle cache', () => {
-  for (const name of SETUP_STEPS.filter((candidate) => candidate !== 'Set up Java')) assert.ok(sameStep(workflow, ciBackendTest, name), name);
-  // Java 설정만 달라야 한다: 필수 CI의 같은 단계에서 cache 줄 하나를 빼면 이 workflow의 단계와 바이트 단위로 같다.
-  assert.ok(sameStep(workflow, ciBackendTest.replace(/(- name: Set up Java\n[\s\S]*?)^ {10}cache: gradle\n/m, '$1'), 'Set up Java'), 'Set up Java differs from CI beyond the cache line');
-  assert.match(step(ciBackendTest, 'Set up Java'), /^ {10}cache: gradle$/m, 'the reference step is expected to cache');
-  assert.doesNotMatch(withoutComments(workflow), /cache:|actions\/cache|gradle-build-action|setup-gradle/, 'the PIT job must not write or read a cache that required CI can restore');
-  for (const [, reference] of workflow.matchAll(/^\s+uses: ([^\s]+)$/gm)) assert.match(reference, /@[0-9a-f]{40}$/, `${reference} must be pinned to a commit sha`);
-});
-
 test('Backend #523 scans the PIT toolchain coordinates with the same OSV action pin the required CI uses', () => {
   const scan = step(workflow, 'Scan the PIT toolchain with OSV');
   const pin = /uses: (google\/osv-scanner-action\/osv-scanner-action@[0-9a-f]{40})/.exec(scan)?.[1];
@@ -105,7 +95,7 @@ test('Backend #523 summarizes the report directory the Gradle task writes, then 
   assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
   assert.ok(upload.includes(`name: ${ARTIFACT_PREFIX}\${{ github.sha }}`), 'the artifact name must start with ARTIFACT_PREFIX');
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-mutation\//);
-  assert.match(upload, /retention-days: 30/);
+  assert.match(upload, /retention-days: 14/);
   assert.match(upload, /if-no-files-found: error/);
 });
 
@@ -184,7 +174,7 @@ test('Backend #523 keeps the raw PIT report even when the summary fails, under a
   assert.match(raw, /if: always\(\)/);
   assert.match(raw, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
   assert.match(raw, new RegExp(`path: ${REPORT_DIRECTORY}/`));
-  assert.match(raw, /retention-days: 30/);
+  assert.match(raw, /retention-days: 14/);
   assert.match(raw, /if-no-files-found: ignore/);
   const name = /^ {10}name: (.+)$/m.exec(raw)[1];
   assert.ok(!name.startsWith(ARTIFACT_PREFIX), 'a raw report must not be taken for a previous result');

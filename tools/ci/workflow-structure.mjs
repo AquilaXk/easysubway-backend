@@ -15,8 +15,5 @@ export const step = (text, name) => {
   return found[0].text;
 };
 
-const STEP_TRAILING_COMMENTS = /(?:\n      # [^\n]*)+$/;
-const trimStep = (text) => text.replace(/\n+$/, '').replace(STEP_TRAILING_COMMENTS, '').replace(/\n+$/, '');
-
-/** 두 workflow의 같은 이름 step이 다음 step 앞의 설명 주석을 빼고 바이트 단위로 같은지 비교한다(핀이 갈라지지 않게). */
-export const sameStep = (left, right, name) => trimStep(step(left, name)) === trimStep(step(right, name));
+/** step 블록의 8칸 들여쓴 `uses:` 값을 그대로 돌려준다(없으면 undefined). 부분 문자열이 아니라 값 전체로 비교하기 위한 도우미. */
+export const stepUses = (stepText) => /^ {8}uses: ([^\n]+)$/m.exec(stepText)?.[1];

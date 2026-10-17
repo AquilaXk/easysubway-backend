@@ -64,6 +64,8 @@ test('Backend #416 path table: backend build, gates, contracts, and unknown path
     ['contracts/documentation/documentation-fragment.json', false],
     ['package.json', false],
     ['.nvmrc', false],
+    ['.github/actions/backend-setup/action.yml', true],
+    ['.github/actions/other/action.yml', true],
   ]) assert.equal(classifyPath(path).heavy, heavy, path);
   for (const invalid of ['', '/etc/passwd', 'backend/../README.md']) assert.throws(() => classifyPath(invalid), /invalid changed path/);
 });
