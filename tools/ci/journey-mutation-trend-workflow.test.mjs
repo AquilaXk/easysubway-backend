@@ -188,5 +188,5 @@ test('Backend #523 keeps the raw PIT report even when the summary fails, under a
   assert.match(raw, /if-no-files-found: ignore/);
   const name = /^ {10}name: (.+)$/m.exec(raw)[1];
   assert.ok(!name.startsWith(ARTIFACT_PREFIX), 'a raw report must not be taken for a previous result');
-  assert.ok(name.endsWith('${{ github.sha }}'));
+  assert.equal(name, 'journey-pit-report-${{ github.sha }}-${{ github.run_attempt }}', 're-run attempts of one run id must not collide');
 });

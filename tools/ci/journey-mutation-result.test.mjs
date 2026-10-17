@@ -152,7 +152,7 @@ test('every PIT 1.30 DEFAULTS mutator name is accepted in a survivor', () => {
 });
 
 test('a survivor mutator name that is not a PIT class name is rejected before it reaches the summary', () => {
-  for (const mutator of ['Bad_Name', 'RemoveConditionalMutator_EQUAL', 'RemoveConditionalMutator_EQUAL_ELSE_X', 'Mutator|x', 'Mutator&lt;b&gt;', '_ELSE', '_EQUAL_ELSE', 'RemoveConditionalMutator_EQUAL_IF_ORDER_ELSE', 'A'.repeat(81)]) {
+  for (const mutator of ['Bad_Name', 'RemoveConditionalMutator_EQUAL', 'RemoveConditionalMutator_EQUAL_ELSE_X', 'Mutator|x', 'Mutator&lt;b&gt;', '_ELSE', '_EQUAL_ELSE', 'RemoveConditionalMutator_EQUAL_X', 'RemoveConditionalMutator_BOUNDARY_IF', 'RemoveConditionalMutator_EQUAL_IF_ORDER_ELSE', 'A'.repeat(81)]) {
     assert.throws(() => buildMutationResult({ mutants: parse([{ status: 'SURVIVED', mutator }]), run: RUN, context: context() }), /survivor\.mutator is invalid/, mutator);
   }
 });
