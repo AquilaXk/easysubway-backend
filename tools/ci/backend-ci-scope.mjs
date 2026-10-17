@@ -12,6 +12,7 @@ import { isMainModule } from '../lib/is-main-module.mjs';
 
 const fail = (message) => { throw new Error(`backend CI scope: ${message}`); };
 
+// 경로 표에서 light가 아닌 경로는 heavy다. .github/actions/** (backend-setup composite)는 Gradle job의 환경을 정하므로 어떤 light 패턴과도 겹치지 않아야 한다.
 // Node 계약 테스트만으로 검증되는 경로. 여기 없는 경로는 모두 무거운 단계 대상이다.
 export const LIGHT_PATHS = [
   { pattern: /^README(?:\.ko)?\.md$/, reason: 'product README' },

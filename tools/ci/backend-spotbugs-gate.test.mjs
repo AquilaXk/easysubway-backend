@@ -1152,6 +1152,11 @@ test('workflow preserves #87 and uploads exactly four Phase-1 files before final
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.equal(validateWorkflow(workflow), true);
   assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 0\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
+  const composite = '        uses: ./.github/actions/backend-setup\n';
+  assert.ok(workflow.includes(composite));
+  for (const mutant of ['        uses: ./.github/actions/evil\n', '        uses: ./.github/actions/backend-setup-x\n', `${composite}        with:\n          gradle-cache: "false"\n`]) {
+    assert.throws(() => validateWorkflow(workflow.replace(composite, mutant)), /pinned backend-setup composite/, mutant);
+  }
   assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
   assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        if: always\(\) && !cancelled\(\) && \(steps\.spotbugs_main\.outcome == 'success' \|\| steps\.spotbugs_main\.outcome == 'failure'\)\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
   assert.match(workflow, /test -s build\/reports\/spotbugs\/spotbugsMain\.xml\n          test -s build\/reports\/spotbugs\/spotbugsMain\.html\n          \.\/gradlew writeSpotbugsMainEvidence --no-daemon -x spotbugsMain\n/);
@@ -1210,6 +1215,8 @@ test('PR-head provenance binds a distinct synthetic checkout head and rejects mi
   try {
     const buildScript = readFileSync(new URL('../../backend/build.gradle', import.meta.url));
     const fixturePolicy = policy(); fixturePolicy.toolchain.spotbugsGradlePlugin.buildScriptSha256 = digest(buildScript); const fixturePolicyBytes = `${JSON.stringify(fixturePolicy, null, 2)}\n`;
+    const setupComposite = readFileSync(new URL('../../.github/actions/backend-setup/action.yml', import.meta.url));
+    write('.github/actions/backend-setup/action.yml', setupComposite);
     write('backend/build.gradle', buildScript);
     write('backend/quality/spotbugs-suppression-policy.json', fixturePolicyBytes);
     write('backend/quality/spotbugs-exclude.xml', '<?xml version="1.0"?><FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match></FindBugsFilter>');
@@ -1219,6 +1226,7 @@ test('PR-head provenance binds a distinct synthetic checkout head and rejects mi
     const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(), prHeadSha = 'b'.repeat(40), output = join(dir, 'result.json'), summary = join(dir, 'summary.md');
     const options = ['--repo-root', dir, '--policy', join(dir, 'backend/quality/spotbugs-suppression-policy.json'), '--raw-xml', join(dir, 'raw.xml'), '--raw-html', join(dir, 'raw.html'), '--xml', join(dir, 'staged.xml'), '--html', join(dir, 'staged.html'), '--evidence', join(dir, 'evidence.json'), '--source-sha', sourceSha, '--pull-request-head-sha', prHeadSha, '--output', output, '--summary', summary];
     const validated = run(['validate', ...options]); assert.equal(validated.status, 0, validated.stderr);
+    write('.github/actions/backend-setup/action.yml', `${setupComposite}# tampered\n`); const tamperedComposite = run(['validate', ...options]); assert.equal(tamperedComposite.status, 1); assert.match(tamperedComposite.stderr, /setup composite digest is stale/); write('.github/actions/backend-setup/action.yml', setupComposite);
     const result = JSON.parse(readFileSync(output, 'utf8')); assert.deepEqual(Object.keys(result), ['schemaVersion', 'artifactKind', 'sourceSha', 'pullRequestHeadSha', 'analyzer', 'inputs', 'reports', 'findings', 'summary', 'outcome']); assert.equal(result.sourceSha, sourceSha); assert.equal(result.pullRequestHeadSha, prHeadSha); assert.deepEqual(Object.keys(result.inputs), ['sourceDigest', 'classDigest', 'classpathDigest', 'pluginClasspathDigest', 'pluginImplementationDigest', 'engineClasspathDigest', 'javaLauncherDigest', 'policyDigest', 'priorPolicyDigest', 'excludeFilterDigest']); assert.equal(result.inputs.priorPolicyDigest, digest(fixturePolicyBytes)); assert.deepEqual(Object.keys(result.reports), ['transform', 'xml', 'html']); assert.equal(result.reports.transform.id, 'spotbugs-report-sanitizer-v1'); assert.doesNotMatch(readFileSync(join(dir, 'staged.xml'), 'utf8'), /\/tmp\//); assert.doesNotMatch(readFileSync(join(dir, 'staged.html'), 'utf8'), /\/tmp\//);
     const final = run(['validate-final', ...options]); assert.equal(final.status, 1); assert.match(final.stderr, /DISCOVERY_REMOTE_RED/);
     writeFileSync(join(dir, 'staged.xml'), '<BugCollection/>'); const stagedTamper = run(['validate-final', ...options]); assert.equal(stagedTamper.status, 1); assert.match(stagedTamper.stderr, /sanitized report tamper/); assert.equal(run(['validate', ...options]).status, 0);

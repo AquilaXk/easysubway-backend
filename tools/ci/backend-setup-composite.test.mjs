@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { BASELINE_CANDIDATE_LIMIT, BASELINE_RUN_LIMIT } from './journey-benchmark-previous.mjs';
-import { stepNames, step, withoutComments } from './workflow-structure.mjs';
+import { stepNames, step, steps, stepUses, withoutComments } from './workflow-structure.mjs';
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const composite = read('../../.github/actions/backend-setup/action.yml');
-const COMPOSITE_USE = 'uses: ./.github/actions/backend-setup';
+const COMPOSITE_PATH = './.github/actions/backend-setup';
+const SETUP_STEPS_PER_WORKFLOW = { ci: 3, 'journey-benchmark-trend': 1, 'journey-load': 1, 'journey-mutation-trend': 1 };
 const SETUP_STEP = 'Set up backend build environment';
 const TREND_WORKFLOWS = ['journey-benchmark-trend', 'journey-load', 'journey-mutation-trend'];
 const BACKEND_WORKFLOWS = ['ci', ...TREND_WORKFLOWS];
@@ -36,15 +37,16 @@ test('every backend workflow reaches setup through the composite and keeps no in
   for (const name of BACKEND_WORKFLOWS) {
     const workflow = workflowOf(name);
     const code = withoutComments(workflow);
-    assert.ok(code.includes(COMPOSITE_USE), `${name} must use the backend-setup composite`);
-    assert.ok(stepNames(workflow).includes(SETUP_STEP), name);
+    const setups = steps(workflow).filter((candidate) => candidate.name === SETUP_STEP);
+    assert.equal(setups.length, SETUP_STEPS_PER_WORKFLOW[name], `${name} setup step count`);
+    for (const setup of setups) assert.equal(stepUses(setup.text), COMPOSITE_PATH, `${name} must use exactly the backend-setup composite`);
     assert.doesNotMatch(code, /actions\/setup-java|oras-project\/setup-oras|name: Stage pinned/, `${name} must not repeat the composite steps`);
   }
 });
 
 test('mutation trend never caches Gradle, so a nightly run cannot feed the required CI cache', () => {
   const mutation = workflowOf('journey-mutation-trend');
-  assert.ok(step(mutation, SETUP_STEP).includes(`${COMPOSITE_USE}\n        with:\n          gradle-cache: "false"\n`));
+  assert.ok(step(mutation, SETUP_STEP).includes(`uses: ${COMPOSITE_PATH}\n        with:\n          gradle-cache: "false"\n`));
   assert.doesNotMatch(withoutComments(mutation), /actions\/cache|gradle-build-action|setup-gradle|cache: gradle/);
   for (const name of ['journey-benchmark-trend', 'journey-load']) assert.doesNotMatch(step(workflowOf(name), SETUP_STEP), /gradle-cache/, `${name} keeps the default cache`);
   assert.doesNotMatch(workflowOf('ci'), /gradle-cache/);

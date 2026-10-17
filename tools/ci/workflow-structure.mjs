@@ -14,3 +14,6 @@ export const step = (text, name) => {
   assert.equal(found.length, 1, `step ${name} must appear exactly once`);
   return found[0].text;
 };
+
+/** step 블록의 8칸 들여쓴 `uses:` 값을 그대로 돌려준다(없으면 undefined). 부분 문자열이 아니라 값 전체로 비교하기 위한 도우미. */
+export const stepUses = (stepText) => /^ {8}uses: ([^\n]+)$/m.exec(stepText)?.[1];
