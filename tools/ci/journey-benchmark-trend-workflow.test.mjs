@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { ARTIFACT_PREFIX, BASELINE_CANDIDATE_LIMIT, BASELINE_RUN_LIMIT } from './journey-benchmark-previous.mjs';
 import { validateMeasurement } from './journey-benchmark-result.mjs';
+import { stepNames as stepNamesOf, step, withoutComments } from './workflow-structure.mjs';
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const workflow = read('../../.github/workflows/journey-benchmark-trend.yml');
@@ -10,16 +11,8 @@ const ci = read('../../.github/workflows/ci.yml');
 const initScript = read('./gradle/journey-benchmark.init.gradle');
 const gateSource = read('../../backend/src/test/java/com/easysubway/route/application/service/JourneyEnginePerformanceGateTest.java');
 
-// 주석 문구가 구조 판정에 섞이지 않도록 주석 줄을 뺀 사본으로 판정한다.
-const withoutComments = (text) => text.replace(/^[ \t]*#.*\n/gm, '');
-const steps = (text) => text.split(/^(?=      - name: )/m).slice(1).map((block) => ({ name: /^      - name: ([^\n]+)/.exec(block)[1], text: block }));
-const step = (text, name) => {
-  const found = steps(text).filter((candidate) => candidate.name === name);
-  assert.equal(found.length, 1, `step ${name} must appear exactly once`);
-  return found[0].text;
-};
 const ciBackendTest = /^  backend-test:\n[\s\S]*?(?=^  backend:\n)/m.exec(ci)[0];
-const stepNames = steps(workflow).map(({ name }) => name);
+const stepNames = stepNamesOf(workflow);
 const SETUP_STEPS = ['Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'];
 
 test('Backend #516 runs on main push, nightly schedule and manual dispatch only', () => {

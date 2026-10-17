@@ -49,11 +49,10 @@ import org.springframework.boot.web.server.WebServer;
 import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.web.servlet.function.RouterFunction;
+import org.springframework.web.servlet.function.RouterFunctions;
+import org.springframework.web.servlet.function.ServerResponse;
 
 /**
  * 경로 API 부하·장애 시나리오(k6)가 때리는 로컬 서버. 운영 서버가 아니라 CI에서 띄운 인스턴스가 대상이다.
@@ -67,8 +66,10 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code POST /__load/bundle/{a|b}}: 해당 팩을 컴파일해 stage하고 activate한다. 팩 {@code a}는 fixture 그대로,
  *       {@code b}는 모든 정차 시각을 {@value #REPLACEMENT_SHIFT_SECONDS}초 늦춘 같은 노선망이다. 컴파일은 요청 경로 밖에서 하고,
  *       요청은 activate 순간까지 이전 팩으로 응답한다.</li>
- *   <li>{@code POST /__load/facility/{up|down}}: 시설 가동 원천을 정상(차단 0건, 방금 관측)이나 사용 불가로 바꾼다. 운영 기본값처럼
- *       시설 상태 필수 모드를 켜 두므로, 사용 불가이면 계단 없는 필수 요청은 {@code FACILITY_STATUS_UNAVAILABLE} 503이 된다.</li>
+ *   <li>{@code POST /__load/facility/{up|down}}: 시설 가동 원천을 정상(차단 0건, 방금 관측)이나 사용 불가로 바꾼다. 시설 상태 필수
+ *       모드({@code easysubway.journey.facility-status.required=true})를 켠 구성이므로, 사용 불가이면 계단 없는 필수 요청은
+ *       {@code FACILITY_STATUS_UNAVAILABLE} 503이 되고 나머지 요청은 {@code facilityStatus=UNOBSERVED}를 밝힌다. 운영 기본값은
+ *       필수 모드 꺼짐이라 그 구성은 이 서버가 검증하지 않는다.</li>
  * </ul>
  * <p>{@code GET /__load/fixture}는 시나리오가 질의를 만드는 입력(역 목록, 서비스일, 팩 식별자)을 알려 준다.</p>
  *
@@ -90,9 +91,13 @@ public final class JourneyLoadServer implements AutoCloseable {
 		this.port = ((WebServer) context.getWebServer()).getPort();
 	}
 
+	/** 빈 포트에 서버를 띄운다. 포트는 이 컨텍스트의 설정으로만 정해 같은 JVM의 다른 테스트에 영향을 주지 않는다. */
 	public static JourneyLoadServer start() {
-		System.setProperty("server.port", "0");
-		return new JourneyLoadServer(new AnnotationConfigServletWebServerApplicationContext(Wiring.class));
+		var context = new AnnotationConfigServletWebServerApplicationContext();
+		context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("journey-load-server", Map.of("server.port", "0")));
+		context.register(Wiring.class);
+		context.refresh();
+		return new JourneyLoadServer(context);
 	}
 
 	public int port() {
@@ -178,42 +183,12 @@ public final class JourneyLoadServer implements AutoCloseable {
 			}
 		}
 
+		boolean knows(String label) {
+			return timetables.containsKey(label);
+		}
+
 		RouteBundleActivationRegistry registry() {
 			return registry;
-		}
-	}
-
-	@RestController
-	static final class LoadControl {
-		private final BundleReplacement bundles;
-		private final SwitchableFacilityAvailability facility;
-
-		LoadControl(BundleReplacement bundles, SwitchableFacilityAvailability facility) {
-			this.bundles = bundles;
-			this.facility = facility;
-		}
-
-		@PostMapping("/__load/bundle/{label}")
-		ResponseEntity<Map<String, String>> replaceBundle(@PathVariable String label) {
-			if (!bundles.timetables.containsKey(label)) return ResponseEntity.badRequest().build();
-			bundles.activate(label);
-			return ResponseEntity.ok(Map.of("active", label));
-		}
-
-		@PostMapping("/__load/facility/{state}")
-		ResponseEntity<Map<String, String>> switchFacility(@PathVariable String state) {
-			if (!"up".equals(state) && !"down".equals(state)) return ResponseEntity.badRequest().build();
-			facility.down.set("down".equals(state));
-			return ResponseEntity.ok(Map.of("facility", state));
-		}
-
-		@GetMapping("/__load/fixture")
-		Map<String, Object> fixture() {
-			return Map.of(
-				"serviceDate", CapitalEndpointFixture.serviceDate().toString(),
-				"stations", CapitalEndpointFixture.stations(),
-				"bundles", Map.of("a", LoadScenarioBundles.manifestSha256("a"), "b", LoadScenarioBundles.manifestSha256("b")),
-				"replacementShiftSeconds", REPLACEMENT_SHIFT_SECONDS);
 		}
 	}
 
@@ -232,9 +207,31 @@ public final class JourneyLoadServer implements AutoCloseable {
 			return new SwitchableFacilityAvailability();
 		}
 
+		/**
+		 * 제어 면. 컨트롤러 애너테이션 대신 함수형 라우터를 쓴다. 컨트롤러 스테레오타입을 붙이면 애플리케이션 컨텍스트 테스트의
+		 * 컴포넌트 스캔이 이 클래스를 읽어 빈이 섞이고, 애너테이션 없는 클래스는 Spring 6에서 핸들러로 인식되지 않는다.
+		 */
 		@Bean
-		LoadControl loadControl(BundleReplacement bundles, SwitchableFacilityAvailability facility) {
-			return new LoadControl(bundles, facility);
+		RouterFunction<ServerResponse> loadControl(BundleReplacement bundles, SwitchableFacilityAvailability facility) {
+			return RouterFunctions.route()
+				.POST("/__load/bundle/{label}", request -> {
+					String label = request.pathVariable("label");
+					if (!bundles.knows(label)) return ServerResponse.badRequest().build();
+					bundles.activate(label);
+					return ServerResponse.ok().body(Map.of("active", label));
+				})
+				.POST("/__load/facility/{state}", request -> {
+					String state = request.pathVariable("state");
+					if (!"up".equals(state) && !"down".equals(state)) return ServerResponse.badRequest().build();
+					facility.down.set("down".equals(state));
+					return ServerResponse.ok().body(Map.of("facility", state));
+				})
+				.GET("/__load/fixture", request -> ServerResponse.ok().body(Map.of(
+					"serviceDate", CapitalEndpointFixture.serviceDate().toString(),
+					"stations", CapitalEndpointFixture.stations(),
+					"bundles", Map.of("a", LoadScenarioBundles.manifestSha256("a"), "b", LoadScenarioBundles.manifestSha256("b")),
+					"replacementShiftSeconds", REPLACEMENT_SHIFT_SECONDS)))
+				.build();
 		}
 
 		@Bean

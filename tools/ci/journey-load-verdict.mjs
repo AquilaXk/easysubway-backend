@@ -6,7 +6,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { annotation } from './journey-benchmark-summary.mjs';
-import { LOAD_PLAN, VIOLATIONS } from './journey-load-contract.mjs';
+import { LOAD_PLAN } from './journey-load-contract.mjs';
 
 const TITLE = '경로 검색 부하·장애 시나리오';
 const CLEAN_PHASES = ['steady', 'recovered'];
