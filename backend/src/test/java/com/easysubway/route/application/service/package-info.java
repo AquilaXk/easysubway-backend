@@ -458,6 +458,12 @@
  *   {@code EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256})으로 대응을 확인한다.</li>
  *   <li>차분 검증 확장 실행: {@code EASYSUBWAY_DIFFERENTIAL_BUNDLES}(기본 150)와 {@code EASYSUBWAY_DIFFERENTIAL_BASE_SEED}로
  *   번들 수와 시작 시드를 바꾼다. 반례에 찍힌 seed가 번들 시드다.</li>
+ *   <li>상시 추세 관찰(#516): 게이트는 허용폭이 넓어 완만한 열화를 보여 주지 못하고 측정값도 남기지 않는다. 그래서
+ *   {@code .github/workflows/journey-benchmark-trend.yml}이 main push·매일 야간·수동 실행으로 같은 측정 진입점을 판정 없이 새 JVM
+ *   3회 돌려 값별 중앙값을 artifact(보존 30일)로 올리고, 직전 성공 run과 비교한 표를 job summary에 쓴다. 보정 후 지연이나
+ *   할당이 직전의 1.30배 이상이면 {@code ::warning}만 내고 job은 실패시키지 않는다(관찰형, 임계 상수는
+ *   {@code tools/ci/journey-benchmark-trend.mjs}). 번들·질의 집합 sha256이 바뀐 workload는 비교에서 빠진다. 이 workflow는 게이트의
+ *   기준선을 바꾸지 않는다. 실패선 조정은 이 절의 기준선 갱신 절차를 따른다.</li>
  * </ul>
  *
  * <h2>8. 알려진 한계</h2>

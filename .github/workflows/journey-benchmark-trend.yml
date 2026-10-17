@@ -1,0 +1,140 @@
+name: Journey Engine Benchmark Trend
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # 매일 03:23 KST. 정각을 피해 예약 실행 지연을 줄인다.
+    - cron: "23 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 병합이 몰려도 측정은 한 번에 하나만 돌고, 대기열에는 가장 최근 push 하나만 남는다(이전 대기 run은 취소된다).
+# 진행 중인 측정은 취소하지 않는다. 취소된 측정은 추세에 빈 점을 남긴다.
+concurrency:
+  group: journey-engine-benchmark-trend
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Journey engine benchmark trend
+    # 운영 부하와 겹치는 self-hosted 운영 러너는 쓰지 않는다. 호스티드 러너의 편차는 새 JVM 반복 중앙값과
+    # 보정 작업 시간 정규화로 줄이고, 임계를 넘어도 job은 실패시키지 않는다(관찰형, backend #516).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    env:
+      BENCHMARK_REPEATS: "3"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        with:
+          version: 1.3.3
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21.0.11"
+          cache: gradle
+
+      # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
+      - name: Stage pinned contracts
+        shell: bash
+        run: |
+          artifact_url="$(jq -er '.artifactUrl | select(. == "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json")' backend/contracts.lock.json)"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            --output "${RUNNER_TEMP}/backend-contracts.json" \
+            "${artifact_url}"
+          node backend/tools/stage-contracts.mjs \
+            --lock backend/contracts.lock.json \
+            --input "${RUNNER_TEMP}/backend-contracts.json" \
+            --output backend/build/contracts-staging
+
+      - name: Stage pinned Journey contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          journey_contract_subject="$(jq -er '.artifact | if type == "object" and (.repository | type == "string") and (.manifestDigest | type == "string" and test("^sha256:[a-f0-9]{64}$")) then "\(.repository)@\(.manifestDigest)" else error("invalid Journey contract OCI subject") end' backend/journey-contracts.lock.json)"
+          [[ "${journey_contract_subject}" =~ ^ghcr\.io/aquilaxk/easysubway-backend-contracts@sha256:[a-f0-9]{64}$ ]]
+          oras pull "${journey_contract_subject}" --output "${RUNNER_TEMP}/journey-contract-pull"
+          node backend/tools/stage-journey-contracts.mjs \
+            --lock backend/journey-contracts.lock.json \
+            --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
+            --output backend/build/journey-contracts-staging
+
+      # 회귀 게이트(JourneyEnginePerformanceGateTest)와 같은 측정을 판정 없이 새 JVM에서 반복 실행한다.
+      - name: Measure the engine benchmark
+        working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/journey-benchmark"
+          for repeat in $(seq 1 "${BENCHMARK_REPEATS}"); do
+            ./gradlew --init-script ../tools/ci/gradle/journey-benchmark.init.gradle journeyEngineBenchmark -PjourneyBenchmarkOutput="${RUNNER_TEMP}/journey-benchmark/measured-${repeat}.json" --no-daemon
+          done
+
+      - name: Aggregate the benchmark repeats
+        shell: bash
+        run: |
+          set -euo pipefail
+          measured=()
+          for repeat in $(seq 1 "${BENCHMARK_REPEATS}"); do
+            measured+=(--measured "${RUNNER_TEMP}/journey-benchmark/measured-${repeat}.json")
+          done
+          node tools/ci/journey-benchmark-trend.mjs aggregate "${measured[@]}" --output "${RUNNER_TEMP}/journey-benchmark/result.json"
+
+      # 결과는 저장소에 커밋하지 않는다(자동 PR 누적 방지). 보존 기간 안의 직전 성공 run과만 비교한다.
+      - name: Upload the benchmark result
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: journey-engine-benchmark-${{ github.sha }}
+          path: ${{ runner.temp }}/journey-benchmark/
+          retention-days: 30
+          if-no-files-found: error
+
+      # 비교 대상이 없거나 읽을 수 없는 이유는 summary에 그대로 남긴다. 회귀는 ::warning으로만 드러낸다.
+      - name: Compare with the previous successful run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+          previous_dir="${RUNNER_TEMP}/previous-benchmark"
+          reason=""
+          previous_result=""
+          previous_run="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow "${WORKFLOW_NAME}" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [[ -z "${previous_run}" ]]; then
+            reason="직전 성공 run이 없습니다(첫 실행)."
+          elif ! download_error="$(gh run download "${previous_run}" --repo "${GITHUB_REPOSITORY}" --pattern 'journey-engine-benchmark-*' --dir "${previous_dir}" 2>&1)"; then
+            reason="직전 성공 run ${previous_run}의 artifact를 받지 못했습니다(보존 기간 만료 등): ${download_error//$'\n'/ }"
+          else
+            previous_result="$(find "${previous_dir}" -name result.json -print -quit)"
+            if [[ -z "${previous_result}" ]]; then
+              reason="직전 성공 run ${previous_run}의 artifact에 result.json이 없습니다."
+            fi
+          fi
+          if [[ -n "${reason}" ]]; then
+            node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --no-previous "${reason}" --summary "$GITHUB_STEP_SUMMARY"
+          else
+            node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --previous "${previous_result}" --summary "$GITHUB_STEP_SUMMARY"
+          fi
