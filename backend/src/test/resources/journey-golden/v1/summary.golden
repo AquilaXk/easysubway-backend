@@ -1,0 +1,898 @@
+# Journey V3 golden summary v1
+FIXTURE capital serviceDate=2026-10-06 pin=b90ce040036aa0a36018ed9bb849024a6a6d0f0094f3b432dcfb6a3b5eec7517
+FIXTURE synthetic-14 serviceDate=2026-07-01 pin=a2a6e3c1e9f04674f2c1b0b5334ca8c32a43146d59c070661e7039c630698d6b
+FIXTURE synthetic-24 serviceDate=2026-07-01 pin=cf0479b06b67d36cda6540a3c6cfb8b175e308ff4fc2444e24ae01229f99542e
+FIXTURE synthetic-51 serviceDate=2026-07-01 pin=08146a4c965c6996848d6f4b30f182552c2bf058bdabd5a82b9db35b11eabe92
+FIXTURE synthetic-9 serviceDate=2026-07-01 pin=0a72ae51adf7c3213236aa4da2da43549302c277b5ee2df808a6956301968abf
+capital-direct-ride-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:21:00 1260s transfers=0 walk=0m lines=line-2b2d9eaa53d0 access=VERIFIED
+capital-direct-ride-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:21:00 1260s transfers=0 walk=0m lines=line-2b2d9eaa53d0 access=VERIFIED
+capital-direct-ride-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:21:00 1260s transfers=0 walk=0m lines=line-2b2d9eaa53d0 access=VERIFIED
+capital-direct-ride-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:21:00 1260s transfers=0 walk=0m lines=line-2b2d9eaa53d0 access=VERIFIED
+capital-transfer-one-01 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:03:00 1980s transfers=1 walk=524m lines=line-98718184f016>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-01 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:12:00 2520s transfers=1 walk=524m lines=line-98718184f016>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-01 NO_STAIRS UNKNOWN
+capital-transfer-one-01 STEP_FREE UNKNOWN
+capital-transfer-one-02 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:42:00 2520s transfers=1 walk=194m lines=line-472a81add377>seoul-4 access=UNDETERMINED
+capital-transfer-one-02 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:42:00 2520s transfers=1 walk=96m lines=line-472a81add377>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-one-02 NO_STAIRS UNKNOWN
+capital-transfer-one-02 STEP_FREE UNKNOWN
+capital-transfer-multi-01 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:53:22 3202s transfers=2 walk=649m lines=line-80fc4d5350d4>line-e9e9a5b520a4>line-42b5805f3b5a access=UNDETERMINED
+capital-transfer-multi-01 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:53:22 3202s transfers=2 walk=649m lines=line-80fc4d5350d4>line-e9e9a5b520a4>line-42b5805f3b5a access=UNDETERMINED
+capital-transfer-multi-01 NO_STAIRS UNKNOWN
+capital-transfer-multi-01 STEP_FREE UNKNOWN
+capital-transfer-multi-02 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>08:55:00 3300s transfers=3 walk=317m lines=line-aefa08ccc0a9>seoul-2>seoul-4>line-3f41718e0833 access=UNDETERMINED
+  #2 08:00:00>09:07:00 4020s transfers=2 walk=170m lines=line-aefa08ccc0a9>seoul-2>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-multi-02 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>08:59:00 3540s transfers=3 walk=317m lines=line-aefa08ccc0a9>seoul-2>seoul-4>line-3f41718e0833 access=UNDETERMINED
+  #2 08:00:00>09:07:00 4020s transfers=2 walk=170m lines=line-aefa08ccc0a9>seoul-2>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-multi-02 NO_STAIRS UNKNOWN
+capital-transfer-multi-02 STEP_FREE UNKNOWN
+capital-transfer-one-03 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>23:02:00 5520s transfers=1 walk=100m lines=line-6e39be0cb6e2>line-15b3b8a93259 access=UNDETERMINED
+capital-transfer-one-03 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>23:02:00 5520s transfers=1 walk=100m lines=line-6e39be0cb6e2>line-15b3b8a93259 access=UNDETERMINED
+capital-transfer-one-03 NO_STAIRS UNKNOWN
+capital-transfer-one-03 STEP_FREE UNKNOWN
+capital-transfer-one-04 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>09:18:00 4680s transfers=1 walk=148m lines=line-6e39be0cb6e2>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-04 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>09:18:00 4680s transfers=1 walk=148m lines=line-6e39be0cb6e2>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-04 NO_STAIRS UNKNOWN
+capital-transfer-one-04 STEP_FREE UNKNOWN
+capital-transfer-one-05 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>21:58:00 1680s transfers=1 walk=107m lines=line-80fc4d5350d4>seoul-4 access=UNDETERMINED
+capital-transfer-one-05 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>21:58:00 1680s transfers=1 walk=107m lines=line-80fc4d5350d4>seoul-4 access=UNDETERMINED
+capital-transfer-one-05 NO_STAIRS UNKNOWN
+capital-transfer-one-05 STEP_FREE UNKNOWN
+capital-transfer-one-06 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>15:49:00 2940s transfers=1 walk=155m lines=line-41a8c75ec9d8>line-6e39be0cb6e2 access=UNDETERMINED
+capital-transfer-one-06 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>15:49:00 2940s transfers=1 walk=155m lines=line-41a8c75ec9d8>line-6e39be0cb6e2 access=UNDETERMINED
+capital-transfer-one-06 NO_STAIRS UNKNOWN
+capital-transfer-one-06 STEP_FREE UNKNOWN
+capital-transfer-one-07 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>15:30:00 1800s transfers=1 walk=155m lines=line-41a8c75ec9d8>line-f0e747248a31 access=UNDETERMINED
+capital-transfer-one-07 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>15:30:00 1800s transfers=1 walk=155m lines=line-41a8c75ec9d8>line-f0e747248a31 access=UNDETERMINED
+capital-transfer-one-07 NO_STAIRS UNKNOWN
+capital-transfer-one-07 STEP_FREE UNKNOWN
+capital-direct-ride-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:03:00 1980s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:03:00 1980s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:03:00 1980s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:10:00 2400s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-transfer-multi-03 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>22:35:00 3900s transfers=2 walk=139m lines=line-2b2d9eaa53d0>line-80fc4d5350d4>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-multi-03 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>22:35:00 3900s transfers=2 walk=139m lines=line-2b2d9eaa53d0>line-80fc4d5350d4>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-multi-03 NO_STAIRS UNKNOWN
+capital-transfer-multi-03 STEP_FREE UNKNOWN
+capital-transfer-multi-04 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>13:08:00 4080s transfers=2 walk=272m lines=line-3f41718e0833>seoul-2>line-2b2d9eaa53d0 access=UNDETERMINED
+capital-transfer-multi-04 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>13:08:00 4080s transfers=3 walk=203m lines=line-3f41718e0833>seoul-2>line-80fc4d5350d4>line-2b2d9eaa53d0 access=UNDETERMINED
+  #2 12:00:00>13:12:00 4320s transfers=2 walk=165m lines=line-3f41718e0833>line-41a8c75ec9d8>line-2b2d9eaa53d0 access=UNDETERMINED
+capital-transfer-multi-04 NO_STAIRS UNKNOWN
+capital-transfer-multi-04 STEP_FREE UNKNOWN
+capital-transfer-multi-05 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>16:47:00 6420s transfers=2 walk=378m lines=line-e4939a4b4713>line-558d0bd8312d>line-80fc4d5350d4 access=UNDETERMINED
+capital-transfer-multi-05 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>16:47:00 6420s transfers=2 walk=378m lines=line-e4939a4b4713>line-558d0bd8312d>line-80fc4d5350d4 access=UNDETERMINED
+capital-transfer-multi-05 NO_STAIRS UNKNOWN
+capital-transfer-multi-05 STEP_FREE UNKNOWN
+capital-transfer-multi-06 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 20:00:00>22:16:00 8160s transfers=2 walk=252m lines=line-98718184f016>line-15b3b8a93259>line-472a81add377 access=UNDETERMINED
+capital-transfer-multi-06 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 20:00:00>22:16:00 8160s transfers=2 walk=252m lines=line-98718184f016>line-15b3b8a93259>line-472a81add377 access=UNDETERMINED
+capital-transfer-multi-06 NO_STAIRS UNKNOWN
+capital-transfer-multi-06 STEP_FREE UNKNOWN
+capital-transfer-multi-07 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 20:00:00>20:40:00 2400s transfers=3 walk=218m lines=line-6e39be0cb6e2>line-3f41718e0833>seoul-2>line-472a81add377 access=UNDETERMINED
+  #2 20:00:00>20:47:00 2820s transfers=1 walk=164m lines=line-6e39be0cb6e2>line-472a81add377 access=UNDETERMINED
+capital-transfer-multi-07 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 20:00:00>20:40:00 2400s transfers=3 walk=218m lines=line-6e39be0cb6e2>line-3f41718e0833>seoul-2>line-472a81add377 access=UNDETERMINED
+  #2 20:00:00>20:47:00 2820s transfers=1 walk=164m lines=line-6e39be0cb6e2>line-472a81add377 access=UNDETERMINED
+capital-transfer-multi-07 NO_STAIRS UNKNOWN
+capital-transfer-multi-07 STEP_FREE UNKNOWN
+capital-transfer-one-08 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:48:00 4680s transfers=1 walk=290m lines=line-558d0bd8312d>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-08 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:48:00 4680s transfers=1 walk=290m lines=line-558d0bd8312d>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-08 NO_STAIRS UNKNOWN
+capital-transfer-one-08 STEP_FREE UNKNOWN
+capital-transfer-multi-08 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>23:31:30 7290s transfers=2 walk=293m lines=seoul-4>line-41a8c75ec9d8>line-8604048b6430 access=UNDETERMINED
+capital-transfer-multi-08 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>23:31:30 7290s transfers=2 walk=293m lines=seoul-4>line-41a8c75ec9d8>line-8604048b6430 access=UNDETERMINED
+capital-transfer-multi-08 NO_STAIRS UNKNOWN
+capital-transfer-multi-08 STEP_FREE UNKNOWN
+capital-transfer-one-09 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>12:39:00 2340s transfers=1 walk=75m lines=seoul-2>line-41a8c75ec9d8 access=UNDETERMINED
+capital-transfer-one-09 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>12:39:00 2340s transfers=1 walk=75m lines=seoul-2>line-41a8c75ec9d8 access=UNDETERMINED
+capital-transfer-one-09 NO_STAIRS UNKNOWN
+capital-transfer-one-09 STEP_FREE UNKNOWN
+capital-transfer-multi-09 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>16:59:00 7140s transfers=2 walk=163m lines=line-472a81add377>seoul-2>line-3f41718e0833 access=UNDETERMINED
+  #2 15:00:00>17:29:00 8940s transfers=1 walk=96m lines=line-472a81add377>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-multi-09 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>16:59:00 7140s transfers=2 walk=163m lines=line-472a81add377>seoul-2>line-3f41718e0833 access=UNDETERMINED
+  #2 15:00:00>17:29:00 8940s transfers=1 walk=96m lines=line-472a81add377>line-3f41718e0833 access=UNDETERMINED
+capital-transfer-multi-09 NO_STAIRS UNKNOWN
+capital-transfer-multi-09 STEP_FREE UNKNOWN
+capital-transfer-multi-10 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:51:00 4860s transfers=3 walk=1324m lines=line-051552e50435>line-e9e9a5b520a4>line-6e39be0cb6e2>line-41a8c75ec9d8 access=UNDETERMINED
+  #2 07:30:00>09:33:00 7380s transfers=2 walk=217m lines=line-051552e50435>line-80fc4d5350d4>line-41a8c75ec9d8 access=UNDETERMINED
+capital-transfer-multi-10 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>09:00:00 5400s transfers=3 walk=1324m lines=line-051552e50435>line-e9e9a5b520a4>line-6e39be0cb6e2>line-41a8c75ec9d8 access=UNDETERMINED
+  #2 07:30:00>09:33:00 7380s transfers=2 walk=217m lines=line-051552e50435>line-80fc4d5350d4>line-41a8c75ec9d8 access=UNDETERMINED
+capital-transfer-multi-10 NO_STAIRS UNKNOWN
+capital-transfer-multi-10 STEP_FREE UNKNOWN
+capital-transfer-one-10 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:14:00 840s transfers=1 walk=155m lines=line-3f41718e0833>seoul-4 access=UNDETERMINED
+capital-transfer-one-10 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:21:00 1260s transfers=1 walk=155m lines=line-3f41718e0833>seoul-4 access=UNDETERMINED
+capital-transfer-one-10 NO_STAIRS UNKNOWN
+capital-transfer-one-10 STEP_FREE UNKNOWN
+capital-transfer-multi-11 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>13:55:00 6900s transfers=2 walk=181m lines=line-558d0bd8312d>line-f0e747248a31>line-e9e9a5b520a4 access=UNDETERMINED
+capital-transfer-multi-11 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>13:55:00 6900s transfers=2 walk=181m lines=line-558d0bd8312d>line-f0e747248a31>line-e9e9a5b520a4 access=UNDETERMINED
+capital-transfer-multi-11 NO_STAIRS UNKNOWN
+capital-transfer-multi-11 STEP_FREE UNKNOWN
+capital-transfer-one-11 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>15:42:00 2520s transfers=1 walk=80m lines=line-15b3b8a93259>shinbundang access=UNDETERMINED
+capital-transfer-one-11 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>15:42:00 2520s transfers=1 walk=80m lines=line-15b3b8a93259>shinbundang access=UNDETERMINED
+capital-transfer-one-11 NO_STAIRS UNKNOWN
+capital-transfer-one-11 STEP_FREE UNKNOWN
+capital-transfer-multi-12 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>19:31:00 5460s transfers=2 walk=121m lines=seoul-2>line-15b3b8a93259>line-472a81add377 access=UNDETERMINED
+  #2 18:00:00>20:22:00 8520s transfers=1 walk=81m lines=seoul-2>line-472a81add377 access=UNDETERMINED
+capital-transfer-multi-12 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>19:31:00 5460s transfers=2 walk=121m lines=seoul-2>line-15b3b8a93259>line-472a81add377 access=UNDETERMINED
+  #2 18:00:00>20:22:00 8520s transfers=1 walk=81m lines=seoul-2>line-472a81add377 access=UNDETERMINED
+capital-transfer-multi-12 NO_STAIRS UNKNOWN
+capital-transfer-multi-12 STEP_FREE UNKNOWN
+capital-transfer-multi-13 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>10:07:30 9450s transfers=2 walk=82m lines=line-472a81add377>seoul-4>line-6e39be0cb6e2 access=UNDETERMINED
+  #2 07:30:00>10:22:00 10320s transfers=1 walk=254m lines=line-472a81add377>line-6e39be0cb6e2 access=UNDETERMINED
+capital-transfer-multi-13 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>10:07:30 9450s transfers=2 walk=82m lines=line-472a81add377>seoul-4>line-6e39be0cb6e2 access=UNDETERMINED
+  #2 07:30:00>10:22:00 10320s transfers=1 walk=254m lines=line-472a81add377>line-6e39be0cb6e2 access=UNDETERMINED
+capital-transfer-multi-13 NO_STAIRS UNKNOWN
+capital-transfer-multi-13 STEP_FREE UNKNOWN
+capital-transfer-multi-14 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>16:50:00 6600s transfers=2 walk=175m lines=line-54a7b980b7c3>line-15b3b8a93259>line-80fc4d5350d4 access=UNDETERMINED
+capital-transfer-multi-14 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 15:00:00>16:50:00 6600s transfers=2 walk=175m lines=line-54a7b980b7c3>line-15b3b8a93259>line-80fc4d5350d4 access=UNDETERMINED
+capital-transfer-multi-14 NO_STAIRS UNKNOWN
+capital-transfer-multi-14 STEP_FREE UNKNOWN
+capital-transfer-one-12 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>19:08:00 4080s transfers=1 walk=155m lines=line-f0e747248a31>line-41a8c75ec9d8 access=UNDETERMINED
+capital-transfer-one-12 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>19:08:00 4080s transfers=1 walk=155m lines=line-f0e747248a31>line-41a8c75ec9d8 access=UNDETERMINED
+capital-transfer-one-12 NO_STAIRS UNKNOWN
+capital-transfer-one-12 STEP_FREE UNKNOWN
+capital-transfer-multi-15 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>12:22:00 1320s transfers=2 walk=271m lines=line-558d0bd8312d>seoul-2>line-2b2d9eaa53d0 access=UNDETERMINED
+  #2 12:00:00>12:38:00 2280s transfers=1 walk=16m lines=line-558d0bd8312d>line-2b2d9eaa53d0 access=UNDETERMINED
+capital-transfer-multi-15 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>12:22:00 1320s transfers=2 walk=271m lines=line-558d0bd8312d>seoul-2>line-2b2d9eaa53d0 access=UNDETERMINED
+  #2 12:00:00>12:38:00 2280s transfers=1 walk=16m lines=line-558d0bd8312d>line-2b2d9eaa53d0 access=UNDETERMINED
+capital-transfer-multi-15 NO_STAIRS UNKNOWN
+capital-transfer-multi-15 STEP_FREE UNKNOWN
+capital-transfer-multi-16 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 23:00:00>24:01:00 3660s transfers=2 walk=114m lines=line-30886152e4f8>seoul-4>line-80fc4d5350d4 access=UNDETERMINED
+capital-transfer-multi-16 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 23:00:00>24:01:00 3660s transfers=2 walk=114m lines=line-30886152e4f8>seoul-4>line-80fc4d5350d4 access=UNDETERMINED
+capital-transfer-multi-16 NO_STAIRS UNKNOWN
+capital-transfer-multi-16 STEP_FREE UNKNOWN
+capital-transfer-one-13 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>22:34:00 3840s transfers=1 walk=159m lines=line-472a81add377>seoul-4 access=UNDETERMINED
+capital-transfer-one-13 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>22:34:00 3840s transfers=1 walk=159m lines=line-472a81add377>seoul-4 access=UNDETERMINED
+capital-transfer-one-13 NO_STAIRS UNKNOWN
+capital-transfer-one-13 STEP_FREE UNKNOWN
+capital-transfer-one-14 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>14:44:00 9840s transfers=1 walk=290m lines=line-558d0bd8312d>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-14 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>14:44:00 9840s transfers=1 walk=290m lines=line-558d0bd8312d>line-472a81add377 access=UNDETERMINED
+capital-transfer-one-14 NO_STAIRS UNKNOWN
+capital-transfer-one-14 STEP_FREE UNKNOWN
+capital-direct-ride-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 21:30:00>21:47:30 1050s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 21:30:00>21:47:30 1050s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 21:30:00>21:47:30 1050s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 21:30:00>21:47:30 1050s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-04 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>09:44:00 6240s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-04 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>09:44:00 6240s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-04 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>09:44:00 6240s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-04 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>09:44:00 6240s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-transfer-one-15 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:54:00 3240s transfers=1 walk=99m lines=line-558d0bd8312d>seoul-2 access=UNDETERMINED
+capital-transfer-one-15 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:54:00 3240s transfers=1 walk=99m lines=line-558d0bd8312d>seoul-2 access=UNDETERMINED
+capital-transfer-one-15 NO_STAIRS UNKNOWN
+capital-transfer-one-15 STEP_FREE UNKNOWN
+capital-transfer-one-16 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 20:00:00>21:17:00 4620s transfers=1 walk=6m lines=line-f0e747248a31>line-e9e9a5b520a4 access=UNDETERMINED
+capital-transfer-one-16 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 20:00:00>21:17:00 4620s transfers=1 walk=6m lines=line-f0e747248a31>line-e9e9a5b520a4 access=UNDETERMINED
+capital-transfer-one-16 NO_STAIRS UNKNOWN
+capital-transfer-one-16 STEP_FREE UNKNOWN
+capital-direct-ride-05 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:45:30 2730s transfers=0 walk=0m lines=line-558d0bd8312d access=VERIFIED
+capital-direct-ride-05 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:45:30 2730s transfers=0 walk=0m lines=line-558d0bd8312d access=VERIFIED
+capital-direct-ride-05 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:45:30 2730s transfers=0 walk=0m lines=line-558d0bd8312d access=VERIFIED
+capital-direct-ride-05 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:45:30 2730s transfers=0 walk=0m lines=line-558d0bd8312d access=VERIFIED
+capital-direct-ride-06 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>16:59:00 7140s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-06 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>16:59:00 7140s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-06 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>16:59:00 7140s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-06 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>16:59:00 7140s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-07 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:43:00 2580s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-07 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:43:00 2580s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-07 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:43:00 2580s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-07 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:43:00 2580s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-direct-ride-08 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:50:00 3000s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-08 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:50:00 3000s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-08 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:50:00 3000s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-08 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:50:00 3000s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-09 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 18:00:00>19:02:00 3720s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-09 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 18:00:00>19:02:00 3720s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-09 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 18:00:00>19:02:00 3720s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-09 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 18:00:00>19:02:00 3720s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-10 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>13:06:00 3960s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-10 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>13:06:00 3960s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-10 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>13:06:00 3960s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-10 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>13:06:00 3960s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-11 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:10:00 600s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-11 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:10:00 600s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-11 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:10:00 600s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-11 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 12:00:00>12:10:00 600s transfers=0 walk=0m lines=line-98718184f016 access=VERIFIED
+capital-direct-ride-12 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>15:19:00 1140s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-12 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>15:27:00 1620s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-12 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>15:19:00 1140s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-12 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 15:00:00>15:27:00 1620s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-direct-ride-13 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>20:10:22 622s transfers=0 walk=0m lines=line-42b5805f3b5a access=VERIFIED
+capital-direct-ride-13 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>20:10:22 622s transfers=0 walk=0m lines=line-42b5805f3b5a access=VERIFIED
+capital-direct-ride-13 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>20:10:22 622s transfers=0 walk=0m lines=line-42b5805f3b5a access=VERIFIED
+capital-direct-ride-13 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>20:10:22 622s transfers=0 walk=0m lines=line-42b5805f3b5a access=VERIFIED
+capital-direct-ride-14 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>21:22:00 4920s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-14 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>21:22:00 4920s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-14 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>21:22:00 4920s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-direct-ride-14 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 20:00:00>21:22:00 4920s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-no-service-01 STANDARD UNSUPPORTED
+capital-no-service-01 SLOW UNSUPPORTED
+capital-no-service-01 NO_STAIRS UNSUPPORTED
+capital-no-service-01 STEP_FREE UNSUPPORTED
+capital-no-service-02 STANDARD UNSUPPORTED
+capital-no-service-02 SLOW UNSUPPORTED
+capital-no-service-02 NO_STAIRS UNSUPPORTED
+capital-no-service-02 STEP_FREE UNSUPPORTED
+capital-no-service-03 STANDARD UNSUPPORTED
+capital-no-service-03 SLOW UNSUPPORTED
+capital-no-service-03 NO_STAIRS UNSUPPORTED
+capital-no-service-03 STEP_FREE UNSUPPORTED
+capital-no-service-04 STANDARD UNSUPPORTED
+capital-no-service-04 SLOW UNSUPPORTED
+capital-no-service-04 NO_STAIRS UNSUPPORTED
+capital-no-service-04 STEP_FREE UNSUPPORTED
+capital-no-service-05 STANDARD UNSUPPORTED
+capital-no-service-05 SLOW UNSUPPORTED
+capital-no-service-05 NO_STAIRS UNSUPPORTED
+capital-no-service-05 STEP_FREE UNSUPPORTED
+capital-no-service-06 STANDARD UNSUPPORTED
+capital-no-service-06 SLOW UNSUPPORTED
+capital-no-service-06 NO_STAIRS UNSUPPORTED
+capital-no-service-06 STEP_FREE UNSUPPORTED
+capital-existing-01 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>08:29:00 1740s transfers=1 walk=74m lines=seoul-2>seoul-4 access=UNDETERMINED
+capital-existing-01 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>08:29:00 1740s transfers=2 walk=94m lines=shinbundang>line-41a8c75ec9d8>seoul-4 access=UNDETERMINED
+  #2 08:00:00>08:33:00 1980s transfers=1 walk=74m lines=seoul-2>seoul-4 access=UNDETERMINED
+capital-existing-01 NO_STAIRS UNKNOWN
+capital-existing-01 STEP_FREE UNKNOWN
+capital-existing-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:48:00 2880s transfers=2 walk=187m lines=line-2b2d9eaa53d0>line-f0e747248a31>seoul-2 access=UNDETERMINED
+  #2 08:00:00>08:54:00 3240s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:48:00 2880s transfers=2 walk=187m lines=line-2b2d9eaa53d0>line-f0e747248a31>seoul-2 access=UNDETERMINED
+  #2 08:00:00>08:54:00 3240s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:54:00 3240s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:58:00 3480s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-03 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:33:00 3780s transfers=2 walk=78m lines=line-472a81add377>seoul-4>seoul-2 access=UNDETERMINED
+  #2 07:30:00>08:35:00 3900s transfers=1 walk=168m lines=line-558d0bd8312d>shinbundang access=UNDETERMINED
+capital-existing-03 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:33:00 3780s transfers=2 walk=78m lines=line-472a81add377>seoul-4>seoul-2 access=UNDETERMINED
+  #2 07:30:00>08:40:00 4200s transfers=1 walk=266m lines=line-558d0bd8312d>shinbundang access=UNDETERMINED
+capital-existing-03 NO_STAIRS UNKNOWN
+capital-existing-03 STEP_FREE UNKNOWN
+capital-existing-04 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:43:00 2580s transfers=1 walk=242m lines=line-472a81add377>line-80fc4d5350d4 access=UNDETERMINED
+capital-existing-04 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 18:00:00>18:48:00 2880s transfers=1 walk=242m lines=line-472a81add377>line-80fc4d5350d4 access=UNDETERMINED
+capital-existing-04 NO_STAIRS UNKNOWN
+capital-existing-04 STEP_FREE UNKNOWN
+capital-existing-05 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>13:04:00 3840s transfers=1 walk=80m lines=line-15b3b8a93259>shinbundang access=UNDETERMINED
+capital-existing-05 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 12:00:00>13:04:00 3840s transfers=1 walk=80m lines=line-15b3b8a93259>shinbundang access=UNDETERMINED
+capital-existing-05 NO_STAIRS UNKNOWN
+capital-existing-05 STEP_FREE UNKNOWN
+capital-existing-06 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>22:28:00 3480s transfers=1 walk=314m lines=line-f0e747248a31>line-15b3b8a93259 access=UNDETERMINED
+capital-existing-06 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 21:30:00>22:28:00 3480s transfers=1 walk=314m lines=line-f0e747248a31>line-15b3b8a93259 access=UNDETERMINED
+capital-existing-06 NO_STAIRS UNKNOWN
+capital-existing-06 STEP_FREE UNKNOWN
+capital-existing-07 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>08:45:00 2700s transfers=2 walk=230m lines=line-f0e747248a31>line-41a8c75ec9d8>seoul-2 access=UNDETERMINED
+  #2 08:00:00>08:57:00 3420s transfers=1 walk=105m lines=line-f0e747248a31>seoul-2 access=UNDETERMINED
+capital-existing-07 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 08:00:00>08:45:00 2700s transfers=2 walk=230m lines=line-f0e747248a31>line-41a8c75ec9d8>seoul-2 access=UNDETERMINED
+  #2 08:00:00>08:57:00 3420s transfers=1 walk=105m lines=line-f0e747248a31>seoul-2 access=UNDETERMINED
+capital-existing-07 NO_STAIRS UNKNOWN
+capital-existing-07 STEP_FREE UNKNOWN
+capital-existing-08 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 22:00:00>23:03:00 3780s transfers=1 walk=94m lines=line-f0e747248a31>seoul-2 access=UNDETERMINED
+capital-existing-08 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 22:00:00>23:03:00 3780s transfers=1 walk=94m lines=line-f0e747248a31>seoul-2 access=UNDETERMINED
+capital-existing-08 NO_STAIRS UNKNOWN
+capital-existing-08 STEP_FREE UNKNOWN
+capital-existing-09 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 22:00:00>22:46:00 2760s transfers=1 walk=80m lines=shinbundang>line-15b3b8a93259 access=UNDETERMINED
+capital-existing-09 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 22:00:00>22:46:00 2760s transfers=1 walk=80m lines=shinbundang>line-15b3b8a93259 access=UNDETERMINED
+capital-existing-09 NO_STAIRS UNKNOWN
+capital-existing-09 STEP_FREE UNKNOWN
+capital-existing-10 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>22:50:00 3000s transfers=2 walk=180m lines=seoul-2>line-558d0bd8312d>seoul-2 access=UNDETERMINED
+  #2 22:00:00>22:55:00 3300s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-10 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>22:50:00 3000s transfers=2 walk=199m lines=seoul-2>line-f0e747248a31>seoul-2 access=UNDETERMINED
+  #2 22:00:00>22:55:00 3300s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-10 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>22:55:00 3300s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-10 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>22:55:00 3300s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-11 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>23:10:00 4200s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-existing-11 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>23:10:00 4200s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-existing-11 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>23:10:00 4200s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-existing-11 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:00:00>23:10:00 4200s transfers=0 walk=0m lines=line-472a81add377 access=VERIFIED
+capital-existing-12 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 22:00:00>23:00:00 3600s transfers=1 walk=81m lines=seoul-2>line-472a81add377 access=UNDETERMINED
+capital-existing-12 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 22:00:00>23:00:00 3600s transfers=1 walk=81m lines=seoul-2>line-472a81add377 access=UNDETERMINED
+capital-existing-12 NO_STAIRS UNKNOWN
+capital-existing-12 STEP_FREE UNKNOWN
+capital-existing-13 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:11:00 2460s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-13 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:11:00 2460s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-13 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:11:00 2460s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-13 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:11:00 2460s transfers=0 walk=0m lines=seoul-2 access=VERIFIED
+capital-existing-14 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 16:00:00>16:24:00 1440s transfers=0 walk=0m lines=line-41a8c75ec9d8 access=VERIFIED
+capital-existing-14 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 16:00:00>16:24:00 1440s transfers=0 walk=0m lines=line-41a8c75ec9d8 access=VERIFIED
+capital-existing-14 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 16:00:00>16:24:00 1440s transfers=0 walk=0m lines=line-41a8c75ec9d8 access=VERIFIED
+capital-existing-14 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 16:00:00>16:24:00 1440s transfers=0 walk=0m lines=line-41a8c75ec9d8 access=VERIFIED
+capital-benchmark-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:53:00 3180s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:53:00 3180s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:53:00 3180s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 08:00:00>08:53:00 3180s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 14:30:00>15:17:00 2820s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 14:30:00>15:17:00 2820s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 14:30:00>15:17:00 2820s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+capital-benchmark-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 14:30:00>15:17:00 2820s transfers=0 walk=0m lines=seoul-4 access=VERIFIED
+synthetic14-stair-state-unknown-01 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:22:00 10320s transfers=1 walk=125m lines=L3>L2 access=STAIRS_INCLUDED
+synthetic14-stair-state-unknown-01 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:22:00 10320s transfers=1 walk=125m lines=L3>L2 access=STAIRS_INCLUDED
+synthetic14-stair-state-unknown-01 NO_STAIRS UNKNOWN
+synthetic14-stair-state-unknown-01 STEP_FREE UNKNOWN
+synthetic14-no-service-01 STANDARD UNSUPPORTED
+synthetic14-no-service-01 SLOW UNSUPPORTED
+synthetic14-no-service-01 NO_STAIRS UNSUPPORTED
+synthetic14-no-service-01 STEP_FREE UNSUPPORTED
+synthetic14-direct-ride-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:44:31 871s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic14-direct-ride-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:44:31 871s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic14-direct-ride-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:44:31 871s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic14-direct-ride-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:44:31 871s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic14-stair-state-unknown-02 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:22:00 10320s transfers=2 walk=371m lines=L1>L3>L2 access=STAIRS_INCLUDED
+synthetic14-stair-state-unknown-02 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:22:00 10320s transfers=2 walk=371m lines=L1>L3>L2 access=STAIRS_INCLUDED
+synthetic14-stair-state-unknown-02 NO_STAIRS UNKNOWN
+synthetic14-stair-state-unknown-02 STEP_FREE UNKNOWN
+synthetic14-stair-state-unknown-03 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:22:00 10320s transfers=1 walk=182m lines=L4>L2 access=STAIRS_INCLUDED
+synthetic14-stair-state-unknown-03 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:22:00 10320s transfers=1 walk=182m lines=L4>L2 access=STAIRS_INCLUDED
+synthetic14-stair-state-unknown-03 NO_STAIRS UNKNOWN
+synthetic14-stair-state-unknown-03 STEP_FREE UNKNOWN
+synthetic14-profile-divergence-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:26:00 3360s transfers=1 walk=87m lines=L2>L4 access=UNDETERMINED
+  #2 06:30:00>08:06:30 5790s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic14-profile-divergence-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:26:00 3360s transfers=1 walk=87m lines=L2>L4 access=UNDETERMINED
+  #2 06:30:00>08:06:30 5790s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic14-profile-divergence-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:06:30 5790s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic14-profile-divergence-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:06:30 5790s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic14-elevator-only-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:24:00 6840s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+  #2 06:30:00>09:18:30 10110s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic14-elevator-only-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:24:00 6840s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+  #2 06:30:00>09:18:30 10110s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic14-elevator-only-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:24:00 6840s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+  #2 06:30:00>09:18:30 10110s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic14-elevator-only-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:24:00 6840s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+  #2 06:30:00>09:18:30 10110s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic14-elevator-only-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:38:00 4080s transfers=1 walk=407m lines=L2>L3 access=UNDETERMINED
+  #2 06:30:00>08:30:30 7230s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+synthetic14-elevator-only-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:38:00 4080s transfers=1 walk=407m lines=L2>L3 access=UNDETERMINED
+  #2 06:30:00>08:30:30 7230s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+synthetic14-elevator-only-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:30:30 7230s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+synthetic14-elevator-only-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:30:30 7230s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+synthetic14-no-service-02 STANDARD UNSUPPORTED
+synthetic14-no-service-02 SLOW UNSUPPORTED
+synthetic14-no-service-02 NO_STAIRS UNSUPPORTED
+synthetic14-no-service-02 STEP_FREE UNSUPPORTED
+synthetic14-elevator-only-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:03:30 5610s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:03:30 5610s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:03:30 5610s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:03:30 5610s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-04 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:24:00 3240s transfers=1 walk=246m lines=L1>L3 access=VERIFIED
+synthetic14-elevator-only-04 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:24:00 3240s transfers=1 walk=246m lines=L1>L3 access=VERIFIED
+synthetic14-elevator-only-04 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:24:00 3240s transfers=1 walk=246m lines=L1>L3 access=VERIFIED
+synthetic14-elevator-only-04 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:24:00 3240s transfers=1 walk=246m lines=L1>L3 access=VERIFIED
+synthetic14-profile-divergence-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:38:00 480s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic14-profile-divergence-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:30:30 3630s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic14-profile-divergence-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:38:00 480s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic14-profile-divergence-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:30:30 3630s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic14-elevator-only-05 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:06:30 2190s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-05 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:06:30 2190s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-05 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:06:30 2190s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-elevator-only-05 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:06:30 2190s transfers=1 walk=105m lines=L2>L1 access=VERIFIED
+synthetic14-profile-divergence-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:33:00 180s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic14-profile-divergence-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:52:00 1320s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic14-profile-divergence-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:33:00 180s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic14-profile-divergence-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:52:00 1320s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic14-stale-01 STANDARD FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 06:30:00>08:24:00 6840s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+  #2 06:30:00>09:18:30 10110s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic14-stale-01 SLOW FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 06:30:00>08:24:00 6840s transfers=2 walk=351m lines=L2>L1>L3 access=VERIFIED
+  #2 06:30:00>09:18:30 10110s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic14-stale-01 NO_STAIRS ERROR FacilityStatusUnavailableException
+synthetic14-stale-01 STEP_FREE ERROR FacilityStatusUnavailableException
+synthetic14-outage-01 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 06:30:00>07:38:00 4080s transfers=1 walk=407m lines=L2>L3 access=UNDETERMINED
+synthetic14-outage-01 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 06:30:00>07:38:00 4080s transfers=1 walk=407m lines=L2>L3 access=UNDETERMINED
+synthetic14-outage-01 NO_STAIRS BLOCKED
+synthetic14-outage-01 STEP_FREE BLOCKED
+synthetic14-outage-02 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 06:30:00>09:10:00 9600s transfers=2 walk=192m lines=L2>L4>L1 access=UNDETERMINED
+synthetic14-outage-02 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 06:30:00>09:10:00 9600s transfers=2 walk=192m lines=L2>L4>L1 access=UNDETERMINED
+synthetic14-outage-02 NO_STAIRS BLOCKED
+synthetic14-outage-02 STEP_FREE BLOCKED
+synthetic24-elevator-only-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-direct-ride-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:54:30 1470s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic24-direct-ride-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:54:30 1470s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic24-direct-ride-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:54:30 1470s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic24-direct-ride-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:54:30 1470s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic24-no-service-01 STANDARD UNSUPPORTED
+synthetic24-no-service-01 SLOW UNSUPPORTED
+synthetic24-no-service-01 NO_STAIRS UNSUPPORTED
+synthetic24-no-service-01 STEP_FREE UNSUPPORTED
+synthetic24-elevator-only-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:49:00 8340s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:49:00 8340s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:49:00 8340s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:49:00 8340s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-stair-state-unknown-01 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 07:30:00>09:03:30 5610s transfers=1 walk=242m lines=L2>L1 access=STAIRS_INCLUDED
+synthetic24-stair-state-unknown-01 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 07:30:00>09:03:30 5610s transfers=1 walk=242m lines=L2>L1 access=STAIRS_INCLUDED
+synthetic24-stair-state-unknown-01 NO_STAIRS UNKNOWN
+synthetic24-stair-state-unknown-01 STEP_FREE UNKNOWN
+synthetic24-stair-state-unknown-02 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:03:30 9210s transfers=1 walk=242m lines=L2>L1 access=STAIRS_INCLUDED
+synthetic24-stair-state-unknown-02 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>09:03:30 9210s transfers=1 walk=242m lines=L2>L1 access=STAIRS_INCLUDED
+synthetic24-stair-state-unknown-02 NO_STAIRS UNKNOWN
+synthetic24-stair-state-unknown-02 STEP_FREE UNKNOWN
+synthetic24-no-service-02 STANDARD UNSUPPORTED
+synthetic24-no-service-02 SLOW UNSUPPORTED
+synthetic24-no-service-02 NO_STAIRS UNSUPPORTED
+synthetic24-no-service-02 STEP_FREE UNSUPPORTED
+synthetic24-stair-state-unknown-03 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 07:30:00>09:01:00 5460s transfers=1 walk=242m lines=L2>L1 access=STAIRS_INCLUDED
+synthetic24-stair-state-unknown-03 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 07:30:00>09:01:00 5460s transfers=1 walk=242m lines=L2>L1 access=STAIRS_INCLUDED
+synthetic24-stair-state-unknown-03 NO_STAIRS UNKNOWN
+synthetic24-stair-state-unknown-03 STEP_FREE UNKNOWN
+synthetic24-elevator-only-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-04 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:52:30 4950s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-04 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:52:30 4950s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-04 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:52:30 4950s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-elevator-only-04 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:52:30 4950s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-no-service-03 STANDARD UNSUPPORTED
+synthetic24-no-service-03 SLOW UNSUPPORTED
+synthetic24-no-service-03 NO_STAIRS UNSUPPORTED
+synthetic24-no-service-03 STEP_FREE UNSUPPORTED
+synthetic24-outage-01 STANDARD BLOCKED
+synthetic24-outage-01 SLOW BLOCKED
+synthetic24-outage-01 NO_STAIRS BLOCKED
+synthetic24-outage-01 STEP_FREE BLOCKED
+synthetic24-stale-01 STANDARD FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-stale-01 SLOW FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 07:30:00>08:40:30 4230s transfers=1 walk=169m lines=L1>L2 access=VERIFIED
+synthetic24-stale-01 NO_STAIRS ERROR FacilityStatusUnavailableException
+synthetic24-stale-01 STEP_FREE ERROR FacilityStatusUnavailableException
+synthetic24-outage-02 STANDARD BLOCKED
+synthetic24-outage-02 SLOW BLOCKED
+synthetic24-outage-02 NO_STAIRS BLOCKED
+synthetic24-outage-02 STEP_FREE BLOCKED
+synthetic51-elevator-only-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=0m lines=L4>L1 access=VERIFIED
+synthetic51-elevator-only-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=0m lines=L4>L1 access=VERIFIED
+synthetic51-elevator-only-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=0m lines=L4>L1 access=VERIFIED
+synthetic51-elevator-only-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=0m lines=L4>L1 access=VERIFIED
+synthetic51-direct-ride-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:32:30 3750s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic51-direct-ride-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:32:30 3750s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic51-direct-ride-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:32:30 3750s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic51-direct-ride-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:32:30 3750s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic51-elevator-only-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:45:30 930s transfers=1 walk=42m lines=L1>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>08:10:01 2401s transfers=2 walk=173m lines=L1>L2>L4 access=VERIFIED
+  #3 07:30:00>09:01:30 5490s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+synthetic51-elevator-only-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:45:30 930s transfers=1 walk=42m lines=L1>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>08:10:01 2401s transfers=2 walk=173m lines=L1>L2>L4 access=VERIFIED
+  #3 07:30:00>09:01:30 5490s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+synthetic51-elevator-only-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:01 2401s transfers=2 walk=173m lines=L1>L2>L4 access=VERIFIED
+  #2 07:30:00>09:01:30 5490s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+synthetic51-elevator-only-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>09:01:30 5490s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+synthetic51-elevator-only-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:54:00 1440s transfers=1 walk=42m lines=L1>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>07:56:00 1560s transfers=1 walk=173m lines=L1>L2 access=VERIFIED
+synthetic51-elevator-only-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:54:00 1440s transfers=1 walk=42m lines=L1>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>07:56:00 1560s transfers=1 walk=173m lines=L1>L2 access=VERIFIED
+synthetic51-elevator-only-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:56:00 1560s transfers=1 walk=173m lines=L1>L2 access=VERIFIED
+synthetic51-elevator-only-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:12:31 2551s transfers=1 walk=0m lines=L1>L3 access=VERIFIED
+synthetic51-stair-state-unknown-01 STANDARD FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:32:30 3750s transfers=1 walk=90m lines=L3>L1 access=UNDETERMINED
+synthetic51-stair-state-unknown-01 SLOW FOUND stairFree=UNDETERMINED facility=APPLIED
+  #1 07:30:00>08:32:30 3750s transfers=1 walk=90m lines=L3>L1 access=UNDETERMINED
+synthetic51-stair-state-unknown-01 NO_STAIRS UNKNOWN
+synthetic51-stair-state-unknown-01 STEP_FREE UNKNOWN
+synthetic51-elevator-only-04 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:45:30 4530s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+  #2 06:30:00>08:02:59 5579s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-elevator-only-04 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:45:30 4530s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+  #2 06:30:00>08:02:59 5579s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-elevator-only-04 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:45:30 4530s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+  #2 06:30:00>08:02:59 5579s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-elevator-only-04 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:45:30 4530s transfers=1 walk=261m lines=L1>L4 access=VERIFIED
+  #2 06:30:00>08:02:59 5579s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-elevator-only-05 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:59:01 5341s transfers=1 walk=0m lines=L4>L3 access=VERIFIED
+synthetic51-elevator-only-05 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:59:01 5341s transfers=1 walk=0m lines=L4>L3 access=VERIFIED
+synthetic51-elevator-only-05 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:59:01 5341s transfers=1 walk=0m lines=L4>L3 access=VERIFIED
+synthetic51-elevator-only-05 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 06:30:00>07:59:01 5341s transfers=1 walk=0m lines=L4>L3 access=VERIFIED
+synthetic51-stair-state-unknown-02 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=1 walk=423m lines=L3>L4 access=STAIRS_INCLUDED
+synthetic51-stair-state-unknown-02 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=1 walk=423m lines=L3>L4 access=STAIRS_INCLUDED
+synthetic51-stair-state-unknown-02 NO_STAIRS UNKNOWN
+synthetic51-stair-state-unknown-02 STEP_FREE UNKNOWN
+synthetic51-profile-divergence-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:58:00 1680s transfers=1 walk=0m lines=L4>L2 access=STAIRS_INCLUDED
+  #2 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:59:59 1799s transfers=1 walk=423m lines=L3>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>08:06:59 2219s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic51-profile-divergence-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:59:59 1799s transfers=1 walk=423m lines=L3>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>08:06:59 2219s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic51-profile-divergence-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:06:59 2219s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic51-profile-divergence-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:06:59 2219s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic51-profile-divergence-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:58:00 1680s transfers=1 walk=0m lines=L4>L2 access=STAIRS_INCLUDED
+  #2 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-profile-divergence-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:29 2429s transfers=0 walk=0m lines=L4 access=VERIFIED
+synthetic51-outage-01 STANDARD FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=421m lines=L3>L1 access=STAIRS_INCLUDED
+synthetic51-outage-01 SLOW FOUND stairFree=NOT_FOUND facility=APPLIED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=421m lines=L3>L1 access=STAIRS_INCLUDED
+synthetic51-outage-01 NO_STAIRS BLOCKED
+synthetic51-outage-01 STEP_FREE BLOCKED
+synthetic51-stale-01 STANDARD FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=0m lines=L4>L1 access=VERIFIED
+synthetic51-stale-01 SLOW FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 06:30:00>08:32:30 7350s transfers=1 walk=0m lines=L4>L1 access=VERIFIED
+synthetic51-stale-01 NO_STAIRS ERROR FacilityStatusUnavailableException
+synthetic51-stale-01 STEP_FREE ERROR FacilityStatusUnavailableException
+synthetic51-outage-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:45:30 930s transfers=1 walk=42m lines=L1>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>08:10:01 2401s transfers=2 walk=173m lines=L1>L2>L4 access=VERIFIED
+synthetic51-outage-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>07:45:30 930s transfers=1 walk=42m lines=L1>L4 access=STAIRS_INCLUDED
+  #2 07:30:00>08:10:01 2401s transfers=2 walk=173m lines=L1>L2>L4 access=VERIFIED
+synthetic51-outage-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 07:30:00>08:10:01 2401s transfers=2 walk=173m lines=L1>L2>L4 access=VERIFIED
+synthetic51-outage-02 STEP_FREE BLOCKED
+synthetic9-elevator-only-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>25:02:31 5551s transfers=1 walk=76m lines=L3>L2 access=VERIFIED
+synthetic9-elevator-only-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>25:02:31 5551s transfers=1 walk=76m lines=L3>L2 access=VERIFIED
+synthetic9-elevator-only-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>25:02:31 5551s transfers=1 walk=76m lines=L3>L2 access=VERIFIED
+synthetic9-elevator-only-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>25:02:31 5551s transfers=1 walk=76m lines=L3>L2 access=VERIFIED
+synthetic9-elevator-only-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>24:56:00 8760s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+  #2 22:30:00>27:21:30 17490s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-elevator-only-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>24:56:00 8760s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+  #2 22:30:00>27:21:30 17490s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-elevator-only-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>24:56:00 8760s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+  #2 22:30:00>27:21:30 17490s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-elevator-only-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>24:56:00 8760s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+  #2 22:30:00>27:21:30 17490s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-direct-ride-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>23:09:30 2370s transfers=0 walk=0m lines=L5 access=VERIFIED
+synthetic9-direct-ride-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>23:09:30 2370s transfers=0 walk=0m lines=L5 access=VERIFIED
+synthetic9-direct-ride-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>23:09:30 2370s transfers=0 walk=0m lines=L5 access=VERIFIED
+synthetic9-direct-ride-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>23:09:30 2370s transfers=0 walk=0m lines=L5 access=VERIFIED
+synthetic9-elevator-only-03 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>23:55:00 1500s transfers=1 walk=111m lines=L4>L5 access=UNDETERMINED
+  #2 23:30:00>24:21:00 3060s transfers=1 walk=213m lines=L4>L3 access=VERIFIED
+  #3 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic9-elevator-only-03 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>23:55:00 1500s transfers=1 walk=111m lines=L4>L5 access=UNDETERMINED
+  #2 23:30:00>24:21:00 3060s transfers=1 walk=213m lines=L4>L3 access=VERIFIED
+  #3 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic9-elevator-only-03 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:21:00 3060s transfers=1 walk=213m lines=L4>L3 access=VERIFIED
+  #2 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic9-elevator-only-03 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:21:00 3060s transfers=1 walk=213m lines=L4>L3 access=VERIFIED
+  #2 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L3 access=VERIFIED
+synthetic9-elevator-only-04 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>25:02:31 9151s transfers=1 walk=0m lines=L1>L2 access=STAIRS_INCLUDED
+  #2 22:30:00>25:02:31 9151s transfers=2 walk=621m lines=L2>L5>L2 access=VERIFIED
+  #3 22:30:00>27:26:00 17760s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-elevator-only-04 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>25:02:31 9151s transfers=1 walk=0m lines=L1>L2 access=STAIRS_INCLUDED
+  #2 22:30:00>25:02:31 9151s transfers=2 walk=621m lines=L2>L5>L2 access=VERIFIED
+  #3 22:30:00>27:26:00 17760s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-elevator-only-04 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>25:02:31 9151s transfers=2 walk=621m lines=L2>L5>L2 access=VERIFIED
+  #2 22:30:00>27:26:00 17760s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-elevator-only-04 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>25:02:31 9151s transfers=2 walk=621m lines=L2>L5>L2 access=VERIFIED
+  #2 22:30:00>27:26:00 17760s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-profile-divergence-01 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:22:30 3150s transfers=1 walk=0m lines=L1>L3 access=STAIRS_INCLUDED
+  #2 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic9-profile-divergence-01 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:22:30 3150s transfers=1 walk=0m lines=L1>L3 access=STAIRS_INCLUDED
+  #2 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic9-profile-divergence-01 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic9-profile-divergence-01 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:53:00 4980s transfers=0 walk=0m lines=L1 access=VERIFIED
+synthetic9-elevator-only-05 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:13:30 2610s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+synthetic9-elevator-only-05 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:13:30 2610s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+synthetic9-elevator-only-05 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:13:30 2610s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+synthetic9-elevator-only-05 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:13:30 2610s transfers=1 walk=273m lines=L5>L1 access=VERIFIED
+synthetic9-elevator-only-06 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>23:49:29 4769s transfers=1 walk=0m lines=L2>L3 access=UNDETERMINED
+  #2 22:30:00>24:03:00 5580s transfers=1 walk=89m lines=L2>L1 access=VERIFIED
+synthetic9-elevator-only-06 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>23:49:29 4769s transfers=1 walk=0m lines=L2>L3 access=UNDETERMINED
+  #2 22:30:00>24:03:00 5580s transfers=1 walk=89m lines=L2>L1 access=VERIFIED
+synthetic9-elevator-only-06 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>24:03:00 5580s transfers=1 walk=89m lines=L2>L1 access=VERIFIED
+synthetic9-elevator-only-06 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 22:30:00>24:03:00 5580s transfers=1 walk=89m lines=L2>L1 access=VERIFIED
+synthetic9-profile-divergence-02 STANDARD FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:21:00 3060s transfers=1 walk=0m lines=L1>L3 access=STAIRS_INCLUDED
+  #2 23:30:00>24:59:31 5371s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-profile-divergence-02 SLOW FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:21:00 3060s transfers=1 walk=0m lines=L1>L3 access=STAIRS_INCLUDED
+  #2 23:30:00>24:59:31 5371s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-profile-divergence-02 NO_STAIRS FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:59:31 5371s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-profile-divergence-02 STEP_FREE FOUND stairFree=INCLUDED facility=APPLIED
+  #1 23:30:00>24:59:31 5371s transfers=0 walk=0m lines=L2 access=VERIFIED
+synthetic9-stale-01 STANDARD FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 23:30:00>25:02:31 5551s transfers=1 walk=76m lines=L3>L2 access=VERIFIED
+synthetic9-stale-01 SLOW FOUND stairFree=INCLUDED facility=UNOBSERVED
+  #1 23:30:00>25:02:31 5551s transfers=1 walk=76m lines=L3>L2 access=VERIFIED
+synthetic9-stale-01 NO_STAIRS ERROR FacilityStatusUnavailableException
+synthetic9-stale-01 STEP_FREE ERROR FacilityStatusUnavailableException
