@@ -1,0 +1,1196 @@
+{
+ "description": "엔진 성능 기준선(engine-performance-baseline.json)의 원자료(#3036). Backend CI shard 2의 게이트 실패 메시지에 있던 job별 JVM 측정 3개씩이다. 기준선 지연·할당·컴파일 값은 JourneyEngineBaselineDerivation이 이 파일에서 다시 계산하고 JourneyEngineBaselineDerivationTest가 일치를 확인한다.",
+ "source": "AquilaXk/easysubway-backend run 39069638670 시도 1~5, head 9082f230, Backend CI test shard 2. 한 시도(job)의 세 JVM은 같은 러너에서 쟀다.",
+ "method": {
+  "warmupRounds": 30,
+  "aggregation": "round median of p50 and p99 after 30 sync-JIT warmup rounds (compile: median of 9 after 30)"
+ },
+ "baselineCalibrationNanos": 97813815,
+ "jobs": [
+  {
+   "run": 39069638670,
+   "attempt": 1,
+   "jvms": [
+    {
+     "calibrationNanos": 97996232,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 59492650,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 176850,
+         "p99Nanos": 1003328,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 7793591,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 47849,
+         "p99Nanos": 133359,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 186879,
+         "p99Nanos": 969122,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 214781,
+         "p99Nanos": 578252,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 156984,
+         "p99Nanos": 198571,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 179736,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 13906,
+         "p99Nanos": 38553,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 28834,
+         "p99Nanos": 60042,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 42980,
+         "p99Nanos": 92493,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 26780,
+         "p99Nanos": 59612,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 96913228,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 54603877,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 167283,
+         "p99Nanos": 745474,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 7762188,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 46868,
+         "p99Nanos": 123491,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 193743,
+         "p99Nanos": 892088,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 221575,
+         "p99Nanos": 580315,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 155872,
+         "p99Nanos": 197891,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 184956,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 13936,
+         "p99Nanos": 42530,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 28072,
+         "p99Nanos": 56606,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 43692,
+         "p99Nanos": 91451,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 26710,
+         "p99Nanos": 66835,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 97510247,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 53360867,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 171511,
+         "p99Nanos": 951340,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 7638093,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 47679,
+         "p99Nanos": 127889,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 193863,
+         "p99Nanos": 930962,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 208541,
+         "p99Nanos": 619419,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 154600,
+         "p99Nanos": 197339,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 205825,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 13635,
+         "p99Nanos": 53520,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 28724,
+         "p99Nanos": 57908,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 42760,
+         "p99Nanos": 93305,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 26200,
+         "p99Nanos": 56756,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "run": 39069638670,
+   "attempt": 2,
+   "jvms": [
+    {
+     "calibrationNanos": 75787985,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 32596358,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 88141,
+         "p99Nanos": 729173,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 4217947,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 23395,
+         "p99Nanos": 95793,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 118316,
+         "p99Nanos": 821951,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 119357,
+         "p99Nanos": 495877,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 81702,
+         "p99Nanos": 144094,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 93229,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 7311,
+         "p99Nanos": 19469,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 15463,
+         "p99Nanos": 33250,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 24006,
+         "p99Nanos": 89072,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14641,
+         "p99Nanos": 31216,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 74894907,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 30333402,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 79078,
+         "p99Nanos": 736615,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 4127353,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 22944,
+         "p99Nanos": 91656,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 101641,
+         "p99Nanos": 760360,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 142081,
+         "p99Nanos": 454255,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 78617,
+         "p99Nanos": 148510,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 103824,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 7371,
+         "p99Nanos": 25768,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 15703,
+         "p99Nanos": 38748,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 23454,
+         "p99Nanos": 63594,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14992,
+         "p99Nanos": 32649,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 76378884,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 34259498,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 82172,
+         "p99Nanos": 692459,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 4199160,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 22804,
+         "p99Nanos": 90324,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 112747,
+         "p99Nanos": 742934,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 116774,
+         "p99Nanos": 445172,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 81872,
+         "p99Nanos": 144165,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 95512,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6971,
+         "p99Nanos": 20290,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 15162,
+         "p99Nanos": 34741,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 23505,
+         "p99Nanos": 62943,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14843,
+         "p99Nanos": 31326,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "run": 39069638670,
+   "attempt": 3,
+   "jvms": [
+    {
+     "calibrationNanos": 74194227,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 28916821,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 76155,
+         "p99Nanos": 640678,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 4015988,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 22204,
+         "p99Nanos": 87702,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 96756,
+         "p99Nanos": 674829,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 108734,
+         "p99Nanos": 437140,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 73501,
+         "p99Nanos": 134003,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 86932,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6770,
+         "p99Nanos": 19329,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 14992,
+         "p99Nanos": 35524,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 22854,
+         "p99Nanos": 58348,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14111,
+         "p99Nanos": 35113,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 70703462,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 27522163,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 76986,
+         "p99Nanos": 650222,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 3857438,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 21032,
+         "p99Nanos": 78819,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 88373,
+         "p99Nanos": 590973,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 108504,
+         "p99Nanos": 390901,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 69685,
+         "p99Nanos": 113482,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 103796,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6731,
+         "p99Nanos": 21432,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 14733,
+         "p99Nanos": 34272,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 22915,
+         "p99Nanos": 59360,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14031,
+         "p99Nanos": 25568,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 70470606,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 28516637,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 74152,
+         "p99Nanos": 658896,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 3852632,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 22614,
+         "p99Nanos": 87372,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 96465,
+         "p99Nanos": 679336,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 117748,
+         "p99Nanos": 417341,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 83957,
+         "p99Nanos": 125470,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 96166,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6810,
+         "p99Nanos": 15593,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 15063,
+         "p99Nanos": 45119,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 23386,
+         "p99Nanos": 63706,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14492,
+         "p99Nanos": 35223,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "run": 39069638670,
+   "attempt": 4,
+   "jvms": [
+    {
+     "calibrationNanos": 71902893,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 27697366,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 74893,
+         "p99Nanos": 642137,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 3877898,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 22144,
+         "p99Nanos": 78638,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 96956,
+         "p99Nanos": 579522,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 109675,
+         "p99Nanos": 337869,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 73251,
+         "p99Nanos": 109665,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 87412,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6589,
+         "p99Nanos": 18608,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 14862,
+         "p99Nanos": 33600,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 21152,
+         "p99Nanos": 54202,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14151,
+         "p99Nanos": 28283,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 72143885,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 28828722,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 77266,
+         "p99Nanos": 644200,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 3920013,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 21402,
+         "p99Nanos": 81974,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 90867,
+         "p99Nanos": 603900,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 108073,
+         "p99Nanos": 430148,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 71438,
+         "p99Nanos": 118609,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 87662,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6630,
+         "p99Nanos": 21973,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 14382,
+         "p99Nanos": 29594,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 21032,
+         "p99Nanos": 59079,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 14071,
+         "p99Nanos": 36565,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 73538769,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 28756029,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 71888,
+         "p99Nanos": 596097,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 3994342,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 21032,
+         "p99Nanos": 82995,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 93110,
+         "p99Nanos": 637740,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 119400,
+         "p99Nanos": 402175,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 74673,
+         "p99Nanos": 137427,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 93891,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 6630,
+         "p99Nanos": 15713,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 14331,
+         "p99Nanos": 28944,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 21051,
+         "p99Nanos": 51989,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 13821,
+         "p99Nanos": 22954,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "run": 39069638670,
+   "attempt": 5,
+   "jvms": [
+    {
+     "calibrationNanos": 96894842,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 50875639,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 167425,
+         "p99Nanos": 830753,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 7599478,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 47821,
+         "p99Nanos": 151315,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 190287,
+         "p99Nanos": 868574,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 218001,
+         "p99Nanos": 612442,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 143731,
+         "p99Nanos": 184307,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 189747,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 13656,
+         "p99Nanos": 47139,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 28544,
+         "p99Nanos": 63840,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 43161,
+         "p99Nanos": 110699,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 26661,
+         "p99Nanos": 68439,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 96306802,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 53705552,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 166843,
+         "p99Nanos": 958169,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 7748157,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 45686,
+         "p99Nanos": 130836,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 191591,
+         "p99Nanos": 901827,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 215376,
+         "p99Nanos": 689537,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 149802,
+         "p99Nanos": 189236,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 182012,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 13606,
+         "p99Nanos": 48822,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 28732,
+         "p99Nanos": 63396,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 42988,
+         "p99Nanos": 93345,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 25958,
+         "p99Nanos": 52849,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    },
+    {
+     "calibrationNanos": 96902915,
+     "workloads": {
+      "metro-grid-v1": {
+       "compile": {
+        "nanos": 53984908,
+        "allocatedBytes": 26981864,
+        "retainedBytes": 3256096
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 167705,
+         "p99Nanos": 942737,
+         "allocatedBytesPerQuery": 8286
+        }
+       }
+      },
+      "district-grid-v1": {
+       "compile": {
+        "nanos": 7677510,
+        "allocatedBytes": 4510744,
+        "retainedBytes": 553104
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 46577,
+         "p99Nanos": 123491,
+         "allocatedBytesPerQuery": 6693
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 182472,
+         "p99Nanos": 892844,
+         "allocatedBytesPerQuery": 258404
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 215524,
+         "p99Nanos": 635330,
+         "allocatedBytesPerQuery": 266068
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 152706,
+         "p99Nanos": 188253,
+         "allocatedBytesPerQuery": 127837
+        }
+       }
+      },
+      "line4-corridor-slice": {
+       "compile": {
+        "nanos": 202971,
+        "allocatedBytes": 117040,
+        "retainedBytes": 31400
+       },
+       "modes": {
+        "DEPART_AT": {
+         "p50Nanos": 13626,
+         "p99Nanos": 42499,
+         "allocatedBytesPerQuery": 6292
+        },
+        "ARRIVE_BY": {
+         "p50Nanos": 28303,
+         "p99Nanos": 77927,
+         "allocatedBytesPerQuery": 34291
+        },
+        "DEPART_BETWEEN": {
+         "p50Nanos": 44123,
+         "p99Nanos": 160451,
+         "allocatedBytesPerQuery": 93930
+        },
+        "LAST_CONNECTION": {
+         "p50Nanos": 26580,
+         "p99Nanos": 62006,
+         "allocatedBytesPerQuery": 35562
+        }
+       }
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

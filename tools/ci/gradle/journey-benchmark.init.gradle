@@ -11,7 +11,7 @@ gradle.allprojects { project ->
 			benchmark.description = '경로 엔진 성능 측정 JSON만 쓴다(기준선 판정 없음).'
 			benchmark.classpath = project.sourceSets.test.runtimeClasspath
 			benchmark.mainClass = 'com.easysubway.route.application.service.JourneyEnginePerformanceGateTest'
-			benchmark.jvmArgs('-Xms1g', '-Xmx1g', '-Dfile.encoding=UTF-8')
+			benchmark.jvmArgs('-Xms1g', '-Xmx1g', '-XX:-BackgroundCompilation', '-Dfile.encoding=UTF-8')
 			// build.gradle의 toolchain(Adoptium 21)을 그대로 쓴다. 게이트 테스트 JVM과 같은 런타임이어야 비교가 성립한다.
 			benchmark.javaLauncher = project.javaToolchains.launcherFor(project.extensions.getByType(JavaPluginExtension).toolchain)
 			benchmark.doFirst {
