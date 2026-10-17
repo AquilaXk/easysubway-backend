@@ -1,0 +1,27 @@
+// 경로 엔진 벤치마크 추세 관찰 전용 Gradle init script. 로컬 기본 빌드는 바꾸지 않는다.
+//
+// ./gradlew --init-script ../tools/ci/gradle/journey-benchmark.init.gradle journeyEngineBenchmark -PjourneyBenchmarkOutput=<절대 파일 경로>
+//   JourneyEnginePerformanceGateTest의 측정 진입점(main)을 새 JVM 하나에서 실행해 측정 JSON만 쓴다.
+//   기준선 비교(게이트 판정)와 JaCoCo 에이전트를 붙이지 않으므로 관찰 workflow가 회귀 게이트 결과와 섞이지 않는다.
+//   JVM 옵션은 게이트의 forkedMeasurement()와 같다. 힙을 고정해야 GC 압력이 두 측정에서 같다.
+gradle.allprojects { project ->
+	project.plugins.withId('java') {
+		project.tasks.register('journeyEngineBenchmark', JavaExec) { JavaExec benchmark ->
+			benchmark.group = 'verification'
+			benchmark.description = '경로 엔진 성능 측정 JSON만 쓴다(기준선 판정 없음).'
+			benchmark.classpath = project.sourceSets.test.runtimeClasspath
+			benchmark.mainClass = 'com.easysubway.route.application.service.JourneyEnginePerformanceGateTest'
+			benchmark.jvmArgs('-Xms1g', '-Xmx1g', '-Dfile.encoding=UTF-8')
+			// build.gradle의 toolchain(Adoptium 21)을 그대로 쓴다. 게이트 테스트 JVM과 같은 런타임이어야 비교가 성립한다.
+			benchmark.javaLauncher = project.javaToolchains.launcherFor(project.extensions.getByType(JavaPluginExtension).toolchain)
+			benchmark.doFirst {
+				def output = gradle.startParameter.projectProperties['journeyBenchmarkOutput']
+				if (output == null || !new File(output).isAbsolute()) {
+					throw new GradleException('-PjourneyBenchmarkOutput=<절대 파일 경로>가 필요하다')
+				}
+				new File(output).parentFile.mkdirs()
+				benchmark.args(output)
+			}
+		}
+	}
+}
