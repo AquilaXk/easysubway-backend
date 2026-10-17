@@ -55,7 +55,8 @@ import org.junit.jupiter.api.Test;
  *   각각의 최근순위 백분위의 중앙값이고, 성공 경로 계열은 회차당 질의가 100건 이상이다. 출발 시각 고정(DepartAt) p50은 잡음이 작아 2.0배,
  *   나머지(p99, 프로필 모드, 컴파일)는 2.5배를 넘으면 실패한다. 이 한도보다 작은 상수배 둔화(작업량 카운터가 그대로인
  *   내부 루프 비용 증가 등)는 설계상 통과시킨다. 보정 작업과 엔진의 속도 비율은 CPU 아키텍처마다 달라서 벽시계
- *   기준선은 Backend CI 러너 측정값을 쓴다.</li>
+ *   기준선은 Backend CI 러너 측정값을 쓴다. 첫 측정이 허용폭을 넘으면 새 JVM에서 두 번 더 재어 세 측정의 값별
+ *   중앙값으로 다시 판정한다({@link JourneyEngineMeasurementConfirmation}, #518).</li>
  * </ul>
  *
  * <p>측정은 새 JVM 하나에서 한다({@link #forkedMeasurement()}). 기준선 갱신 절차는 엔진 설계 문서
@@ -163,8 +164,12 @@ class JourneyEnginePerformanceGateTest {
 			Files.writeString(BASELINE, JSON.writeValueAsString(baseline) + "\n", StandardCharsets.UTF_8);
 		}
 		JsonNode baseline = JSON.readTree(Files.readString(BASELINE, StandardCharsets.UTF_8));
-		List<String> regressions = regressions(baseline, JSON.valueToTree(measured));
-		assertThat(regressions).as("성능 기준선 위반. 측정값:\n%s", json).isEmpty();
+		var verdict = JourneyEngineMeasurementConfirmation.judge(baseline, JSON.valueToTree(measured),
+			() -> JSON.valueToTree(forkedMeasurement()));
+		verdict.measurements().stream().skip(1)
+			.forEach(extra -> System.out.println("#460 engine performance re-measured:\n" + extra.toPrettyString()));
+		assertThat(verdict.regressions()).as("성능 기준선 위반(첫 측정이 허용폭을 넘으면 새 JVM 3회 값별 중앙값으로 다시 판정). 판정에 쓴 측정값:\n%s",
+			verdict.judged().toPrettyString()).isEmpty();
 	}
 
 	@Test
@@ -745,7 +750,7 @@ class JourneyEnginePerformanceGateTest {
 		return JSON.valueToTree(value);
 	}
 
-	private static Map<String, Object> sample(long trips, long p50, long bytes, long calibration, String bundleSha) {
+	static Map<String, Object> sample(long trips, long p50, long bytes, long calibration, String bundleSha) {
 		Map<String, Object> modes = new LinkedHashMap<>();
 		for (Mode mode : Mode.values()) {
 			Map<String, Object> value = new LinkedHashMap<>();
