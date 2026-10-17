@@ -1,0 +1,80 @@
+// 핵심 라우팅 뮤테이션 테스트 전용 Gradle init script (backend #523). 로컬 기본 빌드는 바꾸지 않는다.
+//
+// ./gradlew --init-script ../tools/ci/gradle/journey-mutation.init.gradle pitest
+//   PIT(pitest)로 접근성 제약 라우팅의 판정 클래스에 변이를 넣고, 테스트가 그 결함을 잡는지 mutations.xml·HTML로 남긴다.
+//   플러그인은 이 init script에서만 적용한다. build.gradle·gradle.lockfile·SpotBugs 증거 digest를 건드리지 않고,
+//   일반 test·check 태스크 그래프에도 들어가지 않는다.
+//   보고서는 PIT 기본 위치(build/reports/pitest)에 쓰이고, 같은 디렉터리에 실행 설명(journey-mutation-run.json)을 더한다.
+//
+// -PmutationTargetClasses=<클래스 패턴,...>  기본 범위(MUTATION_TARGET_CLASSES)를 덮어쓴다. 로컬에서 1~2개로 좁힐 때 쓴다.
+// -PmutationThreads=<수>                    변이 실행 스레드 수. 기본 MUTATION_DEFAULT_THREADS.
+initscript {
+	repositories {
+		gradlePluginPortal()
+	}
+	dependencies {
+		classpath 'info.solidsoft.gradle.pitest:gradle-pitest-plugin:1.19.0'
+	}
+}
+
+def PITEST_VERSION = '1.30.0'
+def JUNIT5_PLUGIN_VERSION = '1.2.3'
+def RUN_DESCRIPTION_FILE = 'journey-mutation-run.json'
+
+// 접근성 제약 라우팅의 판정 클래스. 범위가 크면 실행 시간이 폭증하므로 작은 클래스부터 시작한다.
+// 끝의 *는 중첩 record·enum까지 포함한다. RouteTimetableRaptorPlanner(6천 줄)는 계단 판정만 따로 뽑을 수 없어 제외했다.
+def MUTATION_TARGET_CLASSES = [
+	'com.easysubway.route.application.service.JourneyFacilityBlockOverlay*',
+	'com.easysubway.journey.application.JourneyExecutionDisposition*',
+	'com.easysubway.journey.application.JourneyAlternatives*',
+	'com.easysubway.journey.application.JourneyFrontierPolicyV1*',
+	'com.easysubway.journey.application.JourneyProfileSegmentPolicyV1*',
+]
+// 변이를 죽이는 테스트 후보. 대상 클래스를 실제로 실행하는 테스트만 PIT가 골라 돌린다.
+def MUTATION_TARGET_TESTS = [
+	'com.easysubway.journey.*',
+	'com.easysubway.route.*',
+]
+// 성능·부하 측정 테스트는 변이마다 돌리면 시간이 폭증하고 정확성 판정도 아니다.
+def MUTATION_EXCLUDED_TEST_CLASSES = [
+	'*PerfTest',
+	'*PerformanceGateTest',
+	'*LoadServerTest',
+]
+def MUTATION_DEFAULT_THREADS = 2
+def MUTATION_CHILD_JVM_HEAP = '-Xmx1g'
+// PIT가 각 mutant에 허용하는 시간은 정상 실행 시간의 이 배수에 상수를 더한 값이다. 호스티드 러너에서 오탐 TIMED_OUT을 줄이려고 기본(1.25배)보다 늘린다.
+def MUTATION_TIMEOUT_FACTOR = 2.0
+def NANOS_PER_SECOND = 1_000_000_000L
+
+gradle.allprojects { project ->
+	project.plugins.withId('java') {
+		project.apply plugin: info.solidsoft.gradle.pitest.PitestPlugin
+		def properties = gradle.startParameter.projectProperties
+		def scopedClasses = properties['mutationTargetClasses']?.split(',')?.collect { it.trim() }?.findAll { !it.isEmpty() } ?: MUTATION_TARGET_CLASSES
+		def threadCount = Integer.parseInt(properties['mutationThreads'] ?: "${MUTATION_DEFAULT_THREADS}")
+		project.pitest {
+			pitestVersion = PITEST_VERSION
+			junit5PluginVersion = JUNIT5_PLUGIN_VERSION
+			// build.gradle이 junit-platform-launcher를 BOM 버전(잠금 파일 기준)으로 이미 선언한다. 플러그인이 다른 버전을 더하면 잠금이 깨진다.
+			addJUnitPlatformLauncher = false
+			targetClasses = scopedClasses
+			targetTests = MUTATION_TARGET_TESTS
+			excludedTestClasses = MUTATION_EXCLUDED_TEST_CLASSES
+			threads = threadCount
+			jvmArgs = [MUTATION_CHILD_JVM_HEAP]
+			timeoutFactor = MUTATION_TIMEOUT_FACTOR
+			outputFormats = ['XML', 'HTML']
+			timestampedReports = false
+		}
+		// 요약 도구가 읽는 실행 설명. 버전·범위를 workflow에 다시 적지 않도록 이 파일이 유일한 출처다. 시간은 pitest 태스크 실행(컴파일 제외)이다.
+		project.tasks.named('pitest') { task ->
+			task.doFirst { task.extensions.extraProperties.set('startedNanos', System.nanoTime()) }
+			task.doLast {
+				def elapsedSeconds = (System.nanoTime() - task.extensions.extraProperties.get('startedNanos')).intdiv(NANOS_PER_SECOND)
+				def description = [pitestVersion: PITEST_VERSION, junit5PluginVersion: JUNIT5_PLUGIN_VERSION, targetClasses: scopedClasses, threads: threadCount, elapsedSeconds: elapsedSeconds]
+				new File(task.reportDir.get().asFile, RUN_DESCRIPTION_FILE).setText(groovy.json.JsonOutput.toJson(description) + '\n', 'UTF-8')
+			}
+		}
+	}
+}

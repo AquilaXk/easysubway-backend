@@ -71,6 +71,39 @@ class JourneyProfileSegmentPolicyV1Test {
 			breakpoint("2026-09-02T08:15:00Z", "journey-c"))));
 	}
 
+	@Test
+	void acceptsThreeOrMoreStrictlyOrderedBreakpointsInEitherInputOrder() {
+		var expected = List.of(
+			segment("2026-09-02T08:00:00Z", "2026-09-02T08:10:01Z", "journey-a"),
+			segment("2026-09-02T08:10:01Z", "2026-09-02T08:15:01Z", "journey-b"),
+			segment("2026-09-02T08:15:01Z", "2026-09-02T08:20:01Z", "journey-c"),
+			segment("2026-09-02T08:20:01Z", "2026-09-02T08:30:01Z"));
+
+		var ascending = JourneyProfileSegmentPolicyV1.compress(range(), List.of(
+			breakpoint("2026-09-02T08:10:00Z", "journey-a"),
+			breakpoint("2026-09-02T08:15:00Z", "journey-b"),
+			breakpoint("2026-09-02T08:20:00Z", "journey-c")));
+		var descending = JourneyProfileSegmentPolicyV1.compress(range(), List.of(
+			breakpoint("2026-09-02T08:20:00Z", "journey-c"),
+			breakpoint("2026-09-02T08:15:00Z", "journey-b"),
+			breakpoint("2026-09-02T08:10:00Z", "journey-a")));
+
+		assertThat(ascending.segments()).isEqualTo(expected);
+		assertThat(descending.segments()).isEqualTo(expected);
+	}
+
+	@Test
+	void rejectsADuplicateOrTurningBreakpointAfterTheSecondOne() {
+		assertThatIllegalArgumentException().isThrownBy(() -> JourneyProfileSegmentPolicyV1.compress(range(), List.of(
+			breakpoint("2026-09-02T08:10:00Z", "journey-a"),
+			breakpoint("2026-09-02T08:20:00Z", "journey-b"),
+			breakpoint("2026-09-02T08:20:00Z", "journey-c"))));
+		assertThatIllegalArgumentException().isThrownBy(() -> JourneyProfileSegmentPolicyV1.compress(range(), List.of(
+			breakpoint("2026-09-02T08:20:00Z", "journey-a"),
+			breakpoint("2026-09-02T08:10:00Z", "journey-b"),
+			breakpoint("2026-09-02T08:15:00Z", "journey-c"))));
+	}
+
 	private static JourneyRaptorQuery.DepartBetween range() {
 		return new JourneyRaptorQuery.DepartBetween(EARLIEST, LATEST);
 	}

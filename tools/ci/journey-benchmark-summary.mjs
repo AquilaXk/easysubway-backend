@@ -4,10 +4,10 @@ import { escapeMarkdown, formatChange, formatGiB, formatNanos, formatValue, shor
 import { metricsFor, scopesOf } from './journey-benchmark-result.mjs';
 
 const ANNOTATION_LIMIT = 500;
-const TITLE = 'Journey 엔진 벤치마크 추세';
+export const BENCHMARK_TITLE = 'Journey 엔진 벤치마크 추세';
 
 /** workflow command는 한 줄이어야 하므로 %, 줄바꿈을 이스케이프하고 길이를 제한한다. 다른 관찰 workflow(경로 부하)도 title만 바꿔 쓴다. */
-export const annotation = (message, level = 'warning', title = TITLE) => `::${level} title=${title}::${truncate(message, ANNOTATION_LIMIT).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}\n`;
+export const annotation = (message, level = 'warning', title = BENCHMARK_TITLE) => `::${level} title=${title}::${truncate(message, ANNOTATION_LIMIT).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}\n`;
 
 // runUrl과 sha는 결과를 읽을 때 형식이 검증되어 있다. 그 밖의 설명 문자열은 escapeMarkdown을 거친다.
 const link = (context) => `[${shortSha(context.commitSha)} · run ${context.runId}](${context.runUrl})`;
