@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { ARTIFACT_PREFIX, BASELINE_CANDIDATE_LIMIT, BASELINE_RUN_LIMIT } from './journey-benchmark-previous.mjs';
+import { validateMeasurement } from './journey-benchmark-result.mjs';
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const workflow = read('../../.github/workflows/journey-benchmark-trend.yml');
@@ -107,4 +108,9 @@ test('Backend #516 init script runs the gate measurement entry point with the sa
   const initOptions = /jvmArgs\(([^)]+)\)/.exec(initScript)[1].split(', ').map((option) => option.replaceAll("'", ''));
   assert.deepEqual(initOptions, forkOptions);
   assert.doesNotMatch(withoutComments(initScript.replaceAll('//', '#')), /jacoco/i);
+});
+
+test('Backend #518 committed gate baseline passes the trend measurement validator, so a measurement method change cannot break the trend job', () => {
+  const baseline = JSON.parse(read('../../backend/src/test/resources/journey-benchmark/engine-performance-baseline.json'));
+  assert.doesNotThrow(() => validateMeasurement(baseline));
 });

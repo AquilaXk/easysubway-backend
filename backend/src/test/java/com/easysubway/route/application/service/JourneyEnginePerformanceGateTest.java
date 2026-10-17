@@ -1,6 +1,7 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
@@ -67,6 +68,13 @@ class JourneyEnginePerformanceGateTest {
 	private static final Path MEASURED = Path.of("build/journey-benchmark/engine-performance-measured.json");
 	private static final int WARMUP_ROUNDS = 2;
 	private static final int MEASURED_ROUNDS = 5;
+	/**
+	 * 컴파일 시간은 질의와 달리 예열 회차가 없어서 따로 예열한다. 처음 몇 번의 컴파일은 JIT 전이 구간이라 정상 상태보다
+	 * 몇 배 느리고 길이가 러너 경합에 따라 달라진다. 앞 {@code COMPILE_WARMUPS}번은 버리고 뒤 {@code COMPILE_SAMPLES}번의
+	 * 중앙값을 낸다(#518, {@link #steadyMedian}).
+	 */
+	private static final int COMPILE_WARMUPS = 6;
+	private static final int COMPILE_SAMPLES = 9;
 	private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 	/**
 	 * 벤치마크 전용 프로필 한도. 운영 정책 값은 배포 산출물(platform)에 있고 저장소에 없다. 한도가 없으면 출발 시간대
@@ -181,6 +189,10 @@ class JourneyEnginePerformanceGateTest {
 		assertThat(regressions(baseline, tree(sample(1_000, 4_000_000, 1_000_000, 200_000_000, "bundle")))).isEmpty();
 		assertThat(regressions(baseline, tree(sample(1_000, 2_000_000, 1_000_000, 100_000_000, "other"))))
 			.singleElement().asString().contains("bundle identity changed");
+		// 측정 방법(컴파일 예열 포함)이 기준선과 다르면 기준선 값의 뜻이 달라지므로 새로 만들어야 한다.
+		Map<String, Object> otherMethod = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
+		otherMethod.put("method", Map.of("aggregation", "compile median of 3 cold samples"));
+		assertThat(regressions(baseline, tree(otherMethod))).singleElement().asString().contains("measurement method changed");
 		// 운영 후보 정책 재현 결과(거절 수)가 바뀌면 기준선을 새로 고쳐야 한다.
 		Map<String, Object> fewerRejections = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
 		@SuppressWarnings("unchecked")
@@ -204,6 +216,57 @@ class JourneyEnginePerformanceGateTest {
 		Map<String, Object> missingWorkload = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
 		missingWorkload.put("workloads", Map.of());
 		assertThat(regressions(baseline, tree(missingWorkload))).singleElement().asString().contains("workload");
+	}
+
+	/**
+	 * 새 JVM의 첫 컴파일들은 인터프리터와 C1 단계에서 돌아 정상 상태보다 몇 배 느리고, 몇 번째 컴파일에서 C2가 끼어드는지가
+	 * 러너 CPU 경합에 따라 달라진다. 예열 없이 처음 세 번의 중앙값을 내면 이 전이 구간의 값이 되어 같은 코드에서도 정규화
+	 * 값이 0.6~2.5배로 흔들린다(backend #517 CI의 metro 컴파일 2.80배 실패, #518). 아래 열 개는 부하가 높은 개발 장비에서
+	 * 새 JVM에 metro 번들을 15번 연속 컴파일한 실제 기록(ms)이다. 전이 구간이 길게 끌리는 경우까지 담겨 있다.
+	 */
+	private static final long[][] RECORDED_COLD_COMPILE_TRACES_MILLIS = {
+		{321, 56, 101, 74, 84, 36, 34, 34, 34, 39, 36, 34, 32, 39, 29},
+		{582, 60, 128, 97, 135, 75, 66, 69, 45, 45, 55, 68, 47, 27, 37},
+		{757, 150, 255, 63, 50, 28, 55, 34, 75, 61, 44, 37, 33, 45, 33},
+		{504, 133, 141, 92, 85, 83, 48, 73, 74, 29, 42, 27, 38, 28, 44},
+		{590, 55, 77, 70, 36, 30, 31, 72, 44, 29, 32, 61, 44, 46, 32},
+		{201, 67, 45, 36, 37, 65, 31, 45, 61, 69, 28, 35, 26, 28, 32},
+		{532, 87, 125, 115, 61, 51, 32, 32, 30, 30, 30, 29, 31, 27, 28},
+		{199, 44, 80, 71, 35, 38, 30, 31, 30, 32, 32, 29, 29, 28, 29},
+		{197, 41, 60, 66, 72, 43, 30, 31, 30, 27, 27, 28, 37, 29, 25},
+		{204, 42, 78, 73, 32, 31, 28, 31, 29, 30, 29, 29, 29, 26, 30}};
+	/** 위 기록의 정상 상태 컴파일 시간(마지막 다섯 표본 중앙값의 전체 중앙값, ms). 이 값이 기준선이다. */
+	private static final long RECORDED_STEADY_COMPILE_MILLIS = 30;
+
+	@Test
+	@DisplayName("컴파일 시간은 JIT 예열 전이 구간 잡음에 흔들리지 않고 정상 상태 회귀는 잡는다")
+	void compileTimeIsJudgedAtSteadyStateNotInTheJitWarmupTransient() {
+		long calibration = 100_000_000L;
+		JsonNode baseline = tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
+			RECORDED_STEADY_COMPILE_MILLIS * 1_000_000L));
+		long legacyFlakes = 0;
+		for (long[] trace : RECORDED_COLD_COMPILE_TRACES_MILLIS) {
+			long[] nanos = Arrays.stream(trace).map(millis -> millis * 1_000_000L).toArray();
+			// 예열 없이 처음 세 표본의 중앙값(#460의 옛 측정)은 이 기록들에서 한도를 자주 넘는다. 시뮬레이션이 flake를 재현한다.
+			if (!regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
+				median(Arrays.copyOf(nanos, 3))))).isEmpty()) legacyFlakes += 1;
+			// 정상 상태 중앙값은 같은 기록에서 한 번도 한도를 넘지 않는다.
+			assertThat(regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
+				steadyMedian(nanos))))).as("trace %s", Arrays.toString(trace)).isEmpty();
+			// 진짜 회귀: 컴파일이 모든 표본에서 3배 느려지면 전이 구간 잡음과 무관하게 실패한다.
+			long[] regressed = Arrays.stream(nanos).map(value -> value * 3).toArray();
+			assertThat(regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
+				steadyMedian(regressed))))).as("3x trace %s", Arrays.toString(trace))
+				.singleElement().asString().contains("compile.nanos");
+		}
+		assertThat(legacyFlakes).as("옛 측정이 기록 열 개 중 실패한 수").isGreaterThanOrEqualTo(5);
+	}
+
+	@Test
+	@DisplayName("예열 뒤 표본 수가 맞지 않으면 컴파일 시간을 내지 않는다")
+	void steadyMedianRejectsUnexpectedSampleCounts() {
+		assertThatThrownBy(() -> steadyMedian(new long[] {1, 2, 3}))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("15");
 	}
 
 	// ---------------------------------------------------------------- 측정
@@ -250,7 +313,9 @@ class JourneyEnginePerformanceGateTest {
 		Map<String, Object> method = new LinkedHashMap<>();
 		method.put("warmupRounds", WARMUP_ROUNDS);
 		method.put("measuredRounds", MEASURED_ROUNDS);
-		method.put("aggregation", "median over measured rounds of per-round nearest-rank p50 and p99");
+		// 추세 관찰(journey-benchmark-result.mjs)이 설명 문자열을 100자, 제한된 문자만 허용하므로 쉼표·세미콜론을 쓰지 않는다.
+		method.put("aggregation", "round median of nearest-rank p50 and p99 (compile: median of "
+			+ COMPILE_SAMPLES + " after " + COMPILE_WARMUPS + " warmups)");
 		method.put("profileLimits", Map.of("maxEstimatedWork", BENCHMARK_LIMITS.maxEstimatedWork(),
 			"maxLabelsPerState", BENCHMARK_LIMITS.maxLabelsPerState(),
 			"maxDestinationProfileLabels", BENCHMARK_LIMITS.maxDestinationProfileLabels(),
@@ -267,8 +332,8 @@ class JourneyEnginePerformanceGateTest {
 	static Map<String, Object> measure(Workload workload, com.sun.management.ThreadMXBean threads) {
 		RouteTimetable timetable = workload.timetable().get();
 		List<Query> queries = querySet(workload, timetable);
-		long[] compileNanos = new long[3];
-		long[] compileBytes = new long[3];
+		long[] compileNanos = new long[COMPILE_WARMUPS + COMPILE_SAMPLES];
+		long[] compileBytes = new long[compileNanos.length];
 		RaptorRouteBundleRuntimeView runtime = null;
 		for (int index = 0; index < compileNanos.length; index += 1) {
 			long bytes = threads.getCurrentThreadAllocatedBytes();
@@ -343,8 +408,8 @@ class JourneyEnginePerformanceGateTest {
 		querySet.put("count", queries.size());
 		querySet.put("sha256", sha256(String.join("\n", queries.stream().map(Query::describe).toList())));
 		Map<String, Object> compile = new LinkedHashMap<>();
-		compile.put("nanos", median(compileNanos));
-		compile.put("allocatedBytes", median(compileBytes));
+		compile.put("nanos", steadyMedian(compileNanos));
+		compile.put("allocatedBytes", steadyMedian(compileBytes));
 		compile.put("retainedBytes", retained);
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("bundle", bundle);
@@ -532,6 +597,9 @@ class JourneyEnginePerformanceGateTest {
 	static List<String> regressions(JsonNode baseline, JsonNode measured) {
 		List<String> problems = new ArrayList<>();
 		Tolerances tolerances = Tolerances.from(baseline.get("tolerances"));
+		if (!baseline.path("method").path("aggregation").equals(measured.path("method").path("aggregation"))) {
+			problems.add("measurement method changed; regenerate the baseline with the documented procedure");
+		}
 		double baselineCalibration = baseline.path("calibrationNanos").asDouble();
 		double measuredCalibration = measured.path("calibrationNanos").asDouble();
 		for (String id : names(baseline.path("workloads"), measured.path("workloads"))) {
@@ -665,6 +733,29 @@ class JourneyEnginePerformanceGateTest {
 		value.put("workloads", Map.of("sample-grid", workload));
 		value.put("tolerances", Tolerances.DEFAULT.asMap());
 		return value;
+	}
+
+	private static Map<String, Object> withCompileNanos(Map<String, Object> sample, long nanos) {
+		@SuppressWarnings("unchecked")
+		Map<String, Object> workloads = (Map<String, Object>) sample.get("workloads");
+		@SuppressWarnings("unchecked")
+		Map<String, Object> workload = new LinkedHashMap<>((Map<String, Object>) workloads.get("sample-grid"));
+		@SuppressWarnings("unchecked")
+		Map<String, Object> compile = new LinkedHashMap<>((Map<String, Object>) workload.get("compile"));
+		compile.put("nanos", nanos);
+		workload.put("compile", compile);
+		Map<String, Object> result = new LinkedHashMap<>(sample);
+		result.put("workloads", Map.of("sample-grid", workload));
+		return result;
+	}
+
+	/** 예열 컴파일 표본을 버리고 남은 정상 상태 표본의 중앙값. 표본 수가 정해진 수와 다르면 측정이 어긋난 것이라 거절한다. */
+	static long steadyMedian(long[] samples) {
+		if (samples.length != COMPILE_WARMUPS + COMPILE_SAMPLES) {
+			throw new IllegalArgumentException("compile measurement needs " + (COMPILE_WARMUPS + COMPILE_SAMPLES)
+				+ " samples (warmup " + COMPILE_WARMUPS + " + measured " + COMPILE_SAMPLES + "), got " + samples.length);
+		}
+		return median(Arrays.copyOfRange(samples, COMPILE_WARMUPS, samples.length));
 	}
 
 	// ---------------------------------------------------------------- 통계
