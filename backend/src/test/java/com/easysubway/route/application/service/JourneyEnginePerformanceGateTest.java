@@ -277,6 +277,8 @@ class JourneyEnginePerformanceGateTest {
 	@Test
 	@DisplayName("컴파일 시간은 JIT 예열 전이 구간 잡음에 흔들리지 않고 정상 상태 회귀는 잡는다")
 	void compileTimeIsJudgedAtSteadyStateNotInTheJitWarmupTransient() {
+		final int regressionFactor = 3;
+		final int minimumLegacyFlakes = 12;
 		long calibration = 100_000_000L;
 		JsonNode baseline = tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
 			RECORDED_STEADY_COMPILE_MILLIS * 1_000_000L));
@@ -284,18 +286,16 @@ class JourneyEnginePerformanceGateTest {
 		for (long[] trace : RECORDED_COLD_COMPILE_TRACES_MILLIS) {
 			long[] nanos = Arrays.stream(trace).map(millis -> millis * 1_000_000L).toArray();
 			// 예열 없이 처음 세 표본의 중앙값(#460의 옛 측정)은 이 기록들에서 한도를 자주 넘는다. 시뮬레이션이 flake를 재현한다.
-			if (!regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
-				median(Arrays.copyOf(nanos, 3))))).isEmpty()) legacyFlakes += 1;
+			if (!compileRegressions(baseline, calibration, median(Arrays.copyOf(nanos, 3))).isEmpty()) legacyFlakes += 1;
 			// 정상 상태 중앙값은 같은 기록에서 한 번도 한도를 넘지 않는다.
-			assertThat(regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
-				steadyMedian(nanos))))).as("trace %s", Arrays.toString(trace)).isEmpty();
+			assertThat(compileRegressions(baseline, calibration, steadyMedian(nanos)))
+				.as("trace %s", Arrays.toString(trace)).isEmpty();
 			// 진짜 회귀: 컴파일이 모든 표본에서 3배 느려지면 전이 구간 잡음과 무관하게 실패한다.
-			long[] regressed = Arrays.stream(nanos).map(value -> value * 3).toArray();
-			assertThat(regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"),
-				steadyMedian(regressed))))).as("3x trace %s", Arrays.toString(trace))
-				.singleElement().asString().contains("compile.nanos");
+			long[] regressed = Arrays.stream(nanos).map(value -> value * regressionFactor).toArray();
+			assertThat(compileRegressions(baseline, calibration, steadyMedian(regressed)))
+				.as("%dx trace %s", regressionFactor, Arrays.toString(trace)).singleElement().asString().contains("compile.nanos");
 		}
-		assertThat(legacyFlakes).as("옛 측정이 기록 열다섯 개 중 실패한 수").isGreaterThanOrEqualTo(12);
+		assertThat(legacyFlakes).as("옛 측정이 기록 열다섯 개 중 실패한 수").isGreaterThanOrEqualTo(minimumLegacyFlakes);
 	}
 
 	@Test
@@ -769,6 +769,10 @@ class JourneyEnginePerformanceGateTest {
 		value.put("workloads", Map.of("sample-grid", workload));
 		value.put("tolerances", Tolerances.DEFAULT.asMap());
 		return value;
+	}
+
+	private static List<String> compileRegressions(JsonNode baseline, long calibration, long compileNanos) {
+		return regressions(baseline, tree(withCompileNanos(sample(1_000, 2_000_000, 1_000_000, calibration, "bundle"), compileNanos)));
 	}
 
 	private static Map<String, Object> withCompileNanos(Map<String, Object> sample, long nanos) {
