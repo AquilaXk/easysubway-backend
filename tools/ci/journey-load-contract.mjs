@@ -111,20 +111,32 @@ const ALLOWED_BUNDLES = Object.freeze({
 export const swapFlipBundle = (flip) => (flip % 2 === 0 ? SECOND_BUNDLE : FIRST_BUNDLE);
 
 /**
- * swap 단계의 어느 시각에 시작한 요청이 반드시 받아야 하는 팩. 교체를 호출한 뒤 활성화가 반영될 시간(activationLag)이 지나고
- * 다음 교체 직전(jitter)까지는 그 교체가 활성화한 팩만 허용한다. 그 사이의 시각은 정해지지 않아 null(어느 팩이든 허용)이다.
+ * swap 단계에서 단 하나의 팩만 허용되는 엄격 창. 처음 교체 전 창은 첫 팩만, 교체마다 활성화가 반영된 뒤(activationLag)부터 다음 교체 직전
+ * (jitter)까지는 그 교체가 활성화한 팩만 허용한다. 그 사이 시각은 정해지지 않아 어느 팩이든 허용이다. countedSeconds는 단계 창 안의 길이다
+ * (마지막 창은 단계가 끝난 뒤로 이어지므로 짧거나 0이다).
  */
-export function expectedSwapBundle(plan, planSeconds) {
+export function swapStrictWindows(plan) {
   const swap = plan.phases.find(({ name }) => name === 'swap');
   const { startSeconds: firstFlip, flips } = plan.controls.swap;
+  const phaseEnd = swap.startSeconds + swap.durationSeconds;
   const flipAt = (index) => firstFlip + index * plan.flipIntervalSeconds;
-  const windowEnd = swap.startSeconds + swap.durationSeconds + plan.windowToleranceSeconds;
-  if (planSeconds >= swap.startSeconds && planSeconds < firstFlip - plan.flipJitterSeconds) return FIRST_BUNDLE;
-  for (let flip = 0; flip < flips; flip += 1) {
-    const strictEnd = flip + 1 < flips ? flipAt(flip + 1) - plan.flipJitterSeconds : windowEnd;
-    if (planSeconds >= flipAt(flip) + plan.activationLagSeconds && planSeconds < strictEnd) return swapFlipBundle(flip);
-  }
-  return null;
+  const window = (bundle, start, end) => ({ bundle, start, end, countedSeconds: Math.max(0, Math.min(end, phaseEnd) - start) });
+  return [
+    window(FIRST_BUNDLE, swap.startSeconds, firstFlip - plan.flipJitterSeconds),
+    ...Array.from({ length: flips }, (_, flip) => window(
+      swapFlipBundle(flip),
+      flipAt(flip) + plan.activationLagSeconds,
+      flip + 1 < flips ? flipAt(flip + 1) - plan.flipJitterSeconds : phaseEnd + plan.windowToleranceSeconds,
+    )),
+  ];
+}
+
+/** swap 단계의 어느 시각에 시작한 요청이 속한 엄격 창의 번호. 어느 창에도 속하지 않으면 -1이다. */
+export const swapWindowIndexAt = (plan, planSeconds) => swapStrictWindows(plan).findIndex(({ start, end }) => planSeconds >= start && planSeconds < end);
+
+/** swap 단계의 어느 시각에 시작한 요청이 반드시 받아야 하는 팩. 엄격 창 밖이면 null(어느 팩이든 허용)이다. */
+export function expectedSwapBundle(plan, planSeconds) {
+  return swapStrictWindows(plan)[swapWindowIndexAt(plan, planSeconds)]?.bundle ?? null;
 }
 
 const COUNTER_KINDS = ['requests', 'lateIterations', 'status5xx', 'status429', 'bundleA', 'bundleB', 'explicitFailures', 'disclosedUnobserved', ...Object.values(VIOLATIONS)];
@@ -141,6 +153,15 @@ export function phaseWindowContains(plan, phaseName, elapsedSeconds) {
 }
 
 export const metricName = (phase, kind) => `phase_${phase}_${kind}`;
+export const swapWindowMetricName = (index) => `phase_swap_window_${index}`;
+
+/**
+ * 단계(시나리오)별 버려진 반복은 k6가 dropped_iterations에 scenario 태그를 붙여 내보낸다. k6 요약에는 임계값이 걸린 하위 지표만 실리므로
+ * 항상 참인 임계값을 단계마다 걸어 하위 지표를 만든다(판정은 이 임계값이 아니라 journey-load-verdict.mjs가 한다).
+ * 참고: https://grafana.com/docs/k6/latest/using-k6/thresholds/ (태그 하위 지표), https://grafana.com/docs/k6/latest/using-k6/metrics/reference/ (dropped_iterations)
+ */
+export const droppedIterationsMetricName = (phase) => `dropped_iterations{scenario:${phase}}`;
+export const droppedIterationsThresholds = (plan) => Object.fromEntries(plan.phases.map(({ name }) => [droppedIterationsMetricName(name), ['count>=0']]));
 
 export function requestIdFor(sequence) {
   if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('requestIdFor: sequence must be a non-negative safe integer');
@@ -302,6 +323,7 @@ export function distillK6Summary({ metrics }, plan, facilityMode) {
     const count = (kind) => counterOf(metrics, metricName(name, kind));
     return [name, {
       requests: count('requests'),
+      droppedIterations: counterOf(metrics, droppedIterationsMetricName(name)),
       lateIterations: count('lateIterations'),
       status5xx: count('status5xx'),
       status429: count('status429'),
@@ -311,12 +333,12 @@ export function distillK6Summary({ metrics }, plan, facilityMode) {
       disclosedUnobserved: count('disclosedUnobserved'),
       violations: Object.fromEntries(Object.values(VIOLATIONS).map((violation) => [violation, count(violation)])),
       latencyMs: latencyOf(metrics, metricName(name, LATENCY_KIND)),
+      ...(name === 'swap' ? { windowRequests: swapStrictWindows(plan).map((_, index) => counterOf(metrics, swapWindowMetricName(index))) } : {}),
     }];
   }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     facilityMode,
-    droppedIterations: counterOf(metrics, 'dropped_iterations'),
     controls: { calls: counterOf(metrics, 'control_calls'), failures: counterOf(metrics, 'control_failures') },
     phases,
   };
