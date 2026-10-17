@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { ARTIFACT_PREFIX, BASELINE_CANDIDATE_LIMIT, BASELINE_RUN_LIMIT } from './journey-benchmark-previous.mjs';
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const workflow = read('../../.github/workflows/journey-benchmark-trend.yml');
@@ -49,12 +50,17 @@ test('Backend #516 is read-only: no secrets, no repository writes, results leave
 
 test('Backend #516 is observational: regressions never fail the job, the measurement does', () => {
   assert.doesNotMatch(withoutComments(workflow), /continue-on-error|\|\| true|\|\| :/);
-  const compare = step(workflow, 'Compare with the previous successful run');
+  const compare = step(workflow, 'Compare with the previous successful runs');
   assert.match(compare, /set -euo pipefail/);
-  assert.match(compare, /node tools\/ci\/journey-benchmark-trend\.mjs compare /);
-  assert.match(compare, /--summary "\$GITHUB_STEP_SUMMARY"/);
-  assert.match(compare, /--no-previous "\$\{reason\}"/);
-  assert.match(compare, /--previous "\$\{previous_result\}"/);
+  assert.match(compare, /node tools\/ci\/journey-benchmark-trend\.mjs compare --current "\$\{RUNNER_TEMP\}\/journey-benchmark\/result\.json" --previous-manifest "\$\{RUNNER_TEMP\}\/previous-benchmark\/manifest\.json" --summary "\$GITHUB_STEP_SUMMARY"/);
+});
+
+test('Backend #516 fetches the previous runs through the tested script, authenticated with the workflow token only', () => {
+  const fetch = step(workflow, 'Fetch previous successful runs');
+  assert.match(fetch, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(fetch, /WORKFLOW_NAME: \$\{\{ github\.workflow \}\}/);
+  assert.match(fetch, /node tools\/ci\/journey-benchmark-trend\.mjs fetch-previous --repo "\$\{GITHUB_REPOSITORY\}" --workflow "\$\{WORKFLOW_NAME\}" --dir "\$\{RUNNER_TEMP\}\/previous-benchmark" --output "\$\{RUNNER_TEMP\}\/previous-benchmark\/manifest\.json"/);
+  assert.ok(BASELINE_CANDIDATE_LIMIT > BASELINE_RUN_LIMIT, 'skipped runs must be replaceable from further candidates');
 });
 
 test('Backend #516 serializes runs without cancelling a measurement in progress', () => {
@@ -62,7 +68,7 @@ test('Backend #516 serializes runs without cancelling a measurement in progress'
 });
 
 test('Backend #516 steps run in order from setup to measurement, aggregation, upload and comparison', () => {
-  assert.deepEqual(stepNames, ['Checkout', ...SETUP_STEPS, 'Measure the engine benchmark', 'Aggregate the benchmark repeats', 'Upload the benchmark result', 'Compare with the previous successful run']);
+  assert.deepEqual(stepNames, ['Checkout', ...SETUP_STEPS, 'Measure the engine benchmark', 'Aggregate the benchmark repeats', 'Upload the benchmark result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
 });
 
 test('Backend #516 setup steps are byte-identical to the Backend CI test shard setup so the pins cannot drift', () => {
@@ -84,17 +90,13 @@ test('Backend #516 measures through the init script task with the repeat count f
   assert.match(aggregate, /--output "\$\{RUNNER_TEMP\}\/journey-benchmark\/result\.json"/);
 });
 
-test('Backend #516 uploads the result with a bounded retention and finds the previous run by the same artifact name', () => {
+test('Backend #516 uploads the result with a bounded retention under the name prefix the previous-run lookup searches for', () => {
   const upload = step(workflow, 'Upload the benchmark result');
   assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
-  assert.match(upload, /name: journey-engine-benchmark-\$\{\{ github\.sha \}\}/);
+  assert.ok(upload.includes(`name: ${ARTIFACT_PREFIX}\${{ github.sha }}`), 'the artifact name must start with ARTIFACT_PREFIX');
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-benchmark\//);
   assert.match(upload, /retention-days: 30/);
   assert.match(upload, /if-no-files-found: error/);
-  const compare = step(workflow, 'Compare with the previous successful run');
-  assert.match(compare, /--pattern 'journey-engine-benchmark-\*'/);
-  assert.match(compare, /--branch main --status success --limit 1/);
-  assert.match(compare, /GH_TOKEN: \$\{\{ github\.token \}\}/);
 });
 
 test('Backend #516 init script runs the gate measurement entry point with the same JVM options as the gate fork', () => {

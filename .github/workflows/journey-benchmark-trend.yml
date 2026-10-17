@@ -102,7 +102,7 @@ jobs:
           done
           node tools/ci/journey-benchmark-trend.mjs aggregate "${measured[@]}" --output "${RUNNER_TEMP}/journey-benchmark/result.json"
 
-      # 결과는 저장소에 커밋하지 않는다(자동 PR 누적 방지). 보존 기간 안의 직전 성공 run과만 비교한다.
+      # 결과는 저장소에 커밋하지 않는다(자동 PR 누적 방지). 보존 기간 안의 직전 성공 run들과만 비교한다.
       - name: Upload the benchmark result
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
@@ -111,30 +111,20 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      # 비교 대상이 없거나 읽을 수 없는 이유는 summary에 그대로 남긴다. 회귀는 ::warning으로만 드러낸다.
-      - name: Compare with the previous successful run
+      # 직전 성공 run 최대 5개의 결과를 내려받는다. 보존 만료는 알림으로, 그 밖의 실패(목록·artifact·다운로드 오류, 손상된 파일)는
+      # 경고로 남기고 나머지 run으로 기준을 채운다. 내려받은 목록은 manifest.json에 모인다.
+      - name: Fetch previous successful runs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_NAME: ${{ github.workflow }}
         run: |
           set -euo pipefail
-          previous_dir="${RUNNER_TEMP}/previous-benchmark"
-          reason=""
-          previous_result=""
-          previous_run="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow "${WORKFLOW_NAME}" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
-          if [[ -z "${previous_run}" ]]; then
-            reason="직전 성공 run이 없습니다(첫 실행)."
-          elif ! download_error="$(gh run download "${previous_run}" --repo "${GITHUB_REPOSITORY}" --pattern 'journey-engine-benchmark-*' --dir "${previous_dir}" 2>&1)"; then
-            reason="직전 성공 run ${previous_run}의 artifact를 받지 못했습니다(보존 기간 만료 등): ${download_error//$'\n'/ }"
-          else
-            previous_result="$(find "${previous_dir}" -name result.json -print -quit)"
-            if [[ -z "${previous_result}" ]]; then
-              reason="직전 성공 run ${previous_run}의 artifact에 result.json이 없습니다."
-            fi
-          fi
-          if [[ -n "${reason}" ]]; then
-            node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --no-previous "${reason}" --summary "$GITHUB_STEP_SUMMARY"
-          else
-            node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --previous "${previous_result}" --summary "$GITHUB_STEP_SUMMARY"
-          fi
+          node tools/ci/journey-benchmark-trend.mjs fetch-previous --repo "${GITHUB_REPOSITORY}" --workflow "${WORKFLOW_NAME}" --dir "${RUNNER_TEMP}/previous-benchmark" --output "${RUNNER_TEMP}/previous-benchmark/manifest.json"
+
+      # 회귀는 ::warning으로만 드러내고 job은 실패시키지 않는다. 기준이 없거나 손상된 이유는 summary에 그대로 남는다.
+      - name: Compare with the previous successful runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --previous-manifest "${RUNNER_TEMP}/previous-benchmark/manifest.json" --summary "$GITHUB_STEP_SUMMARY"
