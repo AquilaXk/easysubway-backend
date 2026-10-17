@@ -59,7 +59,9 @@ import org.junit.jupiter.api.Test;
  *   중앙값으로 다시 판정한다({@link JourneyEngineMeasurementConfirmation}, #518).</li>
  * </ul>
  *
- * <p>측정은 새 JVM 하나에서 한다({@link #forkedMeasurement()}). 기준선 갱신 절차는 엔진 설계 문서
+ * <p>측정은 새 JVM 하나에서 한다({@link #forkedMeasurement()}). 이 JVM은 JIT 컴파일을 질의 스레드가 기다리게 하고
+ * ({@code -XX:-BackgroundCompilation}) 질의를 {@link #WARMUP_ROUNDS}회 예열한다. 컴파일이 끝나는 시점이 JVM마다 달라 같은 코드의
+ * 출발 시각 고정 p50이 두 상태(약 2배 차이)로 갈리던 flake를 없앤다(#3036). 기준선 갱신 절차는 엔진 설계 문서
  * (같은 패키지 테스트 소스의 package-info.java)의 7절에 있다.</p>
  */
 @DisplayName("#460 경로 엔진 성능 회귀 게이트")
@@ -241,7 +243,9 @@ class JourneyEnginePerformanceGateTest {
 	/**
 	 * 새 JVM 하나에서 측정한다. 같은 테스트 JVM에서 앞서 돈 다른 테스트가 JIT 타입 프로파일을 오염시키면 인라이닝과
 	 * 탈출 분석이 달라져 할당량이 수 배, 지연이 2배 넘게 흔들린다(shard 구성에 따라 달라짐). 그래서 JMH의 fork처럼
-	 * 깨끗한 JVM에서 재고 결과 JSON만 읽는다. 측정 JVM에는 커버리지 에이전트를 붙이지 않는다.
+	 * 깨끗한 JVM에서 재고 결과 JSON만 읽는다. 측정 JVM에는 커버리지 에이전트를 붙이지 않는다. 컴파일을 질의 스레드가 기다리게
+	 * 해({@code -XX:-BackgroundCompilation}) 컴파일 완료 시점이 컴파일러 스레드의 타이밍이 아니라 실행 이력으로만 정해진다.
+	 * 이 옵션 목록은 추세 관찰의 {@code journey-benchmark.init.gradle}과 같아야 한다(계약 테스트가 확인).
 	 */
 	@SuppressWarnings("unchecked")
 	private static Map<String, Object> forkedMeasurement() throws IOException, InterruptedException {
