@@ -9,6 +9,9 @@ import {
   assertLoopbackOrigin,
   buildCorpus,
   distillK6Summary,
+  droppedIterationsThresholds,
+  swapStrictWindows,
+  swapWindowIndexAt,
   expectedSwapBundle,
   judgeResponse,
   metricName,
@@ -170,14 +173,19 @@ test('distillation reads the per-phase counters and latency trends from the k6 s
       [metricName('steady', 'lateIterations')]: 4, [metricName('steady', 'bundleA')]: 1000, [metricName('steady', 'bundleB')]: 0, [metricName('steady', 'explicitFailures')]: 0, [metricName('steady', 'disclosedUnobserved')]: 0,
       [metricName('steady', VIOLATIONS.MIXED_RESPONSE)]: 0, [metricName('steady', VIOLATIONS.MASKED_OUTAGE)]: 0, [metricName('steady', VIOLATIONS.WRONG_BUNDLE)]: 0,
       [metricName('steady', VIOLATIONS.UNEXPECTED_FAILURE)]: 0, [metricName('steady', VIOLATIONS.UNEXPECTED_RESPONSE)]: 2,
-      control_calls: 12, control_failures: 1, dropped_iterations: 3,
+      control_calls: 12, control_failures: 1, dropped_iterations: 8,
+      'dropped_iterations{scenario:steady}': 3, 'dropped_iterations{scenario:swap}': 5, phase_swap_window_0: 150, phase_swap_window_4: 7,
     }),
     [metricName('steady', 'latencyMs')]: trend({ 'p(50)': 5, 'p(95)': 12, 'p(99)': 20, max: 30 }),
   };
   const distilled = distillK6Summary({ metrics }, LOAD_PLAN, FACILITY_MODES.DEFAULT);
-  assert.equal(distilled.schemaVersion, 1);
+  assert.equal(distilled.schemaVersion, 2);
   assert.equal(distilled.facilityMode, FACILITY_MODES.DEFAULT);
-  assert.equal(distilled.droppedIterations, 3);
+  assert.equal(distilled.phases.steady.droppedIterations, 3);
+  assert.equal(distilled.phases.swap.droppedIterations, 5);
+  assert.equal(distilled.phases.outage.droppedIterations, 0, 'a phase without the tagged sub-metric dropped nothing');
+  assert.deepEqual(distilled.phases.swap.windowRequests, [150, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0]);
+  assert.equal(distilled.phases.steady.windowRequests, undefined);
   assert.deepEqual(distilled.controls, { calls: 12, failures: 1 });
   assert.deepEqual(Object.keys(distilled.phases), LOAD_PLAN.phases.map(({ name }) => name));
   assert.deepEqual(distilled.phases.steady.latencyMs, { p50: 5, p95: 12, p99: 20, max: 30 });
@@ -288,4 +296,23 @@ test('a swap answer after the activation landed must come from the activated bun
   assert.equal(judge('swap', summarizeResponse(200, success()), 'NONE', {}, { expectedBundle: 'b' }).violation, VIOLATIONS.WRONG_BUNDLE);
   assert.equal(judge('swap', second, 'NONE', {}, { expectedBundle: 'a' }).violation, VIOLATIONS.WRONG_BUNDLE);
   assert.equal(judge('swap', summarizeResponse(200, success()), 'NONE', {}, { expectedBundle: null }).ok, true, 'undecided instants accept either bundle');
+});
+
+test('every phase gets an always-true threshold so k6 reports its dropped iterations as a sub-metric', () => {
+  assert.deepEqual(droppedIterationsThresholds(LOAD_PLAN), {
+    'dropped_iterations{scenario:steady}': ['count>=0'],
+    'dropped_iterations{scenario:swap}': ['count>=0'],
+    'dropped_iterations{scenario:outage}': ['count>=0'],
+    'dropped_iterations{scenario:recovered}': ['count>=0'],
+  });
+});
+
+test('the strict swap windows are the first bundle before the first flip and one window per flip, the last one past the phase end', () => {
+  const windows = swapStrictWindows(LOAD_PLAN);
+  assert.equal(windows.length, 11);
+  assert.deepEqual(windows[0], { bundle: 'a', start: 20, end: 20.75, countedSeconds: 0.75 });
+  assert.deepEqual(windows[1], { bundle: 'b', start: 22, end: 22.75, countedSeconds: 0.75 });
+  assert.deepEqual(windows[10], { bundle: 'a', start: 40, end: 40.5, countedSeconds: 0 });
+  assert.equal(swapWindowIndexAt(LOAD_PLAN, 22.5), 1);
+  assert.equal(swapWindowIndexAt(LOAD_PLAN, 21.5), -1, 'between the strict windows nothing is decided');
 });

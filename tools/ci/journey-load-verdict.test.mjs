@@ -5,27 +5,28 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN, VIOLATIONS } from './journey-load-contract.mjs';
-import { CLEAN_PHASE_P95_LIMIT_MS, annotations, judgeRun, renderSummary } from './journey-load-verdict.mjs';
+import { CLEAN_PHASE_P95_LIMIT_MS, LOAD_SUSTAIN_MIN_PERCENT, SWAP_WINDOW_MIN_PERCENT, annotations, judgeRun, renderSummary } from './journey-load-verdict.mjs';
 
 const RPS = LOAD_PLAN.requestsPerSecond;
 const NO_VIOLATIONS = Object.fromEntries(Object.values(VIOLATIONS).map((violation) => [violation, 0]));
+/** 엄격 창 11개: 첫 팩 창 1개와 교체 10번. 창마다 0.75초(150건)이고 마지막 교체의 창은 단계가 끝난 뒤라 0건이다. */
+const HEALTHY_WINDOW_REQUESTS = [150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 0];
 const LATENCY = { p50: 4, p95: 9, p99: 15, max: 40 };
 
 const phaseResult = (name, overrides = {}) => {
   const { durationSeconds } = LOAD_PLAN.phases.find((phase) => phase.name === name);
   const requests = RPS * durationSeconds;
-  const base = { requests, lateIterations: 0, status5xx: 0, status429: 0, bundleA: requests, bundleB: 0, explicitFailures: 0, disclosedUnobserved: 0, violations: { ...NO_VIOLATIONS }, latencyMs: { ...LATENCY } };
+  const base = { requests, droppedIterations: 0, lateIterations: 0, status5xx: 0, status429: 0, bundleA: requests, bundleB: 0, explicitFailures: 0, disclosedUnobserved: 0, violations: { ...NO_VIOLATIONS }, latencyMs: { ...LATENCY } };
   const third = Math.floor(requests / 3);
   const byPhase = {
-    swap: { bundleA: requests / 2, bundleB: requests / 2 },
+    swap: { bundleA: requests / 2, bundleB: requests / 2, windowRequests: [...HEALTHY_WINDOW_REQUESTS] },
     outage: { bundleA: third, explicitFailures: third, disclosedUnobserved: third, status5xx: third },
   };
   return { ...base, ...byPhase[name], ...overrides };
 };
 const healthyRun = (changes = {}) => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   facilityMode: FACILITY_MODES.REQUIRED,
-  droppedIterations: 0,
   controls: { calls: LOAD_PLAN.controls.swap.flips + 2, failures: 0 },
   phases: Object.fromEntries(LOAD_PLAN.phases.map(({ name }) => [name, phaseResult(name)])),
   ...changes,
@@ -86,12 +87,55 @@ test('rate limiting fails the run because the harness must never be throttled', 
   assert.deepEqual(failureCodes(withPhase('steady', { status429: 1 })), ['RATE_LIMITED']);
 });
 
-test('a phase that did not run, or that delivered less than the planned load, fails', () => {
+test('a phase that did not run fails', () => {
   assert.deepEqual(failureCodes(withPhase('recovered', { requests: 0, bundleA: 0 })), ['PHASE_NOT_RUN']);
-  assert.deepEqual(failureCodes(withPhase('steady', { requests: RPS * 20 - 2 })), ['LOAD_SHORTFALL']);
-  assert.deepEqual(failureCodes(withPhase('steady', { requests: RPS * 20 - 1 })), [], 'one request of rounding is tolerated');
-  assert.deepEqual(failureCodes(healthyRun({ droppedIterations: 1 })), ['LOAD_NOT_SUSTAINED']);
   assert.deepEqual(failureCodes(withPhase('swap', { lateIterations: 1 })), ['LOAD_NOT_SUSTAINED'], 'an iteration that started after its window was not judged, so the load was not sustained');
+});
+
+test('the tolerance is 99% of each phase plan, for arrived requests and for dropped iterations alike', () => {
+  assert.equal(LOAD_SUSTAIN_MIN_PERCENT, 99);
+  assert.deepEqual(failureCodes(withPhase('steady', { requests: 3960, bundleA: 3960, droppedIterations: 40 })), []);
+  assert.deepEqual(failureCodes(withPhase('steady', { requests: 3959, bundleA: 3959 })), ['LOAD_SHORTFALL']);
+  assert.deepEqual(failureCodes(withPhase('steady', { droppedIterations: 41 })), ['LOAD_NOT_SUSTAINED']);
+  assert.deepEqual(failureCodes(withPhase('outage', { droppedIterations: 20 })), []);
+  assert.deepEqual(failureCodes(withPhase('outage', { droppedIterations: 21 })), ['LOAD_NOT_SUSTAINED']);
+});
+
+test('the hosted-runner figures of the first measurement pass, with the dropped iterations reported per phase', () => {
+  const hosted = healthyRun({ phases: { ...healthyRun().phases,
+    steady: phaseResult('steady', { requests: 3989, bundleA: 3989, droppedIterations: 11 }),
+    swap: phaseResult('swap', { requests: 3995, bundleA: 1995, bundleB: 2000, droppedIterations: 5 }),
+    outage: phaseResult('outage', { requests: 1997, bundleA: 665, explicitFailures: 665, disclosedUnobserved: 665, status5xx: 665, droppedIterations: 3 }) } });
+  const verdict = judgeRun(hosted, LOAD_PLAN);
+  assert.deepEqual(verdict.failures, []);
+  assert.match(renderSummary(verdict, null), /\| steady \| 3989 \| 11 \(≤40\) \|/);
+});
+
+test('one phase cannot absorb the tolerance of the others: a run-wide total within 1% still fails when a single phase exceeds its share', () => {
+  const run = withPhase('outage', { droppedIterations: 100 });
+  assert.deepEqual(failureCodes(run), ['LOAD_NOT_SUSTAINED']);
+  assert.match(judgeRun(run, LOAD_PLAN).failures[0].message, /outage/);
+});
+
+test('a shortfall concentrated in the strict swap windows fails even when the phase total stays inside the tolerance', () => {
+  const concentrated = [...HEALTHY_WINDOW_REQUESTS];
+  concentrated[4] = 0;
+  const requests = 3980;
+  const run = withPhase('swap', { requests, bundleA: 1990, bundleB: 1990, windowRequests: concentrated, droppedIterations: 20 });
+  assert.deepEqual(failureCodes(run), ['SWAP_WINDOW_STARVED']);
+  assert.match(judgeRun(run, LOAD_PLAN).failures[0].message, /창 5/);
+});
+
+test('each strict swap window needs 90% of its 150 planned requests: 135 passes and 134 fails', () => {
+  assert.equal(SWAP_WINDOW_MIN_PERCENT, 90);
+  const windows = (value) => HEALTHY_WINDOW_REQUESTS.map((count, index) => (index === 3 ? value : count));
+  assert.deepEqual(failureCodes(withPhase('swap', { windowRequests: windows(135) })), []);
+  assert.deepEqual(failureCodes(withPhase('swap', { windowRequests: windows(134) })), ['SWAP_WINDOW_STARVED']);
+});
+
+test('a tolerated shortfall never excuses a violation in the iterations that did arrive', () => {
+  const run = withPhase('swap', { requests: 3960, bundleA: 1980, bundleB: 1980, droppedIterations: 40, violations: { ...NO_VIOLATIONS, WRONG_BUNDLE: 1 } });
+  assert.deepEqual(failureCodes(run), ['CONTRACT_VIOLATION']);
 });
 
 test('control failures and a wrong control call count fail the run', () => {

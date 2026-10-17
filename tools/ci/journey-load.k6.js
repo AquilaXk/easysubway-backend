@@ -17,6 +17,7 @@ import {
   assertLoopbackOrigin,
   buildCorpus,
   distillK6Summary,
+  droppedIterationsThresholds,
   expectedSwapBundle,
   judgeResponse,
   metricName,
@@ -26,6 +27,9 @@ import {
   requestIdFor,
   summarizeResponse,
   swapFlipBundle,
+  swapStrictWindows,
+  swapWindowIndexAt,
+  swapWindowMetricName,
 } from './journey-load-contract.mjs';
 
 const baseUrl = __ENV.JOURNEY_LOAD_BASE_URL;
@@ -65,6 +69,7 @@ const controlScenario = (execName, startSeconds) => ({ executor: 'shared-iterati
 export const options = {
   setupTimeout: SETUP_TIMEOUT,
   summaryTrendStats: ['p(50)', 'p(95)', 'p(99)', 'max'],
+  thresholds: droppedIterationsThresholds(LOAD_PLAN),
   scenarios: {
     ...Object.fromEntries(LOAD_PLAN.phases.map(phaseScenario)),
     swap_control: controlScenario('swapBundles', LOAD_PLAN.controls.swap.startSeconds),
@@ -77,6 +82,7 @@ const phaseMetrics = Object.fromEntries(LOAD_PLAN.phases.map(({ name }) => [name
   counters: Object.fromEntries(phaseMetricSpec.counters.map((kind) => [kind, new Counter(metricName(name, kind))])),
   latency: new Trend(metricName(name, phaseMetricSpec.latency), true),
 }]));
+const swapWindowCounters = swapStrictWindows(LOAD_PLAN).map((_, index) => new Counter(swapWindowMetricName(index)));
 const controlCalls = new Counter('control_calls');
 const controlFailures = new Counter('control_failures');
 
@@ -134,6 +140,7 @@ export function searchPhase(data) {
   const expectedBundle = phase === 'swap' ? expectedSwapBundle(LOAD_PLAN, planSeconds) : null;
   const verdict = judgeResponse({ phase, entry, actual: summary, expected: data.expected[index], bundles: data.bundles, facilityMode, expectedBundle });
   counters.requests.add(1);
+  if (phase === 'swap') swapWindowCounters[swapWindowIndexAt(LOAD_PLAN, planSeconds)]?.add(1);
   latency.add(response.timings.duration);
   if (response.status >= 500) counters.status5xx.add(1);
   if (response.status === 429) counters.status429.add(1);

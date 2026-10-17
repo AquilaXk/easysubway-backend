@@ -6,27 +6,54 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { annotation } from './journey-benchmark-summary.mjs';
-import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN } from './journey-load-contract.mjs';
+import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN, swapStrictWindows } from './journey-load-contract.mjs';
 
 const TITLE = '경로 검색 부하·장애 시나리오';
 const CLEAN_PHASES = ['steady', 'recovered'];
-/** 지연 한도 초과는 공유 러너 잡음일 수 있어 경고만 한다. 한도는 steady·recovered 단계의 p95다. */
-export const CLEAN_PHASE_P95_LIMIT_MS = 25;
-/** 도착률 스케줄러의 반올림 때문에 계획한 요청 수보다 하나까지 적게 도착할 수 있다. */
-const ROUNDING_TOLERANCE_REQUESTS = 1;
+/**
+ * 지연 한도 초과는 공유 러너 잡음일 수 있어 경고만 한다. 한도는 steady·recovered 단계의 p95다.
+ * 호스티드 러너 첫 실측(backend journey-load run 39024609532, 200 rps)의 최대 p95(steady 27.4ms)의 약 1.5배다. 측정이 1회뿐이라 경고로만 쓴다.
+ * 재조정 조건은 hub 에픽 AquilaXk/easysubway#3036 체크리스트에 있다.
+ */
+export const CLEAN_PHASE_P95_LIMIT_MS = 40;
+/**
+ * 부하 유지의 허용 비율(%)이다. 단계마다 도착한 요청이 계획의 이 비율 이상이고 버려진 반복(k6 dropped_iterations, 단계별)이 나머지 이하면
+ * 측정이 성립한 것으로 본다. k6 constant-arrival-rate는 VU가 부족하거나 스케줄러가 밀리면 반복을 버린다.
+ * 호스티드 첫 실측의 단계별 부족은 최대 0.28%였고 정확성 위반은 없었다. 버려진 반복은 요청이 되지 않아 판정 대상이 아니며 그 수는
+ * verdict와 summary에 적는다. 도착한 요청의 위반 검사는 그대로 적용된다.
+ */
+export const LOAD_SUSTAIN_MIN_PERCENT = 99;
+/**
+ * swap 엄격 창(팩이 정해진 구간)마다 도착해야 하는 최소 요청의 비율(%)이다. 창이 비면 그 구간의 오래된 팩 응답(WRONG_BUNDLE)을 볼 수 없다.
+ * 창 경계는 반복이 밀리면 요청이 이웃 창으로 넘어가 창당 수가 흔들리므로 단계 허용(99%)보다 넓게 90%로 둔다. 호스티드 창별 실측이 없어
+ * 임시값이며 재조정 조건은 에픽 #3036 체크리스트에 있다.
+ */
+export const SWAP_WINDOW_MIN_PERCENT = 90;
 const CONTROL_CALLS_OUTSIDE_SWAP = 2;
 
 const fail = (message) => { throw new Error(`journey load: ${message}`); };
 
 const finding = (code, message) => ({ code, message });
 
-function phaseFindings(name, phase, plan, facilityMode) {
+const percentOf = (count, percent) => Math.ceil(count * percent / 100);
+
+/** 단계 하나가 받아들이는 가장 적은 도착 요청 수와 가장 많은 버려진 반복 수. 허용 개수의 유일한 계산이다. */
+export function phaseLoadLimits(plan, name) {
   const { durationSeconds } = plan.phases.find((candidate) => candidate.name === name);
   const planned = plan.requestsPerSecond * durationSeconds;
+  const minimumRequests = percentOf(planned, LOAD_SUSTAIN_MIN_PERCENT);
+  return { planned, minimumRequests, maximumDropped: planned - minimumRequests };
+}
+
+function phaseFindings(name, phase, plan, facilityMode) {
+  const { planned, minimumRequests, maximumDropped } = phaseLoadLimits(plan, name);
   const findings = [];
   if (phase.requests === 0) return [finding('PHASE_NOT_RUN', `${name} 단계에서 요청이 하나도 도착하지 않았습니다.`)];
-  if (phase.requests < planned - ROUNDING_TOLERANCE_REQUESTS) {
-    findings.push(finding('LOAD_SHORTFALL', `${name} 단계 요청 ${phase.requests}건이 계획 ${planned}건보다 적습니다.`));
+  if (phase.requests < minimumRequests) {
+    findings.push(finding('LOAD_SHORTFALL', `${name} 단계 요청 ${phase.requests}건이 계획 ${planned}건의 ${LOAD_SUSTAIN_MIN_PERCENT}%(${minimumRequests}건)보다 적습니다.`));
+  }
+  if (phase.droppedIterations > maximumDropped) {
+    findings.push(finding('LOAD_NOT_SUSTAINED', `${name} 단계에서 목표 도착률을 유지하지 못해 반복 ${phase.droppedIterations}건이 버려졌습니다(허용 ${maximumDropped}건).`));
   }
   if (phase.lateIterations > 0) findings.push(finding('LOAD_NOT_SUSTAINED', `${name} 단계 창이 끝난 뒤에 시작한 반복 ${phase.lateIterations}건은 판정하지 않았습니다.`));
   for (const [violation, count] of Object.entries(phase.violations)) {
@@ -54,9 +81,17 @@ function observationFindings(phases, facilityMode) {
   return findings;
 }
 
+/** swap 엄격 창마다 최소 요청이 도착했는지 본다. 창이 비면 그 구간의 팩 판정이 없었으므로 실패다. */
+function swapWindowFindings(swap, plan) {
+  return swapStrictWindows(plan).flatMap(({ countedSeconds }, index) => {
+    const minimum = percentOf(countedSeconds * plan.requestsPerSecond, SWAP_WINDOW_MIN_PERCENT);
+    const arrived = swap.windowRequests[index];
+    return arrived < minimum ? [finding('SWAP_WINDOW_STARVED', `swap 엄격 창 ${index + 1}에 요청 ${arrived}건만 도착했습니다(최소 ${minimum}건).`)] : [];
+  });
+}
+
 function runFindings(run, plan) {
   const findings = [];
-  if (run.droppedIterations > 0) findings.push(finding('LOAD_NOT_SUSTAINED', `목표 도착률을 유지하지 못해 반복 ${run.droppedIterations}건이 버려졌습니다.`));
   const expectedControlCalls = plan.controls.swap.flips + CONTROL_CALLS_OUTSIDE_SWAP;
   if (run.controls.failures > 0 || run.controls.calls !== expectedControlCalls) {
     findings.push(finding('CONTROL_FAILED', `제어 호출 ${run.controls.calls}건 중 실패 ${run.controls.failures}건 (기대 ${expectedControlCalls}건)`));
@@ -72,9 +107,10 @@ function latencyWarnings(phases) {
 export function judgeRun(run, plan) {
   const { facilityMode } = run;
   if (!Object.values(FACILITY_MODES).includes(facilityMode)) fail(`unknown facility mode ${JSON.stringify(facilityMode)}`);
-  const phases = Object.fromEntries(plan.phases.map(({ name, durationSeconds }) => [name, { ...run.phases[name], throughputRps: run.phases[name].requests / durationSeconds }]));
+  const phases = Object.fromEntries(plan.phases.map(({ name, durationSeconds }) => [name, { ...run.phases[name], maximumDropped: phaseLoadLimits(plan, name).maximumDropped, throughputRps: run.phases[name].requests / durationSeconds }]));
   const failures = [
     ...plan.phases.flatMap(({ name }) => phaseFindings(name, run.phases[name], plan, facilityMode)),
+    ...swapWindowFindings(run.phases.swap, plan),
     ...observationFindings(run.phases, facilityMode),
     ...runFindings(run, plan),
   ];
@@ -86,7 +122,7 @@ const violationTotal = (phase) => Object.values(phase.violations).reduce((sum, c
 
 function phaseRow(name, phase) {
   const latency = phase.latencyMs;
-  return `| ${name} | ${phase.requests} | ${phase.throughputRps.toFixed(1)} | ${ms(latency?.p50)} | ${ms(latency?.p95)} | ${ms(latency?.p99)} | ${phase.status5xx} | ${phase.status429} | ${violationTotal(phase)} |`;
+  return `| ${name} | ${phase.requests} | ${phase.droppedIterations} (≤${phase.maximumDropped}) | ${phase.throughputRps.toFixed(1)} | ${ms(latency?.p50)} | ${ms(latency?.p95)} | ${ms(latency?.p99)} | ${phase.status5xx} | ${phase.status429} | ${violationTotal(phase)} |`;
 }
 
 const contextLine = (context) => (context
@@ -99,8 +135,10 @@ export function renderSummary(verdict, context) {
     `## ${TITLE} — ${FACILITY_MODE_LABELS[verdict.facilityMode]}`, '',
     `- 판정: **${verdict.status}**`,
     contextLine(context),
+    `- 부하 유지: 단계별 도착 요청 계획의 ${LOAD_SUSTAIN_MIN_PERCENT}% 이상, 버려진 반복(판정 제외) 나머지 이하`,
+    `- swap 엄격 창별 도착 요청: ${verdict.phases.swap.windowRequests.join(', ')}`,
     `- 지연 한도(경고, 비차단): steady·recovered 단계 p95 ${CLEAN_PHASE_P95_LIMIT_MS}ms`,
-    '', '| 단계 | 요청 | 처리량(rps) | p50(ms) | p95(ms) | p99(ms) | 5xx | 429 | 계약 위반 |', '|---|---|---|---|---|---|---|---|---|',
+    '', '| 단계 | 요청 | 버려진 반복(허용) | 처리량(rps) | p50(ms) | p95(ms) | p99(ms) | 5xx | 429 | 계약 위반 |', '|---|---|---|---|---|---|---|---|---|---|',
     ...Object.entries(verdict.phases).map(([name, phase]) => phaseRow(name, phase)),
     '', ...(verdict.failures.length === 0 ? ['실패 항목 없음'] : ['### 실패', ...verdict.failures.map(bullet)]),
     ...(verdict.warnings.length === 0 ? [] : ['', '### 경고', ...verdict.warnings.map(bullet)]),
@@ -127,8 +165,9 @@ const options = (values) => {
 function readDistilled(path) {
   let run;
   try { run = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { fail(`distilled summary is not valid JSON: ${error.message}`); }
-  const wellFormed = run?.schemaVersion === 1 && Object.values(FACILITY_MODES).includes(run.facilityMode) && Number.isInteger(run.droppedIterations) && run.controls
-    && LOAD_PLAN.phases.every(({ name }) => run.phases?.[name] && run.phases[name].violations);
+  const wellFormed = run?.schemaVersion === 2 && Object.values(FACILITY_MODES).includes(run.facilityMode) && run.controls
+    && LOAD_PLAN.phases.every(({ name }) => run.phases?.[name]?.violations && Number.isInteger(run.phases[name].droppedIterations))
+    && Array.isArray(run.phases.swap.windowRequests) && run.phases.swap.windowRequests.length === swapStrictWindows(LOAD_PLAN).length;
   if (!wellFormed) fail('distilled summary has an unexpected shape');
   return run;
 }
