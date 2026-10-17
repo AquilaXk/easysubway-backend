@@ -52,7 +52,7 @@ import org.springframework.security.web.authentication.rememberme.TokenBasedReme
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 @Configuration
@@ -77,6 +77,9 @@ public class SecurityConfig {
 			public void revokeStaleBootstrapRoles(Set<String> activeBootstrapLoginIds) {
 			}
 		};
+
+	// 인증 진입점·로그아웃 요청 matcher용 PathPattern builder. 컨텍스트 경로 기준으로 대소문자를 구분해 매칭한다.
+	private static final PathPatternRequestMatcher.Builder PATH_PATTERNS = PathPatternRequestMatcher.withDefaults();
 
 	// 관리자·operator 콘솔 CSP: 모든 스크립트·스타일은 self-host(static/vendor·static/css)만 허용한다.
 	// Alpine는 CSP 빌드라 'unsafe-eval' 불필요, 인라인 스크립트·핸들러는 전면 금지(진화형 향상 원칙).
@@ -293,7 +296,7 @@ public class SecurityConfig {
 				)
 				.defaultAuthenticationEntryPointFor(
 					new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
-					new AntPathRequestMatcher("/admin/**")
+					PATH_PATTERNS.matcher("/admin/**")
 				)
 			)
 			.formLogin(form -> form
@@ -338,11 +341,11 @@ public class SecurityConfig {
 				)
 				.defaultAuthenticationEntryPointFor(
 					new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
-					new AntPathRequestMatcher("/operator/api/**")
+					PATH_PATTERNS.matcher("/operator/api/**")
 				)
 				.defaultAuthenticationEntryPointFor(
 					new LoginUrlAuthenticationEntryPoint("/operator/login"),
-					new AntPathRequestMatcher("/operator/**")
+					PATH_PATTERNS.matcher("/operator/**")
 				)
 			)
 			.formLogin(form -> form
@@ -352,7 +355,7 @@ public class SecurityConfig {
 				.permitAll()
 			)
 			.logout(logout -> logout
-				.logoutRequestMatcher(new AntPathRequestMatcher("/operator/logout"))
+				.logoutRequestMatcher(PATH_PATTERNS.matcher("/operator/logout"))
 				.logoutSuccessHandler((request, response, authentication) ->
 					response.sendRedirect(request.getContextPath() + "/operator/login?logout"))
 				.permitAll()

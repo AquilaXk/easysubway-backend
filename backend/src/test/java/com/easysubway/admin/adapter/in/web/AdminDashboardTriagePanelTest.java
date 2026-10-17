@@ -20,13 +20,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * "확인 필요" 통합 트리아지 카드(#2349 PR⑦) 렌더링 검증. 실제 DB 상태로는 제보·시설·데이터팩
  * 차단 요인 건수를 결정적으로 만들기 어려워, {@link AdminAlertRenderingTest}와 같은 패턴으로
- * 값을 주입하는 use case를 대체(MockBean)해 0건 생략·전부 0 폴백·데이터팩 상세 표의 0건 행 숨김을 고정한다.
+ * 값을 주입하는 use case를 대체(MockitoBean)해 0건 생략·전부 0 폴백·데이터팩 상세 표의 0건 행 숨김을 고정한다.
  */
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-test",
@@ -39,13 +39,13 @@ class AdminDashboardTriagePanelTest {
 	@Autowired
 	private MockMvc mockMvc;
 
-	@MockBean
+	@MockitoBean
 	private FacilityReportUseCase facilityReportUseCase;
 
-	@MockBean
+	@MockitoBean
 	private DataQualityUseCase dataQualityUseCase;
 
-	@MockBean
+	@MockitoBean
 	private DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase;
 
 	@Test
