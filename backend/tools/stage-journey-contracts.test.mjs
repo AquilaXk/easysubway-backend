@@ -16,6 +16,7 @@ const journeyArtifact = `${journeyLock.artifact.repository}@${journeyLock.artifa
 
 test("CI와 release 및 Gradle은 digest-pinned Journey OCI payload의 현재 staging만 소비한다", () => {
   const ci = readFileSync(join(repositoryRoot, ".github/workflows/ci.yml"), "utf8");
+  const setup = readFileSync(join(repositoryRoot, ".github/actions/backend-setup/action.yml"), "utf8");
   const release = readFileSync(join(repositoryRoot, ".github/workflows/release-artifacts.yml"), "utf8");
   const build = readFileSync(join(repositoryRoot, "backend/build.gradle"), "utf8");
   const stageCommand = new RegExp(
@@ -25,7 +26,7 @@ test("CI와 release 및 Gradle은 digest-pinned Journey OCI payload의 현재 st
   assert.equal(journeyLock.artifact.repository, "ghcr.io/aquilaxk/easysubway-backend-contracts");
   assert.match(journeyLock.artifact.manifestDigest, /^sha256:[a-f0-9]{64}$/);
   assert.match(journeyArtifact, /^ghcr\.io\/aquilaxk\/easysubway-backend-contracts@sha256:[a-f0-9]{64}$/);
-  for (const workflow of [ci, release]) {
+  for (const workflow of [setup, release]) {
     assert.match(workflow, /journey_contract_subject="\$\(jq -er .*backend\/journey-contracts\.lock\.json\)"/s);
     assert.match(workflow, /\[\[ "\$\{journey_contract_subject\}" =~ \^ghcr\\\.io\/aquilaxk\/easysubway-backend-contracts@sha256:\[a-f0-9\]\{64\}\$ \]\]/);
     assert.match(workflow, /oras pull "\$\{journey_contract_subject\}" --output "\$\{RUNNER_TEMP\}\/journey-contract-pull"/);
@@ -33,15 +34,17 @@ test("CI와 release 및 Gradle은 digest-pinned Journey OCI payload의 현재 st
     assert.doesNotMatch(workflow, new RegExp(journeyArtifact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.doesNotMatch(workflow, /ghcr\.io\/aquilaxk\/easysubway-backend-contracts@sha256:/);
   }
-  assert.equal(countMatches(ci, /journey_contract_subject="\$\(jq -er/g), 3);
-  assert.equal(countMatches(ci, /oras pull "\$\{journey_contract_subject\}"/g), 3);
-  // Backend #416: SpotBugs·테스트 shard·집계 job이 같은 staging 단계를 각각 실행한다.
-  assert.equal(countMatches(ci, /node backend\/tools\/stage-journey-contracts\.mjs/g), 3);
+  // Backend #416: SpotBugs·테스트 shard·집계 job은 staging을 가진 backend-setup composite를 각각 호출하고 workflow에 사본을 두지 않는다.
+  assert.equal(countMatches(setup, /node backend\/tools\/stage-journey-contracts\.mjs/g), 1);
+  assert.equal(countMatches(ci, /uses: \.\/\.github\/actions\/backend-setup/g), 3);
+  assert.doesNotMatch(ci, /journey_contract_subject|stage-journey-contracts\.mjs/);
   assert.equal(countMatches(release, /journey_contract_subject="\$\(jq -er/g), 2);
   assert.equal(countMatches(release, /oras pull "\$\{journey_contract_subject\}"/g), 2);
   assert.equal(countMatches(release, /node backend\/tools\/stage-journey-contracts\.mjs/g), 2);
-  for (const workflow of [ci, release]) {
+  for (const workflow of [setup, release]) {
     assert.match(workflow, /# v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다\.[\s\S]*node backend\/tools\/stage-contracts\.mjs/);
+  }
+  for (const workflow of [ci, release]) {
     assert.match(workflow, /EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
   }
   assert.match(build, /def journeyContractsStaging = layout\.buildDirectory\.dir\('journey-contracts-staging'\)/);
