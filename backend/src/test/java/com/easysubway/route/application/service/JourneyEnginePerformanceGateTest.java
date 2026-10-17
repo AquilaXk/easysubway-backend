@@ -294,6 +294,7 @@ class JourneyEnginePerformanceGateTest {
 			throw new IllegalStateException("forked engine measurement failed with exit " + process.exitValue() + ":\n"
 				+ Files.readString(log, StandardCharsets.UTF_8));
 		}
+		System.out.println("#518-debug forked log:\n" + Files.readString(log, StandardCharsets.UTF_8));
 		return JSON.readValue(Files.readString(output, StandardCharsets.UTF_8), LinkedHashMap.class);
 	}
 
@@ -342,6 +343,7 @@ class JourneyEnginePerformanceGateTest {
 			compileNanos[index] = System.nanoTime() - started;
 			compileBytes[index] = threads.getCurrentThreadAllocatedBytes() - bytes;
 		}
+		System.err.println("#518-debug compile " + workload.id() + " nanos " + Arrays.toString(compileNanos));
 		long retained = retainedBytes(timetable);
 
 		var planner = new RouteTimetableRaptorPlanner();
