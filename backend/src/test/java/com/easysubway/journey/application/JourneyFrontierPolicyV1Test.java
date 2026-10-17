@@ -3,12 +3,13 @@ package com.easysubway.journey.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static com.easysubway.journey.application.JourneyFrontierFixtures.START;
+import static com.easysubway.journey.application.JourneyFrontierFixtures.candidate;
 
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.FeasibleCandidate;
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.ObjectiveTag;
 import com.easysubway.journey.application.JourneyProfileRaptorPort.MinimumTransferSeconds;
 import com.easysubway.journey.application.JourneyProfileRaptorPort.NoTransfer;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -16,8 +17,6 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class JourneyFrontierPolicyV1Test {
-
-	private static final Instant START = Instant.parse("2026-09-02T00:00:00Z");
 
 	@Test
 	void publishesTheFixedPolicyIdentity() {
@@ -170,12 +169,6 @@ class JourneyFrontierPolicyV1Test {
 		return labels.stream().map(label -> candidate(label.journeyId(), label.departureOffset(), label.arrivalOffset(),
 			label.transfers(), label.walkingSeconds(), label.walkingDistanceMeters(), label.accessibilityBurden(),
 			label.minimumConnectionSlackSeconds())).toList();
-	}
-
-	private static FeasibleCandidate candidate(String id, long departure, long arrival, int transfers,
-		long walkingSeconds, long walkingDistanceMeters, int accessibilityBurden, long slack) {
-		return new FeasibleCandidate(id, START.plusSeconds(departure), START.plusSeconds(arrival), transfers,
-			walkingSeconds, walkingDistanceMeters, accessibilityBurden, new MinimumTransferSeconds(slack));
 	}
 
 	private static TestLabel label(String id, long departure, long arrival, int transfers, long walkingSeconds,
