@@ -3,6 +3,8 @@ package com.easysubway.journey.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.easysubway.journey.application.JourneyFrontierFixtures.START;
+import static com.easysubway.journey.application.JourneyFrontierFixtures.candidate;
 
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.CapacityExceeded;
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.CapacityState;
@@ -15,7 +17,6 @@ import com.easysubway.journey.application.JourneyFrontierPolicyV1.Success;
 import com.easysubway.journey.application.JourneyProfileRaptorPort.ConnectionSlack;
 import com.easysubway.journey.application.JourneyProfileRaptorPort.MinimumTransferSeconds;
 import com.easysubway.journey.application.JourneyProfileRaptorPort.NoTransfer;
-import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -25,6 +26,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -33,7 +35,6 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class JourneyFrontierPolicyV1BoundaryTest {
 
-	private static final Instant START = Instant.parse("2026-09-02T00:00:00Z");
 	private static final Set<ObjectiveTag> ALL_TAGS = EnumSet.allOf(ObjectiveTag.class);
 	private static final Set<ObjectiveTag> FASTEST_ONLY = EnumSet.of(ObjectiveTag.FASTEST_ARRIVAL);
 
@@ -45,30 +46,48 @@ class JourneyFrontierPolicyV1BoundaryTest {
 			candidate("c", 20, 70, 1, 100, 100, 0, 60));
 	}
 
-	static Stream<Arguments> dominationTable() {
-		// 기준 후보(출발 20, 도착 80, 환승 2, 도보 100초·100m, 부담 1, 여유 60초) 대비 한 차원만 더 좋은 후보는 기준을 지배한다.
-		return Stream.of(
-			Arguments.of("departure", new long[] {1, 0, 0, 0, 0, 0, 0}),
-			Arguments.of("arrival", new long[] {0, -1, 0, 0, 0, 0, 0}),
-			Arguments.of("transfers", new long[] {0, 0, -1, 0, 0, 0, 0}),
-			Arguments.of("walkingSeconds", new long[] {0, 0, 0, -1, 0, 0, 0}),
-			Arguments.of("walkingDistance", new long[] {0, 0, 0, 0, -1, 0, 0}),
-			Arguments.of("accessibility", new long[] {0, 0, 0, 0, 0, -1, 0}),
-			Arguments.of("slack", new long[] {0, 0, 0, 0, 0, 0, 1}));
+	private enum Dimension {
+		DEPARTURE, ARRIVAL, TRANSFERS, WALKING_SECONDS, WALKING_DISTANCE, ACCESSIBILITY, SLACK
+	}
+
+	/** 기준 후보(출발 20, 도착 80, 환승 2, 도보 100초·100m, 부담 1, 여유 60초)보다 지정한 한 차원만 더 좋은 후보. */
+	private static FeasibleCandidate betterOnlyIn(Dimension better) {
+		return candidate("a",
+			20 + step(better, Dimension.DEPARTURE, 1),
+			80 + step(better, Dimension.ARRIVAL, -1),
+			2 + step(better, Dimension.TRANSFERS, -1),
+			100 + step(better, Dimension.WALKING_SECONDS, -1),
+			100 + step(better, Dimension.WALKING_DISTANCE, -1),
+			1 + step(better, Dimension.ACCESSIBILITY, -1),
+			60 + step(better, Dimension.SLACK, 1));
+	}
+
+	private static long step(Dimension better, Dimension dimension, long improvement) {
+		return better == dimension ? improvement : 0;
 	}
 
 	@ParameterizedTest(name = "{0} 한 차원만 좋으면 지배한다")
-	@MethodSource("dominationTable")
-	void aCandidateBetterInExactlyOneDimensionDominatesAnOtherwiseEqualOne(String dimension, long[] d) {
-		FeasibleCandidate better = candidate("a", 20 + d[0], 80 + d[1], 2 + d[2], 100 + d[3], 100 + d[4], 1 + d[5],
-			60 + d[6]);
+	@EnumSource(Dimension.class)
+	void aCandidateBetterInExactlyOneDimensionDominatesAnOtherwiseEqualOne(Dimension dimension) {
 		FeasibleCandidate worse = candidate("b", 20, 80, 2, 100, 100, 1, 60);
 
-		Success success = (Success) JourneyFrontierPolicyV1.evaluate(List.of(worse, better), ALL_TAGS, 6);
+		Success success = (Success) JourneyFrontierPolicyV1.evaluate(
+			List.of(worse, betterOnlyIn(dimension)), ALL_TAGS, 6);
 
 		assertThat(success.labels()).extracting(label -> label.candidate().journeyId()).containsExactly("a");
-		assertThat(success.metrics().labelsAccepted()).as(dimension).isEqualTo(1);
-		assertThat(success.metrics().labelsDominated()).as(dimension).isEqualTo(1);
+		assertThat(success.metrics().labelsAccepted()).as(dimension.name()).isEqualTo(1);
+		assertThat(success.metrics().labelsDominated()).as(dimension.name()).isEqualTo(1);
+	}
+
+	@Test
+	void dominanceUsesTheRawSlackEvenAboveTheSafestConnectionCreditCap() {
+		// 700초와 1500초는 600초 상한을 적용하면 같아지지만, 지배 판정은 원래 값을 쓰므로 1500초가 700초를 지배한다.
+		Success success = (Success) JourneyFrontierPolicyV1.evaluate(List.of(
+			candidate("b", 20, 80, 2, 100, 100, 1, 700),
+			candidate("a", 20, 80, 2, 100, 100, 1, 1_500)), ALL_TAGS, 6);
+
+		assertThat(success.labels()).extracting(label -> label.candidate().journeyId()).containsExactly("a");
+		assertThat(success.metrics().labelsDominated()).isEqualTo(1);
 	}
 
 	@Test
@@ -112,6 +131,8 @@ class JourneyFrontierPolicyV1BoundaryTest {
 		// id 오름차순 a(90)->b(80)->c(70)로 대표가 두 번 바뀐다.
 		assertThat(success.metrics()).isEqualTo(new Metrics(3, 3, 0, 0, 0, 2, 0, 3, CapacityState.WITHIN_CAPACITY));
 		assertThat(success.labels()).extracting(label -> label.candidate().journeyId()).containsExactly("c");
+		assertThat(success.labels()).singleElement().satisfies(label ->
+			assertThat(label.objectiveTags()).containsExactly(ObjectiveTag.FASTEST_ARRIVAL));
 	}
 
 	static Stream<Arguments> trioOrders() {
@@ -275,11 +296,5 @@ class JourneyFrontierPolicyV1BoundaryTest {
 
 	private static ConnectionSlack slackFor(long transfers) {
 		return transfers == 0 ? new NoTransfer() : new MinimumTransferSeconds(60);
-	}
-
-	private static FeasibleCandidate candidate(String id, long departure, long arrival, long transfers,
-		long walkingSeconds, long walkingDistanceMeters, long accessibilityBurden, long slack) {
-		return new FeasibleCandidate(id, START.plusSeconds(departure), START.plusSeconds(arrival), transfers,
-			walkingSeconds, walkingDistanceMeters, accessibilityBurden, new MinimumTransferSeconds(slack));
 	}
 }
