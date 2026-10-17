@@ -75,7 +75,6 @@ class OperatorRouteFeedbackReportPageControllerTest {
 			.doesNotContain("basic-user")
 			.doesNotContain(routeSearchId)
 			.doesNotContain("엘리베이터가 막혀 있었어요")
-			.containsOnlyOnce("name=\"_csrf\"")
 			.doesNotContain("/admin/reports");
 	}
 

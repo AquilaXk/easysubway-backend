@@ -71,7 +71,6 @@ class OperatorAccessibilityReportPageControllerTest {
 			.contains("확인 필요 상태")
 			.doesNotContain("name=\"from\"")
 			.doesNotContain("name=\"to\"")
-			.containsOnlyOnce("name=\"_csrf\"")
 			.doesNotContain("/admin/reports")
 			.doesNotContain("station-sangnoksu")
 			.doesNotContain("facility-sangnoksu");

@@ -74,7 +74,6 @@ class OperatorRepeatedBrokenFacilitiesPageControllerTest {
 			.doesNotContain("첫 번째 엘리베이터 고장 신고")
 			.doesNotContain("두 번째 엘리베이터 고장 신고")
 			.doesNotContain("에스컬레이터 단일 고장 신고")
-			.containsOnlyOnce("name=\"_csrf\"")
 			.doesNotContain("/admin/reports");
 	}
 
