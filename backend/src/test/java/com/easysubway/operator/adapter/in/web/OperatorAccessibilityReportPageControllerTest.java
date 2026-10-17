@@ -71,10 +71,27 @@ class OperatorAccessibilityReportPageControllerTest {
 			.contains("확인 필요 상태")
 			.doesNotContain("name=\"from\"")
 			.doesNotContain("name=\"to\"")
-			.doesNotContain("name=\"_csrf\"")
 			.doesNotContain("/admin/reports")
 			.doesNotContain("station-sangnoksu")
 			.doesNotContain("facility-sangnoksu");
+	}
+
+	@Test
+	@DisplayName("운영기관 화면의 로그아웃은 CSRF 토큰을 담은 POST 폼이다")
+	void operatorShellLogoutIsCsrfProtectedPostForm() throws Exception {
+		String html = mockMvc.perform(get("/operator/accessibility-report/page")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.containsPattern("<form class=\"operator-logout-form\" action=\"/operator/logout\" method=\"post\">"
+				+ "<input type=\"hidden\" name=\"_csrf\" value=\"[^\"]+\"/>")
+			.contains("<button type=\"submit\" class=\"operator-logout-btn\" aria-label=\"로그아웃\">로그아웃</button>")
+			.doesNotContain("href=\"/operator/logout\"")
+			.doesNotContain("th:action이");
 	}
 
 	@Test

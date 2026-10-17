@@ -2,8 +2,10 @@ package com.easysubway.operator.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,13 +61,9 @@ class OperatorLoginPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("운영기관 로그아웃은 GET 및 POST 요청 모두 세션을 파기하고 로그인 화면으로 리다이렉트한다")
+	@DisplayName("운영기관 로그아웃은 CSRF 토큰이 있는 POST만 세션을 파기하고 로그인 화면으로 리다이렉트한다")
 	void operatorLogoutRedirectsToLoginWithNotice() throws Exception {
 		mockMvc.perform(post("/operator/logout").with(csrf()))
-			.andExpect(status().is3xxRedirection())
-			.andExpect(redirectedUrl("/operator/login?logout"));
-
-		mockMvc.perform(get("/operator/logout"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/operator/login?logout"));
 
@@ -76,5 +74,26 @@ class OperatorLoginPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html).contains("로그아웃되었습니다.");
+	}
+
+	@Test
+	@DisplayName("운영기관 로그아웃은 GET이나 CSRF 토큰 없는 POST로는 동작하지 않는다")
+	void operatorLogoutRejectsGetAndPostWithoutCsrfToken() throws Exception {
+		mockMvc.perform(get("/operator/logout"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
+
+		mockMvc.perform(post("/operator/logout"))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("인증된 운영기관 계정의 GET 로그아웃 요청은 로그아웃하지 않고 없는 리소스로 응답한다")
+	void authenticatedGetLogoutIsNotFoundAndDoesNotLogOut() throws Exception {
+		mockMvc.perform(get("/operator/logout")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(redirectedUrl(null))
+			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 	}
 }

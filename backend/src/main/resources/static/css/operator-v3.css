@@ -157,7 +157,10 @@ input:focus-visible {
 	padding: 4px 8px;
 	cursor: pointer;
 	line-height: 1.2;
-	margin-left: auto;
+}
+
+.operator-logout-form {
+	margin: 0 0 0 auto;
 }
 
 .operator-logout-btn:hover {

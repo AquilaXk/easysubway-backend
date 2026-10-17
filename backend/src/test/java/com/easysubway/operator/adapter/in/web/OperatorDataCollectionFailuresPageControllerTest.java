@@ -123,7 +123,6 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			.doesNotContain("collection-failed")
 			.doesNotContain("collection-completed")
 			.doesNotContain("admin-user")
-			.doesNotContain("name=\"_csrf\"")
 			.doesNotContain("/admin/collections");
 	}
 
