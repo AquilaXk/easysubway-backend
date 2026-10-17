@@ -1,27 +1,17 @@
 package com.easysubway.journey.adapter.in.web;
 
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
-import com.easysubway.journey.analytics.InMemoryJourneySearchRecordStore;
 import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
 import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
-import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
-import com.easysubway.journey.application.JourneyApplicationService;
 import com.easysubway.journey.application.JourneyProfileApplicationService;
 import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
-import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.application.service.CapitalEndpointFixture;
 import com.easysubway.route.application.service.JourneyProfileRaptorAdapter;
-import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import io.micrometer.prometheusmetrics.PrometheusConfig;
@@ -123,24 +113,17 @@ public final class JourneyEndpointLatencyMeasurement {
 
 		@Bean
 		JourneySessionService sessions() {
-			var sessions = mock(JourneySessionService.class);
-			when(sessions.authorize(anyString(), anyInt())).thenReturn(
-				new JourneySessionService.AuthorizedSession("journey:v3", NOW.plusSeconds(3_600)));
-			return sessions;
+			return JourneyEndpointTestWiring.authorizedSessions(NOW);
 		}
 
 		@Bean
 		JourneyProfileResourcePolicy policy() {
-			return new JourneyProfileResourcePolicy(
-				new JourneyProfileResourcePolicy.Identity("RAPTOR_RESOURCE_POLICY_V1", "1.1.0", "a".repeat(64)),
-				Duration.ofSeconds(3_600), 2, 10_000_000L, 2_048, 128, 128, Duration.ofSeconds(3_600),
-				Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofSeconds(8), 1, 2, 3, 4, 10);
+			return JourneyEndpointTestWiring.resourcePolicy();
 		}
 
 		@Bean
 		JourneySearchRecorder recorder() {
-			return new JourneySearchRecorder(new InMemoryJourneySearchRecordStore(), Executors.newSingleThreadExecutor(),
-				CLOCK, METERS);
+			return JourneyEndpointTestWiring.recorder(METERS, CLOCK);
 		}
 
 		@Bean
@@ -154,15 +137,8 @@ public final class JourneyEndpointLatencyMeasurement {
 			JourneySearchLatencyMetrics latency
 		) {
 			var snapshot = snapshot();
-			ActiveJourneySnapshotPort snapshotPort = (request, instant, measurement) -> snapshot;
-			JourneyRealtimePort realtime = (request, ignored, instant) -> {
-				throw new IllegalStateException("timetable-only measurement");
-			};
-			var service = new JourneyApplicationService(snapshotPort, realtime,
-				new JourneyRaptorAdapter(new ScanWorkspacePool(16), FacilityAvailabilityPort.unavailable(), false, CLOCK), CLOCK);
-			var workers = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("journey-search-", 0).factory());
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, workers, policy.pointSearchDeadline());
-			return new JourneySearchController(sessions, executor, policy, recorder, latency);
+			return JourneyEndpointTestWiring.pointSearchController((request, instant, measurement) -> snapshot,
+				FacilityAvailabilityPort.unavailable(), false, CLOCK, sessions, policy, recorder, latency);
 		}
 
 		@Bean
