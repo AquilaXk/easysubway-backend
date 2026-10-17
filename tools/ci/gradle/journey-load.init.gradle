@@ -1,0 +1,28 @@
+// 경로 검색 부하·장애 시나리오 전용 Gradle init script (backend #520). 로컬 기본 빌드는 바꾸지 않는다.
+//
+// ./gradlew --init-script ../tools/ci/gradle/journey-load.init.gradle journeyLoadRuntime -PjourneyLoadRuntimeOutput=<절대 파일 경로>
+//   테스트 클래스를 컴파일하고, 시나리오 서버(JourneyLoadServer)를 Gradle 밖에서 직접 띄우는 데 필요한 정보만 JSON으로 쓴다:
+//   테스트 런타임 classpath와 build.gradle toolchain의 java 실행 파일. 서버를 Gradle 자식 프로세스로 두지 않으므로 실행기가
+//   종료 신호를 JVM에 곧바로 보내 서버를 정리할 수 있다.
+gradle.allprojects { project ->
+	project.plugins.withId('java') {
+		project.tasks.register('journeyLoadRuntime') { task ->
+			task.group = 'verification'
+			task.description = '시나리오 서버를 띄우는 java 실행 파일과 테스트 런타임 classpath를 JSON으로 쓴다.'
+			task.dependsOn(project.tasks.named('testClasses'))
+			task.doLast {
+				def output = gradle.startParameter.projectProperties['journeyLoadRuntimeOutput']
+				if (output == null || !new File(output).isAbsolute()) {
+					throw new GradleException('-PjourneyLoadRuntimeOutput=<절대 파일 경로>가 필요하다')
+				}
+				def launcher = project.javaToolchains.launcherFor(project.extensions.getByType(JavaPluginExtension).toolchain).get()
+				def runtime = [
+					javaExecutable: launcher.executablePath.asFile.absolutePath,
+					classpath: project.sourceSets.test.runtimeClasspath.files.collect { it.absolutePath }
+				]
+				new File(output).parentFile.mkdirs()
+				new File(output).setText(groovy.json.JsonOutput.toJson(runtime) + '\n', 'UTF-8')
+			}
+		}
+	}
+}
