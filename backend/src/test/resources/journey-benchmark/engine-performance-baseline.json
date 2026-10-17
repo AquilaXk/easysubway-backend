@@ -3,7 +3,7 @@
   "method" : {
     "warmupRounds" : 2,
     "measuredRounds" : 5,
-    "aggregation" : "round median of nearest-rank p50 and p99 (compile: median of 9 after 12 warmups)",
+    "aggregation" : "round median of nearest-rank p50 and p99 (compile: median of 9 after 30 warmups)",
     "profileLimits" : {
       "maxProfileBreakpoints" : 64,
       "maxDestinationProfileLabels" : 64,
