@@ -21,7 +21,7 @@ class JourneyGoldenDiffCliTest {
 	void sameInputDiffersOnlyInTheFixturePin() {
 		String report = JourneyGoldenDiffCli.compare(bundle(CapitalRealDerivedFixture.load()), null);
 
-		assertThat(report).contains("번들 test-bundle release 7 (%d개 수도권 질의, 서비스일 2026-10-06)".formatted(capitalQueryCount()))
+		assertThat(report).contains("번들 test-bundle release 7 (" + capitalQueryCount() + "개 수도권 질의, 서비스일 2026-10-06)")
 			.contains("변경 0행, 추가 0행, 삭제 0행")
 			.contains("[입력 변경] capital: ").contains("pin=" + BUNDLE_PAYLOAD_SHA256)
 			.doesNotContain("[변경]");

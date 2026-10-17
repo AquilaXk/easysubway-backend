@@ -1,6 +1,7 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 import com.easysubway.route.application.service.JourneyGoldenCorpus.Tag;
@@ -10,11 +11,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * 대표 경로 질의 golden 회귀. 고정 fixture 위에서 대표 질의를 보행 프로필 4종으로 돌린 응답 요약이 golden과 같아야
@@ -29,6 +35,8 @@ class JourneyGoldenRegressionTest {
 
 	static final Path GOLDEN = Path.of("src/test/resources", JourneyGoldenReport.RESOURCE);
 	private static final Path DIFF_REPORT = Path.of("build/reports/journey-golden/diff.txt");
+	private static final Path UPDATE_DIFF_REPORT = Path.of("build/reports/journey-golden/update-diff.txt");
+	private static final String CI_ENVIRONMENT_VARIABLE = "CI";
 	private static final int FAILURE_MESSAGE_LINES = 120;
 	static final String UPDATE_PROPERTY = "easysubway.updateGolden";
 	/** 첫 슬라이스의 최소 규모. 목표는 수백 쌍이다. */
@@ -94,7 +102,7 @@ class JourneyGoldenRegressionTest {
 	void tagsAreTrueForTheActualResults() {
 		List<String> violations = new ArrayList<>();
 		for (JourneyGoldenCorpus.Query query : corpus.queries()) {
-			List<Tag> violated = JourneyGoldenTags.violated(query, actual.rowsByQuery().get(query.id()));
+			List<Tag> violated = JourneyGoldenTags.violated(query, results());
 			if (!violated.isEmpty()) violations.add(query.id() + " " + violated);
 		}
 		assertThat(violations).as("결과로 확인되지 않는 태그").isEmpty();
@@ -119,15 +127,59 @@ class JourneyGoldenRegressionTest {
 			+ "줄 생략)\n";
 	}
 
+	@Test
+	@DisplayName("갱신 모드는 CI 환경변수가 있으면 거절된다")
+	void updateModeIsRejectedInCi() {
+		assertThatThrownBy(() -> requireNotCi(Map.of("CI", "true")))
+			.isInstanceOf(IllegalStateException.class).hasMessageContaining("CI");
+		requireNotCi(Map.of());
+	}
+
+	@Test
+	@DisplayName("로캘과 시간대가 달라도 요약과 diff가 같다")
+	@ResourceLock(Resources.LOCALE)
+	@ResourceLock(Resources.TIME_ZONE)
+	void summaryIsIndependentOfLocaleAndTimeZone() {
+		Locale locale = Locale.getDefault();
+		TimeZone zone = TimeZone.getDefault();
+		try {
+			Locale.setDefault(Locale.forLanguageTag("ar-SA-u-nu-arab"));
+			TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
+			assertThat(String.format("%d", 8)).as("이 로캘은 숫자를 ASCII로 쓰지 않는다").isNotEqualTo("8");
+
+			var report = JourneyGoldenSuite.run(corpus.queries(), JourneyGoldenFixtures::load).report();
+
+			assertThat(report.render()).isEqualTo(actual.report().render());
+			assertThat(JourneyGoldenReport.diff(report, actual.report())).isEmpty();
+		} finally {
+			Locale.setDefault(locale);
+			TimeZone.setDefault(zone);
+		}
+	}
+
+	private JourneyGoldenTags.Results results() {
+		return new JourneyGoldenTags.Results(corpus.queries(), actual.rowsByQuery());
+	}
+
 	private static JourneyGoldenReport readGolden() throws IOException {
 		return JourneyGoldenReport.parse(Files.readString(GOLDEN, StandardCharsets.UTF_8));
 	}
 
 	private void updateGolden() throws IOException {
+		requireNotCi(System.getenv());
 		JourneyGoldenReport previous = Files.exists(GOLDEN) ? readGolden() : new JourneyGoldenReport(List.of(), List.of());
 		Files.writeString(GOLDEN, actual.report().render(), StandardCharsets.UTF_8);
 		String difference = JourneyGoldenReport.diff(previous, actual.report());
-		System.out.println("golden을 다시 만들었다: " + GOLDEN + "\n"
-			+ (difference.isEmpty() ? "이전 golden과 같다." : difference));
+		String evidence = difference.isEmpty() ? "이전 golden과 같다.\n" : difference;
+		Files.createDirectories(UPDATE_DIFF_REPORT.getParent());
+		Files.writeString(UPDATE_DIFF_REPORT, evidence, StandardCharsets.UTF_8);
+		System.out.println("golden을 다시 만들었다: " + GOLDEN + " (차이: " + UPDATE_DIFF_REPORT + ")\n" + evidence);
+	}
+
+	/** CI에서 갱신 모드가 켜지면 불일치가 통과로 바뀌므로 거절한다. */
+	static void requireNotCi(Map<String, String> environment) {
+		if (environment.containsKey(CI_ENVIRONMENT_VARIABLE)) {
+			throw new IllegalStateException("golden 갱신(-PupdateGolden)은 CI에서 실행할 수 없다: " + CI_ENVIRONMENT_VARIABLE + " 환경변수가 있다");
+		}
 	}
 }

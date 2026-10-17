@@ -18,7 +18,7 @@ record JourneyGoldenCorpus(int schemaVersion, List<Query> queries) {
 	static final String RESOURCE = "journey-golden/v1/queries.json";
 	private static final int SCHEMA_VERSION = 1;
 
-	/** 대표 질의가 되는 이유. 의미는 {@link JourneyGoldenTags}가 결과로 확인한다. */
+	/** 대표 질의가 되는 이유. 의미는 {@link JourneyGoldenTags}가 운영이 낸 결과로 확인한다. */
 	enum Tag {
 		/** 환승 없이 한 노선으로 간다. */
 		DIRECT_RIDE,
@@ -30,15 +30,17 @@ record JourneyGoldenCorpus(int schemaVersion, List<Query> queries) {
 		ELEVATOR_ONLY,
 		/** 보행 프로필마다 결과가 다르다. */
 		PROFILE_DIVERGENCE,
-		/** 계단 상태가 확정되지 않아 계단 없는 프리셋은 경로를 내지 않는다(fail-closed). */
+		/** 운영이 계단 상태 미확정(UNDETERMINED)을 내고, 계단 없는 프리셋은 경로가 없다. */
 		STAIR_STATE_UNKNOWN,
-		/** 엘리베이터 중단으로 계단 없는 프리셋은 경로를 낼 수 없다. */
-		FACILITY_OUTAGE_BLOCKED,
+		/** 운영이 확정 계단만 있다(NOT_FOUND)고 내고, 계단 없는 프리셋은 경로가 없다. */
+		STAIRS_CONFIRMED,
+		/** 엘리베이터 중단 질의에서 계단 없는 프리셋이 경로가 없다. 중단이 없는 짝 질의에서는 경로가 있다. */
+		FACILITY_OUTAGE_NO_ROUTE,
 		/** 시설 상태가 낡아 계단 없는 프리셋은 명시적 오류가 된다. */
 		FACILITY_STATUS_ERROR,
-		/** 그 시각에 어떤 프리셋으로도 갈 수 없다. */
-		NO_SERVICE,
-		/** 기존 대표 질의(프로필 탐색 정책 테스트, 운영 범위 벤치마크 코퍼스)의 출발·도착 쌍을 재사용한다. */
+		/** 표준 프리셋을 포함해 어떤 프리셋으로도 경로가 없다. */
+		NO_ROUTE_ANY_PRESET,
+		/** 기존 대표 질의(수도권 대표 프로필 질의, 운영 범위 벤치마크 코퍼스)의 출발·도착 쌍을 재사용한다. */
 		EXISTING_REPRESENTATIVE
 	}
 

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -116,7 +117,7 @@ record JourneyGoldenReport(List<FixtureHeader> fixtures, List<JourneyGoldenRow> 
 			}
 		}
 		if (sections.isEmpty()) return "";
-		String summary = "golden 대비 차이: 변경 %d행, 추가 %d행, 삭제 %d행 (실제 %d행, golden %d행)".formatted(
+		String summary = String.format(Locale.ROOT, "golden 대비 차이: 변경 %d행, 추가 %d행, 삭제 %d행 (실제 %d행, golden %d행)",
 			changed, added, removed, actual.rows().size(), expected.rows().size());
 		return summary + "\n" + String.join("\n", sections) + "\n";
 	}
@@ -166,8 +167,8 @@ record JourneyGoldenReport(List<FixtureHeader> fixtures, List<JourneyGoldenRow> 
 		compare(changes, "출발", before, after, JourneyGoldenRow.Alternative::departure);
 		compare(changes, "도착", before, after, JourneyGoldenRow.Alternative::arrival);
 		if (before.durationSeconds() != after.durationSeconds()) {
-			changes.add("소요시간: %ds -> %ds (%+ds)".formatted(before.durationSeconds(), after.durationSeconds(),
-				after.durationSeconds() - before.durationSeconds()));
+			changes.add(String.format(Locale.ROOT, "소요시간: %ds -> %ds (%+ds)", before.durationSeconds(),
+				after.durationSeconds(), after.durationSeconds() - before.durationSeconds()));
 		}
 		compare(changes, "환승 수", before, after, JourneyGoldenRow.Alternative::transfers);
 		compare(changes, "보행 거리(m)", before, after, JourneyGoldenRow.Alternative::walkingMeters);

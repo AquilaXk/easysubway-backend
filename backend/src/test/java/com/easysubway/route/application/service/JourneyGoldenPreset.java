@@ -31,9 +31,4 @@ enum JourneyGoldenPreset {
 	boolean requiresStepFree() {
 		return constraint == ConstraintMode.REQUIRE_STEP_FREE;
 	}
-
-	/** 계단 제약만 푼 대조 질의의 프로필. NO_STAIRS는 계약상 NONE과 함께 못 쓰므로 STANDARD로 대신한다. */
-	MobilityProfile unconstrainedControlProfile() {
-		return profile == MobilityProfile.NO_STAIRS ? MobilityProfile.STANDARD : profile;
-	}
 }

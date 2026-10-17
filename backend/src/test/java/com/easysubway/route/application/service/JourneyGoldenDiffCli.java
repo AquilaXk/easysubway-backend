@@ -5,6 +5,7 @@ import com.easysubway.route.application.service.JourneyGoldenReport.FixtureHeade
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -42,8 +43,8 @@ public final class JourneyGoldenDiffCli {
 		JourneyGoldenReport actual = JourneyGoldenSuite.run(capitalQueries, id -> fixture).report();
 
 		String difference = JourneyGoldenReport.diff(golden, actual);
-		return "번들 %s release %d (%d개 수도권 질의, 서비스일 %s)\n%s".formatted(bundle.bundleId(), bundle.releaseSequence(),
-			capitalQueries.size(), serviceDate, difference.isEmpty() ? "golden과 차이 없음\n" : difference);
+		return String.format(Locale.ROOT, "번들 %s release %d (%d개 수도권 질의, 서비스일 %s)\n%s", bundle.bundleId(),
+			bundle.releaseSequence(), capitalQueries.size(), serviceDate, difference.isEmpty() ? "golden과 차이 없음\n" : difference);
 	}
 
 	private static JourneyGoldenReport capitalOnly(JourneyGoldenReport golden, List<JourneyGoldenCorpus.Query> capitalQueries) {

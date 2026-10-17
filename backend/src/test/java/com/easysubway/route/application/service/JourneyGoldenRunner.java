@@ -5,6 +5,8 @@ import com.easysubway.journey.application.FacilityAvailabilityPort;
 import com.easysubway.journey.application.FacilityAvailabilityView;
 import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import com.easysubway.journey.application.JourneyCandidate;
+import com.easysubway.journey.application.JourneyExecutionDisposition;
+import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyRaptorPort.PlanResult;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -18,6 +20,7 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -26,14 +29,13 @@ import java.util.stream.Collectors;
 /**
  * 고정 입력 위에서 운영과 같은 Journey V3 서버 라우팅({@link JourneyRaptorAdapter})으로 질의를 돌려 golden 행을 만든다.
  *
- * <p>경로가 없을 때의 상태는 같은 질의를 조건만 풀어 한 번 더 돌려 가린다.</p>
- * <ul>
- *   <li>BLOCKED: 시설 차단이 없으면 같은 프리셋으로 경로가 나온다.</li>
- *   <li>UNKNOWN: 계단 없는 프리셋인데 계단 제약을 풀면 경로가 나온다. 계단 상태가 확정되지 않아 경로를 내지 않는다.</li>
- *   <li>UNSUPPORTED: 조건을 모두 풀어도 경로가 없다.</li>
- *   <li>ERROR: 시설 상태 필수 요청이 낡은 시설 상태를 만나 명시적 오류가 났다.</li>
- * </ul>
- * 걸음 속도·최대 환승·대안 수는 모바일 기본 요청(표준 걸음, 환승 3, 대안 3)으로 고정한다.
+ * <p>운영이 실제로 내는 값만 기록한다. 경로가 있으면 대안과 운영의 {@code stairFreeAlternative}를, 빈 결과는 운영이
+ * {@link JourneyExecutionFailure.Reason#NO_ROUTE}에 매기는 공개 오류(422 ROUTE_NOT_FOUND)를, 시설 상태 필수 요청이 낡은
+ * 시설 상태를 만나 던진 예외는 운영이 매기는 공개 오류(503 FACILITY_STATUS_UNAVAILABLE)를 쓴다. 조건을 풀어 다시 돌려
+ * 원인을 추론하지 않는다. 원인이 필요한 곳은 같은 질의의 다른 프리셋 행과 운영 증거로 읽는다
+ * ({@link JourneyGoldenRow}).</p>
+ *
+ * <p>걸음 속도·최대 환승·대안 수는 모바일 기본 요청(표준 걸음, 환승 3, 대안 3)으로 고정한다.</p>
  */
 final class JourneyGoldenRunner {
 
@@ -41,7 +43,8 @@ final class JourneyGoldenRunner {
 	private static final String ROUTE_BUNDLE_SHA256 = "a".repeat(64);
 	private static final int MAX_TRANSFERS = 3;
 	private static final int ALTERNATIVE_COUNT = 3;
-	private static final Duration STALE_FACILITY_AGE = Duration.ofMinutes(6);
+	/** 운영의 허용 나이를 넘는 시설 상태. 운영 상수에서 유도해 한도가 바뀌어도 낡은 상태로 남게 한다. */
+	private static final Duration STALE_FACILITY_AGE = JourneyFacilityBlockOverlay.MAX_AGE.plusMinutes(1);
 	private static final String ACCESS_REASON_PREFIX = "ACCESSIBILITY_";
 
 	private final JourneyGoldenFixtures.Fixture fixture;
@@ -64,36 +67,21 @@ final class JourneyGoldenRunner {
 		Instant ready = readyAt(query);
 		PlanResult result;
 		try {
-			result = plan(query, preset.profile(), preset.constraint(), facilityPort(query, ready), ready);
+			result = plan(query, preset, ready);
 		} catch (FacilityStatusUnavailableException exception) {
-			return failure(query, preset, JourneyGoldenRow.Status.ERROR, FacilityStatusUnavailableException.class.getSimpleName());
+			return failure(query, preset, JourneyGoldenRow.Status.ERROR, JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE);
 		}
-		if (!result.candidates().isEmpty()) return found(query, preset, result);
-		return failure(query, preset, withoutRoute(query, preset, ready), "");
+		if (result.candidates().isEmpty()) {
+			return failure(query, preset, JourneyGoldenRow.Status.NO_ROUTE, JourneyExecutionFailure.Reason.NO_ROUTE);
+		}
+		return found(query, preset, result);
 	}
 
-	private JourneyGoldenRow.Status withoutRoute(JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset, Instant ready) {
-		FacilityAvailabilityPort healthy = healthyFacility(ready);
-		if (query.facility() != null
-			&& !plan(query, preset.profile(), preset.constraint(), healthy, ready).candidates().isEmpty()) {
-			return JourneyGoldenRow.Status.BLOCKED;
-		}
-		if (preset.requiresStepFree()
-			&& !plan(query, preset.unconstrainedControlProfile(), JourneyRequest.ConstraintMode.NONE, healthy, ready)
-				.candidates().isEmpty()) {
-			return JourneyGoldenRow.Status.UNKNOWN;
-		}
-		return JourneyGoldenRow.Status.UNSUPPORTED;
-	}
-
-	private PlanResult plan(
-		JourneyGoldenCorpus.Query query, JourneyRequest.MobilityProfile profile,
-		JourneyRequest.ConstraintMode constraint, FacilityAvailabilityPort facility, Instant ready
-	) {
+	private PlanResult plan(JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset, Instant ready) {
 		var request = new JourneyRequest(REQUEST_ID, query.origin(), query.destination(),
 			new JourneyRequest.Departure.Scheduled(ready), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.WalkingPace.STANDARD, profile, constraint, MAX_TRANSFERS, ALTERNATIVE_COUNT, () -> false);
-		var adapter = new JourneyRaptorAdapter(facility, true, Clock.fixed(ready, ServiceDayResolver.ZONE));
+			JourneyRequest.WalkingPace.STANDARD, preset.profile(), preset.constraint(), MAX_TRANSFERS, ALTERNATIVE_COUNT, () -> false);
+		var adapter = new JourneyRaptorAdapter(facilityPort(query, ready), true, Clock.fixed(ready, ServiceDayResolver.ZONE));
 		return adapter.plan(request, snapshot(ready), ready, null, new JourneyRequestMeasurement(REQUEST_ID));
 	}
 
@@ -140,15 +128,19 @@ final class JourneyGoldenRunner {
 
 	private JourneyGoldenRow found(JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset, PlanResult result) {
 		var stairFree = result.stairFreeAlternative();
-		String detail = "stairFree=%s facility=%s".formatted(stairFree.status(), stairFree.facilityStatus());
+		String detail = "stairFree=" + stairFree.status() + " facility=" + stairFree.facilityStatus();
 		return new JourneyGoldenRow(query.id(), preset, JourneyGoldenRow.Status.FOUND, detail,
 			result.candidates().stream().map(candidate -> alternative(candidate)).toList());
 	}
 
+	/** 운영이 이 실패 사유에 매기는 공개 오류 코드를 상세로 기록한다. */
 	private static JourneyGoldenRow failure(
-		JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset, JourneyGoldenRow.Status status, String detail
+		JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset, JourneyGoldenRow.Status status,
+		JourneyExecutionFailure.Reason reason
 	) {
-		return new JourneyGoldenRow(query.id(), preset, status, detail, List.of());
+		var disposition = (JourneyExecutionDisposition.PublicFailure) JourneyExecutionDisposition.from(
+			new JourneyExecutionFailure(reason));
+		return new JourneyGoldenRow(query.id(), preset, status, disposition.machineCode().name(), List.of());
 	}
 
 	private JourneyGoldenRow.Alternative alternative(JourneyCandidate candidate) {
@@ -167,6 +159,6 @@ final class JourneyGoldenRunner {
 	/** 서비스일 0시부터 흐른 시각(HH:MM:SS). 자정을 넘으면 24시 이후로 쓴다(GTFS 관례). 날짜와 무관해 서비스일을 바꿔도 같다. */
 	private String serviceDayTime(Instant instant) {
 		long seconds = Duration.between(serviceDayStart, instant).getSeconds();
-		return "%02d:%02d:%02d".formatted(seconds / 3600, seconds / 60 % 60, seconds % 60);
+		return String.format(Locale.ROOT, "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60);
 	}
 }
