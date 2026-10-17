@@ -67,7 +67,13 @@ class JourneyEnginePerformanceGateTest {
 
 	static final Path BASELINE = Path.of("src/test/resources/journey-benchmark/engine-performance-baseline.json");
 	private static final Path MEASURED = Path.of("build/journey-benchmark/engine-performance-measured.json");
-	private static final int WARMUP_ROUNDS = 2;
+	/**
+	 * 질의 예열 회차. 회차 하나는 번들의 모든 질의를 한 번씩 돈다. 실데이터 슬라이스의 출발 시각 고정 질의처럼 한 회차가
+	 * 수 ms인 계열은 예열 2회(질의 200건)로는 C2 컴파일이 끝나기 전에 재기 시작해, 같은 코드에서도 새 JVM마다 정규화 p50이
+	 * 0.2~0.9배 안팎으로 흔들렸다(6.4절, #3036). 50회는 로컬 20 JVM에서 번들 세 개의 출발 시각 고정 p50이 모두 중앙값의
+	 * 1.14배 안에 들어오는 가장 작은 값이다.
+	 */
+	static final int WARMUP_ROUNDS = 50;
 	private static final int MEASURED_ROUNDS = 5;
 	/**
 	 * 컴파일 시간은 질의와 달리 예열 회차가 없어서 따로 예열한다. 처음 몇 번의 컴파일은 JIT 전이 구간이라 정상 상태보다
@@ -168,8 +174,9 @@ class JourneyEnginePerformanceGateTest {
 			() -> JSON.valueToTree(forkedMeasurement()));
 		verdict.measurements().stream().skip(1)
 			.forEach(extra -> System.out.println("#460 engine performance re-measured:\n" + extra.toPrettyString()));
-		assertThat(verdict.regressions()).as("성능 기준선 위반(첫 측정이 허용폭을 넘으면 새 JVM 3회 값별 중앙값으로 다시 판정). 판정에 쓴 측정값:\n%s",
-			verdict.judged().toPrettyString()).isEmpty();
+		assertThat(verdict.regressions()).as("성능 기준선 위반(첫 측정이 허용폭을 넘으면 새 JVM 3회 값별 중앙값으로 다시 판정). 판정에 쓴 측정값:\n%s\n"
+			+ "실제로 잰 측정 전부(Gradle은 통과·실패와 무관하게 테스트 표준 출력을 CI 로그에 남기지 않는다):\n%s",
+			verdict.judged().toPrettyString(), verdict.measurements()).isEmpty();
 	}
 
 	@Test
@@ -275,8 +282,8 @@ class JourneyEnginePerformanceGateTest {
 		method.put("warmupRounds", WARMUP_ROUNDS);
 		method.put("measuredRounds", MEASURED_ROUNDS);
 		// 추세 관찰(journey-benchmark-result.mjs)이 설명 문자열을 100자, 제한된 문자만 허용하므로 쉼표·세미콜론을 쓰지 않는다.
-		method.put("aggregation", "round median of nearest-rank p50 and p99 (compile: median of "
-			+ COMPILE_SAMPLES + " after " + COMPILE_WARMUPS + " warmups)");
+		method.put("aggregation", "round median of nearest-rank p50 and p99 after " + WARMUP_ROUNDS
+			+ " warmup rounds (compile: median of " + COMPILE_SAMPLES + " after " + COMPILE_WARMUPS + ")");
 		method.put("profileLimits", Map.of("maxEstimatedWork", BENCHMARK_LIMITS.maxEstimatedWork(),
 			"maxLabelsPerState", BENCHMARK_LIMITS.maxLabelsPerState(),
 			"maxDestinationProfileLabels", BENCHMARK_LIMITS.maxDestinationProfileLabels(),
