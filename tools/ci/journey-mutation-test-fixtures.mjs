@@ -11,6 +11,7 @@ export const RUN = {
   junit5PluginVersion: '1.2.3',
   targetClasses: [`${OVERLAY}*`, `${DISPOSITION}*`],
   threads: 2,
+  configHash: 'c'.repeat(64),
   elapsedSeconds: 254,
 };
 
@@ -30,10 +31,11 @@ export const mutantXml = ({
 export const mutationsXml = (mutants) => `<?xml version="1.0" encoding="UTF-8"?>\n<mutations partial="true">\n${mutants.map((mutant) => `${mutantXml(mutant)}\n`).join('')}</mutations>\n`;
 
 /** 클래스마다 killed·survived 개수를 정해 주는 mutant 목록. */
-export const mutantsFor = (className, { killed = 0, survived = 0, noCoverage = 0 } = {}) => [
+export const mutantsFor = (className, { killed = 0, survived = 0, noCoverage = 0, timedOut = 0 } = {}) => [
   ...Array.from({ length: killed }, (_, index) => ({ mutatedClass: className, line: 10 + index })),
   ...Array.from({ length: survived }, (_, index) => ({ mutatedClass: className, status: 'SURVIVED', line: 100 + index })),
   ...Array.from({ length: noCoverage }, (_, index) => ({ mutatedClass: className, status: 'NO_COVERAGE', line: 200 + index })),
+  ...Array.from({ length: timedOut }, (_, index) => ({ mutatedClass: className, status: 'TIMED_OUT', line: 300 + index })),
 ];
 
 export const result = (specs = { [OVERLAY]: { killed: 8, survived: 2 }, [DISPOSITION]: { killed: 4 } }, { run = RUN, contextOverrides = {} } = {}) => buildMutationResult({

@@ -77,6 +77,8 @@ test('the run description from the Gradle task is validated field by field', () 
     'empty scope': { targetClasses: [] },
     'markdown in scope': { targetClasses: ['a.B`*'] },
     'thread count': { threads: 0 },
+    'config hash': { configHash: 'abc' },
+    'missing config hash': { configHash: undefined },
     'elapsed time': { elapsedSeconds: -1 },
   };
   for (const [name, change] of Object.entries(broken)) assert.throws(() => validateRun({ ...RUN, ...change }), /run\./, name);

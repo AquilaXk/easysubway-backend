@@ -12,16 +12,25 @@ test('the summary shows commit, tool versions, scope, totals, baseline runs, eve
   const current = result(specs(8, 2));
   const text = renderSummary({ current, comparison: compareResults({ current, previous: baseline(specs(9, 1)) }), skipped: [] });
   for (const expected of ['aaaaaaa', 'PIT 1.30.0', 'JUnit 플러그인 1.2.3', '스레드 2', '4분 14초', `${OVERLAY}*`, '85.7%', '직전 성공 run 3개 중앙값', 'actions/runs/901', 'actions/runs/903',
-    OVERLAY, DISPOSITION, '90.0%', '80.0%', '-10.0%p', '| 경고 |', '점수 하락 1건', '0.5%p']) {
+    OVERLAY, DISPOSITION, '90.0%', '80.0%', '-10.0%p', '| 경고 |', '경고 1건', '0.5%p', '생존 mutant']) {
     assert.ok(text.includes(expected), expected);
   }
+});
+
+test('a clean comparison says there is no warning, and timeouts are shown on their own because they count as detected', () => {
+  const timeouts = { [OVERLAY]: { killed: 7, survived: 1, timedOut: 2 }, [DISPOSITION]: { killed: 4 } };
+  const current = result(timeouts);
+  const text = renderSummary({ current, comparison: compareResults({ current, previous: baseline(timeouts) }), skipped: [] });
+  assert.ok(text.includes('경고 없음'));
+  assert.match(text, /시간 초과 2건\(탐지로 계산/);
+  assert.match(text, new RegExp(`${OVERLAY} \\| 9 \\| 2 \\| 1 \\|`), 'detected 9, timed out 2, missed 1 in the class row');
 });
 
 test('without a baseline the summary gives the reason and the current values only', () => {
   const text = renderSummary({ current: result(), comparison: null, noPreviousReason: '직전 성공 run이 없습니다(첫 실행).', skipped: [] });
   assert.ok(text.includes('직전 성공 run이 없습니다'));
   assert.ok(text.includes(OVERLAY));
-  assert.ok(!text.includes('| 경고 |') && !text.includes('점수 하락'));
+  assert.ok(!text.includes('| 경고 |') && !text.includes('경고 1건') && !text.includes('경고 없음'));
 });
 
 test('the survivors are listed with class, method, line, mutator and description, and a long list is cut with the rest named', () => {
@@ -40,10 +49,10 @@ test('classes that were added, removed or measured with another tool version are
   const current = result({ [OVERLAY]: { killed: 9, survived: 1 }, 'com.easysubway.journey.application.JourneyAlternatives': { killed: 1, survived: 1 } });
   const added = renderSummary({ current, comparison: compareResults({ current, previous: baseline(specs(9, 1)) }), skipped: [] });
   assert.match(added, /JourneyAlternatives \| .* \| 추가 \|/);
-  assert.match(added, new RegExp(`${DISPOSITION} \\| - \\| - \\| - \\| - \\| - \\| 제외 \\|`));
+  assert.match(added, new RegExp(`${DISPOSITION} \\| - \\| - \\| - \\| - \\| - \\| - \\| 제외 \\|`));
   const other = compareResults({ current, previous: [previousRun(7, specs(9, 1), { run: { ...RUN, pitestVersion: '1.31.0' } })] });
   const text = renderSummary({ current, comparison: other, skipped: [], noPreviousReason: 'x' });
-  assert.match(text, /PIT 버전 또는 JUnit 플러그인 버전이 현재.*달라 기준에서 제외/);
+  assert.match(text, /PIT·JUnit 플러그인 버전 또는 측정 설정이 현재.*달라 기준에서 제외/);
   assert.match(text, /\| 보류 \|/);
 });
 

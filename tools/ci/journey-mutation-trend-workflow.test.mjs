@@ -65,12 +65,26 @@ test('Backend #523 serializes runs without cancelling a measurement in progress'
 });
 
 test('Backend #523 steps run in order from setup to PIT, summary, upload and comparison', () => {
-  assert.deepEqual(stepNamesOf(workflow), [...SETUP_STEPS, 'Run PIT on the routing classes', 'Summarize the PIT report', 'Upload the mutation result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
+  assert.deepEqual(stepNamesOf(workflow), [...SETUP_STEPS, 'Scan the PIT toolchain with OSV', 'Run PIT on the routing classes', 'Summarize the PIT report', 'Upload the mutation result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
 });
 
-test('Backend #523 setup steps are byte-identical to the Backend CI test shard setup so the pins cannot drift', () => {
-  for (const name of SETUP_STEPS) assert.ok(sameStep(workflow, ciBackendTest, name), name);
+test('Backend #523 setup steps are byte-identical to the Backend CI test shard setup, except that this job never uses the Gradle cache', () => {
+  for (const name of SETUP_STEPS.filter((candidate) => candidate !== 'Set up Java')) assert.ok(sameStep(workflow, ciBackendTest, name), name);
+  // Java 설정만 달라야 한다: 필수 CI의 같은 단계에서 cache 줄 하나를 빼면 이 workflow의 단계와 바이트 단위로 같다.
+  assert.ok(sameStep(workflow, ciBackendTest.replace(/(- name: Set up Java\n[\s\S]*?)^ {10}cache: gradle\n/m, '$1'), 'Set up Java'), 'Set up Java differs from CI beyond the cache line');
+  assert.match(step(ciBackendTest, 'Set up Java'), /^ {10}cache: gradle$/m, 'the reference step is expected to cache');
+  assert.doesNotMatch(withoutComments(workflow), /cache:|actions\/cache|gradle-build-action|setup-gradle/, 'the PIT job must not write or read a cache that required CI can restore');
   for (const [, reference] of workflow.matchAll(/^\s+uses: ([^\s]+)$/gm)) assert.match(reference, /@[0-9a-f]{40}$/, `${reference} must be pinned to a commit sha`);
+});
+
+test('Backend #523 scans the PIT toolchain coordinates with the same OSV action pin the required CI uses', () => {
+  const scan = step(workflow, 'Scan the PIT toolchain with OSV');
+  const pin = /uses: (google\/osv-scanner-action\/osv-scanner-action@[0-9a-f]{40})/.exec(scan)?.[1];
+  assert.ok(pin, 'the scan step uses the osv-scanner action pinned to a commit');
+  assert.ok(ci.includes(`uses: ${pin}`), 'the pin matches ci.yml');
+  assert.match(scan, /scan-args: \|-\n {12}--lockfile=tools\/ci\/gradle\/journey-mutation\/gradle\.lockfile\n/);
+  assert.doesNotMatch(scan, /continue-on-error/, 'a known vulnerability must fail the job');
+  assert.ok(stepNamesOf(workflow).indexOf('Scan the PIT toolchain with OSV') < stepNamesOf(workflow).indexOf('Run PIT on the routing classes'), 'scan before running PIT');
 });
 
 test('Backend #523 runs the pitest task from the init script only, so test and check never include PIT', () => {
@@ -103,7 +117,7 @@ test('Backend #523 init script pins the PIT tools, writes the run description th
   assert.match(constant('JUNIT5_PLUGIN_VERSION'), /^'\d+\.\d+\.\d+'$/);
   assert.match(initScript, /addJUnitPlatformLauncher = false/, 'the locked junit-platform-launcher must stay untouched');
   assert.equal(constant('RUN_DESCRIPTION_FILE'), `'${RUN_FILE_NAME}'`);
-  for (const field of ['pitestVersion', 'junit5PluginVersion', 'targetClasses', 'threads', 'elapsedSeconds']) assert.match(initScript, new RegExp(`${field}:`), `run description field ${field}`);
+  for (const field of ['pitestVersion', 'junit5PluginVersion', 'targetClasses', 'threads', 'configHash', 'elapsedSeconds']) assert.match(initScript, new RegExp(`${field}:`), `run description field ${field}`);
   assert.doesNotMatch(initScript, /reportDir\s*=/, `the default report directory must stay ${REPORT_DIRECTORY}`);
   assert.equal(REPORT_FILE_NAME, 'mutations.xml');
 });
@@ -122,4 +136,45 @@ test('Backend #523 excludes the timing tests from the PIT run and keeps a bounde
   const excluded = quotedList('MUTATION_EXCLUDED_TEST_CLASSES');
   assert.ok(excluded.includes('*PerformanceGateTest') && excluded.includes('*PerfTest'));
   assert.match(constant('MUTATION_CHILD_JVM_HEAP'), /^'-Xmx\d+[mg]'$/);
+});
+
+const TOOLCHAIN_DIRECTORY = '../../tools/ci/gradle/journey-mutation';
+const toolchain = JSON.parse(read(`${TOOLCHAIN_DIRECTORY}/checksums.json`));
+const toolchainLockfile = read(`${TOOLCHAIN_DIRECTORY}/gradle.lockfile`);
+const SHA256 = /^[a-f0-9]{64}$/;
+const coordinatesOf = (section) => Object.keys(section);
+
+test('Backend #523 the committed toolchain checksums cover exactly the coordinates the OSV lockfile lists', () => {
+  assert.equal(toolchain.schemaVersion, 1);
+  const checksummed = [...coordinatesOf(toolchain.pluginClasspath), ...coordinatesOf(toolchain.pitestClasspath)];
+  const locked = toolchainLockfile.split('\n').filter((line) => line !== '' && !line.startsWith('#')).map((line) => /^([^=]+)=[A-Za-z]+$/.exec(line)?.[1]);
+  assert.ok(locked.every(Boolean), 'every lockfile line is group:name:version=configuration');
+  assert.deepEqual([...locked].sort(), [...checksummed].sort());
+  assert.equal(new Set(checksummed).size, checksummed.length, 'no coordinate is listed twice');
+  for (const section of [toolchain.pluginClasspath, toolchain.pitestClasspath]) {
+    for (const [coordinate, hash] of Object.entries(section)) {
+      assert.match(coordinate, /^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:\d+(?:\.\d+)*$/, coordinate);
+      assert.match(hash, SHA256, coordinate);
+    }
+  }
+  assert.deepEqual(coordinatesOf(toolchain.pitestClasspath), [...coordinatesOf(toolchain.pitestClasspath)].sort(), 'sorted so a recorded update diffs minimally');
+});
+
+test('Backend #523 the checksummed coordinates carry the versions the init script pins', () => {
+  const pluginVersion = /classpath 'info\.solidsoft\.gradle\.pitest:gradle-pitest-plugin:(\d+\.\d+\.\d+)'/.exec(initScript)[1];
+  const pitestVersion = /^def PITEST_VERSION = '(.+)'$/m.exec(initScript)[1];
+  const junitVersion = /^def JUNIT5_PLUGIN_VERSION = '(.+)'$/m.exec(initScript)[1];
+  assert.deepEqual(coordinatesOf(toolchain.pluginClasspath), [`info.solidsoft.gradle.pitest:gradle-pitest-plugin:${pluginVersion}`]);
+  for (const coordinate of [`org.pitest:pitest:${pitestVersion}`, `org.pitest:pitest-entry:${pitestVersion}`, `org.pitest:pitest-command-line:${pitestVersion}`, `org.pitest:pitest-junit5-plugin:${junitVersion}`]) {
+    assert.ok(coordinate in toolchain.pitestClasspath, coordinate);
+  }
+});
+
+test('Backend #523 the init script verifies the toolchain jars before they run and documents how to update the list', () => {
+  assert.match(initScript, /^if \(toolchainRecordDirectory == null\) verifyHashes\('plugin classpath', pluginHashes, committedChecksums\(\)\.pluginClasspath\)$/m, 'the plugin classpath is checked unless the list is being recorded');
+  assert.ok(initScript.indexOf("verifyHashes('plugin classpath'") < initScript.indexOf('project.apply plugin'), 'verification precedes applying the plugin');
+  assert.match(initScript, /task\.dependsOn\(verifyToolchain\)/, 'pitest runs only after the pitest classpath is verified');
+  assert.match(initScript, /throw new GradleException\("PIT toolchain/, 'a mismatch fails the build');
+  assert.match(initScript, /-PmutationToolchainRecord=/, 'the update procedure names the record command');
+  assert.match(initScript, /버전을 올리는 절차/);
 });

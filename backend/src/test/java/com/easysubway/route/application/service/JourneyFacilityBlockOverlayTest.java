@@ -24,6 +24,9 @@ class JourneyFacilityBlockOverlayTest {
 
 	private static final Instant NOW = Instant.parse("2026-10-17T00:00:00Z");
 	private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+	// 계약(Javadoc)에 적힌 한도를 리터럴로 고정한다. production 상수에서 값을 끌어오면 한도가 바뀌어도 테스트가 따라 바뀐다.
+	private static final Duration MAX_AGE = Duration.ofMinutes(5);
+	private static final Duration MAX_FUTURE_SKEW = Duration.ofSeconds(30);
 	private static final String REJECTION_PREFIX = "FACILITY_STATUS_UNAVAILABLE: ";
 	private static final RouteTimetableRaptorPlanner.CompiledTimetable NO_TIMETABLE_NEEDED = null;
 
@@ -31,9 +34,9 @@ class JourneyFacilityBlockOverlayTest {
 	void rejectsAStepFreeRequestWithTheReasonWhenTheViewCannotBeTrusted() {
 		assertRejected(FacilityAvailabilityView.unavailable(), "facility status unavailable");
 		assertRejected(new SimpleFacilityAvailabilityView(true, null, Set.of()), "facility status has no observation time");
-		assertRejected(FacilityAvailabilityView.empty(NOW.minus(JourneyFacilityBlockOverlay.MAX_AGE).minusNanos(1)),
+		assertRejected(FacilityAvailabilityView.empty(NOW.minus(MAX_AGE).minusNanos(1)),
 			"facility status is older than 5 minutes");
-		assertRejected(FacilityAvailabilityView.empty(NOW.plus(JourneyFacilityBlockOverlay.MAX_FUTURE_SKEW).plusNanos(1)),
+		assertRejected(FacilityAvailabilityView.empty(NOW.plus(MAX_FUTURE_SKEW).plusNanos(1)),
 			"facility status observation time is in the future");
 	}
 
@@ -52,7 +55,7 @@ class JourneyFacilityBlockOverlayTest {
 	@Test
 	void appliesAViewObservedExactlyAtTheAgeAndFutureSkewLimits() {
 		for (Instant observedAt : new Instant[] {
-			NOW, NOW.minus(JourneyFacilityBlockOverlay.MAX_AGE), NOW.plus(JourneyFacilityBlockOverlay.MAX_FUTURE_SKEW)
+			NOW, NOW.minus(MAX_AGE), NOW.plus(MAX_FUTURE_SKEW)
 		}) {
 			var atLimit = new JourneyFacilityBlockOverlay(() -> FacilityAvailabilityView.empty(observedAt), true, CLOCK)
 				.captureWithStatus(ConstraintMode.REQUIRE_STEP_FREE, NO_TIMETABLE_NEEDED);

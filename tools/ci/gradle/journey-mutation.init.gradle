@@ -8,6 +8,18 @@
 //
 // -PmutationTargetClasses=<클래스 패턴,...>  기본 범위(MUTATION_TARGET_CLASSES)를 덮어쓴다. 로컬에서 1~2개로 좁힐 때 쓴다.
 // -PmutationThreads=<수>                    변이 실행 스레드 수. 기본 MUTATION_DEFAULT_THREADS.
+//
+// 도구 jar 검증(fail-closed): 이 init script가 해석하는 플러그인 classpath와 pitest 설정의 jar는 gradle.lockfile·OSV·Dependabot 밖에 있다.
+// 그래서 해석된 jar마다 sha256을 journey-mutation/checksums.json과 대조하고, 하나라도 다르거나 목록에 없거나 빠지면 빌드가 실패한다
+// (플러그인 classpath는 플러그인을 적용하기 전에, pitest 설정은 pitest 태스크 실행 전에 검사한다).
+// 같은 좌표 목록을 journey-mutation/gradle.lockfile(Gradle lockfile 형식)로 두고 workflow가 osv-scanner로 검사한다.
+//
+// 버전을 올리는 절차 (구조 테스트 journey-mutation-trend-workflow.test.mjs가 아래를 모두 대조한다):
+//   1. 아래 initscript classpath 버전과 PITEST_VERSION·JUNIT5_PLUGIN_VERSION을 함께 고친다.
+//   2. ./gradlew --init-script ../tools/ci/gradle/journey-mutation.init.gradle verifyMutationToolchain \
+//        -PmutationToolchainRecord="$PWD/../tools/ci/gradle/journey-mutation"
+//      을 실행해 checksums.json과 gradle.lockfile을 다시 쓴다(두 파일은 항상 같이 갱신된다).
+//   3. git diff로 바뀐 좌표와 해시를 검토하고 osv-scanner가 새 버전을 통과하는지 확인한 뒤 같은 PR에 담는다.
 initscript {
 	repositories {
 		gradlePluginPortal()
@@ -17,9 +29,17 @@ initscript {
 	}
 }
 
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+
 def PITEST_VERSION = '1.30.0'
 def JUNIT5_PLUGIN_VERSION = '1.2.3'
 def RUN_DESCRIPTION_FILE = 'journey-mutation-run.json'
+def TOOLCHAIN_DIRECTORY = new File(initscript.sourceFile.parentFile, 'journey-mutation')
+def TOOLCHAIN_CHECKSUMS_FILE = 'checksums.json'
+def TOOLCHAIN_LOCKFILE = 'gradle.lockfile'
+def TOOLCHAIN_SCHEMA_VERSION = 1
 
 // 접근성 제약 라우팅의 판정 클래스. 범위가 크면 실행 시간이 폭증하므로 작은 클래스부터 시작한다.
 // 끝의 *는 중첩 record·enum까지 포함한다. RouteTimetableRaptorPlanner(6천 줄)는 계단 판정만 따로 뽑을 수 없어 제외했다.
@@ -41,11 +61,58 @@ def MUTATION_EXCLUDED_TEST_CLASSES = [
 	'*PerformanceGateTest',
 	'*LoadServerTest',
 ]
+// 변이 연산자 묶음. PIT 기본 묶음을 명시해 측정 설정 해시에 들어가게 한다.
+def MUTATION_MUTATORS = ['DEFAULTS']
 def MUTATION_DEFAULT_THREADS = 2
 def MUTATION_CHILD_JVM_HEAP = '-Xmx1g'
 // PIT가 각 mutant에 허용하는 시간은 정상 실행 시간의 이 배수에 상수를 더한 값이다. 호스티드 러너에서 오탐 TIMED_OUT을 줄이려고 기본(1.25배)보다 늘린다.
 def MUTATION_TIMEOUT_FACTOR = 2.0
 def NANOS_PER_SECOND = 1_000_000_000L
+
+def toolchainRecordDirectory = gradle.startParameter.projectProperties['mutationToolchainRecord']
+
+def sha256Of = { File file -> MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+// 해석된 jar를 "group:name:version" -> sha256으로 모은다. 같은 좌표가 jar 둘로 해석되면 어느 것을 믿을지 정할 수 없어 실패한다.
+def hashesOf = { Set resolvedArtifacts ->
+	def hashes = new TreeMap<String, String>()
+	resolvedArtifacts.each { artifact ->
+		def coordinate = artifact.moduleVersion.id.toString()
+		if (hashes.containsKey(coordinate)) throw new GradleException("${coordinate}: resolved to more than one artifact")
+		hashes[coordinate] = sha256Of(artifact.file)
+	}
+	hashes
+}
+def verifyHashes = { String label, Map actual, Map expected ->
+	def problems = []
+	actual.each { coordinate, hash ->
+		if (!expected.containsKey(coordinate)) problems << "${coordinate}: not in ${TOOLCHAIN_CHECKSUMS_FILE}"
+		else if (expected[coordinate] != hash) problems << "${coordinate}: sha256 ${hash} != committed ${expected[coordinate]}"
+	}
+	expected.keySet().findAll { !actual.containsKey(it) }.each { problems << "${it}: committed but not resolved" }
+	if (!problems.isEmpty()) {
+		throw new GradleException("PIT toolchain ${label} does not match ${TOOLCHAIN_CHECKSUMS_FILE} (update procedure: see the header of this init script):\n  " + problems.join('\n  '))
+	}
+}
+def committedChecksums = {
+	def checksums = new JsonSlurper().parse(new File(TOOLCHAIN_DIRECTORY, TOOLCHAIN_CHECKSUMS_FILE))
+	if (checksums.schemaVersion != TOOLCHAIN_SCHEMA_VERSION) throw new GradleException("${TOOLCHAIN_CHECKSUMS_FILE}: unsupported schemaVersion ${checksums.schemaVersion}")
+	checksums
+}
+def recordToolchain = { Map pluginHashes, Map pitestHashes ->
+	def directory = new File(toolchainRecordDirectory)
+	if (!directory.isAbsolute()) throw new GradleException('-PmutationToolchainRecord=<절대 디렉터리 경로>가 필요하다')
+	directory.mkdirs()
+	new File(directory, TOOLCHAIN_CHECKSUMS_FILE).setText(JsonOutput.prettyPrint(JsonOutput.toJson([schemaVersion: TOOLCHAIN_SCHEMA_VERSION, pluginClasspath: pluginHashes, pitestClasspath: pitestHashes])) + '\n', 'UTF-8')
+	// OSV가 읽는 Gradle lockfile 형식. 좌표만 담고 구성 이름으로 어느 classpath인지 남긴다.
+	def lines = ['# Gradle lockfile 형식의 PIT 도구 좌표. osv-scanner가 읽는다. journey-mutation.init.gradle 헤더의 절차로만 다시 쓴다.']
+	pluginHashes.keySet().each { lines << "${it}=journeyMutationPluginClasspath".toString() }
+	pitestHashes.keySet().each { lines << "${it}=journeyMutationPitest".toString() }
+	new File(directory, TOOLCHAIN_LOCKFILE).setText(lines.join('\n') + '\n', 'UTF-8')
+}
+
+// 플러그인 classpath는 플러그인 코드를 쓰기 전에 검사한다. 기록 모드에서는 pitest 설정과 함께 아래 태스크에서 쓴다.
+def pluginHashes = hashesOf(initscript.configurations.classpath.resolvedConfiguration.resolvedArtifacts)
+if (toolchainRecordDirectory == null) verifyHashes('plugin classpath', pluginHashes, committedChecksums().pluginClasspath)
 
 gradle.allprojects { project ->
 	project.plugins.withId('java') {
@@ -53,6 +120,11 @@ gradle.allprojects { project ->
 		def properties = gradle.startParameter.projectProperties
 		def scopedClasses = properties['mutationTargetClasses']?.split(',')?.collect { it.trim() }?.findAll { !it.isEmpty() } ?: MUTATION_TARGET_CLASSES
 		def threadCount = Integer.parseInt(properties['mutationThreads'] ?: "${MUTATION_DEFAULT_THREADS}")
+		// 점수와 mutant 집합에 영향을 주는 설정을 한 해시로 묶어 실행 설명에 남긴다. 요약 도구는 해시가 다른 직전 run을 기준에서 뺀다.
+		def configHash = MessageDigest.getInstance('SHA-256').digest(JsonOutput.toJson([
+			targetClasses: scopedClasses, targetTests: MUTATION_TARGET_TESTS, excludedTestClasses: MUTATION_EXCLUDED_TEST_CLASSES,
+			mutators: MUTATION_MUTATORS, threads: threadCount, timeoutFactor: MUTATION_TIMEOUT_FACTOR, jvmArgs: [MUTATION_CHILD_JVM_HEAP],
+		]).getBytes('UTF-8')).encodeHex().toString()
 		project.pitest {
 			pitestVersion = PITEST_VERSION
 			junit5PluginVersion = JUNIT5_PLUGIN_VERSION
@@ -61,19 +133,30 @@ gradle.allprojects { project ->
 			targetClasses = scopedClasses
 			targetTests = MUTATION_TARGET_TESTS
 			excludedTestClasses = MUTATION_EXCLUDED_TEST_CLASSES
+			mutators = MUTATION_MUTATORS
 			threads = threadCount
 			jvmArgs = [MUTATION_CHILD_JVM_HEAP]
 			timeoutFactor = MUTATION_TIMEOUT_FACTOR
 			outputFormats = ['XML', 'HTML']
 			timestampedReports = false
 		}
+		def verifyToolchain = project.tasks.register('verifyMutationToolchain') { task ->
+			task.group = 'verification'
+			task.description = 'PIT 도구 jar의 sha256을 커밋된 목록과 대조한다(-PmutationToolchainRecord=<절대 디렉터리>면 목록을 다시 쓴다).'
+			task.doLast {
+				def pitestHashes = hashesOf(project.configurations.getByName('pitest').resolvedConfiguration.resolvedArtifacts)
+				if (toolchainRecordDirectory != null) recordToolchain(pluginHashes, pitestHashes)
+				else verifyHashes('pitest classpath', pitestHashes, committedChecksums().pitestClasspath)
+			}
+		}
 		// 요약 도구가 읽는 실행 설명. 버전·범위를 workflow에 다시 적지 않도록 이 파일이 유일한 출처다. 시간은 pitest 태스크 실행(컴파일 제외)이다.
 		project.tasks.named('pitest') { task ->
+			task.dependsOn(verifyToolchain)
 			task.doFirst { task.extensions.extraProperties.set('startedNanos', System.nanoTime()) }
 			task.doLast {
 				def elapsedSeconds = (System.nanoTime() - task.extensions.extraProperties.get('startedNanos')).intdiv(NANOS_PER_SECOND)
-				def description = [pitestVersion: PITEST_VERSION, junit5PluginVersion: JUNIT5_PLUGIN_VERSION, targetClasses: scopedClasses, threads: threadCount, elapsedSeconds: elapsedSeconds]
-				new File(task.reportDir.get().asFile, RUN_DESCRIPTION_FILE).setText(groovy.json.JsonOutput.toJson(description) + '\n', 'UTF-8')
+				def description = [pitestVersion: PITEST_VERSION, junit5PluginVersion: JUNIT5_PLUGIN_VERSION, targetClasses: scopedClasses, threads: threadCount, configHash: configHash, elapsedSeconds: elapsedSeconds]
+				new File(task.reportDir.get().asFile, RUN_DESCRIPTION_FILE).setText(JsonOutput.toJson(description) + '\n', 'UTF-8')
 			}
 		}
 	}

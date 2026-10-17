@@ -40,12 +40,13 @@ jobs:
         with:
           version: 1.3.3
 
+      # Gradle 캐시를 쓰지 않는다. setup-java의 캐시 키는 저장소의 Gradle 파일에서 나오므로 main에서 도는 이 야간 job이 저장한 항목을
+      # 필수 CI가 복원할 수 있다. 이 job은 lockfile 밖의 PIT 도구를 해석하므로 그 산출물이 필수 CI 캐시로 흘러가면 안 된다.
       - name: Set up Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
           java-version: "21.0.11"
-          cache: gradle
 
       # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
       - name: Stage pinned contracts
@@ -73,6 +74,14 @@ jobs:
             --lock backend/journey-contracts.lock.json \
             --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
             --output backend/build/journey-contracts-staging
+
+      # PIT 도구(플러그인·PIT·JUnit 플러그인과 전이 의존성)는 backend/gradle.lockfile 밖에서 해석되므로 같은 좌표 목록을 따로 OSV로 검사한다.
+      # 알려진 취약점이 있으면 job이 실패한다. 받은 jar가 목록과 같은지는 init script가 sha256으로 대조한다.
+      - name: Scan the PIT toolchain with OSV
+        uses: google/osv-scanner-action/osv-scanner-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        with:
+          scan-args: |-
+            --lockfile=tools/ci/gradle/journey-mutation/gradle.lockfile
 
       # PIT 플러그인은 init script에서만 적용한다. 일반 test·check 태스크 그래프와 build.gradle은 그대로다.
       - name: Run PIT on the routing classes

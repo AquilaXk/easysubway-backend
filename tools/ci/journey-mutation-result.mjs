@@ -26,6 +26,7 @@ const CLASS_PATTERN = /^[A-Za-z_][A-Za-z0-9_$.*]{0,199}$/;
 const METHOD_NAME = /^[A-Za-z0-9_$<>]{1,100}$/;
 const MUTATOR_NAME = /^[A-Za-z0-9]{1,80}$/;
 const VERSION = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
 const DESCRIPTION_LIMIT = 300;
 const SCORE_DECIMALS = 100;
 
@@ -112,6 +113,7 @@ export function validateRun(run) {
   if (!Array.isArray(run.targetClasses) || run.targetClasses.length === 0) fail('run.targetClasses must not be empty');
   run.targetClasses.forEach((pattern) => matches(pattern, CLASS_PATTERN, 'run.targetClasses entry'));
   positiveInteger(run.threads, 'run.threads');
+  matches(run.configHash, SHA256, 'run.configHash');
   count(run.elapsedSeconds, 'run.elapsedSeconds');
   return run;
 }

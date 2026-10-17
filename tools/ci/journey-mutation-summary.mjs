@@ -25,11 +25,12 @@ function headerLines({ current, comparison, noPreviousReason, skipped }) {
     `- 도구: PIT ${run.pitestVersion} · JUnit 플러그인 ${run.junit5PluginVersion} · 스레드 ${run.threads} · 실행 시간 ${formatDuration(run.elapsedSeconds)}`,
     `- 범위: ${run.targetClasses.map(code).join(', ')}`,
     `- 전체 점수: ${formatPercent(totals.score)} — 탐지 ${detected}(테스트 실패 ${totals.killed} · 시간 초과 ${totals.timedOut} · 메모리 ${totals.memoryError}), 생존 ${totals.survived}, 미커버 ${totals.noCoverage}, 컴파일 불가 ${totals.nonViable}`,
+    `- 시간 초과 ${totals.timedOut}건(탐지로 계산하지만 러너 속도에 따라 테스트 실패와 오갈 수 있어 따로 표시합니다)`,
     comparison
       ? `- 기준: 직전 성공 run ${comparison.baselineRuns}개 중앙값 — ${comparison.baselineContexts.map(link).join(', ')}`
       : `- 직전 성공 run: 비교 대상 없음 — ${escaped(noPreviousReason)}`,
-    ...(comparison ? [`- 판정: ${comparison.regressions.length === 0 ? '점수 하락 없음' : `점수 하락 ${comparison.regressions.length}건(아래 표와 경고 annotation)`}`] : []),
-    `- 임계(비차단): 클래스별 점수가 기준 중앙값보다 ${SCORE_DROP_TOLERANCE_POINTS.toFixed(1)}%p를 넘게 내려가면 경고합니다.`,
+    ...(comparison ? [`- 판정: ${comparison.regressions.length === 0 ? '경고 없음' : `경고 ${comparison.regressions.length}건(점수 하락 또는 생존 mutant 증가, 아래 표와 경고 annotation)`}`] : []),
+    `- 임계(비차단): 클래스별 점수가 기준 중앙값보다 ${SCORE_DROP_TOLERANCE_POINTS.toFixed(1)}%p를 넘게 내려가거나 생존 mutant가 기준 중앙값보다 늘면 경고합니다.`,
     ...(comparison?.notes ?? []).map((note) => `- 참고: ${escaped(note)}`),
     ...skipped.map(({ runId, kind, message }) => `- 기준에서 제외된 run ${escaped(runId)} (${escaped(kind)}): ${escaped(message)}`),
     '',
@@ -40,15 +41,15 @@ const missedOf = (counts) => counts.survived + counts.noCoverage;
 const detectedOf = (counts) => counts.killed + counts.timedOut + counts.memoryError;
 
 function classRow(className, counts, compared) {
-  if (compared?.status === 'removed') return `| ${escaped(className)} | - | - | - | - | - | ${judgement(compared)} |`;
+  if (compared?.status === 'removed') return `| ${escaped(className)} | - | - | - | - | - | - | ${judgement(compared)} |`;
   const base = compared?.status === 'compared' ? formatPercent(compared.baselineScore) : '-';
   const change = compared?.status === 'compared' ? formatPoints(compared.delta) : '-';
-  return `| ${escaped(className)} | ${detectedOf(counts)} | ${missedOf(counts)} | ${formatPercent(counts.score)} | ${base} | ${change} | ${compared ? judgement(compared) : '-'} |`;
+  return `| ${escaped(className)} | ${detectedOf(counts)} | ${counts.timedOut} | ${missedOf(counts)} | ${formatPercent(counts.score)} | ${base} | ${change} | ${compared ? judgement(compared) : '-'} |`;
 }
 
 function classLines(current, comparison) {
   const byName = new Map((comparison?.classes ?? []).map((row) => [row.className, row]));
-  const lines = ['### 클래스별 점수', '', '| 클래스 | 탐지 | 놓침(생존+미커버) | 점수 | 기준 중앙값 | 변화 | 판정 |', '| --- | ---: | ---: | ---: | ---: | ---: | --- |'];
+  const lines = ['### 클래스별 점수', '', '| 클래스 | 탐지 | 그중 시간 초과 | 놓침(생존+미커버) | 점수 | 기준 중앙값 | 변화 | 판정 |', '| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |'];
   for (const [className, counts] of Object.entries(current.classes)) lines.push(classRow(className, counts, byName.get(className)));
   for (const removed of (comparison?.classes ?? []).filter(({ status }) => status === 'removed')) lines.push(classRow(removed.className, null, removed));
   return [...lines, ''];

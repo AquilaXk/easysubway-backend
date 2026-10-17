@@ -62,16 +62,62 @@ test('classes are compared one by one, so a scope change is reported but never a
   assert.equal(shrunk.regressions.length, 0);
 });
 
-test('runs measured with another PIT or JUnit plugin version are excluded because their mutants differ', () => {
-  const other = { ...RUN, pitestVersion: '1.31.0' };
-  const previous = [...baseline(overlay(9, 1), 2), previousRun(7, overlay(1, 9), { run: other })];
-  const comparison = compareResults({ current: result(overlay(9, 1)), previous });
-  assert.equal(comparison.baselineRuns, 2);
-  assert.match(comparison.notes.join('\n'), /1개는 PIT 버전.*달라 기준에서 제외/);
-  const allOther = compareResults({ current: result(overlay(1, 9)), previous: [previousRun(7, overlay(9, 1), { run: other })] });
-  assert.equal(allOther.baselineRuns, 0);
-  assert.deepEqual(allOther.classes.map(({ status }) => status), ['method-changed', 'method-changed']);
-  assert.equal(allOther.regressions.length, 0);
+test('runs measured with another PIT version, JUnit plugin version or measurement setup are excluded because their mutants differ', () => {
+  const others = {
+    'PIT version': { ...RUN, pitestVersion: '1.31.0' },
+    'JUnit plugin version': { ...RUN, junit5PluginVersion: '1.2.4' },
+    'measurement setup': { ...RUN, configHash: 'd'.repeat(64) },
+  };
+  for (const [name, other] of Object.entries(others)) {
+    const previous = [...baseline(overlay(9, 1), 2), previousRun(7, overlay(1, 9), { run: other })];
+    const comparison = compareResults({ current: result(overlay(9, 1)), previous });
+    assert.equal(comparison.baselineRuns, 2, name);
+    assert.match(comparison.notes.join('\n'), /1개는 PIT·JUnit 플러그인 버전 또는 측정 설정.*달라 기준에서 제외/, name);
+    const allOther = compareResults({ current: result(overlay(1, 9)), previous: [previousRun(7, overlay(9, 1), { run: other })] });
+    assert.equal(allOther.baselineRuns, 0, name);
+    assert.deepEqual(allOther.classes.map(({ status }) => status), ['method-changed', 'method-changed'], name);
+    assert.equal(allOther.regressions.length, 0, name);
+  }
+});
+
+// 점수 허용(0.5%p) 안에 머무는 큰 클래스: killed 399 + survived 1 = 99.75%, killed 398 + survived 2 = 99.5%.
+const large = (killed, survived) => ({ [OVERLAY]: { killed, survived } });
+
+test('a class that gains a surviving mutant is a regression even when its score stays inside the tolerance', () => {
+  const comparison = compareResults({ current: result(large(398, 2)), previous: baseline(large(399, 1)) });
+  const row = rowOf(comparison, OVERLAY);
+  assert.equal(row.delta, -0.25);
+  assert.equal(row.baselineSurvived, 1);
+  assert.equal(row.survived, 2);
+  assert.equal(row.regressed, true);
+  assert.match(row.message, /JourneyFacilityBlockOverlay: 생존 mutant 기준 중앙값 1건 → 현재 2건/);
+  assert.doesNotMatch(row.message, /점수 기준 중앙값/, 'the score did not drop beyond the tolerance');
+  assert.deepEqual(comparison.regressions.map(({ className }) => className), [OVERLAY]);
+});
+
+test('an equal or smaller survivor count is silent, and the baseline survivor count is the median of the previous runs', () => {
+  assert.equal(compareResults({ current: result(large(399, 1)), previous: baseline(large(399, 1)) }).regressions.length, 0);
+  assert.equal(compareResults({ current: result(large(399, 1)), previous: baseline(large(398, 2)) }).regressions.length, 0);
+  const previous = [previousRun(1, large(399, 1)), previousRun(2, large(399, 1)), previousRun(3, large(390, 10))];
+  const outlier = compareResults({ current: result(large(399, 1)), previous });
+  assert.equal(rowOf(outlier, OVERLAY).baselineSurvived, 1);
+  assert.equal(outlier.regressions.length, 0, 'a high outlier must not hide or raise the baseline');
+  const low = [previousRun(1, large(399, 1)), previousRun(2, large(399, 1)), previousRun(3, large(400, 0))];
+  assert.equal(compareResults({ current: result(large(398, 2)), previous: low }).regressions.length, 1, 'a low outlier must not hide the increase');
+});
+
+test('uncovered mutants are not survivors: only the survived count drives the survivor warning', () => {
+  const noCoverage = { [OVERLAY]: { killed: 399, survived: 1, noCoverage: 0 } };
+  const moreUncovered = { [OVERLAY]: { killed: 399, survived: 1, noCoverage: 1 } };
+  const comparison = compareResults({ current: result(moreUncovered), previous: baseline(noCoverage) });
+  assert.equal(rowOf(comparison, OVERLAY).regressed, false);
+});
+
+test('a class that drops in score and gains survivors reports both reasons in one message', () => {
+  const comparison = compareResults({ current: result(overlay(8, 2)), previous: baseline(overlay(9, 1)) });
+  const { message } = rowOf(comparison, OVERLAY);
+  assert.match(message, /점수 기준 중앙값 90\.0% → 현재 80\.0%/);
+  assert.match(message, /생존 mutant 기준 중앙값 1건 → 현재 2건/);
 });
 
 test('comparing needs at least one previous result', () => {
