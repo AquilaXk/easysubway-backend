@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * #494: 패키지 밖의 수동 측정 도구({@code JourneyEndpointLatencyMeasurement})가 수도권 실데이터 fixture와 모바일 대표
  * 프로필 질의를 읽는 공개 통로. fixture 자체({@link CapitalRealDerivedFixture})와 대표 질의
- * ({@link ProfileSearchWithinResourcePolicyTest#cases()})는 그대로 두고 값만 노출한다.
+ * ({@link CapitalRepresentativeCases#cases()})는 그대로 두고 값만 노출한다.
  */
 public final class CapitalEndpointFixture {
 
@@ -34,7 +34,7 @@ public final class CapitalEndpointFixture {
 	}
 
 	public static List<RepresentativeCase> representativeProfileCases() {
-		return ProfileSearchWithinResourcePolicyTest.cases().stream()
+		return CapitalRepresentativeCases.cases().stream()
 			.map(testCase -> new RepresentativeCase(testCase.mode(), testCase.origin(), testCase.destination(),
 				testCase.localTime(), testCase.profile(), testCase.constraint()))
 			.toList();

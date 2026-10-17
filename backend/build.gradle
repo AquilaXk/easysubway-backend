@@ -196,6 +196,29 @@ tasks.named('test') {
 		.withPathSensitivity(PathSensitivity.RELATIVE)
 	// 커버리지 측정만 수행한다. 전역 % fail 게이트는 후속 이슈에서 패키지 단위로 검토한다(#2440).
 	finalizedBy tasks.named('jacocoTestReport')
+	// -PupdateGolden: 대표 경로 질의 golden 회귀가 의도한 변경을 golden 파일에 다시 쓴다(#514). 이 옵션이 없으면 golden을 쓰지 않는다.
+	if (project.hasProperty('updateGolden')) {
+		systemProperty 'easysubway.updateGolden', 'true'
+		outputs.upToDateWhen { false }
+	}
+}
+
+// 대표 경로 질의 golden 대비 번들 diff 보고(#514): ./gradlew journeyGoldenDiff -PgoldenBundle=<server-route-bundle 디렉터리> [-PgoldenServiceDate=YYYY-MM-DD]
+tasks.register('journeyGoldenDiff', JavaExec) {
+	group = 'verification'
+	description = '번들 디렉터리를 대표 경로 질의 golden과 비교한 차이 보고를 출력한다.'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.easysubway.route.application.service.JourneyGoldenDiffCli'
+	maxHeapSize = '2g'
+	javaLauncher = javaToolchains.launcherFor {
+		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
+	doFirst {
+		if (!project.hasProperty('goldenBundle')) throw new GradleException('-PgoldenBundle=<server-route-bundle 디렉터리>가 필요하다')
+		args(file(project.property('goldenBundle')).absolutePath)
+		if (project.hasProperty('goldenServiceDate')) args('--service-date', project.property('goldenServiceDate'))
+	}
 }
 
 def jacocoClassDirectoryExcludes = [

@@ -24,7 +24,7 @@ import java.util.TreeMap;
  *
  * <p>테스트가 아니라 손으로 돌리는 측정 진입점이다. 성능 게이트({@link JourneyEnginePerformanceGateTest})는 격자 번들과
  * 4호선 슬라이스로 회귀를 막고, 이 구동기는 저수준 최적화의 전후를 실데이터 규모에서 잰다. 출발 시각 고정은 시드 고정
- * 무작위 OD 400건, 프로필 모드는 {@link ProfileSearchWithinResourcePolicyTest}의 모바일 대표 질의 14건을 운영 후보 정책
+ * 무작위 OD 400건, 프로필 모드는 {@link CapitalRepresentativeCases}의 모바일 대표 질의 14건을 운영 후보 정책
  * 한도로 돌린다. 모드마다 결과와 결정적 작업량의 지문(sha256)을 찍어 최적화 전후 결과가 같은지 확인한다.</p>
  *
  * <p>실행: 테스트 런타임 classpath로 {@code java -Xms1g -Xmx1g -cp <test runtime classpath>
@@ -126,7 +126,7 @@ final class CapitalEngineBenchmark {
 				mobility.profile(), mobility.constraint(), 3, 3, () -> false)));
 		}
 		int index = 0;
-		for (var testCase : ProfileSearchWithinResourcePolicyTest.cases()) {
+		for (var testCase : CapitalRepresentativeCases.cases()) {
 			queries.add(new Query(testCase.mode(), testCase.query(index++)));
 		}
 		return List.copyOf(queries);
