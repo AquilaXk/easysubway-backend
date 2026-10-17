@@ -17,13 +17,19 @@ const runnerLine = ({ runner }, method) => {
   return [image, `${runner.os}/${runner.arch}`, runner.cpuModel, `${runner.cpuCount} vCPU`, formatGiB(runner.totalMemoryBytes), method.java].map(escapeMarkdown).join(' · ');
 };
 
-function headerLines(current, comparison, noPreviousReason, skipped) {
+const gateCalibrationLines = (gateCalibration) => (gateCalibration === null ? [] : [
+  `- 게이트 기준선의 보정 작업 시간 산출 범위: ${formatNanos(gateCalibration.range.min)} ~ ${formatNanos(gateCalibration.range.max)}`,
+  ...(gateCalibration.notice === null ? [] : [`- 경고: ${escapeMarkdown(gateCalibration.notice)}`]),
+]);
+
+function headerLines(current, comparison, noPreviousReason, skipped, gateCalibration) {
   const { context, measurement } = current;
   return [
     '## 경로 엔진 벤치마크 추세', '',
     `- 현재: ${link(context)} (${escapeMarkdown(context.ref)}, ${escapeMarkdown(context.event)}), 새 JVM ${current.repeats}회 중앙값`,
     `- 러너: ${runnerLine(context, measurement.method)}`,
     `- 보정 작업 시간: ${formatNanos(measurement.calibrationNanos)} (지연 비교는 이 값으로 나눈 비율)`,
+    ...gateCalibrationLines(gateCalibration),
     comparison
       ? `- 기준: 직전 성공 run ${comparison.baselineRuns}개 중앙값 — ${comparison.baselineContexts.map(link).join(', ')}`
       : `- 직전 성공 run: 비교 대상 없음 — ${escapeMarkdown(noPreviousReason)}`,
@@ -64,9 +70,10 @@ function workloadLines(id, workload, compared) {
   return [...lines, ''];
 }
 
-export function renderSummary({ current, comparison, noPreviousReason, skipped }) {
+/** gateCalibration: 게이트 기준선의 보정 시간 범위와 현재 값이 범위 밖일 때의 경고, 기준선을 주지 않았으면 null. */
+export function renderSummary({ current, comparison, noPreviousReason, skipped, gateCalibration = null }) {
   const byId = new Map((comparison?.workloads ?? []).map((entry) => [entry.id, entry]));
-  const lines = headerLines(current, comparison, noPreviousReason, skipped);
+  const lines = headerLines(current, comparison, noPreviousReason, skipped, gateCalibration);
   for (const [id, workload] of Object.entries(current.measurement.workloads)) lines.push(...workloadLines(id, workload, byId.get(id)));
   for (const removed of (comparison?.workloads ?? []).filter(({ status }) => status === 'removed')) lines.push(`### ${removed.id}`, '', `- ${STATUS_TEXT.removed}`, '');
   return `${lines.join('\n')}\n`;

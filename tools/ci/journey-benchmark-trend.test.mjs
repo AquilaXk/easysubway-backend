@@ -101,3 +101,20 @@ test('fetch-previous writes a manifest from the gh results and annotates failure
   const missing = cli(args, { ...env, FAKE_ARTIFACTS: '[]' });
   assert.match(missing.stdout, /^::warning title=Journey 엔진 벤치마크 추세::run 31/m);
 }));
+
+test('compare with a gate baseline warns when the runner calibration is outside the baseline range and rejects a baseline without a range', () => withDirectory((directory) => {
+  const previous = [1, 2, 3].map((index) => writeJson(directory, `p${index}.json`, previousRun(index)));
+  const gateBaseline = (range) => writeJson(directory, 'gate-baseline.json', { method: { calibrationRangeNanos: range } });
+  const compare = (calibration, baselinePath) => {
+    const current = writeJson(directory, 'current.json', result(measurement({ calibration })));
+    return cli(['compare', '--current', current, '--previous-manifest', manifest(directory, previous), '--gate-baseline', baselinePath, '--summary', join(directory, 'summary.md')]);
+  };
+  const inside = compare(90_000_000, gateBaseline({ min: 70_000_000, max: 98_000_000 }));
+  assert.equal(inside.status, 0, inside.stderr);
+  assert.doesNotMatch(inside.stdout, /산출 범위/);
+  const outside = compare(110_000_000, gateBaseline({ min: 70_000_000, max: 98_000_000 }));
+  assert.equal(outside.status, 0, outside.stderr);
+  assert.match(outside.stdout, /^::warning title=Journey 엔진 벤치마크 추세::보정 작업 시간 110\.0 ms가 게이트 기준선 산출 범위 70~98 ms 밖입니다/m);
+  assert.match(readFileSync(join(directory, 'summary.md'), 'utf8'), /게이트 기준선의 보정 작업 시간 산출 범위/);
+  assert.notEqual(compare(90_000_000, writeJson(directory, 'no-range.json', { method: {} })).status, 0);
+}));

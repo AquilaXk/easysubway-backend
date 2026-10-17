@@ -86,4 +86,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --previous-manifest "${RUNNER_TEMP}/previous-benchmark/manifest.json" --summary "$GITHUB_STEP_SUMMARY"
+          node tools/ci/journey-benchmark-trend.mjs compare --current "${RUNNER_TEMP}/journey-benchmark/result.json" --previous-manifest "${RUNNER_TEMP}/previous-benchmark/manifest.json" --gate-baseline backend/src/test/resources/journey-benchmark/engine-performance-baseline.json --summary "$GITHUB_STEP_SUMMARY"

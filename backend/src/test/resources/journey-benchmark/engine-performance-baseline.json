@@ -13,7 +13,11 @@
     "java" : "Eclipse Adoptium 21.0.11",
     "arch" : "amd64",
     "processors" : 4,
-    "baselineSource" : "geometric mean of 5 Backend CI job medians (run 39069638670 attempts 1-5)"
+    "baselineSource" : "geometric mean of 5 Backend CI job medians (run 39069638670 attempts 1-5)",
+    "calibrationRangeNanos" : {
+      "min" : 70000000,
+      "max" : 98000000
+    }
   },
   "calibrationNanos" : 97813815,
   "workloads" : {
@@ -31,9 +35,9 @@
         "sha256" : "f769c2a2ca17d48057d30d12c3b7b668b49f06813861c5d2e9ef519c860efeb3"
       },
       "compile" : {
-        "nanos" : 49626967,
-        "allocatedBytes" : 27387504,
-        "retainedBytes" : 3252656
+        "nanos" : 44985000,
+        "allocatedBytes" : 26981864,
+        "retainedBytes" : 3256096
       },
       "modes" : {
         "DEPART_AT" : {
@@ -129,9 +133,9 @@
         "sha256" : "8cf1d4028a6c5594db0ffd4e3ae5ea2b772cd6ddd59d5ff77201f8de0363f37a"
       },
       "compile" : {
-        "nanos" : 10000000,
-        "allocatedBytes" : 4447368,
-        "retainedBytes" : 552160
+        "nanos" : 6207030,
+        "allocatedBytes" : 4510744,
+        "retainedBytes" : 553104
       },
       "modes" : {
         "DEPART_AT" : {
@@ -300,9 +304,9 @@
         "sha256" : "5232afcee0d88293e8a4d0e1a899677dfd5ddd9bf9b7aeb8c0e70f9364cc813d"
       },
       "compile" : {
-        "nanos" : 700000,
-        "allocatedBytes" : 118520,
-        "retainedBytes" : 30856
+        "nanos" : 147332,
+        "allocatedBytes" : 117040,
+        "retainedBytes" : 31400
       },
       "modes" : {
         "DEPART_AT" : {

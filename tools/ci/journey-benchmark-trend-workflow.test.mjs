@@ -44,7 +44,7 @@ test('Backend #516 is observational: regressions never fail the job, the measure
   assert.doesNotMatch(withoutComments(workflow), /continue-on-error|\|\| true|\|\| :/);
   const compare = step(workflow, 'Compare with the previous successful runs');
   assert.match(compare, /set -euo pipefail/);
-  assert.match(compare, /node tools\/ci\/journey-benchmark-trend\.mjs compare --current "\$\{RUNNER_TEMP\}\/journey-benchmark\/result\.json" --previous-manifest "\$\{RUNNER_TEMP\}\/previous-benchmark\/manifest\.json" --summary "\$GITHUB_STEP_SUMMARY"/);
+  assert.match(compare, /node tools\/ci\/journey-benchmark-trend\.mjs compare --current "\$\{RUNNER_TEMP\}\/journey-benchmark\/result\.json" --previous-manifest "\$\{RUNNER_TEMP\}\/previous-benchmark\/manifest\.json" --gate-baseline backend\/src\/test\/resources\/journey-benchmark\/engine-performance-baseline\.json --summary "\$GITHUB_STEP_SUMMARY"/);
 });
 
 test('Backend #516 fetches the previous runs through the tested script, authenticated with the workflow token only', () => {

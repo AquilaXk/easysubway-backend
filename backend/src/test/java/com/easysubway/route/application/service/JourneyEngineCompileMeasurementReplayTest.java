@@ -132,15 +132,16 @@ class JourneyEngineCompileMeasurementReplayTest {
 	}
 
 	/**
-	 * district 컴파일은 JVM마다 JIT 상태가 달라 정상 상태 값이 두 가지로 나온다(낮은 상태 약 0.05~0.09, 높은 상태 0.11~0.17,
-	 * 보정 시간으로 나눈 값). 기준값은 관측된 가장 높은 상태가 한도의 1/1.5 이하가 되게 정했다(0.1022).
+	 * district 컴파일은 백그라운드 JIT에서 JVM마다 상태가 두 가지로 나온다(낮은 상태 약 0.05~0.09, 높은 상태 0.11~0.17,
+	 * 보정 시간으로 나눈 값). #518의 기준값은 관측된 가장 높은 상태가 한도의 1/1.5 이하가 되게 정했다(0.1022).
 	 * 그래서 낮은 상태에서 3배 회귀는 놓칠 수 있고, 세 번들 컴파일이 모두 3배 느려지면 최종 방법(예열 30회) 측정 10개 중 8개에서
-	 * 잡는다. 놓치는 둘은 빠른 러너의 metro 값(0.36·0.37)이다.
+	 * 잡는다. 놓치는 둘은 빠른 러너의 metro 값(0.36·0.37)이다. 이 기록과 기준값은 동기 JIT로 바꾼 #3036 이전의 것이다.
 	 */
 	@Test
-	@DisplayName("커밋된 컴파일 기준값은 관측된 JVM 상태 모두에서 한도까지 1.5배 이상 남기고 3배 회귀를 대부분 잡는다")
-	void committedCompileBaselineKeepsMarginOverObservedJvmStates() {
+	@DisplayName("#518 컴파일 기준값은 백그라운드 JIT에서 관측된 JVM 상태 모두에서 한도까지 1.5배 이상 남기고 3배 회귀를 대부분 잡았다")
+	void backgroundJitCompileBaselineKeptMarginOverObservedJvmStates() {
 		double factor = JourneyEnginePerformanceGateTest.Tolerances.DEFAULT.normalizedCompileFactor();
+		JsonNode legacyBaseline = replay.at("/perJvmCompileEstimates/baseline");
 		List<JsonNode> rows = list(replay.at("/perJvmCompileEstimates/rows"));
 		assertThat(rows).hasSize(19);
 		assertThat(rows.stream().map(row -> row.get("run").asLong()).distinct().count()).isGreaterThanOrEqualTo(3);
@@ -148,20 +149,46 @@ class JourneyEngineCompileMeasurementReplayTest {
 			== JourneyEnginePerformanceGateTest.COMPILE_WARMUPS).toList();
 		assertThat(finalMethod).hasSize(10);
 		// district는 JVM별 JIT 상태라 예열 횟수와 무관하게 모든 기록을, metro·line4는 최종 방법의 기록만 쓴다.
-		Map<String, String> workloadIds = Map.of("metro", "metro-grid-v1", "district", "district-grid-v1", "line4", "line4-corridor-slice");
-		for (Map.Entry<String, String> workload : workloadIds.entrySet()) {
-			List<JsonNode> sample = workload.getKey().equals("district") ? rows : finalMethod;
-			double worst = sample.stream().mapToDouble(row -> ratioToBaseline(row, workload.getKey(), workload.getValue())).max().orElseThrow();
-			assertThat(factor / worst).as("%s 최악 상태의 한도 여유 배율", workload.getKey()).isGreaterThanOrEqualTo(REQUIRED_MARGIN);
+		List<String> keys = List.of("metro", "district", "line4");
+		for (String key : keys) {
+			List<JsonNode> sample = key.equals("district") ? rows : finalMethod;
+			double worst = sample.stream().mapToDouble(row -> legacyRatio(legacyBaseline, row, key)).max().orElseThrow();
+			assertThat(factor / worst).as("%s 최악 상태의 한도 여유 배율", key).isGreaterThanOrEqualTo(REQUIRED_MARGIN);
 		}
-		long caught = finalMethod.stream().filter(row -> workloadIds.entrySet().stream().anyMatch(workload ->
-			REGRESSION_FACTOR * ratioToBaseline(row, workload.getKey(), workload.getValue()) > factor)).count();
+		long caught = finalMethod.stream().filter(row -> keys.stream().anyMatch(key ->
+			REGRESSION_FACTOR * legacyRatio(legacyBaseline, row, key) > factor)).count();
 		assertThat(caught).as("컴파일이 모두 %d배 느려졌을 때 잡히는 최종 방법 측정 수", REGRESSION_FACTOR).isEqualTo(8);
 	}
 
-	private static double ratioToBaseline(JsonNode row, String key, String workloadId) {
-		double baselineRatio = committedBaseline.at("/workloads/" + workloadId + "/compile/nanos").asDouble()
+	private static double legacyRatio(JsonNode legacyBaseline, JsonNode row, String key) {
+		double baselineRatio = legacyBaseline.at("/compileNanos/" + key).asDouble() / legacyBaseline.get("calibrationNanos").asDouble();
+		return row.get(key).asDouble() / row.get("calibrationMillis").asDouble() / baselineRatio;
+	}
+
+	/**
+	 * #3036: 동기 JIT에서는 컴파일 시간도 JVM 상태가 하나라(보정 시간으로 나눈 값의 기준선 대비 0.78~1.40배) 기준값을 같은 CI
+	 * 측정(기준선 원자료)에서 다시 만들었다. 최악 상태의 한도 여유가 1.5배 이상이고 컴파일이 3배 느려지면 모든 JVM에서 잡는다.
+	 */
+	@Test
+	@DisplayName("동기 JIT 컴파일 기준값은 원자료 모든 JVM에서 한도까지 1.5배 이상 남기고 컴파일 3배 회귀를 모든 JVM에서 잡는다")
+	void committedCompileBaselineKeepsMarginAndCatchesRegressionOverSyncJitMeasurements() throws IOException {
+		double factor = JourneyEnginePerformanceGateTest.Tolerances.DEFAULT.normalizedCompileFactor();
+		JsonNode raw = JSON.readTree(Files.readString(JourneyEngineBaselineDerivation.MEASUREMENTS, StandardCharsets.UTF_8));
+		List<JsonNode> jvms = list(raw.get("jobs")).stream().flatMap(job -> list(job.get("jvms")).stream()).toList();
+		List<String> workloads = new ArrayList<>();
+		committedBaseline.get("workloads").fieldNames().forEachRemaining(workloads::add);
+		for (String workload : workloads) {
+			double worst = jvms.stream().mapToDouble(jvm -> syncRatio(jvm, workload)).max().orElseThrow();
+			assertThat(factor / worst).as("%s 최악 상태의 한도 여유 배율", workload).isGreaterThanOrEqualTo(REQUIRED_MARGIN);
+		}
+		long caught = jvms.stream().filter(jvm -> workloads.stream().anyMatch(workload ->
+			REGRESSION_FACTOR * syncRatio(jvm, workload) > factor)).count();
+		assertThat(caught).as("컴파일이 모두 %d배 느려졌을 때 잡히는 JVM 수", REGRESSION_FACTOR).isEqualTo(jvms.size());
+	}
+
+	private static double syncRatio(JsonNode jvm, String workload) {
+		double baselineRatio = committedBaseline.at("/workloads/" + workload + "/compile/nanos").asDouble()
 			/ committedBaseline.get("calibrationNanos").asDouble();
-		return row.get(key).asDouble() / row.get("calibrationMillis").asDouble() / (baselineRatio);
+		return jvm.at("/workloads/" + workload + "/compile/nanos").asDouble() / jvm.get("calibrationNanos").asDouble() / baselineRatio;
 	}
 }

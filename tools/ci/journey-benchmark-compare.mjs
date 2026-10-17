@@ -17,9 +17,21 @@ export const ALLOCATION_REGRESSION_RATIO = 1.3;
 // 기준 run이 이보다 적으면 중앙값이 단일 run 잡음과 구분되지 않는다. 표는 보여 주되 경고는 보류한다.
 export const MIN_BASELINE_RUNS_FOR_WARNING = 3;
 
+// 게이트 기준선은 산출에 쓴 러너들의 보정 시간 범위를 기억한다. 호스티드 러너의 CPU 유형이 섞이면 같은 코드의 정규화 지연이
+// 유형 사이에서 1.6~1.7배 다르므로(엔진 설계 문서 6.4절), 범위 밖 러너가 같은 경고를 이 횟수만큼 반복하면 기준선을 다시 산출한다.
+export const RECALIBRATION_REPEATS = 3;
+
 const THRESHOLDS = { [WALL_CLOCK]: WALL_CLOCK_REGRESSION_RATIO, [ALLOCATION]: ALLOCATION_REGRESSION_RATIO };
 // 값이 달라지면 모든 지표가 움직이는 측정 방법 필드. arch·processors는 러너 속성이라 러너 비교에서 다룬다.
 const METHOD_FIELDS = ['warmupRounds', 'measuredRounds', 'aggregation', 'profileLimits', 'java'];
+
+const NANOS_PER_MILLI = 1_000_000;
+
+/** 현재 보정 시간이 게이트 기준선 산출 범위 밖이면 경고 문구, 안이면 null. */
+export function calibrationRangeNotice(calibrationNanos, range) {
+  if (calibrationNanos >= range.min && calibrationNanos <= range.max) return null;
+  return `보정 작업 시간 ${(calibrationNanos / NANOS_PER_MILLI).toFixed(1)} ms가 게이트 기준선 산출 범위 ${range.min / NANOS_PER_MILLI}~${range.max / NANOS_PER_MILLI} ms 밖입니다. 새 러너 CPU 유형일 수 있습니다. 같은 경고가 ${RECALIBRATION_REPEATS}번 반복되면 기준선을 다시 산출합니다(엔진 설계 문서 6.4절).`;
+}
 
 /** 비율을 소수 6자리로 맞춰 부동소수점 잡음이 임계 경계(정확히 1.30배)를 흔들지 못하게 한다. */
 const ratioOf = (current, baseline) => Math.round((current / baseline) * 1e6) / 1e6;

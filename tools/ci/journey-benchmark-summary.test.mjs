@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareResults } from './journey-benchmark-compare.mjs';
+import { RECALIBRATION_REPEATS, calibrationRangeNotice, compareResults } from './journey-benchmark-compare.mjs';
 import { annotation, renderSummary } from './journey-benchmark-summary.mjs';
 import { context, measurement, previousRun, result } from './journey-benchmark-test-fixtures.mjs';
 
@@ -64,4 +64,24 @@ test('text that did not come from a trusted constant is escaped so it cannot add
 test('annotations are single-line and percent-escaped', () => {
   assert.equal(annotation('a%b\nc\rd'), '::warning title=Journey 엔진 벤치마크 추세::a%25b%0Ac%0Dd\n');
   assert.ok(annotation('x'.repeat(2_000)).length < 700, 'long messages are truncated');
+});
+
+test('the summary shows the gate baseline calibration range and warns when this runner is outside it', () => {
+  const range = { min: 70_000_000, max: 98_000_000 };
+  const inside = renderSummary({ current: result(measurement({ calibration: 90_000_000 })), comparison: null, noPreviousReason: '없음', skipped: [], gateCalibration: { range, notice: null } });
+  assert.match(inside, /게이트 기준선의 보정 작업 시간 산출 범위: 70\.00 ms ~ 98\.00 ms/);
+  assert.ok(!inside.includes('- 경고:'));
+  const notice = calibrationRangeNotice(110_000_000, range);
+  const outside = renderSummary({ current: result(measurement({ calibration: 110_000_000 })), comparison: null, noPreviousReason: '없음', skipped: [], gateCalibration: { range, notice } });
+  const unescaped = outside.replaceAll('\\', '');
+  assert.match(unescaped, /- 경고: 보정 작업 시간 110\.0 ms가 게이트 기준선 산출 범위 70~98 ms 밖입니다/);
+  assert.match(unescaped, new RegExp(`같은 경고가 ${RECALIBRATION_REPEATS}번 반복되면`));
+});
+
+test('the calibration range is inclusive at both ends', () => {
+  const range = { min: 70_000_000, max: 98_000_000 };
+  assert.equal(calibrationRangeNotice(70_000_000, range), null);
+  assert.equal(calibrationRangeNotice(98_000_000, range), null);
+  assert.ok(calibrationRangeNotice(69_999_999, range));
+  assert.ok(calibrationRangeNotice(98_000_001, range));
 });

@@ -83,6 +83,8 @@ class JourneyEnginePerformanceGateTest {
 	 */
 	static final int COMPILE_WARMUPS = 30;
 	static final int COMPILE_SAMPLES = 9;
+	/** 컴파일 지표의 식별자에서 모드 자리에 오는 이름. */
+	static final String COMPILE_SUBJECT = "compile";
 	private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 	/**
 	 * 벤치마크 전용 프로필 한도. 운영 정책 값은 배포 산출물(platform)에 있고 저장소에 없다. 한도가 없으면 출발 시간대
@@ -175,9 +177,11 @@ class JourneyEnginePerformanceGateTest {
 			() -> JSON.valueToTree(forkedMeasurement()));
 		verdict.measurements().stream().skip(1)
 			.forEach(extra -> System.out.println("#460 engine performance re-measured:\n" + extra.toPrettyString()));
-		assertThat(verdict.regressions()).as("성능 기준선 위반(첫 측정이 허용폭을 넘으면 새 JVM 3회 값별 중앙값으로 다시 판정). 판정에 쓴 측정값:\n%s\n"
-			+ "실제로 잰 측정 전부(Gradle은 통과·실패와 무관하게 테스트 표준 출력을 CI 로그에 남기지 않는다):\n%s",
-			verdict.judged().toPrettyString(), verdict.measurements()).isEmpty();
+		assertThat(verdict.regressions()).as(() -> String.format(
+			"성능 기준선 위반(첫 측정이 허용폭을 넘으면 새 JVM 3회 값별 중앙값으로 다시 판정).%n%s%n판정에 쓴 측정값:%n%s%n"
+			+ "실제로 잰 측정 전부(Gradle은 통과·실패와 무관하게 테스트 표준 출력을 CI 로그에 남기지 않는다):%n%s",
+			JourneyEngineRunnerNotice.describe(baseline, verdict.measurements(), JourneyEngineRunnerNotice.cpuModel()),
+			verdict.judged().toPrettyString(), verdict.measurements())).isEmpty();
 	}
 
 	@Test
@@ -565,11 +569,24 @@ class JourneyEnginePerformanceGateTest {
 		}
 	}
 
+	/** 허용폭 위반 한 건. {@code subject}는 위반한 지표의 안정된 식별자({@link #metricSubject})이고 {@code message}는 설명이다. */
+	record Regression(String subject, String message) {
+	}
+
+	/** 지표 식별자. 번들, 모드, 지표 이름으로 정해져 메시지 문구가 바뀌어도 변하지 않는다. */
+	static String metricSubject(String workloadId, String mode, String metric) {
+		return workloadId + " " + mode + "." + metric;
+	}
+
 	static List<String> regressions(JsonNode baseline, JsonNode measured) {
-		List<String> problems = new ArrayList<>();
+		return findRegressions(baseline, measured).stream().map(Regression::message).toList();
+	}
+
+	static List<Regression> findRegressions(JsonNode baseline, JsonNode measured) {
+		List<Regression> problems = new ArrayList<>();
 		Tolerances tolerances = Tolerances.from(baseline.get("tolerances"));
 		if (!baseline.path("method").path("aggregation").equals(measured.path("method").path("aggregation"))) {
-			problems.add("measurement method changed; regenerate the baseline with the documented procedure");
+			problems.add(new Regression("method", "measurement method changed; regenerate the baseline with the documented procedure"));
 		}
 		double baselineCalibration = baseline.path("calibrationNanos").asDouble();
 		double measuredCalibration = measured.path("calibrationNanos").asDouble();
@@ -577,39 +594,39 @@ class JourneyEnginePerformanceGateTest {
 			JsonNode before = baseline.path("workloads").path(id);
 			JsonNode after = measured.path("workloads").path(id);
 			if (before.isMissingNode() || after.isMissingNode()) {
-				problems.add("workload " + id + " is missing on one side; regenerate the baseline with the documented procedure");
+				problems.add(new Regression(id, "workload " + id + " is missing on one side; regenerate the baseline with the documented procedure"));
 				continue;
 			}
 			boolean identityChanged = false;
 			for (String identity : List.of("bundle", "querySet")) {
 				if (!before.path(identity).path("sha256").equals(after.path(identity).path("sha256"))) {
-					problems.add(id + " " + identity + " identity changed; regenerate the baseline with the documented procedure");
+					problems.add(new Regression(id + " " + identity, id + " " + identity + " identity changed; regenerate the baseline with the documented procedure"));
 					identityChanged = true;
 				}
 			}
 			if (identityChanged) continue;
-			compareFactor(problems, id + " compile.nanos", before.path("compile").path("nanos").asDouble() / baselineCalibration,
+			compareFactor(problems, metricSubject(id, COMPILE_SUBJECT, "nanos"), before.path("compile").path("nanos").asDouble() / baselineCalibration,
 				after.path("compile").path("nanos").asDouble() / measuredCalibration, tolerances.normalizedCompileFactor());
-			compareRegression(problems, id + " compile.retainedBytes", before.path("compile").path("retainedBytes").asDouble(),
+			compareRegression(problems, metricSubject(id, COMPILE_SUBJECT, "retainedBytes"), before.path("compile").path("retainedBytes").asDouble(),
 				after.path("compile").path("retainedBytes").asDouble(), tolerances.retainedBytesRegression());
 			for (String mode : names(before.path("modes"), after.path("modes"))) {
 				JsonNode expected = before.path("modes").path(mode);
 				JsonNode actual = after.path("modes").path(mode);
 				if (expected.isMissingNode() || actual.isMissingNode()) {
-					problems.add(id + " mode " + mode + " is missing on one side; regenerate the baseline");
+					problems.add(new Regression(id + " " + mode, id + " mode " + mode + " is missing on one side; regenerate the baseline"));
 					continue;
 				}
 				for (String latency : List.of("p50Nanos", "p99Nanos")) {
 					double factor = mode.equals(Mode.DEPART_AT.name()) && latency.equals("p50Nanos")
 						? tolerances.stablePointP50Factor() : tolerances.normalizedLatencyFactor();
-					compareFactor(problems, id + " " + mode + "." + latency, expected.path(latency).asDouble() / baselineCalibration,
+					compareFactor(problems, metricSubject(id, mode, latency), expected.path(latency).asDouble() / baselineCalibration,
 						actual.path(latency).asDouble() / measuredCalibration, factor);
 				}
-				compareRegression(problems, id + " " + mode + ".allocatedBytesPerQuery",
+				compareRegression(problems, metricSubject(id, mode, "allocatedBytesPerQuery"),
 					expected.path("allocatedBytesPerQuery").asDouble(), actual.path("allocatedBytesPerQuery").asDouble(),
 					tolerances.allocatedBytesRegression());
 				for (String name : names(expected.path("work"), actual.path("work"))) {
-					compareWork(problems, id + " " + mode + "." + name, expected.path("work").path(name),
+					compareWork(problems, metricSubject(id, mode, name), expected.path("work").path(name),
 						actual.path("work").path(name), tolerances.workCounterRelative());
 				}
 			}
@@ -618,7 +635,7 @@ class JourneyEnginePerformanceGateTest {
 			if (!sameNumbers(before.path("candidatePolicyReplay").path("limits"), after.path("candidatePolicyReplay").path("limits"))
 				|| !before.path("candidatePolicyReplay").path("source").isTextual()
 				|| !before.path("candidatePolicyReplay").path("source").equals(after.path("candidatePolicyReplay").path("source"))) {
-				problems.add(id + " candidate policy source or limits changed; regenerate the baseline with the documented procedure");
+				problems.add(new Regression(id + " candidatePolicyReplay", id + " candidate policy source or limits changed; regenerate the baseline with the documented procedure"));
 				continue;
 			}
 			for (String mode : names(replayBefore, replayAfter)) {
@@ -631,31 +648,31 @@ class JourneyEnginePerformanceGateTest {
 		return problems;
 	}
 
-	private static void compareWork(List<String> problems, String name, JsonNode expected, JsonNode actual, double tolerance) {
+	private static void compareWork(List<Regression> problems, String name, JsonNode expected, JsonNode actual, double tolerance) {
 		if (!expected.isNumber() || !actual.isNumber()) {
-			problems.add("work " + name + " is missing on one side; regenerate the baseline");
+			problems.add(new Regression(name, "work " + name + " is missing on one side; regenerate the baseline"));
 			return;
 		}
 		double before = expected.asDouble();
 		double after = actual.asDouble();
 		if (after > before * (1 + tolerance)) {
-			problems.add("work " + name + " regressed " + (long) before + " -> " + (long) after);
+			problems.add(new Regression(name, "work " + name + " regressed " + (long) before + " -> " + (long) after));
 		} else if (after < before * (1 - tolerance)) {
-			problems.add("work " + name + " improved " + (long) before + " -> " + (long) after
-				+ "; the baseline is stale, regenerate it with the documented procedure");
+			problems.add(new Regression(name, "work " + name + " improved " + (long) before + " -> " + (long) after
+				+ "; the baseline is stale, regenerate it with the documented procedure"));
 		}
 	}
 
-	private static void compareFactor(List<String> problems, String name, double before, double after, double factor) {
+	private static void compareFactor(List<Regression> problems, String name, double before, double after, double factor) {
 		if (after > before * factor) {
-			problems.add(name + " normalized " + String.format(java.util.Locale.ROOT, "%.4f -> %.4f (limit x%.1f)",
-				before, after, factor));
+			problems.add(new Regression(name, name + " normalized " + String.format(java.util.Locale.ROOT, "%.4f -> %.4f (limit x%.1f)",
+				before, after, factor)));
 		}
 	}
 
-	private static void compareRegression(List<String> problems, String name, double before, double after, double ratio) {
+	private static void compareRegression(List<Regression> problems, String name, double before, double after, double ratio) {
 		if (after > before * (1 + ratio)) {
-			problems.add(name + " regressed " + (long) before + " -> " + (long) after + " (limit +" + Math.round(ratio * 100) + "%)");
+			problems.add(new Regression(name, name + " regressed " + (long) before + " -> " + (long) after + " (limit +" + Math.round(ratio * 100) + "%)"));
 		}
 	}
 

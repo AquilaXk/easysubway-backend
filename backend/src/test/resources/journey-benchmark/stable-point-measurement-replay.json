@@ -1,5 +1,5 @@
 {
- "description": "출발 시각 고정 p50(번들 세 개)의 JVM별 CI 측정 재생 자료(#3036). 값은 모두 ns다.",
+ "description": "예열 2회 방법의 출발 시각 고정 p50(번들 세 개) JVM별 CI 측정 재생 자료(#3036). 값은 모두 ns다. 예열 30회·동기 JIT 방법의 CI 측정은 engine-baseline-measurements.json에 있다.",
  "legacyBaseline": {
   "source": "예열 2회 기준선(#519 이후 main, calibrationNanos와 번들별 DEPART_AT p50Nanos)",
   "calibrationNanos": 97813815,
@@ -293,7 +293,9 @@
      "line4-corridor-slice": 28893
     }
    }
-  ]
+  ],
+  "jvmCount": 28,
+  "singleMeasurementFalseAlarms": 2
  },
  "legacyCiConfirmedFailure": {
   "source": "backend #532 Backend CI run 39064025616 시도 1 shard 2. 첫 측정이 한도를 넘어 새 JVM 두 번을 더 재고 낸 값별 중앙값(세 측정 각각은 CI 로그에 남지 않았다)",
@@ -302,177 +304,7 @@
    "metro-grid-v1": 271983,
    "district-grid-v1": 70001,
    "line4-corridor-slice": 96221
-  }
- },
- "steadyCiJvms": {
-  "source": "예열 30회·동기 JIT 방법의 Backend CI 측정. 이 PR(backend #533) head 9082f230 Backend CI run 39069638670 시도 1~5의 shard 2가 첫 측정 뒤 새 JVM 두 번을 더 잰 JVM 3개씩 15개(한 시도의 세 JVM은 같은 러너)",
-  "warmupRounds": 30,
-  "jvms": [
-   {
-    "run": 39069638670,
-    "attempt": 1,
-    "repeat": 1,
-    "calibrationNanos": 97996232,
-    "p50Nanos": {
-     "metro-grid-v1": 176850,
-     "district-grid-v1": 47849,
-     "line4-corridor-slice": 13906
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 1,
-    "repeat": 2,
-    "calibrationNanos": 96913228,
-    "p50Nanos": {
-     "metro-grid-v1": 167283,
-     "district-grid-v1": 46868,
-     "line4-corridor-slice": 13936
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 1,
-    "repeat": 3,
-    "calibrationNanos": 97510247,
-    "p50Nanos": {
-     "metro-grid-v1": 171511,
-     "district-grid-v1": 47679,
-     "line4-corridor-slice": 13635
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 2,
-    "repeat": 1,
-    "calibrationNanos": 75787985,
-    "p50Nanos": {
-     "metro-grid-v1": 88141,
-     "district-grid-v1": 23395,
-     "line4-corridor-slice": 7311
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 2,
-    "repeat": 2,
-    "calibrationNanos": 74894907,
-    "p50Nanos": {
-     "metro-grid-v1": 79078,
-     "district-grid-v1": 22944,
-     "line4-corridor-slice": 7371
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 2,
-    "repeat": 3,
-    "calibrationNanos": 76378884,
-    "p50Nanos": {
-     "metro-grid-v1": 82172,
-     "district-grid-v1": 22804,
-     "line4-corridor-slice": 6971
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 3,
-    "repeat": 1,
-    "calibrationNanos": 74194227,
-    "p50Nanos": {
-     "metro-grid-v1": 76155,
-     "district-grid-v1": 22204,
-     "line4-corridor-slice": 6770
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 3,
-    "repeat": 2,
-    "calibrationNanos": 70703462,
-    "p50Nanos": {
-     "metro-grid-v1": 76986,
-     "district-grid-v1": 21032,
-     "line4-corridor-slice": 6731
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 3,
-    "repeat": 3,
-    "calibrationNanos": 70470606,
-    "p50Nanos": {
-     "metro-grid-v1": 74152,
-     "district-grid-v1": 22614,
-     "line4-corridor-slice": 6810
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 4,
-    "repeat": 1,
-    "calibrationNanos": 71902893,
-    "p50Nanos": {
-     "metro-grid-v1": 74893,
-     "district-grid-v1": 22144,
-     "line4-corridor-slice": 6589
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 4,
-    "repeat": 2,
-    "calibrationNanos": 72143885,
-    "p50Nanos": {
-     "metro-grid-v1": 77266,
-     "district-grid-v1": 21402,
-     "line4-corridor-slice": 6630
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 4,
-    "repeat": 3,
-    "calibrationNanos": 73538769,
-    "p50Nanos": {
-     "metro-grid-v1": 71888,
-     "district-grid-v1": 21032,
-     "line4-corridor-slice": 6630
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 5,
-    "repeat": 1,
-    "calibrationNanos": 96894842,
-    "p50Nanos": {
-     "metro-grid-v1": 167425,
-     "district-grid-v1": 47821,
-     "line4-corridor-slice": 13656
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 5,
-    "repeat": 2,
-    "calibrationNanos": 96306802,
-    "p50Nanos": {
-     "metro-grid-v1": 166843,
-     "district-grid-v1": 45686,
-     "line4-corridor-slice": 13606
-    }
-   },
-   {
-    "run": 39069638670,
-    "attempt": 5,
-    "repeat": 3,
-    "calibrationNanos": 96902915,
-    "p50Nanos": {
-     "metro-grid-v1": 167705,
-     "district-grid-v1": 46577,
-     "line4-corridor-slice": 13626
-    }
-   }
-  ]
+  },
+  "failedWorkload": "line4-corridor-slice"
  }
 }
