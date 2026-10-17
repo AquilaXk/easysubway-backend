@@ -9,10 +9,15 @@ import exec from 'k6/execution';
 import { sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import {
+  FACILITY_MODES,
+  FIRST_BUNDLE,
   K6_OUTPUT_FILES,
   LOAD_PLAN,
+  SECOND_BUNDLE,
+  assertLoopbackOrigin,
   buildCorpus,
   distillK6Summary,
+  expectedSwapBundle,
   judgeResponse,
   metricName,
   phaseMetricSpec,
@@ -20,17 +25,17 @@ import {
   requestBody,
   requestIdFor,
   summarizeResponse,
+  swapFlipBundle,
 } from './journey-load-contract.mjs';
 
-const LOOPBACK_ORIGIN = /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/;
 const baseUrl = __ENV.JOURNEY_LOAD_BASE_URL;
-if (!LOOPBACK_ORIGIN.test(baseUrl ?? '')) throw new Error('JOURNEY_LOAD_BASE_URL must be the local load server origin (http://127.0.0.1:<port>)');
+assertLoopbackOrigin(__ENV.JOURNEY_LOAD_BASE_URL);
+const facilityMode = __ENV.JOURNEY_LOAD_FACILITY_MODE;
+if (!Object.values(FACILITY_MODES).includes(facilityMode)) throw new Error(`JOURNEY_LOAD_FACILITY_MODE must be one of ${Object.values(FACILITY_MODES).join(', ')}`);
 const outputDirectory = __ENV.JOURNEY_LOAD_OUTPUT_DIR;
 if (typeof outputDirectory !== 'string' || !outputDirectory.startsWith('/')) throw new Error('JOURNEY_LOAD_OUTPUT_DIR is required and must be absolute');
 
-const BUNDLE_LABELS = ['a', 'b'];
-const FIRST_BUNDLE = 'a';
-const SECOND_BUNDLE = 'b';
+const BUNDLE_LABELS = [FIRST_BUNDLE, SECOND_BUNDLE];
 const SEARCH_PATH = '/api/v3/journeys/search';
 const PRE_ALLOCATED_VUS = 20;
 const MAX_VUS = 100;
@@ -126,7 +131,8 @@ export function searchPhase(data) {
   const index = iteration % data.corpus.length;
   const entry = data.corpus[index];
   const { response, summary } = search(entry, phaseIndex * REQUESTS_PER_PHASE_ID_BLOCK + iteration);
-  const verdict = judgeResponse({ phase, entry, actual: summary, expected: data.expected[index], bundles: data.bundles });
+  const expectedBundle = phase === 'swap' ? expectedSwapBundle(LOAD_PLAN, planSeconds) : null;
+  const verdict = judgeResponse({ phase, entry, actual: summary, expected: data.expected[index], bundles: data.bundles, facilityMode, expectedBundle });
   counters.requests.add(1);
   latency.add(response.timings.duration);
   if (response.status >= 500) counters.status5xx.add(1);
@@ -159,7 +165,7 @@ export function swapBundles() {
   for (let flip = 0; flip < LOAD_PLAN.controls.swap.flips; flip += 1) {
     const waitMillis = flip * LOAD_PLAN.flipIntervalSeconds * MILLIS_PER_SECOND - millisIntoScenario();
     if (waitMillis > 0) sleep(waitMillis / MILLIS_PER_SECOND);
-    control(`/__load/bundle/${flip % 2 === 0 ? SECOND_BUNDLE : FIRST_BUNDLE}`);
+    control(`/__load/bundle/${swapFlipBundle(flip)}`);
   }
 }
 
@@ -173,7 +179,7 @@ export function outageOff() {
 
 export function handleSummary(data) {
   return {
-    [`${outputDirectory}/${K6_OUTPUT_FILES.distilled}`]: `${JSON.stringify(distillK6Summary(data, LOAD_PLAN), null, 2)}\n`,
+    [`${outputDirectory}/${K6_OUTPUT_FILES.distilled}`]: `${JSON.stringify(distillK6Summary(data, LOAD_PLAN, facilityMode), null, 2)}\n`,
     [`${outputDirectory}/${K6_OUTPUT_FILES.raw}`]: `${JSON.stringify(data)}\n`,
   };
 }

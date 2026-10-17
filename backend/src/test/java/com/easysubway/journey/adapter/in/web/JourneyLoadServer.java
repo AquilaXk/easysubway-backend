@@ -1,19 +1,10 @@
 package com.easysubway.journey.adapter.in.web;
 
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
-import com.easysubway.journey.analytics.InMemoryJourneySearchRecordStore;
 import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
 import com.easysubway.journey.analytics.JourneySearchRecorder;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import com.easysubway.journey.application.FacilityAvailabilityView;
-import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
-import com.easysubway.journey.application.JourneyApplicationService;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
-import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.journey.bundle.LoadScenarioBundles;
@@ -23,9 +14,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTim
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.service.CapitalEndpointFixture;
-import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
-import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -33,13 +22,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.autoconfigure.web.servlet.DispatcherServletAutoConfiguration;
@@ -67,18 +55,19 @@ import org.springframework.web.servlet.function.ServerResponse;
  *       {@code b}는 모든 정차 시각을 {@value #REPLACEMENT_SHIFT_SECONDS}초 늦춘 같은 노선망이다. 컴파일은 요청 경로 밖에서 하고,
  *       요청은 activate 순간까지 이전 팩으로 응답한다.</li>
  *   <li>{@code POST /__load/facility/{up|down}}: 시설 가동 원천을 정상(차단 0건, 방금 관측)이나 사용 불가로 바꾼다. 시설 상태 필수
- *       모드({@code easysubway.journey.facility-status.required=true})를 켠 구성이므로, 사용 불가이면 계단 없는 필수 요청은
- *       {@code FACILITY_STATUS_UNAVAILABLE} 503이 되고 나머지 요청은 {@code facilityStatus=UNOBSERVED}를 밝힌다. 운영 기본값은
- *       필수 모드 꺼짐이라 그 구성은 이 서버가 검증하지 않는다.</li>
+ *       모드({@code easysubway.journey.facility-status.required})가 꺼진 운영 기본 구성에서는 사용 불가일 때 모든 요청이
+ *       {@code facilityStatus=UNOBSERVED}를 밝힌 정상 응답이다. 켠 구성에서는 계단 없는 필수 요청이
+ *       {@code FACILITY_STATUS_UNAVAILABLE} 503이 되고 나머지는 같다. 두 구성 모두 시작할 때 정한다.</li>
  * </ul>
  * <p>{@code GET /__load/fixture}는 시나리오가 질의를 만드는 입력(역 목록, 서비스일, 팩 식별자)을 알려 준다.</p>
  *
- * <p>실행: {@code main}은 {@code --port-file <절대 경로>}에 포트를 적고(임시 파일에 쓴 뒤 옮겨, 읽는 쪽은 완성된 값만 본다)
+ * <p>실행: {@code main}은 {@code --port-file <절대 경로> --facility-status-required <true|false>}로 구성을 정하고 포트를 적고(임시 파일에 쓴 뒤 옮겨, 읽는 쪽은 완성된 값만 본다)
  * 종료 신호까지 서비스한다.</p>
  */
 public final class JourneyLoadServer implements AutoCloseable {
 
 	static final int REPLACEMENT_SHIFT_SECONDS = 60;
+	private static final String FACILITY_STATUS_REQUIRED_PROPERTY = "easysubway.journey.facility-status.required";
 	private static final Instant NOW = CapitalEndpointFixture.serviceDate().atStartOfDay(ServiceDayResolver.ZONE).toInstant();
 	private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 	private static final String FIRST_BUNDLE = "a";
@@ -91,10 +80,14 @@ public final class JourneyLoadServer implements AutoCloseable {
 		this.port = ((WebServer) context.getWebServer()).getPort();
 	}
 
-	/** 빈 포트에 서버를 띄운다. 포트는 이 컨텍스트의 설정으로만 정해 같은 JVM의 다른 테스트에 영향을 주지 않는다. */
-	public static JourneyLoadServer start() {
+	/**
+	 * 빈 포트에 서버를 띄운다. 포트와 시설 상태 필수 모드는 이 컨텍스트의 설정으로만 정해 같은 JVM의 다른 테스트에 영향을 주지 않는다.
+	 * 필수 모드는 운영과 같은 설정 이름을 쓴다: 꺼짐(false)이 운영 기본값, 켜짐(true)이 시설 상태 필수 구성이다.
+	 */
+	public static JourneyLoadServer start(boolean facilityStatusRequired) {
 		var context = new AnnotationConfigServletWebServerApplicationContext();
-		context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("journey-load-server", Map.of("server.port", "0")));
+		var settings = Map.<String, Object>of("server.port", "0", FACILITY_STATUS_REQUIRED_PROPERTY, Boolean.toString(facilityStatusRequired));
+		context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("journey-load-server", settings));
 		context.register(Wiring.class);
 		context.refresh();
 		return new JourneyLoadServer(context);
@@ -110,11 +103,12 @@ public final class JourneyLoadServer implements AutoCloseable {
 	}
 
 	public static void main(String[] args) throws Exception {
-		if (args.length != 2 || !"--port-file".equals(args[0]) || !Path.of(args[1]).isAbsolute()) {
-			throw new IllegalArgumentException("usage: --port-file <absolute path>");
+		if (args.length != 4 || !"--port-file".equals(args[0]) || !Path.of(args[1]).isAbsolute()
+			|| !"--facility-status-required".equals(args[2]) || !("true".equals(args[3]) || "false".equals(args[3]))) {
+			throw new IllegalArgumentException("usage: --port-file <absolute path> --facility-status-required <true|false>");
 		}
 		Path portFile = Path.of(args[1]);
-		var server = start();
+		var server = start(Boolean.parseBoolean(args[3]));
 		Runtime.getRuntime().addShutdownHook(new Thread(server::close));
 		writeAtomically(portFile, Integer.toString(server.port()));
 		Thread.currentThread().join();
@@ -236,29 +230,17 @@ public final class JourneyLoadServer implements AutoCloseable {
 
 		@Bean
 		JourneySessionService sessions() {
-			var sessions = mock(JourneySessionService.class);
-			when(sessions.authorize(anyString(), anyInt())).thenReturn(
-				new JourneySessionService.AuthorizedSession("journey:v3", NOW.plusSeconds(3_600)));
-			return sessions;
+			return JourneyEndpointTestWiring.authorizedSessions(NOW);
 		}
 
-		/** 정책 값은 platform 후보 정책 RAPTOR_RESOURCE_POLICY_V1 1.1.0(점 탐색 마감 2초)이다. */
 		@Bean
 		JourneyProfileResourcePolicy policy() {
-			return new JourneyProfileResourcePolicy(
-				new JourneyProfileResourcePolicy.Identity("RAPTOR_RESOURCE_POLICY_V1", "1.1.0", "a".repeat(64)),
-				Duration.ofSeconds(3_600), 2, 10_000_000L, 2_048, 128, 128, Duration.ofSeconds(3_600),
-				Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofSeconds(8), 1, 2, 3, 4, 10);
+			return JourneyEndpointTestWiring.resourcePolicy();
 		}
 
 		@Bean
 		JourneySearchRecorder recorder(SimpleMeterRegistry meters) {
-			var recorderThread = Executors.newSingleThreadExecutor(task -> {
-				var thread = new Thread(task, "journey-search-recorder");
-				thread.setDaemon(true);
-				return thread;
-			});
-			return new JourneySearchRecorder(new InMemoryJourneySearchRecordStore(), recorderThread, CLOCK, meters);
+			return JourneyEndpointTestWiring.recorder(meters, CLOCK);
 		}
 
 		@Bean
@@ -274,17 +256,12 @@ public final class JourneyLoadServer implements AutoCloseable {
 		@Bean
 		JourneySearchController searchController(
 			JourneySessionService sessions, JourneyProfileResourcePolicy policy, JourneySearchRecorder recorder,
-			JourneySearchLatencyMetrics latency, BundleReplacement bundles, SwitchableFacilityAvailability facility
+			JourneySearchLatencyMetrics latency, BundleReplacement bundles, SwitchableFacilityAvailability facility,
+			@Value("${" + FACILITY_STATUS_REQUIRED_PROPERTY + "}") boolean facilityStatusRequired
 		) {
 			var snapshots = new RouteBundleActiveJourneySnapshotAdapter(bundles.registry());
-			JourneyRealtimePort timetableOnly = (request, snapshot, instant) -> {
-				throw new IllegalStateException("timetable-only load scenario");
-			};
-			var raptor = new JourneyRaptorAdapter(new ScanWorkspacePool(16), facility, true, CLOCK);
-			var service = new JourneyApplicationService(snapshots, timetableOnly, raptor, CLOCK);
-			var workers = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("journey-search-", 0).factory());
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, workers, policy.pointSearchDeadline());
-			return new JourneySearchController(sessions, executor, policy, recorder, latency);
+			return JourneyEndpointTestWiring.pointSearchController(snapshots, facility, facilityStatusRequired, CLOCK, sessions,
+				policy, recorder, latency);
 		}
 
 		@Bean

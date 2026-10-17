@@ -6,7 +6,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { annotation } from './journey-benchmark-summary.mjs';
-import { LOAD_PLAN } from './journey-load-contract.mjs';
+import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN } from './journey-load-contract.mjs';
 
 const TITLE = '경로 검색 부하·장애 시나리오';
 const CLEAN_PHASES = ['steady', 'recovered'];
@@ -20,7 +20,7 @@ const fail = (message) => { throw new Error(`journey load: ${message}`); };
 
 const finding = (code, message) => ({ code, message });
 
-function phaseFindings(name, phase, plan) {
+function phaseFindings(name, phase, plan, facilityMode) {
   const { durationSeconds } = plan.phases.find((candidate) => candidate.name === name);
   const planned = plan.requestsPerSecond * durationSeconds;
   const findings = [];
@@ -32,21 +32,24 @@ function phaseFindings(name, phase, plan) {
   for (const [violation, count] of Object.entries(phase.violations)) {
     if (count > 0) findings.push(finding('CONTRACT_VIOLATION', `${name} 단계에서 ${violation} ${count}건`));
   }
-  // 장애 단계의 5xx는 명시 실패 응답(FACILITY_STATUS_UNAVAILABLE 503)뿐이어야 한다. 그 밖의 5xx는 모두 오류다.
-  const allowed5xx = name === 'outage' ? phase.explicitFailures : 0;
+  // 시설 상태 필수 구성의 장애 단계에서 5xx는 명시 실패 응답(FACILITY_STATUS_UNAVAILABLE 503)뿐이어야 한다. 그 밖의 5xx는 모두 오류다.
+  const allowed5xx = name === 'outage' && facilityMode === FACILITY_MODES.REQUIRED ? phase.explicitFailures : 0;
   if (phase.status5xx !== allowed5xx) findings.push(finding('SERVER_ERROR', `${name} 단계 5xx ${phase.status5xx}건 (허용 ${allowed5xx}건)`));
   if (phase.status429 > 0) findings.push(finding('RATE_LIMITED', `${name} 단계에서 429 ${phase.status429}건`));
   return findings;
 }
 
 /** 주입이 걸리지 않은 실행이 통과하지 못하게, 시나리오가 의도한 상태가 실제로 관측됐는지 본다. */
-function observationFindings(phases) {
+function observationFindings(phases, facilityMode) {
   const findings = [];
   if (phases.swap.requests > 0 && (phases.swap.bundleA === 0 || phases.swap.bundleB === 0)) {
     findings.push(finding('SWAP_NOT_OBSERVED', `swap 단계에서 두 팩의 응답이 모두 관측되어야 합니다(a ${phases.swap.bundleA}건, b ${phases.swap.bundleB}건).`));
   }
-  if (phases.outage.requests > 0 && (phases.outage.explicitFailures === 0 || phases.outage.disclosedUnobserved === 0)) {
-    findings.push(finding('OUTAGE_NOT_OBSERVED', `outage 단계에서 명시 실패(${phases.outage.explicitFailures}건)와 시설 상태 미적용 응답(${phases.outage.disclosedUnobserved}건)이 모두 관측되어야 합니다.`));
+  const { requests, explicitFailures, disclosedUnobserved } = phases.outage;
+  const explicitRequired = facilityMode === FACILITY_MODES.REQUIRED;
+  if (requests > 0 && ((explicitRequired && explicitFailures === 0) || disclosedUnobserved === 0)) {
+    const expectation = explicitRequired ? '명시 실패와 시설 상태 미적용 응답이 모두' : '시설 상태 미적용 응답이';
+    findings.push(finding('OUTAGE_NOT_OBSERVED', `outage 단계에서 ${expectation} 관측되어야 합니다(명시 실패 ${explicitFailures}건, 시설 상태 미적용 응답 ${disclosedUnobserved}건).`));
   }
   return findings;
 }
@@ -67,13 +70,15 @@ function latencyWarnings(phases) {
 }
 
 export function judgeRun(run, plan) {
+  const { facilityMode } = run;
+  if (!Object.values(FACILITY_MODES).includes(facilityMode)) fail(`unknown facility mode ${JSON.stringify(facilityMode)}`);
   const phases = Object.fromEntries(plan.phases.map(({ name, durationSeconds }) => [name, { ...run.phases[name], throughputRps: run.phases[name].requests / durationSeconds }]));
   const failures = [
-    ...plan.phases.flatMap(({ name }) => phaseFindings(name, run.phases[name], plan)),
-    ...observationFindings(run.phases),
+    ...plan.phases.flatMap(({ name }) => phaseFindings(name, run.phases[name], plan, facilityMode)),
+    ...observationFindings(run.phases, facilityMode),
     ...runFindings(run, plan),
   ];
-  return { status: failures.length === 0 ? 'PASS' : 'FAIL', failures, warnings: latencyWarnings(run.phases), phases };
+  return { facilityMode, status: failures.length === 0 ? 'PASS' : 'FAIL', failures, warnings: latencyWarnings(run.phases), phases };
 }
 
 const ms = (value) => (value === null || value === undefined ? '-' : value.toFixed(1));
@@ -91,7 +96,7 @@ const contextLine = (context) => (context
 export function renderSummary(verdict, context) {
   const bullet = ({ code, message }) => `- \`${code}\` ${message}`;
   return `${[
-    `## ${TITLE}`, '',
+    `## ${TITLE} — ${FACILITY_MODE_LABELS[verdict.facilityMode]}`, '',
     `- 판정: **${verdict.status}**`,
     contextLine(context),
     `- 지연 한도(경고, 비차단): steady·recovered 단계 p95 ${CLEAN_PHASE_P95_LIMIT_MS}ms`,
@@ -104,8 +109,8 @@ export function renderSummary(verdict, context) {
 
 export function annotations(verdict) {
   return [
-    ...verdict.failures.map(({ code, message }) => annotation(`${code} ${message}`, 'error', TITLE)),
-    ...verdict.warnings.map(({ code, message }) => annotation(`${code} ${message}`, 'warning', TITLE)),
+    ...verdict.failures.map(({ code, message }) => annotation(`[${verdict.facilityMode}] ${code} ${message}`, 'error', TITLE)),
+    ...verdict.warnings.map(({ code, message }) => annotation(`[${verdict.facilityMode}] ${code} ${message}`, 'warning', TITLE)),
   ].join('');
 }
 
@@ -122,7 +127,7 @@ const options = (values) => {
 function readDistilled(path) {
   let run;
   try { run = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { fail(`distilled summary is not valid JSON: ${error.message}`); }
-  const wellFormed = run?.schemaVersion === 1 && Number.isInteger(run.droppedIterations) && run.controls
+  const wellFormed = run?.schemaVersion === 1 && Object.values(FACILITY_MODES).includes(run.facilityMode) && Number.isInteger(run.droppedIterations) && run.controls
     && LOAD_PLAN.phases.every(({ name }) => run.phases?.[name] && run.phases[name].violations);
   if (!wellFormed) fail('distilled summary has an unexpected shape');
   return run;

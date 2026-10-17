@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { LOAD_PLAN, VIOLATIONS } from './journey-load-contract.mjs';
+import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN, VIOLATIONS } from './journey-load-contract.mjs';
 import { CLEAN_PHASE_P95_LIMIT_MS, annotations, judgeRun, renderSummary } from './journey-load-verdict.mjs';
 
 const RPS = LOAD_PLAN.requestsPerSecond;
@@ -24,6 +24,7 @@ const phaseResult = (name, overrides = {}) => {
 };
 const healthyRun = (changes = {}) => ({
   schemaVersion: 1,
+  facilityMode: FACILITY_MODES.REQUIRED,
   droppedIterations: 0,
   controls: { calls: LOAD_PLAN.controls.swap.flips + 2, failures: 0 },
   phases: Object.fromEntries(LOAD_PLAN.phases.map(({ name }) => [name, phaseResult(name)])),
@@ -31,6 +32,11 @@ const healthyRun = (changes = {}) => ({
 });
 const withPhase = (name, overrides) => healthyRun({ phases: { ...healthyRun().phases, [name]: phaseResult(name, overrides) } });
 const failureCodes = (run) => judgeRun(run, LOAD_PLAN).failures.map(({ code }) => code);
+/** 운영 기본 구성의 장애 단계: 모든 응답이 시설 상태 미적용을 밝힌 정상 응답이고 명시 실패는 없다. */
+const defaultModeRun = (outage = {}) => healthyRun({
+  facilityMode: FACILITY_MODES.DEFAULT,
+  phases: { ...healthyRun().phases, outage: phaseResult('outage', { explicitFailures: 0, status5xx: 0, disclosedUnobserved: 1300, ...outage }) },
+});
 
 test('a healthy run passes with per-phase throughput and no findings', () => {
   const verdict = judgeRun(healthyRun(), LOAD_PLAN);
@@ -39,6 +45,25 @@ test('a healthy run passes with per-phase throughput and no findings', () => {
   assert.deepEqual(verdict.warnings, []);
   assert.equal(verdict.phases.steady.throughputRps, RPS);
   assert.equal(verdict.phases.swap.requests, RPS * 20);
+});
+
+test('the production default passes when every outage answer discloses the missing facility status and none fails', () => {
+  const verdict = judgeRun(defaultModeRun(), LOAD_PLAN);
+  assert.equal(verdict.status, 'PASS');
+  assert.equal(verdict.facilityMode, FACILITY_MODES.DEFAULT);
+});
+
+test('the production default fails on any outage failure and when no disclosed answer was observed', () => {
+  assert.deepEqual(failureCodes(defaultModeRun({ status5xx: 1, explicitFailures: 1 })), ['SERVER_ERROR']);
+  assert.deepEqual(failureCodes(defaultModeRun({ disclosedUnobserved: 0 })), ['OUTAGE_NOT_OBSERVED']);
+});
+
+test('the required configuration still needs both the explicit failure and the disclosed answer', () => {
+  assert.deepEqual(failureCodes(withPhase('outage', { explicitFailures: 0, status5xx: 0 })), ['OUTAGE_NOT_OBSERVED']);
+});
+
+test('a distilled summary with an unknown facility mode is rejected', () => {
+  assert.throws(() => judgeRun({ ...healthyRun(), facilityMode: 'sideways' }, LOAD_PLAN), /facility mode/);
 });
 
 test('any contract violation fails the run and names the phase and kind', () => {
@@ -107,6 +132,7 @@ test('the summary table renders every phase and each finding', () => {
   const verdict = judgeRun(withPhase('swap', { violations: { ...NO_VIOLATIONS, MIXED_RESPONSE: 2 } }), LOAD_PLAN);
   const markdown = renderSummary(verdict, { commitSha: 'a'.repeat(40), runUrl: 'https://github.com/AquilaXk/easysubway-backend/actions/runs/1', rps: RPS });
   assert.match(markdown, /^## 경로 검색 부하·장애 시나리오/m);
+  assert.ok(markdown.includes(FACILITY_MODE_LABELS[FACILITY_MODES.REQUIRED]), 'the heading names the configuration');
   for (const { name } of LOAD_PLAN.phases) assert.match(markdown, new RegExp(`\\| ${name} \\|`));
   assert.match(markdown, /FAIL/);
   assert.match(markdown, /MIXED_RESPONSE/);
@@ -116,7 +142,7 @@ test('annotations are one line each: errors for failures, warnings for latency',
   const run = withPhase('steady', { status5xx: 1, latencyMs: { ...LATENCY, p95: CLEAN_PHASE_P95_LIMIT_MS + 1 } });
   const lines = annotations(judgeRun(run, LOAD_PLAN)).trimEnd().split('\n');
   assert.equal(lines.length, 2);
-  assert.match(lines[0], /^::error title=경로 검색 부하·장애 시나리오::/);
+  assert.match(lines[0], /^::error title=경로 검색 부하·장애 시나리오::\[required\] /);
   assert.match(lines[1], /^::warning title=경로 검색 부하·장애 시나리오::/);
 });
 

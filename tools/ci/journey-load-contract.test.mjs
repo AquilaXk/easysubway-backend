@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  FACILITY_MODES,
+  FACILITY_MODE_LABELS,
   FACILITY_OUTAGE_CODE,
   LOAD_PLAN,
   VIOLATIONS,
+  assertLoopbackOrigin,
   buildCorpus,
   distillK6Summary,
+  expectedSwapBundle,
   judgeResponse,
   metricName,
   outageExpectation,
@@ -13,6 +17,7 @@ import {
   requestBody,
   requestIdFor,
   summarizeResponse,
+  swapFlipBundle,
 } from './journey-load-contract.mjs';
 
 const SHA_A = 'a'.repeat(64);
@@ -29,9 +34,9 @@ const success = ({ sha = SHA_A, timetable = SHA_A, facilityStatus = 'APPLIED', j
 const failure = (code, requestId = 'r1') => JSON.stringify({ contractVersion: 'JOURNEY_ERROR_V1', requestId, code, retryable: false, occurredAt: '2026-10-17T00:00:00Z' });
 const entry = (constraint = 'NONE') => ({ index: 0, origin: 'station-1', destination: 'station-2', mobility: 'STEP_FREE', constraint, requestedAt: '2026-10-05T23:00:00Z' });
 const expectedFor = (constraint = 'NONE', { a = summarizeResponse(200, success()), b = summarizeResponse(200, success({ sha: SHA_B, timetable: SHA_B, journeys: [{ ...JOURNEY, plannedDepartureTime: '2026-10-06T00:01:00Z' }] })) } = {}) => ({ entry: entry(constraint), expected: { a, b } });
-const judge = (phase, actual, constraint = 'NONE', overrides = {}) => {
+const judge = (phase, actual, constraint = 'NONE', overrides = {}, extra = {}) => {
   const { entry: requestEntry, expected } = expectedFor(constraint, overrides);
-  return judgeResponse({ phase, entry: requestEntry, actual, expected, bundles: BUNDLES });
+  return judgeResponse({ phase, entry: requestEntry, actual, expected, bundles: BUNDLES, facilityMode: FACILITY_MODES.REQUIRED, ...extra });
 };
 
 test('request ids are ULID-shaped, unique per sequence, and reject invalid sequences', () => {
@@ -89,10 +94,10 @@ test('error responses summarize to status and machine code; unreadable bodies ar
 
 test('outage expectation is an explicit 503 for step-free-required requests and a disclosed UNOBSERVED answer otherwise', () => {
   const healthy = summarizeResponse(200, success());
-  assert.deepEqual(outageExpectation(healthy, entry('REQUIRE_STEP_FREE')), { status: 503, code: FACILITY_OUTAGE_CODE, bundleSha: null, facilityStatus: null, fingerprint: '' });
-  assert.deepEqual(outageExpectation(healthy, entry('NONE')), { ...healthy, facilityStatus: 'UNOBSERVED' });
+  assert.deepEqual(outageExpectation(healthy, entry('REQUIRE_STEP_FREE'), FACILITY_MODES.REQUIRED), { status: 503, code: FACILITY_OUTAGE_CODE, bundleSha: null, facilityStatus: null, fingerprint: '' });
+  assert.deepEqual(outageExpectation(healthy, entry('NONE'), FACILITY_MODES.REQUIRED), { ...healthy, facilityStatus: 'UNOBSERVED' });
   const noRoute = summarizeResponse(422, failure('ROUTE_NOT_FOUND'));
-  assert.deepEqual(outageExpectation(noRoute, entry('NONE')), noRoute);
+  assert.deepEqual(outageExpectation(noRoute, entry('NONE'), FACILITY_MODES.REQUIRED), noRoute);
 });
 
 test('steady and recovered phases accept only the first bundle answer', () => {
@@ -135,6 +140,19 @@ test('unexpected failures and unknown answers are classified separately', () => 
   assert.equal(judge('steady', summarizeResponse(0, null)).violation, VIOLATIONS.UNEXPECTED_FAILURE, 'a transport failure is a failure');
 });
 
+test('a successful answer from an unknown bundle is an unexpected response, never classified through a bundle that does not exist', () => {
+  const unknown = (facilityStatus) => summarizeResponse(200, success({ sha: 'c'.repeat(64), timetable: 'c'.repeat(64), facilityStatus }));
+  for (const phase of ['steady', 'swap', 'recovered']) assert.equal(judge(phase, unknown('APPLIED')).violation, VIOLATIONS.UNEXPECTED_RESPONSE, phase);
+  assert.equal(judge('outage', unknown('UNOBSERVED')).violation, VIOLATIONS.UNEXPECTED_RESPONSE, 'outage');
+});
+
+test('in the strict phases the second bundle identity with the first bundle content is a mixed response, and its exact answer is the wrong bundle', () => {
+  const secondIdentityFirstContent = summarizeResponse(200, success({ sha: SHA_B, timetable: SHA_B }));
+  for (const phase of ['steady', 'recovered']) assert.equal(judge(phase, secondIdentityFirstContent).violation, VIOLATIONS.MIXED_RESPONSE, phase);
+  const exactSecondBundle = summarizeResponse(200, success({ sha: SHA_B, timetable: SHA_B, journeys: [{ ...JOURNEY, plannedDepartureTime: '2026-10-06T00:01:00Z' }] }));
+  for (const phase of ['steady', 'recovered']) assert.equal(judge(phase, exactSecondBundle).violation, VIOLATIONS.WRONG_BUNDLE, phase);
+});
+
 test('a no-route answer that both bundles agree on is accepted in every non-outage phase', () => {
   const noRoute = summarizeResponse(422, failure('ROUTE_NOT_FOUND'));
   for (const phase of ['steady', 'swap', 'recovered']) {
@@ -156,8 +174,9 @@ test('distillation reads the per-phase counters and latency trends from the k6 s
     }),
     [metricName('steady', 'latencyMs')]: trend({ 'p(50)': 5, 'p(95)': 12, 'p(99)': 20, max: 30 }),
   };
-  const distilled = distillK6Summary({ metrics }, LOAD_PLAN);
+  const distilled = distillK6Summary({ metrics }, LOAD_PLAN, FACILITY_MODES.DEFAULT);
   assert.equal(distilled.schemaVersion, 1);
+  assert.equal(distilled.facilityMode, FACILITY_MODES.DEFAULT);
   assert.equal(distilled.droppedIterations, 3);
   assert.deepEqual(distilled.controls, { calls: 12, failures: 1 });
   assert.deepEqual(Object.keys(distilled.phases), LOAD_PLAN.phases.map(({ name }) => name));
@@ -202,4 +221,71 @@ test('an iteration belongs to its phase while it starts inside the window, inclu
   assert.equal(phaseWindowContains(LOAD_PLAN, 'swap', lastAllowed), false, 'the tolerated end is exclusive');
   assert.equal(phaseWindowContains(LOAD_PLAN, 'swap', startSeconds - 0.001), false);
   assert.throws(() => phaseWindowContains(LOAD_PLAN, 'unknown', 0), /phase/);
+});
+
+const secondBundleAnswer = () => summarizeResponse(200, success({ sha: SHA_B, timetable: SHA_B, journeys: [{ ...JOURNEY, plannedDepartureTime: '2026-10-06T00:01:00Z' }] }));
+const DEFAULT_MODE = { facilityMode: FACILITY_MODES.DEFAULT };
+
+test('with the production default every request, step-free-required ones included, must keep its answer and disclose the missing facility status', () => {
+  const disclosed = summarizeResponse(200, success({ facilityStatus: 'UNOBSERVED' }));
+  assert.deepEqual(judge('outage', disclosed, 'REQUIRE_STEP_FREE', {}, DEFAULT_MODE), { ok: true, bundle: 'a', explicitFailure: false, disclosedUnobserved: true });
+  assert.deepEqual(judge('outage', disclosed, 'NONE', {}, DEFAULT_MODE), { ok: true, bundle: 'a', explicitFailure: false, disclosedUnobserved: true });
+  const noRoute = summarizeResponse(422, failure('ROUTE_NOT_FOUND'));
+  assert.equal(judge('outage', noRoute, 'REQUIRE_STEP_FREE', { a: noRoute, b: noRoute }, DEFAULT_MODE).ok, true, 'an answer that does not depend on facility status is unchanged');
+  assert.deepEqual(outageExpectation(summarizeResponse(200, success()), entry('REQUIRE_STEP_FREE'), FACILITY_MODES.DEFAULT), disclosed);
+});
+
+test('with the production default a response that looks as if facility status was observed during the outage is a masked outage', () => {
+  const applied = summarizeResponse(200, success({ facilityStatus: 'APPLIED' }));
+  for (const constraint of ['NONE', 'REQUIRE_STEP_FREE']) assert.equal(judge('outage', applied, constraint, {}, DEFAULT_MODE).violation, VIOLATIONS.MASKED_OUTAGE, constraint);
+});
+
+test('with the production default an explicit outage failure is not an allowed answer', () => {
+  const explicit = summarizeResponse(503, failure(FACILITY_OUTAGE_CODE));
+  assert.equal(judge('outage', explicit, 'REQUIRE_STEP_FREE', {}, DEFAULT_MODE).violation, VIOLATIONS.UNEXPECTED_FAILURE);
+});
+
+test('the facility modes are the two configurations the scenarios run, each named after its production setting', () => {
+  assert.deepEqual(Object.values(FACILITY_MODES), ['default', 'required']);
+  assert.match(FACILITY_MODE_LABELS[FACILITY_MODES.DEFAULT], /required=false/);
+  assert.match(FACILITY_MODE_LABELS[FACILITY_MODES.REQUIRED], /required=true/);
+});
+
+test('with the production default a step-free-required answer with mixed content is a mixed response, not a masked outage', () => {
+  const secondIdentityFirstContent = summarizeResponse(200, success({ sha: SHA_B, timetable: SHA_B, facilityStatus: 'UNOBSERVED' }));
+  assert.equal(judge('outage', secondIdentityFirstContent, 'REQUIRE_STEP_FREE', {}, DEFAULT_MODE).violation, VIOLATIONS.MIXED_RESPONSE);
+});
+
+test('only a loopback origin with an explicit port is accepted as the load target', () => {
+  for (const origin of ['http://127.0.0.1:8080', 'http://127.0.0.1:1', 'http://127.0.0.1:65535']) assert.doesNotThrow(() => assertLoopbackOrigin(origin), origin);
+  const hostile = ['prefixhttp://127.0.0.1:8080', 'https://127.0.0.1:8080', 'http://localhost:8080', 'http://127.0.0.2:8080', 'http://user@127.0.0.1:8080', 'http://127.0.0.1:8080/path', 'http://127.0.0.1', 'http://127.0.0.1:0', 'http://127.0.0.1:99999', 'https://easysubway-api.aquilaxk.site', '', undefined, null];
+  for (const origin of hostile) assert.throws(() => assertLoopbackOrigin(origin), /local load server origin/, String(origin));
+});
+
+test('after an activation has had time to land, the swap phase accepts only the bundle that flip activated', () => {
+  const { startSeconds, flips } = LOAD_PLAN.controls.swap;
+  const { activationLagSeconds, flipJitterSeconds, flipIntervalSeconds } = LOAD_PLAN;
+  const swap = LOAD_PLAN.phases.find(({ name }) => name === 'swap');
+  const flipAt = (index) => startSeconds + index * flipIntervalSeconds;
+  assert.equal(expectedSwapBundle(LOAD_PLAN, swap.startSeconds), 'a', 'before the first flip only the first bundle can answer');
+  assert.equal(expectedSwapBundle(LOAD_PLAN, flipAt(0) - flipJitterSeconds), null, 'just before a flip is not decided');
+  for (let flip = 0; flip < flips; flip += 1) {
+    const expected = swapFlipBundle(flip);
+    assert.equal(expectedSwapBundle(LOAD_PLAN, flipAt(flip) + activationLagSeconds), expected, `flip ${flip} start of the strict window`);
+    const strictEnd = flip + 1 < flips ? flipAt(flip + 1) - flipJitterSeconds : swap.startSeconds + swap.durationSeconds + LOAD_PLAN.windowToleranceSeconds;
+    assert.equal(expectedSwapBundle(LOAD_PLAN, strictEnd - 0.001), expected, `flip ${flip} end of the strict window`);
+    assert.equal(expectedSwapBundle(LOAD_PLAN, strictEnd), null, `flip ${flip} the strict window ends before the next flip can land`);
+    assert.equal(expectedSwapBundle(LOAD_PLAN, flipAt(flip) + activationLagSeconds / 2), null, `flip ${flip} while the activation may still be landing`);
+  }
+  assert.equal(swapFlipBundle(flips - 1), 'a', 'the last flip returns to the first bundle');
+  assert.ok(activationLagSeconds + flipJitterSeconds < flipIntervalSeconds, 'every flip must leave a strict window');
+});
+
+test('a swap answer after the activation landed must come from the activated bundle, a stale one is the wrong bundle', () => {
+  const second = secondBundleAnswer();
+  assert.equal(judge('swap', second, 'NONE', {}, { expectedBundle: 'b' }).bundle, 'b');
+  assert.equal(judge('swap', summarizeResponse(200, success()), 'NONE', {}, { expectedBundle: 'a' }).bundle, 'a');
+  assert.equal(judge('swap', summarizeResponse(200, success()), 'NONE', {}, { expectedBundle: 'b' }).violation, VIOLATIONS.WRONG_BUNDLE);
+  assert.equal(judge('swap', second, 'NONE', {}, { expectedBundle: 'a' }).violation, VIOLATIONS.WRONG_BUNDLE);
+  assert.equal(judge('swap', summarizeResponse(200, success()), 'NONE', {}, { expectedBundle: null }).ok, true, 'undecided instants accept either bundle');
 });

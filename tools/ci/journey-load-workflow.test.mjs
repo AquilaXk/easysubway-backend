@@ -9,6 +9,7 @@ const workflow = read('../../.github/workflows/journey-load.yml');
 const ci = read('../../.github/workflows/ci.yml');
 const initScript = read('./gradle/journey-load.init.gradle');
 const runner = read('./journey-load-run.mjs');
+const k6Script = read('./journey-load.k6.js');
 const code = withoutComments(workflow);
 const ciBackendTest = /^  backend-test:\n[\s\S]*?(?=^  backend:\n)/m.exec(ci)[0];
 const SETUP_STEPS = ['Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'];
@@ -84,4 +85,20 @@ test('Backend #520 init script exposes the runtime the runner reads and the runn
   assert.match(runner, /\.\.\/tools\/ci\/gradle\/journey-load\.init\.gradle/);
   assert.match(runner, /\.\.\.K6_OUTPUT_FILES/);
   assert.deepEqual(Object.values(K6_OUTPUT_FILES), ['k6-distilled.json', 'k6-raw.json']);
+});
+
+test('Backend #520 k6 script refuses every target but the local load server through the tested guard, before it sends anything', () => {
+  const guard = k6Script.indexOf('assertLoopbackOrigin(__ENV.JOURNEY_LOAD_BASE_URL)');
+  assert.ok(guard > 0, 'the script must validate the base URL with assertLoopbackOrigin');
+  assert.ok(guard < k6Script.indexOf('export const options'), 'the guard runs at init, before any scenario');
+  assert.doesNotMatch(k6Script.replace(/^\s*\/\/.*\n/gm, ''), /https?:\/\/(?!127\.0\.0\.1)[a-z]/i, 'no other address appears in the script');
+  assert.match(k6Script, /JOURNEY_LOAD_FACILITY_MODE/);
+  assert.match(k6Script, /Object\.values\(FACILITY_MODES\)\.includes\(facilityMode\)/);
+});
+
+test('Backend #520 runs both server configurations in one nightly run and keeps the results apart', () => {
+  assert.match(runner, /modes: Object\.values\(FACILITY_MODES\)/);
+  assert.match(runner, /Math\.max\(\.\.\.codes\)/);
+  assert.match(runner, /serverCommand\(runtime, portFile, facilityMode\)/, 'each server is started with the configuration it is run for');
+  assert.match(runner, /JOURNEY_LOAD_FACILITY_MODE: facilityMode/, 'k6 judges with the same configuration the server runs');
 });

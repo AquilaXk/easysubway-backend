@@ -12,6 +12,29 @@ const ULID_BODY_LENGTH = 25;
 /** k6가 출력 디렉터리에 쓰는 파일. 실행기가 같은 이름으로 읽고 지운다. */
 export const K6_OUTPUT_FILES = Object.freeze({ distilled: 'k6-distilled.json', raw: 'k6-raw.json' });
 
+/**
+ * 시나리오가 검증하는 서버 구성 둘. default는 운영 기본값(easysubway.journey.facility-status.required=false), required는 시설 상태
+ * 필수 모드(true)다. 시설 원천이 멈췄을 때 required에서는 계단 없는 필수 요청이 명시 503이 되고, default에서는 모든 요청이
+ * 시설 상태 미적용(UNOBSERVED)을 밝힌 정상 응답이 된다("모르면 정상, 확인된 고장만 반영").
+ */
+export const FACILITY_MODES = Object.freeze({ DEFAULT: 'default', REQUIRED: 'required' });
+export const FACILITY_MODE_LABELS = Object.freeze({
+  [FACILITY_MODES.DEFAULT]: '운영 기본 구성(facility-status.required=false)',
+  [FACILITY_MODES.REQUIRED]: '시설 상태 필수 구성(facility-status.required=true)',
+});
+
+export const FIRST_BUNDLE = 'a';
+export const SECOND_BUNDLE = 'b';
+
+const LOOPBACK_ORIGIN = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/;
+const MAX_PORT = 65_535;
+
+/** 부하 대상은 러너가 직접 띄운 로컬 서버뿐이다. 운영 주소로 부하가 나가지 않도록 다른 출처는 모두 거부한다. */
+export function assertLoopbackOrigin(origin) {
+  const match = LOOPBACK_ORIGIN.exec(origin ?? '');
+  if (!match || Number(match[1]) > MAX_PORT) throw new Error('the load target must be the local load server origin (http://127.0.0.1:<port>)');
+}
+
 export const FACILITY_OUTAGE_CODE = 'FACILITY_STATUS_UNAVAILABLE';
 const UNREADABLE_BODY = 'UNREADABLE_BODY';
 const STATUS_TRANSPORT_FAILURE = 0;
@@ -35,6 +58,10 @@ export const VIOLATIONS = Object.freeze({
 const GUARD_SECONDS = 1;
 /** k6 도착률 스케줄러는 단계의 끝 시각에도 한 건을 보내고, 약간 밀린 반복도 같은 상태를 보므로 이 정도는 창 안으로 본다. 가드보다 짧아야 한다. */
 const WINDOW_TOLERANCE_SECONDS = GUARD_SECONDS / 2;
+/** 팩 교체 제어 호출 뒤 새 팩이 응답에 반영되기까지 허용하는 시간(요청 경로 밖 컴파일 포함). 이 시간이 지나면 새 팩만 허용한다. */
+const ACTIVATION_LAG_SECONDS = 1;
+/** 다음 교체를 향한 시계 오차. 교체 시각 이 값 전까지만 이전 교체의 팩을 엄격히 요구한다. */
+const FLIP_JITTER_SECONDS = 0.25;
 const SETTLE_SECONDS = 2;
 const FLIP_INTERVAL_SECONDS = 2;
 const STEADY_SECONDS = 20;
@@ -59,6 +86,8 @@ export const LOAD_PLAN = Object.freeze({
   flipIntervalSeconds: FLIP_INTERVAL_SECONDS,
   guardSeconds: GUARD_SECONDS,
   windowToleranceSeconds: WINDOW_TOLERANCE_SECONDS,
+  activationLagSeconds: ACTIVATION_LAG_SECONDS,
+  flipJitterSeconds: FLIP_JITTER_SECONDS,
   settleSeconds: SETTLE_SECONDS,
   phases: Object.freeze([
     { name: 'steady', startSeconds: 0, durationSeconds: STEADY_SECONDS },
@@ -74,7 +103,29 @@ export const LOAD_PLAN = Object.freeze({
 });
 
 /** 각 단계에서 허용되는 단독 응답의 팩 집합. */
-const ALLOWED_BUNDLES = Object.freeze({ steady: ['a'], swap: ['a', 'b'], outage: ['a'], recovered: ['a'] });
+const ALLOWED_BUNDLES = Object.freeze({
+  steady: [FIRST_BUNDLE], swap: [FIRST_BUNDLE, SECOND_BUNDLE], outage: [FIRST_BUNDLE], recovered: [FIRST_BUNDLE],
+});
+
+/** 교체 제어는 둘째 팩부터 번갈아 활성화한다. 짝수 번이라 마지막 교체는 첫 팩으로 돌아온다. */
+export const swapFlipBundle = (flip) => (flip % 2 === 0 ? SECOND_BUNDLE : FIRST_BUNDLE);
+
+/**
+ * swap 단계의 어느 시각에 시작한 요청이 반드시 받아야 하는 팩. 교체를 호출한 뒤 활성화가 반영될 시간(activationLag)이 지나고
+ * 다음 교체 직전(jitter)까지는 그 교체가 활성화한 팩만 허용한다. 그 사이의 시각은 정해지지 않아 null(어느 팩이든 허용)이다.
+ */
+export function expectedSwapBundle(plan, planSeconds) {
+  const swap = plan.phases.find(({ name }) => name === 'swap');
+  const { startSeconds: firstFlip, flips } = plan.controls.swap;
+  const flipAt = (index) => firstFlip + index * plan.flipIntervalSeconds;
+  const windowEnd = swap.startSeconds + swap.durationSeconds + plan.windowToleranceSeconds;
+  if (planSeconds >= swap.startSeconds && planSeconds < firstFlip - plan.flipJitterSeconds) return FIRST_BUNDLE;
+  for (let flip = 0; flip < flips; flip += 1) {
+    const strictEnd = flip + 1 < flips ? flipAt(flip + 1) - plan.flipJitterSeconds : windowEnd;
+    if (planSeconds >= flipAt(flip) + plan.activationLagSeconds && planSeconds < strictEnd) return swapFlipBundle(flip);
+  }
+  return null;
+}
 
 const COUNTER_KINDS = ['requests', 'lateIterations', 'status5xx', 'status429', 'bundleA', 'bundleB', 'explicitFailures', 'disclosedUnobserved', ...Object.values(VIOLATIONS)];
 const LATENCY_KIND = 'latencyMs';
@@ -189,9 +240,12 @@ export function summarizeResponse(status, bodyText) {
 
 const explicitOutage = () => ({ status: STATUS_SERVICE_UNAVAILABLE, code: FACILITY_OUTAGE_CODE, bundleSha: null, facilityStatus: null, fingerprint: '' });
 
-/** 시설 상태 원천이 멈춘 동안 이 요청이 받아야 하는 응답. 계단 없는 필수 요청은 명시 실패, 나머지는 시설 상태 미적용을 밝힌 정상 응답이다. */
-export function outageExpectation(healthy, entry) {
-  if (entry.constraint === REQUIRE_STEP_FREE) return explicitOutage();
+/**
+ * 시설 상태 원천이 멈춘 동안 이 요청이 받아야 하는 응답. 필수 구성의 계단 없는 필수 요청은 명시 실패이고, 그 밖의 모든 경우는
+ * 원래 응답에 시설 상태 미적용(UNOBSERVED)을 밝힌 정상 응답이다.
+ */
+export function outageExpectation(healthy, entry, facilityMode) {
+  if (facilityMode === FACILITY_MODES.REQUIRED && entry.constraint === REQUIRE_STEP_FREE) return explicitOutage();
   return healthy.status === 200 ? { ...healthy, facilityStatus: FACILITY_UNOBSERVED } : healthy;
 }
 
@@ -200,16 +254,16 @@ const sameSummary = (left, right) => left.status === right.status && left.code =
 
 const isFailure = ({ status }) => status === STATUS_TRANSPORT_FAILURE || status >= STATUS_SERVER_ERROR_FLOOR;
 
-/** 장애 단계에서 장애가 아닌 것처럼 보이는 응답: 필수 요청이 명시 실패가 아니거나, 시설 상태를 적용했다고 주장하는 정상 응답. */
-const masksOutage = (actual, entry) => (entry.constraint === REQUIRE_STEP_FREE && !sameSummary(actual, explicitOutage()))
+/** 장애 단계에서 장애가 아닌 것처럼 보이는 응답: 필수 구성의 필수 요청이 명시 실패가 아니거나, 시설 상태를 적용했다고 주장하는 정상 응답. */
+const masksOutage = (actual, entry, facilityMode) => (facilityMode === FACILITY_MODES.REQUIRED && entry.constraint === REQUIRE_STEP_FREE && !sameSummary(actual, explicitOutage()))
   || (actual.status === 200 && actual.facilityStatus === FACILITY_APPLIED);
 
-function classifyMismatch({ phase, entry, actual, expected, bundles }) {
+function classifyMismatch({ phase, entry, actual, expected, bundles, facilityMode, allowedLabels }) {
   if (isFailure(actual)) return VIOLATIONS.UNEXPECTED_FAILURE;
-  if (phase === 'outage' && masksOutage(actual, entry)) return VIOLATIONS.MASKED_OUTAGE;
+  if (phase === 'outage' && masksOutage(actual, entry, facilityMode)) return VIOLATIONS.MASKED_OUTAGE;
   const answeringBundle = Object.keys(bundles).find((label) => bundles[label] === actual.bundleSha);
   if (actual.status === 200 && answeringBundle !== undefined) {
-    const fromOtherBundle = !ALLOWED_BUNDLES[phase].includes(answeringBundle) && sameSummary(actual, expected[answeringBundle]);
+    const fromOtherBundle = !allowedLabels.includes(answeringBundle) && sameSummary(actual, expected[answeringBundle]);
     return fromOtherBundle ? VIOLATIONS.WRONG_BUNDLE : VIOLATIONS.MIXED_RESPONSE;
   }
   return VIOLATIONS.UNEXPECTED_RESPONSE;
@@ -217,12 +271,14 @@ function classifyMismatch({ phase, entry, actual, expected, bundles }) {
 
 /**
  * 응답 하나를 그 단계의 허용 집합과 비교한다. expected는 팩별 정상 단독 응답({a, b})이고, bundles는 팩 이름별 manifest sha256이다.
+ * expectedBundle은 swap 단계에서 활성화가 이미 반영된 시각이면 그 팩 이름이고, 아니면 null이다(expectedSwapBundle).
  * 반환의 bundle은 정상 응답이 어느 팩의 것인지(식별자가 없는 실패·무경로 응답은 null)이다.
  */
-export function judgeResponse({ phase, entry, actual, expected, bundles }) {
-  const allowed = ALLOWED_BUNDLES[phase].map((label) => (phase === 'outage' ? outageExpectation(expected[label], entry) : expected[label]));
+export function judgeResponse({ phase, entry, actual, expected, bundles, facilityMode, expectedBundle = null }) {
+  const allowedLabels = phase === 'swap' && expectedBundle !== null ? [expectedBundle] : ALLOWED_BUNDLES[phase];
+  const allowed = allowedLabels.map((label) => (phase === 'outage' ? outageExpectation(expected[label], entry, facilityMode) : expected[label]));
   if (!allowed.some((candidate) => sameSummary(actual, candidate))) {
-    return { ok: false, violation: classifyMismatch({ phase, entry, actual, expected, bundles }) };
+    return { ok: false, violation: classifyMismatch({ phase, entry, actual, expected, bundles, facilityMode, allowedLabels }) };
   }
   const bundle = Object.keys(bundles).find((label) => bundles[label] === actual.bundleSha) ?? null;
   return {
@@ -241,7 +297,7 @@ function latencyOf(metrics, name) {
 }
 
 /** k6 요약에서 이 시나리오가 만든 지표만 뽑아 판정 입력으로 만든다. 한 번도 더해지지 않아 요약에 없는 카운터는 0이다. */
-export function distillK6Summary({ metrics }, plan) {
+export function distillK6Summary({ metrics }, plan, facilityMode) {
   const phases = Object.fromEntries(plan.phases.map(({ name }) => {
     const count = (kind) => counterOf(metrics, metricName(name, kind));
     return [name, {
@@ -259,6 +315,7 @@ export function distillK6Summary({ metrics }, plan) {
   }));
   return {
     schemaVersion: 1,
+    facilityMode,
     droppedIterations: counterOf(metrics, 'dropped_iterations'),
     controls: { calls: counterOf(metrics, 'control_calls'), failures: counterOf(metrics, 'control_failures') },
     phases,
