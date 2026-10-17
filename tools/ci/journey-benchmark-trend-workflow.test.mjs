@@ -7,13 +7,11 @@ import { stepNames as stepNamesOf, step, withoutComments } from './workflow-stru
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const workflow = read('../../.github/workflows/journey-benchmark-trend.yml');
-const ci = read('../../.github/workflows/ci.yml');
 const initScript = read('./gradle/journey-benchmark.init.gradle');
 const gateSource = read('../../backend/src/test/java/com/easysubway/route/application/service/JourneyEnginePerformanceGateTest.java');
 
-const ciBackendTest = /^  backend-test:\n[\s\S]*?(?=^  backend:\n)/m.exec(ci)[0];
 const stepNames = stepNamesOf(workflow);
-const SETUP_STEPS = ['Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'];
+const SETUP_STEPS = ['Set up backend build environment'];
 
 test('Backend #516 runs on main push, nightly schedule and manual dispatch only', () => {
   const triggers = /^on:\n([\s\S]*?)(?=^[a-z])/m.exec(withoutComments(workflow))[1];
@@ -65,13 +63,6 @@ test('Backend #516 steps run in order from setup to measurement, aggregation, up
   assert.deepEqual(stepNames, ['Checkout', ...SETUP_STEPS, 'Measure the engine benchmark', 'Aggregate the benchmark repeats', 'Upload the benchmark result', 'Fetch previous successful runs', 'Compare with the previous successful runs']);
 });
 
-test('Backend #516 setup steps are byte-identical to the Backend CI test shard setup so the pins cannot drift', () => {
-  const trim = (text) => text.replace(/\n+$/, '').replace(/(?:\n      # [^\n]*)+$/, '').replace(/\n+$/, '');
-  for (const name of SETUP_STEPS) assert.equal(trim(step(workflow, name)), trim(step(ciBackendTest, name)), name);
-  assert.equal(trim(step(workflow, 'Checkout')), trim(step(ciBackendTest, 'Checkout')));
-  for (const [, reference] of workflow.matchAll(/^\s+uses: ([^\s]+)$/gm)) assert.match(reference, /@[0-9a-f]{40}$/, `${reference} must be pinned to a commit sha`);
-});
-
 test('Backend #516 measures through the init script task with the repeat count from one named value', () => {
   assert.match(workflow, /^    env:\n      BENCHMARK_REPEATS: "3"\n/m);
   const measure = step(workflow, 'Measure the engine benchmark');
@@ -89,7 +80,7 @@ test('Backend #516 uploads the result with a bounded retention under the name pr
   assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
   assert.ok(upload.includes(`name: ${ARTIFACT_PREFIX}\${{ github.sha }}`), 'the artifact name must start with ARTIFACT_PREFIX');
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-benchmark\//);
-  assert.match(upload, /retention-days: 30/);
+  assert.match(upload, /retention-days: 14/);
   assert.match(upload, /if-no-files-found: error/);
 });
 

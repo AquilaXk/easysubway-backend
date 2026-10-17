@@ -6,13 +6,11 @@ import { stepNames, step, withoutComments } from './workflow-structure.mjs';
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const workflow = read('../../.github/workflows/journey-load.yml');
-const ci = read('../../.github/workflows/ci.yml');
 const initScript = read('./gradle/journey-load.init.gradle');
 const runner = read('./journey-load-run.mjs');
 const k6Script = read('./journey-load.k6.js');
 const code = withoutComments(workflow);
-const ciBackendTest = /^  backend-test:\n[\s\S]*?(?=^  backend:\n)/m.exec(ci)[0];
-const SETUP_STEPS = ['Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'];
+const SETUP_STEPS = ['Set up backend build environment'];
 
 test('Backend #520 runs on a nightly schedule and manual dispatch only', () => {
   const triggers = /^on:\n([\s\S]*?)(?=^[a-z])/m.exec(code)[1];
@@ -48,12 +46,6 @@ test('Backend #520 steps run in order from setup to k6 installation, the run and
   assert.deepEqual(stepNames(workflow), ['Checkout', ...SETUP_STEPS, 'Set up k6', 'Run the load scenarios', 'Upload the load result']);
 });
 
-test('Backend #520 setup steps are byte-identical to the Backend CI test shard setup so the pins cannot drift', () => {
-  const trim = (text) => text.replace(/\n+$/, '').replace(/(?:\n      # [^\n]*)+$/, '').replace(/\n+$/, '');
-  for (const name of ['Checkout', ...SETUP_STEPS]) assert.equal(trim(step(workflow, name)), trim(step(ciBackendTest, name)), name);
-  for (const [, reference] of workflow.matchAll(/^\s+uses: ([^\s]+)$/gm)) assert.match(reference, /@[0-9a-f]{40}$/, `${reference} must be pinned to a commit sha`);
-});
-
 test('Backend #520 installs a pinned k6 through the pinned setup action', () => {
   const install = step(workflow, 'Set up k6');
   assert.match(install, /uses: grafana\/setup-k6-action@[0-9a-f]{40}\n/);
@@ -73,7 +65,7 @@ test('Backend #520 uploads the result even when the run failed, with a bounded r
   assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
   assert.match(upload, /name: journey-load-\$\{\{ github\.sha \}\}/);
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-load\//);
-  assert.match(upload, /retention-days: 30/);
+  assert.match(upload, /retention-days: 14/);
   assert.match(upload, /if-no-files-found: error/);
 });
 

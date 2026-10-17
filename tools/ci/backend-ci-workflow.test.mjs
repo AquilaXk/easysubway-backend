@@ -92,15 +92,16 @@ test('Backend #416 aggregate merges all shard execution data before the unchange
   assert.match(step(backend, 'Enforce backend critical coverage verdict'), new RegExp(`if: always\\(\\) && ${HEAVY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`));
 });
 
-test('Backend #416 every Gradle job uses the same pinned Java setup and contract staging', () => {
-  const setup = (block) => {
-    const texts = steps(block).filter(({ name }) => ['Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'].includes(name));
-    return texts.map(({ text }) => text.replace(`        if: ${HEAVY}\n`, '').replace(/\n+$/, '').replace(/(?:\n      # [^\n]*)+$/, '').replace(/\n+$/, ''));
-  };
-  const reference = setup(job('backend-test'));
-  assert.equal(reference.length, 5);
-  assert.deepEqual(setup(job('backend-spotbugs')), reference);
-  assert.deepEqual(setup(job('backend')), reference);
+test('Backend #416 every Gradle job prepares its environment through the backend-setup composite', () => {
+  for (const name of ['backend-test', 'backend-spotbugs']) {
+    const setup = step(job(name), 'Set up backend build environment');
+    assert.equal(setup, '      - name: Set up backend build environment\n        uses: ./.github/actions/backend-setup\n\n', name);
+  }
+  // 집계 job은 판정기 실행에 Node.js가 먼저 필요하므로 Node.js를 따로 설치하고 composite에서는 뺀다.
+  const aggregate = job('backend');
+  assert.equal(step(aggregate, 'Set up backend build environment'), `      - name: Set up backend build environment\n        if: ${HEAVY}\n        uses: ./.github/actions/backend-setup\n        with:\n          setup-node: "false"\n\n`);
+  assert.deepEqual(steps(aggregate).slice(0, 3).map(({ name }) => name), ['Checkout', 'Set up Node.js', 'Verify Backend CI job results']);
+  assert.doesNotMatch(workflow, /actions\/setup-java|oras-project\/setup-oras|Stage pinned/, 'Java, ORAS and contract staging live in the composite only');
 });
 
 test('Backend #416 SpotBugs gate job keeps full history and its ordered phase-one steps', () => {
