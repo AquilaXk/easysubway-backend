@@ -81,6 +81,103 @@ public class SecurityConfig {
 	// 인증 진입점·로그아웃 요청 matcher용 PathPattern builder. 컨텍스트 경로 기준으로 대소문자를 구분해 매칭한다.
 	private static final PathPatternRequestMatcher.Builder PATH_PATTERNS = PathPatternRequestMatcher.withDefaults();
 
+	// 여러 경로를 한 규칙으로 묶는 목록. 경계 테스트가 목록의 모든 항목에 대응하는 행이 있는지 검사하므로
+	// (SecurityConfigPathBoundaryTest) 항목을 추가하거나 빼면 그 테스트 표도 함께 바꿔야 한다.
+	static final String[] DATAPACK_WORKFLOW_CHAIN_PATHS = {
+		"/admin/api/datapack/release-requests/**",
+		"/admin/api/datapack/rollback-approvals/**",
+		"/admin/api/datapack/release-callbacks",
+		"/admin/api/datapack/automation-status"
+	};
+	static final String[] DATAPACK_WORKFLOW_PATHS = {
+		"/admin/api/datapack/release-requests/**",
+		"/admin/api/datapack/rollback-approvals/**",
+		"/admin/api/datapack/release-callbacks"
+	};
+	static final String[] ADMIN_REPORT_PHOTO_PATHS = {
+		"/admin/reports/*/photo/thumbnail",
+		"/admin/reports/*/photo/original"
+	};
+	static final String[] ADMIN_MASTER_EDIT_READ_PATHS = {
+		"/admin/facilities/editor/page",
+		"/admin/stations/*/layouts/page",
+		"/admin/stations/*/layout-sources",
+		"/admin/stations/*/layouts",
+		"/admin/stations/*/route-nodes",
+		"/admin/stations/*/route-edges"
+	};
+	static final String[] ADMIN_MASTER_EDIT_WRITE_PATHS = {
+		"/admin/facilities/**",
+		"/admin/stations/**"
+	};
+	static final String[] ADMIN_DATA_OPERATE_PATHS = {
+		"/admin/data-collections/**",
+		"/admin/data-sources/**",
+		"/admin/notifications/**"
+	};
+	// "/x/**"는 "/x" 자체도 일치하므로 같은 경로를 따로 적지 않는다.
+	static final String[] ADMIN_DATAPACK_SOURCE_SNAPSHOT_PATHS = {
+		"/admin/datapack/source-snapshots/**"
+	};
+	static final String[] ADMIN_DATAPACK_REVIEW_POST_PATHS = {
+		"/admin/datapack/alias-approvals/**",
+		"/admin/datapack/quarantine-records/**",
+		"/admin/datapack/facility-evidence/**",
+		"/admin/datapack/manual-overrides/**",
+		"/admin/datapack/candidates/**"
+	};
+	static final String[] ADMIN_OPERATIONS_PATHS = {
+		"/admin/codes/**",
+		"/admin/incidents/**",
+		"/admin/notices/**",
+		"/admin/ads/**"
+	};
+	static final String[] ADMIN_ERROR_PATHS = {
+		"/admin/api/errors/**",
+		"/admin/errors/**"
+	};
+	static final String[] ADMIN_SECURITY_AUDIT_PATHS = {
+		"/admin/system/**",
+		"/admin/usage/**"
+	};
+	static final String[] REPORT_CHAIN_PATHS = {
+		"/api/v1/report-uploads",
+		"/api/v1/report-uploads/*",
+		"/api/v1/reports",
+		"/api/v1/reports/*",
+		"/api/v1/reports/*/confirm"
+	};
+	static final String[] PUBLIC_TRAIN_PATHS = {
+		"/api/v1/trains/stations",
+		"/api/v1/trains/search"
+	};
+	static final String[] PUBLIC_ROOT_PATHS = {
+		"/",
+		"/index.html"
+	};
+	static final String[] PUBLIC_OPEN_PATHS = {
+		"/api/health",
+		"/actuator/health",
+		"/actuator/health/liveness",
+		"/actuator/health/readiness",
+		"/privacy",
+		"/easysubway/privacy",
+		"/terms",
+		"/easysubway/terms",
+		"/location-terms",
+		"/easysubway/location-terms",
+		"/api/v1/realtime/**",
+		"/api/notices/active",
+		"/api/ads/active",
+		"/favicon.ico",
+		"/css/**",
+		"/js/**",
+		"/vendor/**",
+		"/images/**",
+		"/icons/**",
+		"/webjars/**"
+	};
+
 	// 관리자·operator 콘솔 CSP: 모든 스크립트·스타일은 self-host(static/vendor·static/css)만 허용한다.
 	// Alpine는 CSP 빌드라 'unsafe-eval' 불필요, 인라인 스크립트·핸들러는 전면 금지(진화형 향상 원칙).
 	// img data:는 Chart.js가 canvas를 toDataURL로 내보낼 때만 쓰이며 신고 사진은 same-origin 엔드포인트('self')로 제공된다.
@@ -138,23 +235,14 @@ public class SecurityConfig {
 		// data#1084/backend#500/backend#502: 자동화 상태 snapshot 게시 경로는 전용 서비스 토큰
 		// (ROLE_DATAPACK_AUTOMATION_STATUS)과 릴리스 워크플로 토큰(ROLE_DATAPACK_WORKFLOW)을 상호 분리한다.
 		return http
-			.securityMatcher(
-				"/admin/api/datapack/release-requests/**",
-				"/admin/api/datapack/rollback-approvals/**",
-				"/admin/api/datapack/release-callbacks",
-				"/admin/api/datapack/automation-status"
-			)
+			.securityMatcher(DATAPACK_WORKFLOW_CHAIN_PATHS)
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(sm -> sm.sessionCreationPolicy(
 				org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.POST, "/admin/api/datapack/automation-status")
 				.hasRole("DATAPACK_AUTOMATION_STATUS")
-				.requestMatchers(
-					"/admin/api/datapack/release-requests/**",
-					"/admin/api/datapack/rollback-approvals/**",
-					"/admin/api/datapack/release-callbacks"
-				)
+				.requestMatchers(DATAPACK_WORKFLOW_PATHS)
 				.hasRole("DATAPACK_WORKFLOW")
 				.anyRequest().denyAll()
 			)
@@ -187,29 +275,17 @@ public class SecurityConfig {
 				.requestMatchers("/admin/error/page").permitAll()
 				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
 				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
-				.requestMatchers(
-					HttpMethod.GET,
-					"/admin/reports/*/photo/thumbnail",
-					"/admin/reports/*/photo/original"
-				)
+				.requestMatchers(HttpMethod.GET, ADMIN_REPORT_PHOTO_PATHS)
 				.hasAuthority(AdminPermission.REPORT_PHOTO_READ.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
 				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
-				.requestMatchers(
-					HttpMethod.GET,
-					"/admin/facilities/editor/page",
-					"/admin/stations/*/layouts/page",
-					"/admin/stations/*/layout-sources",
-					"/admin/stations/*/layouts",
-					"/admin/stations/*/route-nodes",
-					"/admin/stations/*/route-edges"
-				)
+				.requestMatchers(HttpMethod.GET, ADMIN_MASTER_EDIT_READ_PATHS)
 				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
-				.requestMatchers(HttpMethod.POST, "/admin/facilities/**", "/admin/stations/**")
+				.requestMatchers(HttpMethod.POST, ADMIN_MASTER_EDIT_WRITE_PATHS)
 				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
-				.requestMatchers(HttpMethod.PUT, "/admin/facilities/**", "/admin/stations/**")
+				.requestMatchers(HttpMethod.PUT, ADMIN_MASTER_EDIT_WRITE_PATHS)
 				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
-				.requestMatchers(HttpMethod.PATCH, "/admin/facilities/**", "/admin/stations/**")
+				.requestMatchers(HttpMethod.PATCH, ADMIN_MASTER_EDIT_WRITE_PATHS)
 				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/field-verifications/**")
 				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
@@ -217,19 +293,9 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/field-verifications/**")
 				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
-				.requestMatchers(
-					HttpMethod.POST,
-					"/admin/data-collections/**",
-					"/admin/data-sources/**",
-					"/admin/notifications/**"
-				)
+				.requestMatchers(HttpMethod.POST, ADMIN_DATA_OPERATE_PATHS)
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
-				.requestMatchers(
-					HttpMethod.GET,
-					"/admin/data-collections/**",
-					"/admin/data-sources/**",
-					"/admin/notifications/**"
-				)
+				.requestMatchers(HttpMethod.GET, ADMIN_DATA_OPERATE_PATHS)
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/batches/*/run")
 				.hasAuthority(AdminPermission.BATCH_RUN.authority())
@@ -239,16 +305,9 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/datapack/**")
 				.hasAuthority(AdminPermission.DATAPACK_READ.authority())
-				.requestMatchers(HttpMethod.POST, "/admin/datapack/source-snapshots", "/admin/datapack/source-snapshots/**")
+				.requestMatchers(HttpMethod.POST, ADMIN_DATAPACK_SOURCE_SNAPSHOT_PATHS)
 				.hasAuthority(AdminPermission.DATAPACK_SOURCE_RUN.authority())
-				.requestMatchers(
-					HttpMethod.POST,
-					"/admin/datapack/alias-approvals/**",
-					"/admin/datapack/quarantine-records/**",
-					"/admin/datapack/facility-evidence/**",
-					"/admin/datapack/manual-overrides/**",
-					"/admin/datapack/candidates/**"
-				)
+				.requestMatchers(HttpMethod.POST, ADMIN_DATAPACK_REVIEW_POST_PATHS)
 				.hasAnyAuthority(
 					AdminPermission.DATAPACK_ALIAS_REVIEW.authority(),
 					AdminPermission.DATAPACK_QUARANTINE_REVIEW.authority(),
@@ -269,15 +328,15 @@ public class SecurityConfig {
 					AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority(),
 					AdminPermission.DATAPACK_ROLLBACK.authority()
 				)
-				.requestMatchers("/admin/codes/**", "/admin/incidents/**", "/admin/notices/**", "/admin/ads/**")
+				.requestMatchers(ADMIN_OPERATIONS_PATHS)
 				.hasAuthority(AdminPermission.OPERATIONS_MANAGE.authority())
 				.requestMatchers("/admin/audits/privacy/**")
 				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())
 				.requestMatchers("/admin/audits/**")
 				.hasAuthority(AdminPermission.AUDIT_READ.authority())
-				.requestMatchers("/admin/api/errors", "/admin/api/errors/**", "/admin/errors/**")
+				.requestMatchers(ADMIN_ERROR_PATHS)
 				.hasAuthority(AdminPermission.ERROR_READ.authority())
-				.requestMatchers("/admin/system/**", "/admin/usage/**")
+				.requestMatchers(ADMIN_SECURITY_AUDIT_PATHS)
 				.hasAuthority(AdminPermission.SECURITY_AUDIT.authority())
 				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())
 			)
@@ -370,13 +429,7 @@ public class SecurityConfig {
 	SecurityFilterChain reportSecurityFilterChain(HttpSecurity http) throws Exception {
 		// 신고 접수와 상태 조회는 신고별 receipt token 흐름을 사용한다.
 		return http
-			.securityMatcher(
-				"/api/v1/report-uploads",
-				"/api/v1/report-uploads/*",
-				"/api/v1/reports",
-				"/api/v1/reports/*",
-				"/api/v1/reports/*/confirm"
-			)
+			.securityMatcher(REPORT_CHAIN_PATHS)
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().permitAll()
@@ -406,39 +459,10 @@ public class SecurityConfig {
 					HttpMethod.POST,
 					"/api/ads/events"
 				).permitAll()
-				.requestMatchers(
-					HttpMethod.GET,
-					"/api/v1/trains/stations",
-					"/api/v1/trains/search"
-				).permitAll()
-				.requestMatchers(
-					HttpMethod.HEAD,
-					"/api/v1/trains/stations",
-					"/api/v1/trains/search"
-				).permitAll()
-				.requestMatchers(HttpMethod.GET, "/", "/index.html").permitAll()
-				.requestMatchers(
-					"/api/health",
-					"/actuator/health",
-					"/actuator/health/liveness",
-					"/actuator/health/readiness",
-					"/privacy",
-					"/easysubway/privacy",
-					"/terms",
-					"/easysubway/terms",
-					"/location-terms",
-					"/easysubway/location-terms",
-					"/api/v1/realtime/**",
-					"/api/notices/active",
-					"/api/ads/active",
-					"/favicon.ico",
-					"/css/**",
-					"/js/**",
-					"/vendor/**",
-					"/images/**",
-					"/icons/**",
-					"/webjars/**"
-				).permitAll()
+				.requestMatchers(HttpMethod.GET, PUBLIC_TRAIN_PATHS).permitAll()
+				.requestMatchers(HttpMethod.HEAD, PUBLIC_TRAIN_PATHS).permitAll()
+				.requestMatchers(HttpMethod.GET, PUBLIC_ROOT_PATHS).permitAll()
+				.requestMatchers(PUBLIC_OPEN_PATHS).permitAll()
 				.requestMatchers(HttpMethod.GET, "/actuator/prometheus")
 				.access(internalNetworkOnly())
 				.anyRequest().denyAll()

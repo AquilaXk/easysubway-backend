@@ -50,11 +50,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * SecurityConfig의 모든 URL matcher 경계를 실제 Tomcat 위에서 고정한다(#526).
- * Spring Security의 matcher 구현을 바꿔도(AntPathRequestMatcher → PathPatternRequestMatcher) 허용·거부
- * 결과가 달라지지 않아야 하므로, 컨테이너가 pathInfo를 디코딩하고 StrictHttpFirewall이 요청을 거르는
- * 실제 경로 처리까지 포함해 검증한다. 모든 행은 구현 교체 전에 통과한 기대값이다.
-/**
  * SecurityConfig URL matcher 경계 테스트의 공통 기반(#526). 실제 Tomcat 위에 SecurityConfig와 모든 요청에
  * 200을 돌려주는 probe controller만 올리고, JDK HttpClient로 원시 경로를 그대로 보낸다.
  * MockMvc는 pathInfo를 디코딩하지 않고 컨테이너의 경로 정규화·StrictHttpFirewall 거부를 재현하지 못하므로
