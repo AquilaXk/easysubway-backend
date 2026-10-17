@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN, VIOLATIONS } from './journey-load-contract.mjs';
-import { CLEAN_PHASE_P95_LIMIT_MS, annotations, judgeRun, renderSummary } from './journey-load-verdict.mjs';
+import { CLEAN_PHASE_P95_LIMIT_MS, LOAD_SUSTAIN_MIN_RATIO, annotations, judgeRun, renderSummary } from './journey-load-verdict.mjs';
 
 const RPS = LOAD_PLAN.requestsPerSecond;
 const NO_VIOLATIONS = Object.fromEntries(Object.values(VIOLATIONS).map((violation) => [violation, 0]));
@@ -86,12 +86,44 @@ test('rate limiting fails the run because the harness must never be throttled', 
   assert.deepEqual(failureCodes(withPhase('steady', { status429: 1 })), ['RATE_LIMITED']);
 });
 
-test('a phase that did not run, or that delivered less than the planned load, fails', () => {
+const plannedRequests = (name) => RPS * LOAD_PLAN.phases.find((phase) => phase.name === name).durationSeconds;
+const totalPlannedRequests = LOAD_PLAN.phases.reduce((sum, { name }) => sum + plannedRequests(name), 0);
+/** 허용 비율이 정확히 허용하는 가장 적은 요청 수와 최대 버려진 반복 수. */
+const minimumRequests = (name) => Math.ceil(plannedRequests(name) * LOAD_SUSTAIN_MIN_RATIO);
+const maximumDropped = Math.floor(totalPlannedRequests * (1 - LOAD_SUSTAIN_MIN_RATIO));
+
+test('a phase that did not run fails', () => {
   assert.deepEqual(failureCodes(withPhase('recovered', { requests: 0, bundleA: 0 })), ['PHASE_NOT_RUN']);
-  assert.deepEqual(failureCodes(withPhase('steady', { requests: RPS * 20 - 2 })), ['LOAD_SHORTFALL']);
-  assert.deepEqual(failureCodes(withPhase('steady', { requests: RPS * 20 - 1 })), [], 'one request of rounding is tolerated');
-  assert.deepEqual(failureCodes(healthyRun({ droppedIterations: 1 })), ['LOAD_NOT_SUSTAINED']);
   assert.deepEqual(failureCodes(withPhase('swap', { lateIterations: 1 })), ['LOAD_NOT_SUSTAINED'], 'an iteration that started after its window was not judged, so the load was not sustained');
+});
+
+test('a shortfall inside the hosted-runner tolerance passes, and the dropped iterations are reported', () => {
+  const hosted = healthyRun({ droppedIterations: 21, phases: { ...healthyRun().phases, steady: phaseResult('steady', { requests: 3989, bundleA: 3989 }), swap: phaseResult('swap', { requests: 3995, bundleA: 1995, bundleB: 2000 }) } });
+  const verdict = judgeRun(hosted, LOAD_PLAN);
+  assert.deepEqual(verdict.failures, []);
+  assert.equal(verdict.droppedIterations, 21);
+  assert.match(renderSummary(verdict, null), /버려진 반복.*21건/);
+  assert.deepEqual(failureCodes(withPhase('steady', { requests: minimumRequests('steady'), bundleA: minimumRequests('steady') })), []);
+  assert.deepEqual(failureCodes(healthyRun({ droppedIterations: maximumDropped })), []);
+});
+
+test('a shortfall beyond the tolerance fails', () => {
+  assert.deepEqual(failureCodes(withPhase('steady', { requests: minimumRequests('steady') - 1, bundleA: minimumRequests('steady') - 1 })), ['LOAD_SHORTFALL']);
+  assert.deepEqual(failureCodes(healthyRun({ droppedIterations: maximumDropped + 1 })), ['LOAD_NOT_SUSTAINED']);
+});
+
+test('the tolerance is 99% of the plan: 3960 of 4000 steady requests and 120 of 12000 dropped iterations', () => {
+  assert.equal(LOAD_SUSTAIN_MIN_RATIO, 0.99);
+  assert.deepEqual(failureCodes(withPhase('steady', { requests: 3960, bundleA: 3960 })), []);
+  assert.deepEqual(failureCodes(withPhase('steady', { requests: 3959, bundleA: 3959 })), ['LOAD_SHORTFALL']);
+  assert.deepEqual(failureCodes(healthyRun({ droppedIterations: 120 })), []);
+  assert.deepEqual(failureCodes(healthyRun({ droppedIterations: 121 })), ['LOAD_NOT_SUSTAINED']);
+});
+
+test('a tolerated shortfall never excuses a violation in the iterations that did run', () => {
+  const requests = minimumRequests('swap');
+  const run = withPhase('swap', { requests, bundleA: requests / 2, bundleB: requests / 2, violations: { ...NO_VIOLATIONS, WRONG_BUNDLE: 1 } });
+  assert.deepEqual(failureCodes({ ...run, droppedIterations: 5 }), ['CONTRACT_VIOLATION']);
 });
 
 test('control failures and a wrong control call count fail the run', () => {

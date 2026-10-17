@@ -10,10 +10,22 @@ import { FACILITY_MODES, FACILITY_MODE_LABELS, LOAD_PLAN } from './journey-load-
 
 const TITLE = '경로 검색 부하·장애 시나리오';
 const CLEAN_PHASES = ['steady', 'recovered'];
-/** 지연 한도 초과는 공유 러너 잡음일 수 있어 경고만 한다. 한도는 steady·recovered 단계의 p95다. */
-export const CLEAN_PHASE_P95_LIMIT_MS = 25;
-/** 도착률 스케줄러의 반올림 때문에 계획한 요청 수보다 하나까지 적게 도착할 수 있다. */
-const ROUNDING_TOLERANCE_REQUESTS = 1;
+/**
+ * 지연 한도 초과는 공유 러너 잡음일 수 있어 경고만 한다. 한도는 steady·recovered 단계의 p95다.
+ * 25ms는 로컬 기준 임시값이었다. 호스티드 러너 첫 실측(backend journey-load run 39024609532, 200 rps)에서 steady p95는
+ * default 27.4ms·required 21.2ms(p99 55.0ms·48.8ms), recovered p95는 10.5ms·6.3ms(p99 23.7ms·11.2ms)였다.
+ * 가장 느린 p95(27.4ms)의 약 1.5배인 40ms로 올린다. 측정이 1회뿐이라 계속 경고(비차단)로만 쓴다.
+ * 호스티드 러너 실측이 5회 이상 쌓이면 단계별 최대 p95의 1.5배 안에서 다시 정하고, 경고가 반복되면 원인부터 조사한다.
+ */
+export const CLEAN_PHASE_P95_LIMIT_MS = 40;
+/**
+ * 부하 유지의 허용 비율이다. 단계 요청 수가 계획의 이 비율 이상이고 버려진 반복이 전체 계획의 (1 - 비율) 이하면 측정이 성립한 것으로 본다.
+ * k6 constant-arrival-rate는 VU가 부족하거나 스케줄러가 밀리면 반복을 dropped_iterations로 버린다. 호스티드 러너 첫 실측에서
+ * 단계별 부족은 0~11건(최대 0.28%), 버려진 반복은 계획 12000건 중 21·22건(0.18%)이었고 정확성 위반은 없었다. 이 정도는 스케줄링
+ * 잡음이므로 1%까지 허용한다. 버려진 반복은 요청이 되지 않아 판정 대상이 아니며, 그 수는 verdict와 summary에 적는다.
+ * 그 위반 검사는 실제로 도착한 요청 전부에 그대로 적용되므로 부족분이 정확성 판정을 피하는 통로가 되지 않는다.
+ */
+export const LOAD_SUSTAIN_MIN_RATIO = 0.99;
 const CONTROL_CALLS_OUTSIDE_SWAP = 2;
 
 const fail = (message) => { throw new Error(`journey load: ${message}`); };
@@ -25,7 +37,7 @@ function phaseFindings(name, phase, plan, facilityMode) {
   const planned = plan.requestsPerSecond * durationSeconds;
   const findings = [];
   if (phase.requests === 0) return [finding('PHASE_NOT_RUN', `${name} 단계에서 요청이 하나도 도착하지 않았습니다.`)];
-  if (phase.requests < planned - ROUNDING_TOLERANCE_REQUESTS) {
+  if (phase.requests < planned * LOAD_SUSTAIN_MIN_RATIO) {
     findings.push(finding('LOAD_SHORTFALL', `${name} 단계 요청 ${phase.requests}건이 계획 ${planned}건보다 적습니다.`));
   }
   if (phase.lateIterations > 0) findings.push(finding('LOAD_NOT_SUSTAINED', `${name} 단계 창이 끝난 뒤에 시작한 반복 ${phase.lateIterations}건은 판정하지 않았습니다.`));
@@ -54,9 +66,13 @@ function observationFindings(phases, facilityMode) {
   return findings;
 }
 
+const plannedRequests = (plan) => plan.phases.reduce((sum, { durationSeconds }) => sum + plan.requestsPerSecond * durationSeconds, 0);
+const allowedDroppedIterations = (plan) => Math.floor(plannedRequests(plan) * (1 - LOAD_SUSTAIN_MIN_RATIO));
+
 function runFindings(run, plan) {
   const findings = [];
-  if (run.droppedIterations > 0) findings.push(finding('LOAD_NOT_SUSTAINED', `목표 도착률을 유지하지 못해 반복 ${run.droppedIterations}건이 버려졌습니다.`));
+  const allowedDropped = allowedDroppedIterations(plan);
+  if (run.droppedIterations > allowedDropped) findings.push(finding('LOAD_NOT_SUSTAINED', `목표 도착률을 유지하지 못해 반복 ${run.droppedIterations}건이 버려졌습니다(허용 ${allowedDropped}건).`));
   const expectedControlCalls = plan.controls.swap.flips + CONTROL_CALLS_OUTSIDE_SWAP;
   if (run.controls.failures > 0 || run.controls.calls !== expectedControlCalls) {
     findings.push(finding('CONTROL_FAILED', `제어 호출 ${run.controls.calls}건 중 실패 ${run.controls.failures}건 (기대 ${expectedControlCalls}건)`));
@@ -78,7 +94,7 @@ export function judgeRun(run, plan) {
     ...observationFindings(run.phases, facilityMode),
     ...runFindings(run, plan),
   ];
-  return { facilityMode, status: failures.length === 0 ? 'PASS' : 'FAIL', failures, warnings: latencyWarnings(run.phases), phases };
+  return { facilityMode, status: failures.length === 0 ? 'PASS' : 'FAIL', failures, warnings: latencyWarnings(run.phases), droppedIterations: run.droppedIterations, allowedDroppedIterations: allowedDroppedIterations(plan), phases };
 }
 
 const ms = (value) => (value === null || value === undefined ? '-' : value.toFixed(1));
@@ -99,6 +115,7 @@ export function renderSummary(verdict, context) {
     `## ${TITLE} — ${FACILITY_MODE_LABELS[verdict.facilityMode]}`, '',
     `- 판정: **${verdict.status}**`,
     contextLine(context),
+    `- 버려진 반복(판정 제외): ${verdict.droppedIterations}건 (허용 ${verdict.allowedDroppedIterations}건, 계획의 ${((1 - LOAD_SUSTAIN_MIN_RATIO) * 100).toFixed(0)}%)`,
     `- 지연 한도(경고, 비차단): steady·recovered 단계 p95 ${CLEAN_PHASE_P95_LIMIT_MS}ms`,
     '', '| 단계 | 요청 | 처리량(rps) | p50(ms) | p95(ms) | p99(ms) | 5xx | 429 | 계약 위반 |', '|---|---|---|---|---|---|---|---|---|',
     ...Object.entries(verdict.phases).map(([name, phase]) => phaseRow(name, phase)),
