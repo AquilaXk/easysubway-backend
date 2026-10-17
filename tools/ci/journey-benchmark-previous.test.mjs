@@ -93,3 +93,23 @@ test('only numeric run ids from the listing are used', () => withDirectory((dire
   assert.deepEqual(outcome.results, [join(directory, '12', 'result.json')]);
   assert.ok(!calls.flat().some((arg) => arg.includes('..')));
 }));
+
+test('another trend job can pick its own artifact prefix and result parser, and both reach the lookup and the validation', () => withDirectory((directory) => {
+  const prefix = 'journey-mutation-';
+  const calls = [];
+  const named = () => ok(JSON.stringify([{ name: `${prefix}abc`, expired: false }]));
+  const parsed = [];
+  const parse = (text) => { parsed.push(text); if (text !== '{"kind":"mutation"}') throw new Error('not a mutation result'); };
+  const behaviours = {
+    12: { artifacts: named(), download: downloads(directory, '{"kind":"mutation"}') },
+    11: { artifacts: named(), download: downloads(directory, '{"kind":"benchmark"}') },
+    10: { artifacts: ok('[]') },
+  };
+  const outcome = fetchWith(directory, fakeGh(['12', '11', '10'], behaviours, calls), { artifactPrefix: prefix, parse });
+  assert.deepEqual(outcome.results, [join(directory, '12', 'result.json')]);
+  assert.deepEqual(kinds(outcome), ['11:unreadable', '10:missing-artifact']);
+  assert.ok(calls.some((args) => args[0] === 'api' && args.some((arg) => arg.includes(`startswith("${prefix}")`))), 'the artifact lookup filters on the given prefix');
+  assert.ok(!calls.some((args) => args.some((arg) => arg.includes(ARTIFACT_PREFIX))), 'the benchmark prefix is not used');
+  assert.match(outcome.skipped.find(({ runId }) => runId === '10').message, new RegExp(prefix));
+  assert.deepEqual(parsed, ['{"kind":"mutation"}', '{"kind":"benchmark"}']);
+}));

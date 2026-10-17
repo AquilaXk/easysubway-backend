@@ -1,4 +1,5 @@
 // 직전 성공 run의 추세 artifact를 gh로 내려받아 기준 후보로 모은다 (backend #516).
+// 다른 추세 job(뮤테이션, #523)도 artifact 이름 접두사와 결과 파서만 바꿔 같은 흐름을 쓴다.
 // 실패는 원인별로 나눠 기록한다: 보존 기간 만료(예상된 일), 성공 run인데 artifact 없음·조회/다운로드 오류·손상된 파일(이상 신호).
 import { spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync } from 'node:fs';
@@ -25,39 +26,39 @@ const oneLine = (text) => truncate(text.replace(/\s+/g, ' ').trim(), GH_MESSAGE_
 const skip = (runId, kind, message) => ({ runId, kind, message });
 
 /** 이름 접두사가 맞는 artifact 중 만료되지 않은 것의 이름. 없으면 만료인지 아예 없는지로 나눈다. */
-function findArtifact(gh, repo, runId) {
-  const listed = gh(['api', `repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`, '--jq', `[.artifacts[] | select(.name | startswith("${ARTIFACT_PREFIX}")) | {name, expired}]`]);
+function findArtifact(gh, repo, runId, artifactPrefix) {
+  const listed = gh(['api', `repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`, '--jq', `[.artifacts[] | select(.name | startswith("${artifactPrefix}")) | {name, expired}]`]);
   if (listed.status !== 0) return { skipped: skip(runId, 'error', `artifact 목록 조회에 실패했습니다: ${oneLine(listed.stderr)}`) };
   let artifacts;
   try { artifacts = JSON.parse(listed.stdout); } catch { return { skipped: skip(runId, 'error', 'artifact 목록 응답을 해석하지 못했습니다.') }; }
-  if (artifacts.length === 0) return { skipped: skip(runId, 'missing-artifact', `성공한 run인데 ${ARTIFACT_PREFIX}* artifact가 없습니다.`) };
+  if (artifacts.length === 0) return { skipped: skip(runId, 'missing-artifact', `성공한 run인데 ${artifactPrefix}* artifact가 없습니다.`) };
   const usable = artifacts.find(({ expired }) => !expired);
   return usable ? { name: usable.name } : { skipped: skip(runId, 'expired', '보존 기간이 지나 artifact가 만료되었습니다.') };
 }
 
 /** 내려받은 result.json을 일반 파일로만 읽고 크기를 제한한 뒤 형식까지 검증한다. */
-function readDownloaded(path, runId) {
+function readDownloaded(path, runId, parse) {
   let stat;
   try { stat = lstatSync(path); } catch { return { skipped: skip(runId, 'unreadable', 'artifact에 result.json이 없습니다.') }; }
   if (!stat.isFile() || stat.size > MAX_RESULT_BYTES) return { skipped: skip(runId, 'unreadable', 'result.json이 일반 파일이 아니거나 크기 제한을 넘었습니다.') };
-  try { parseResult(readFileSync(path, 'utf8'), 'previous result'); } catch (error) { return { skipped: skip(runId, 'unreadable', oneLine(`result.json을 읽지 못했습니다: ${error.message}`)) }; }
+  try { parse(readFileSync(path, 'utf8'), 'previous result'); } catch (error) { return { skipped: skip(runId, 'unreadable', oneLine(`result.json을 읽지 못했습니다: ${error.message}`)) }; }
   return { path };
 }
 
-function fetchOne(gh, repo, directory, runId) {
-  const found = findArtifact(gh, repo, runId);
+function fetchOne({ gh, repo, directory, artifactPrefix, parse }, runId) {
+  const found = findArtifact(gh, repo, runId, artifactPrefix);
   if (found.skipped) return found;
   const target = join(directory, runId);
   const downloaded = gh(['run', 'download', runId, '--repo', repo, '--name', found.name, '--dir', target]);
   if (downloaded.status !== 0) return { skipped: skip(runId, 'error', `artifact 다운로드에 실패했습니다: ${oneLine(downloaded.stderr)}` ) };
-  return readDownloaded(join(target, 'result.json'), runId);
+  return readDownloaded(join(target, 'result.json'), runId, parse);
 }
 
 /**
  * 같은 workflow의 main 성공 run을 최신순으로 훑어 기준 결과를 최대 BASELINE_RUN_LIMIT개 모은다.
  * 결과: { results: 경로[], skipped: [{runId, kind, message}], reason: 기준이 없을 때의 사유 | null, warning: 목록 조회 자체의 실패 여부 }
  */
-export function fetchPreviousResults({ gh = runGh, repo, workflow, directory }) {
+export function fetchPreviousResults({ gh = runGh, repo, workflow, directory, artifactPrefix = ARTIFACT_PREFIX, parse = parseResult }) {
   const listed = gh(['run', 'list', '--repo', repo, '--workflow', workflow, '--branch', 'main', '--status', 'success', '--limit', String(BASELINE_CANDIDATE_LIMIT), '--json', 'databaseId', '--jq', '.[].databaseId']);
   if (listed.status !== 0) return { results: [], skipped: [], reason: `run 목록을 조회하지 못했습니다: ${oneLine(listed.stderr)}`, warning: true };
   const runIds = listed.stdout.split('\n').filter((line) => /^\d+$/.test(line));
@@ -66,7 +67,7 @@ export function fetchPreviousResults({ gh = runGh, repo, workflow, directory }) 
   const skipped = [];
   for (const runId of runIds) {
     if (results.length === BASELINE_RUN_LIMIT) break;
-    const fetched = fetchOne(gh, repo, directory, runId);
+    const fetched = fetchOne({ gh, repo, directory, artifactPrefix, parse }, runId);
     if (fetched.path) results.push(fetched.path); else skipped.push(fetched.skipped);
   }
   const reason = results.length === 0 ? `사용할 수 있는 직전 결과가 없습니다(성공 run ${runIds.length}개 중 ${skipped.length}개 제외).` : null;

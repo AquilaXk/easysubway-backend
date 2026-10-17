@@ -14,3 +14,9 @@ export const step = (text, name) => {
   assert.equal(found.length, 1, `step ${name} must appear exactly once`);
   return found[0].text;
 };
+
+const STEP_TRAILING_COMMENTS = /(?:\n      # [^\n]*)+$/;
+const trimStep = (text) => text.replace(/\n+$/, '').replace(STEP_TRAILING_COMMENTS, '').replace(/\n+$/, '');
+
+/** 두 workflow의 같은 이름 step이 다음 step 앞의 설명 주석을 빼고 바이트 단위로 같은지 비교한다(핀이 갈라지지 않게). */
+export const sameStep = (left, right, name) => trimStep(step(left, name)) === trimStep(step(right, name));
