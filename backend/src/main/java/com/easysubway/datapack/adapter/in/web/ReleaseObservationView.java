@@ -1,9 +1,9 @@
 package com.easysubway.datapack.adapter.in.web;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository.ReleaseChannelObservationRow;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.CatalogIdentity;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
@@ -30,7 +30,6 @@ record ReleaseObservationView(
 	private static final List<String> CHANNELS = List.of("production", "staging", "dev");
 	private static final String COMPARED_CHANNEL = ReleaseCatalogObservationReader.PRODUCTION;
 	private static final DateTimeFormatter OBSERVED_AT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
 	public boolean isWarning() {
 		return state != State.ABSENT && state != State.MATCH && state != State.NOT_COMPARED;
@@ -96,7 +95,7 @@ record ReleaseObservationView(
 	}
 
 	private static String seoulText(LocalDateTime utc) {
-		return OBSERVED_AT_FORMAT.format(utc.atOffset(ZoneOffset.UTC).atZoneSameInstant(SEOUL));
+		return OBSERVED_AT_FORMAT.format(utc.atOffset(ZoneOffset.UTC).atZoneSameInstant(BusinessTime.ZONE));
 	}
 
 	private static String label(String channel) {

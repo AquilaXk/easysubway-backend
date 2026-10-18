@@ -5,6 +5,7 @@ import com.easysubway.admin.audit.application.AdminAuditQuery;
 import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import com.easysubway.common.time.BusinessTime;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -165,11 +166,11 @@ public class InMemoryAdminAuditEventRepository implements AdminAuditEventReposit
 			return false;
 		}
 		LocalDateTime occurredAt = event.occurredAt();
-		if (query.occurredFrom() != null && occurredAt.isBefore(query.occurredFrom().atStartOfDay())) {
+		if (query.occurredFrom() != null && occurredAt.isBefore(BusinessTime.startOfDayUtcLocal(query.occurredFrom()))) {
 			return false;
 		}
 		return query.occurredTo() == null
-			|| occurredAt.isBefore(query.occurredTo().plusDays(1).atStartOfDay());
+			|| occurredAt.isBefore(BusinessTime.startOfNextDayUtcLocal(query.occurredTo()));
 	}
 
 	private static boolean matchesTarget(AdminAuditEvent event, String keyword) {

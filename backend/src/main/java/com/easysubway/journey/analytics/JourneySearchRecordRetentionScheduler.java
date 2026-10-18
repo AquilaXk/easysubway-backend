@@ -1,10 +1,10 @@
 package com.easysubway.journey.analytics;
 
+import com.easysubway.common.time.BusinessTime;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -19,7 +19,6 @@ public class JourneySearchRecordRetentionScheduler {
 	public static final String FAILURE_METRIC = "easysubway.journey.search_record.purge.failures";
 	static final int RETENTION_DAYS = 90;
 	private static final Logger LOG = LoggerFactory.getLogger(JourneySearchRecordRetentionScheduler.class);
-	private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
 	private final JourneySearchRecordStore store;
 	private final Clock clock;
@@ -29,7 +28,7 @@ public class JourneySearchRecordRetentionScheduler {
 	public JourneySearchRecordRetentionScheduler(
 		JourneySearchRecordStore store, MeterRegistry meterRegistry, ObjectProvider<Clock> clockProvider
 	) {
-		this(store, meterRegistry, clockProvider.getIfAvailable(() -> Clock.system(SERVICE_ZONE)));
+		this(store, meterRegistry, clockProvider.getIfAvailable(() -> Clock.system(BusinessTime.ZONE)));
 	}
 
 	JourneySearchRecordRetentionScheduler(JourneySearchRecordStore store, MeterRegistry meterRegistry, Clock clock) {
@@ -45,7 +44,7 @@ public class JourneySearchRecordRetentionScheduler {
 		zone = "UTC"
 	)
 	void purgeExpiredRecords() {
-		LocalDate cutoff = LocalDate.now(clock.withZone(SERVICE_ZONE)).minusDays(RETENTION_DAYS);
+		LocalDate cutoff = LocalDate.now(clock.withZone(BusinessTime.ZONE)).minusDays(RETENTION_DAYS);
 		try {
 			int deleted = store.purgeRecordedBefore(cutoff);
 			LOG.info("Journey V3 검색 기록 보존 삭제를 마쳤습니다. deletedRows={} cutoff={}", deleted, cutoff);

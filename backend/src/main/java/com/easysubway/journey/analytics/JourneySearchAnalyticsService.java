@@ -1,8 +1,8 @@
 package com.easysubway.journey.analytics;
 
+import com.easysubway.common.time.BusinessTime;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -28,7 +28,7 @@ public class JourneySearchAnalyticsService {
 	public JourneySearchAnalyticsService(
 		JourneySearchRecordStore store, JourneySearchRecorder recorder, ObjectProvider<Clock> clockProvider
 	) {
-		this(store, recorder, clockProvider.getIfAvailable(() -> Clock.system(ZoneId.of("Asia/Seoul"))));
+		this(store, recorder, clockProvider.getIfAvailable(() -> Clock.system(BusinessTime.ZONE)));
 	}
 
 	public JourneySearchAnalyticsService(JourneySearchRecordStore store, JourneySearchRecorder recorder, Clock clock) {

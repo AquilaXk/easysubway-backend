@@ -130,6 +130,12 @@ class InMemoryPushNotificationOutboxRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("이력 검색·건수·실패 분해는 발송 기간을 한국 날짜 경계(UTC 15:00)로 거른다")
+	void searchFiltersByKoreanDayBoundaries() {
+		KoreanDayPushHistoryScenario.assertFiltersByKoreanDay(repository);
+	}
+
+	@Test
 	@DisplayName("실패 사유별 분해는 status=FAILED를 사유별로 GROUP BY 하고 목록 건수와 정합한다")
 	void countFailureReasonsGroupsFailedByReason() {
 		repository.savePushNotification(new PushNotification(

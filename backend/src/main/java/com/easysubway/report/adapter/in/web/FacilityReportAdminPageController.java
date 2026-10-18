@@ -6,6 +6,7 @@ import com.easysubway.admin.savedview.domain.AdminSavedView;
 import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.admin.web.AdminMasterLabelResolver;
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.WebMessageResolver;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.report.application.port.in.FacilityReportListQuery;
@@ -33,7 +34,6 @@ import java.security.Principal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -313,8 +313,8 @@ class FacilityReportAdminPageController {
 		model.addAttribute("photoFilters", photoFilterOptions(query));
 
 		// 기간 프리셋(오늘·최근 7일·최근 30일·전체 기간). 접수일 기준.
-		// 접수일 필터는 저장된 UTC 접수 시각과 UTC 날짜 경계로 비교하므로(created_at >= 날짜 00:00) "오늘"도 UTC 날짜다.
-		LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
+		// 접수일 필터는 한국 날짜 하루를 UTC 범위로 바꿔 저장된 UTC 접수 시각과 비교하므로 "오늘"도 한국 날짜다.
+		LocalDate today = BusinessTime.today(clock);
 		LocalDate createdFromDate = query.createdFrom();
 		LocalDate createdToDate = query.createdTo();
 		model.addAttribute("datePresets", List.of(

@@ -1,5 +1,6 @@
 package com.easysubway.datapack.adapter.in.web;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.datapack.application.port.in.AutomationStatusUseCase;
 import com.easysubway.datapack.application.port.in.AutomationStatusUseCase.Reading;
 import com.easysubway.datapack.application.service.AutomationStatusAssessor;
@@ -10,7 +11,6 @@ import com.easysubway.datapack.domain.AutomationStatusSnapshot.ExpiringSource;
 import com.easysubway.datapack.domain.AutomationStatusSnapshot.RunSummary;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 class AutomationStatusAdminPageController {
 
-	private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"));
+	private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(BusinessTime.ZONE);
 
 	private final AutomationStatusUseCase useCase;
 

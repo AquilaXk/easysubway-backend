@@ -107,6 +107,14 @@ class ReleaseObservationViewTest {
 	}
 
 	@Test
+	@DisplayName("알려진 채널은 한국어 이름으로, 알 수 없는 채널은 채널 이름 그대로 표시한다")
+	void channelLabelsAreKoreanForKnownChannelsOnly() {
+		assertThat(List.of("production", "staging", "dev", "canary"))
+			.extracting(channel -> ReleaseObservationView.of(channel, Optional.empty(), Optional.empty()).channelLabel())
+			.containsExactly("프로덕션", "스테이징", "개발", "canary");
+	}
+
+	@Test
 	@DisplayName("운영자 문구는 콜백·catalog·sequence 같은 개발 용어를 쓰지 않는다")
 	void messagesUsePlainKorean() {
 		var absent = ReleaseObservationView.of("staging", Optional.empty(), Optional.empty());

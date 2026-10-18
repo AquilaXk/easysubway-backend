@@ -11,12 +11,12 @@ import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
+import com.easysubway.common.time.BusinessTime;
 import jakarta.servlet.DispatcherType;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -494,7 +494,8 @@ public class SecurityConfig {
 			basicAuthEnabled,
 			basicAuthExceptionOwner,
 			basicAuthExceptionExpiresAt,
-			environment
+			environment,
+			Clock.systemUTC()
 		);
 		validateOperatorCredentials(operatorUsername, operatorPassword);
 		validateDistinctAdminLoginIds(adminUsername, operatorUsername, userUsername);
@@ -760,11 +761,14 @@ public class SecurityConfig {
 		return loginId.trim().toLowerCase(Locale.ROOT);
 	}
 
-	private void validateProdBasicAuthPolicy(
+	// 만료일은 운영자가 입력하는 한국 달력 날짜다. UTC 날짜와 비교하면 한국 자정 이후 최대 9시간 더 유효해지므로
+	// 보안 만료는 업무 시간대(한국) 날짜로 비교해 만료일 다음 날 한국 자정에 닫힌다.
+	static void validateProdBasicAuthPolicy(
 		boolean basicAuthEnabled,
 		String exceptionOwner,
 		String exceptionExpiresAt,
-		Environment environment
+		Environment environment,
+		Clock clock
 	) {
 		if (!Arrays.asList(environment.getActiveProfiles()).contains("prod") || !basicAuthEnabled) {
 			return;
@@ -773,7 +777,7 @@ public class SecurityConfig {
 			throw new IllegalStateException("운영 Basic auth 예외는 owner와 만료일이 필요합니다.");
 		}
 		LocalDate expiresAt = LocalDate.parse(exceptionExpiresAt);
-		if (expiresAt.isBefore(LocalDate.now(ZoneOffset.UTC))) {
+		if (expiresAt.isBefore(BusinessTime.today(clock))) {
 			throw new IllegalStateException("운영 Basic auth 예외 만료일이 지났습니다.");
 		}
 	}

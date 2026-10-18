@@ -5,15 +5,17 @@ import com.easysubway.admin.errors.application.port.out.ErrorEventRepository;
 import com.easysubway.admin.errors.domain.ErrorEvent;
 import com.easysubway.admin.navigation.AdminProgram;
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.common.error.ErrorCategory;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxRequest;
+import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -29,9 +31,11 @@ class ErrorEventAdminPageController {
 	private static final int DEFAULT_LOOKBACK_DAYS = 7;
 
 	private final ErrorEventRepository errorEventRepository;
+	private final ObjectProvider<Clock> clockProvider;
 
-	ErrorEventAdminPageController(ErrorEventRepository errorEventRepository) {
+	ErrorEventAdminPageController(ErrorEventRepository errorEventRepository, ObjectProvider<Clock> clockProvider) {
 		this.errorEventRepository = errorEventRepository;
+		this.clockProvider = clockProvider;
 	}
 
 	@GetMapping(PAGE_PATH)
@@ -75,12 +79,12 @@ class ErrorEventAdminPageController {
 		Integer page,
 		Integer size
 	) {
-		LocalDate effectiveTo = to == null ? LocalDate.now(ZoneOffset.UTC) : to;
+		LocalDate effectiveTo = to == null ? BusinessTime.today(clockProvider.getIfAvailable(Clock::systemUTC)) : to;
 		LocalDate effectiveFrom = from == null ? effectiveTo.minusDays(DEFAULT_LOOKBACK_DAYS) : from;
 		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
 		ErrorEventQuery query = ErrorEventQuery.of(
-			effectiveFrom.atStartOfDay().toInstant(ZoneOffset.UTC),
-			effectiveTo.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC),
+			BusinessTime.startOfDayInstant(effectiveFrom),
+			BusinessTime.startOfNextDayInstant(effectiveTo),
 			code,
 			category,
 			pageRequest.page(),

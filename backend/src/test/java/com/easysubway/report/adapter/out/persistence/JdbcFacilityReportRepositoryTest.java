@@ -10,6 +10,7 @@ import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportType;
+import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -697,20 +698,41 @@ class JdbcFacilityReportRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("검색 질의는 접수일 기간을 포함 경계로 거른다")
-	void searchFiltersByCreatedDateRangeInclusive() {
-		repository.saveReport(reportAt("r-15", "15일 신고", FacilityReportStatus.SUBMITTED,
-			LocalDateTime.of(2026, 6, 15, 23, 0)));
-		repository.saveReport(reportAt("r-17", "17일 신고", FacilityReportStatus.SUBMITTED,
+	@DisplayName("검색 질의는 접수일 기간을 한국 날짜 경계(UTC 15:00)로 포함해 거른다")
+	void searchFiltersByCreatedDateRangeOnKoreanDayBoundaries() {
+		// 한국 6월 15일 23:59:59 / 6월 16일 00:00 / 6월 18일 23:59:59 / 6월 19일 00:00.
+		repository.saveReport(reportAt("r-before", "경계 전 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 15, 14, 59, 59)));
+		repository.saveReport(reportAt("r-start", "시작 경계 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 15, 15, 0)));
+		repository.saveReport(reportAt("r-middle", "중간 신고", FacilityReportStatus.SUBMITTED,
 			LocalDateTime.of(2026, 6, 17, 12, 0)));
-		repository.saveReport(reportAt("r-19", "19일 신고", FacilityReportStatus.SUBMITTED,
-			LocalDateTime.of(2026, 6, 19, 1, 0)));
-
-		var page = repository.loadReportSummaries(FacilityReportListQuery.of(
+		repository.saveReport(reportAt("r-end", "끝 경계 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 18, 14, 59, 59)));
+		repository.saveReport(reportAt("r-after", "경계 후 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 18, 15, 0)));
+		var query = FacilityReportListQuery.of(
 			null, null, null, null, null,
-			java.time.LocalDate.of(2026, 6, 16), java.time.LocalDate.of(2026, 6, 18), null, 0, 20));
+			java.time.LocalDate.of(2026, 6, 16), java.time.LocalDate.of(2026, 6, 18), null, 0, 20);
 
-		assertThat(page.items()).extracting(FacilityReportSummary::id).containsExactly("r-17");
+		assertThat(repository.loadReportSummaries(query).items())
+			.extracting(FacilityReportSummary::id)
+			.containsExactlyInAnyOrder("r-start", "r-middle", "r-end");
+		assertThat(repository.countReports(query)).isEqualTo(3L);
+	}
+
+	@Test
+	@DisplayName("처리 시간 요약은 검토된 신고만 평균내고 검토 시각이 접수보다 빠른 행은 제외한다")
+	void processingTimeSummaryAveragesReviewedReportsOnly() {
+		assertThat(repository.loadReportProcessingTimeSummary()).isEqualTo(ReportProcessingTimeSummary.empty());
+		repository.saveReport(reviewedReport("done-30", LocalDateTime.of(2026, 6, 17, 9, 0), LocalDateTime.of(2026, 6, 17, 9, 30)));
+		repository.saveReport(reviewedReport("done-90", LocalDateTime.of(2026, 6, 17, 10, 0), LocalDateTime.of(2026, 6, 17, 11, 30)));
+		repository.saveReport(reviewedReport("clock-skew", LocalDateTime.of(2026, 6, 17, 12, 0), LocalDateTime.of(2026, 6, 17, 11, 0)));
+		repository.saveReport(reportAt("pending", "검토 전 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 13, 0)));
+
+		assertThat(repository.loadReportProcessingTimeSummary())
+			.isEqualTo(new ReportProcessingTimeSummary(2, 60));
 	}
 
 	@Test
@@ -920,6 +942,27 @@ class JdbcFacilityReportRepositoryTest {
 			createdAt,
 			null,
 			null
+		);
+	}
+
+	private FacilityReport reviewedReport(String reportId, LocalDateTime createdAt, LocalDateTime reviewedAt) {
+		return new FacilityReport(
+			reportId,
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-elevator-1",
+			FacilityReportType.BROKEN,
+			"검토된 신고",
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			FacilityReportStatus.ACCEPTED,
+			createdAt,
+			reviewedAt,
+			"admin-user"
 		);
 	}
 

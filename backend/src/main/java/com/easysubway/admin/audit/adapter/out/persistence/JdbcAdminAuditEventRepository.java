@@ -6,6 +6,7 @@ import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.time.BusinessTime;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -219,11 +220,11 @@ public class JdbcAdminAuditEventRepository implements AdminAuditEventRepository 
 		}
 		if (query.occurredFrom() != null) {
 			conditions.add("occurred_at >= ?");
-			arguments.add(query.occurredFrom().atStartOfDay());
+			arguments.add(BusinessTime.startOfDayUtcLocal(query.occurredFrom()));
 		}
 		if (query.occurredTo() != null) {
 			conditions.add("occurred_at < ?");
-			arguments.add(query.occurredTo().plusDays(1).atStartOfDay());
+			arguments.add(BusinessTime.startOfNextDayUtcLocal(query.occurredTo()));
 		}
 		if (query.reasonMissing()) {
 			conditions.add("reason IS NULL");
