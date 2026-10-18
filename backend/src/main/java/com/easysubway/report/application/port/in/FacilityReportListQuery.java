@@ -144,7 +144,7 @@ public record FacilityReportListQuery(
 	 * 제외 경계({@code <})로 쓰며 {@code createdTo}가 있을 때만 호출한다.
 	 */
 	public LocalDateTime createdBeforeUtc() {
-		return BusinessTime.startOfDayUtc(createdTo.plusDays(1));
+		return BusinessTime.startOfNextDayUtc(createdTo);
 	}
 
 	/** 정렬 상태를 URL 토큰(`created_at,desc`)으로 되돌린다. 템플릿의 정렬 링크·저장된 뷰에 쓴다. */

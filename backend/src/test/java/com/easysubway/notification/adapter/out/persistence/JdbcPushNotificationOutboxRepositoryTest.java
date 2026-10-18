@@ -287,6 +287,12 @@ class JdbcPushNotificationOutboxRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("이력 검색·건수·실패 분해는 발송 기간을 한국 날짜 경계(UTC 15:00)로 거른다")
+	void searchFiltersByKoreanDayBoundaries() {
+		KoreanDayPushHistoryScenario.assertFiltersByKoreanDay(repository);
+	}
+
+	@Test
 	@DisplayName("LIKE 메타문자가 든 키워드는 리터럴로 매칭한다")
 	void searchPushNotificationsEscapesLikeMetacharacters() {
 		repository.savePushNotification(new PushNotification(

@@ -1,5 +1,6 @@
 package com.easysubway.notification.adapter.out.persistence;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.notification.application.port.in.PushNotificationHistoryQuery;
 import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
@@ -294,11 +295,11 @@ public class JdbcPushNotificationOutboxRepository implements
 		}
 		if (query.createdFrom() != null) {
 			conditions.add("created_at >= ?");
-			arguments.add(query.createdFrom().atStartOfDay());
+			arguments.add(BusinessTime.startOfDayUtc(query.createdFrom()));
 		}
 		if (query.createdTo() != null) {
 			conditions.add("created_at < ?");
-			arguments.add(query.createdTo().plusDays(1).atStartOfDay());
+			arguments.add(BusinessTime.startOfNextDayUtc(query.createdTo()));
 		}
 		if (conditions.isEmpty()) {
 			return "";
@@ -341,11 +342,11 @@ public class JdbcPushNotificationOutboxRepository implements
 		}
 		if (query.createdFrom() != null) {
 			conditions.add("created_at >= ?");
-			arguments.add(query.createdFrom().atStartOfDay());
+			arguments.add(BusinessTime.startOfDayUtc(query.createdFrom()));
 		}
 		if (query.createdTo() != null) {
 			conditions.add("created_at < ?");
-			arguments.add(query.createdTo().plusDays(1).atStartOfDay());
+			arguments.add(BusinessTime.startOfNextDayUtc(query.createdTo()));
 		}
 		return " WHERE " + String.join(" AND ", conditions);
 	}

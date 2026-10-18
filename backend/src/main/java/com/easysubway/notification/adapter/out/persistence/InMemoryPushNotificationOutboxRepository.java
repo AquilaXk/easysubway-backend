@@ -1,5 +1,6 @@
 package com.easysubway.notification.adapter.out.persistence;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.notification.application.port.in.PushNotificationHistoryQuery;
 import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
@@ -208,11 +209,11 @@ public class InMemoryPushNotificationOutboxRepository implements
 			return false;
 		}
 		LocalDateTime createdAt = notification.createdAt();
-		if (query.createdFrom() != null && createdAt.isBefore(query.createdFrom().atStartOfDay())) {
+		if (query.createdFrom() != null && createdAt.isBefore(BusinessTime.startOfDayUtc(query.createdFrom()))) {
 			return false;
 		}
 		return query.createdTo() == null
-			|| createdAt.isBefore(query.createdTo().plusDays(1).atStartOfDay());
+			|| createdAt.isBefore(BusinessTime.startOfNextDayUtc(query.createdTo()));
 	}
 
 	@Override
@@ -247,11 +248,11 @@ public class InMemoryPushNotificationOutboxRepository implements
 			return false;
 		}
 		LocalDateTime createdAt = notification.createdAt();
-		if (query.createdFrom() != null && createdAt.isBefore(query.createdFrom().atStartOfDay())) {
+		if (query.createdFrom() != null && createdAt.isBefore(BusinessTime.startOfDayUtc(query.createdFrom()))) {
 			return false;
 		}
 		return query.createdTo() == null
-			|| createdAt.isBefore(query.createdTo().plusDays(1).atStartOfDay());
+			|| createdAt.isBefore(BusinessTime.startOfNextDayUtc(query.createdTo()));
 	}
 
 	private static boolean matchesKeyword(PushNotification notification, String keyword) {

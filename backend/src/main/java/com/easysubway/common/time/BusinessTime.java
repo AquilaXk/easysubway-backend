@@ -1,6 +1,7 @@
 package com.easysubway.common.time;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -38,6 +39,16 @@ public final class BusinessTime {
 	 */
 	public static LocalDateTime startOfDayUtc(LocalDate koreanDate) {
 		return koreanDate.atStartOfDay(ZONE).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+	}
+
+	/** 한국 날짜의 다음 날이 시작되는 순간을 UTC 벽시계 시각으로 옮긴다. 기간 필터의 제외({@code <}) 끝 경계에 쓴다. */
+	public static LocalDateTime startOfNextDayUtc(LocalDate koreanDate) {
+		return startOfDayUtc(koreanDate.plusDays(1));
+	}
+
+	/** 한국 날짜가 시작되는 순간. {@link Instant}로 저장된 시각과 비교하는 기간 필터에 쓴다. */
+	public static Instant startOfDay(LocalDate koreanDate) {
+		return koreanDate.atStartOfDay(ZONE).toInstant();
 	}
 
 	/** UTC 벽시계로 저장된 시각이 속한 한국 달력 날짜. */

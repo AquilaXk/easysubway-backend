@@ -5,12 +5,12 @@ import com.easysubway.admin.errors.application.port.out.ErrorEventRepository;
 import com.easysubway.admin.errors.domain.ErrorEvent;
 import com.easysubway.admin.navigation.AdminProgram;
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.common.error.ErrorCategory;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxRequest;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,12 +75,12 @@ class ErrorEventAdminPageController {
 		Integer page,
 		Integer size
 	) {
-		LocalDate effectiveTo = to == null ? LocalDate.now(ZoneOffset.UTC) : to;
+		LocalDate effectiveTo = to == null ? LocalDate.now(BusinessTime.ZONE) : to;
 		LocalDate effectiveFrom = from == null ? effectiveTo.minusDays(DEFAULT_LOOKBACK_DAYS) : from;
 		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
 		ErrorEventQuery query = ErrorEventQuery.of(
-			effectiveFrom.atStartOfDay().toInstant(ZoneOffset.UTC),
-			effectiveTo.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC),
+			BusinessTime.startOfDay(effectiveFrom),
+			BusinessTime.startOfDay(effectiveTo.plusDays(1)),
 			code,
 			category,
 			pageRequest.page(),

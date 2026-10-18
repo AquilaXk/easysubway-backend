@@ -48,6 +48,15 @@ class BusinessTimeTest {
 	}
 
 	@Test
+	@DisplayName("한국 날짜의 다음 날 시작과 Instant 시작은 같은 경계를 가리킨다")
+	void nextDayStartAndInstantStartPointAtTheSameBoundaries() {
+		LocalDate day = LocalDate.of(2026, 10, 18);
+
+		assertThat(BusinessTime.startOfNextDayUtc(day)).isEqualTo(LocalDateTime.of(2026, 10, 18, 15, 0));
+		assertThat(BusinessTime.startOfDay(day)).isEqualTo(Instant.parse("2026-10-17T15:00:00Z"));
+	}
+
+	@Test
 	@DisplayName("UTC 벽시계 시각은 한국 달력 날짜로 묶인다")
 	void groupsUtcWallClockByKoreanDate() {
 		assertThat(BusinessTime.dateOfUtc(LocalDateTime.of(2026, 10, 17, 14, 59, 59)))

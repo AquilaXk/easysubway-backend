@@ -4,10 +4,10 @@ import com.easysubway.admin.errors.application.ErrorEventQuery;
 import com.easysubway.admin.errors.application.port.out.ErrorEventRepository;
 import com.easysubway.admin.errors.domain.ErrorEvent;
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.ApiResponse;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -47,11 +47,11 @@ class ErrorEventAdminApiController {
 	}
 
 	private static Instant toInstant(LocalDate date) {
-		return date == null ? null : date.atStartOfDay().toInstant(ZoneOffset.UTC);
+		return date == null ? null : BusinessTime.startOfDay(date);
 	}
 
 	private static Instant toExclusiveInstant(LocalDate date) {
-		return date == null ? null : date.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+		return date == null ? null : BusinessTime.startOfDay(date.plusDays(1));
 	}
 
 	record PageResponse(List<ErrorEventView> items, int page, int size, boolean hasNext) {

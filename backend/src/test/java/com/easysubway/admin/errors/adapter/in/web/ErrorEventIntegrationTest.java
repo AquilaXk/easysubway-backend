@@ -77,6 +77,28 @@ class ErrorEventIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("기간 필터는 한국 날짜 경계(UTC 15:00)로 마지막 발생 시각을 거른다")
+	void dateFilterUsesKoreanDayBoundaries() throws Exception {
+		Instant lastKoreanSecondOfJuly10 = Instant.parse("2026-07-10T14:59:59Z");
+		Instant firstKoreanSecondOfJuly11 = Instant.parse("2026-07-10T15:00:00Z");
+		for (var event : java.util.Map.of("A", lastKoreanSecondOfJuly10, "B", firstKoreanSecondOfJuly11).entrySet()) {
+			errorEventRepository.upsertOccurrence(new ErrorEvent(
+				null, event.getValue(), event.getValue(), "CODE_" + event.getKey(), "SYSTEM", 500, "GET",
+				"/api/" + event.getKey(), "java.lang.IllegalStateException",
+				event.getKey().toLowerCase().repeat(64), "corr-" + event.getKey(), 1L
+			));
+		}
+
+		mockMvc.perform(get("/admin/api/errors")
+				.param("from", "2026-07-11")
+				.param("to", "2026-07-11")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.items.length()").value(1))
+			.andExpect(jsonPath("$.data.items[0].code").value("CODE_B"));
+	}
+
+	@Test
 	@DisplayName("콘솔 오류 이벤트 화면이 렌더된다")
 	void consolePageRenders() throws Exception {
 		String html = mockMvc.perform(get("/admin/errors/page")

@@ -42,6 +42,25 @@ class InMemoryAdminAuditEventRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("감사 검색은 발생 기간을 한국 날짜 경계(UTC 15:00)로 거른다")
+	void searchFiltersByKoreanDayBoundaries() {
+		var day = java.time.LocalDate.of(2026, 6, 17);
+		for (var entry : java.util.Map.of(
+			"before", LocalDateTime.of(2026, 6, 16, 14, 59, 59),
+			"start", LocalDateTime.of(2026, 6, 16, 15, 0),
+			"end", LocalDateTime.of(2026, 6, 17, 14, 59, 59),
+			"after", LocalDateTime.of(2026, 6, 17, 15, 0)).entrySet()) {
+			repository.save(event(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.SUCCESS,
+				"REPORT", entry.getKey(), "업무 맥락", entry.getValue()));
+		}
+		var query = new AdminAuditQuery(null, null, null, null, day, day, false, 0, 10);
+
+		assertThat(repository.search(query)).extracting(AdminAuditEvent::targetId)
+			.containsExactly("end", "start");
+		assertThat(repository.count(query)).isEqualTo(2);
+	}
+
+	@Test
 	@DisplayName("감사 검색은 페이지 크기·오프셋으로 잘라낸다")
 	void searchPaginates() {
 		LocalDateTime base = LocalDateTime.of(2026, 6, 27, 9, 0);
