@@ -232,10 +232,21 @@ class JourneySearchRecorderTest {
 
 	@Test
 	@DisplayName("종료 대기 중 인터럽트되어도 실행기를 멈추고 인터럽트 상태를 유지한다")
-	void shutdownKeepsInterruptStatus() {
+	void shutdownKeepsInterruptStatus() throws Exception {
 		var pool = new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
 			new java.util.concurrent.LinkedBlockingQueue<>(10));
 		var recorder = new JourneySearchRecorder(store, pool, CLOCK, meters);
+		// 진행 중인 작업이 있어야 종료 대기가 실제로 막혀 인터럽트를 받는다. 이미 종료된 실행기는 인터럽트를 보지 않는다.
+		var started = new java.util.concurrent.CountDownLatch(1);
+		pool.execute(() -> {
+			started.countDown();
+			try {
+				new java.util.concurrent.CountDownLatch(1).await();
+			} catch (InterruptedException expected) {
+				Thread.currentThread().interrupt();
+			}
+		});
+		assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
 
 		Thread.currentThread().interrupt();
 		try {
