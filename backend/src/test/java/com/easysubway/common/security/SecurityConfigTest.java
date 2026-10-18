@@ -164,6 +164,23 @@ class SecurityConfigTest {
 	}
 
 	@Test
+	@DisplayName("Basic auth 예외는 만료일의 한국 날짜가 끝나는 자정(UTC 15:00)에 닫힌다")
+	void basicAuthExceptionExpiresAtKoreanMidnight() {
+		var prod = new MockEnvironment().withProperty("spring.profiles.active", "prod");
+		prod.setActiveProfiles("prod");
+		Clock lastKoreanSecond = Clock.fixed(java.time.Instant.parse("2026-10-17T14:59:59Z"), java.time.ZoneOffset.UTC);
+		Clock firstKoreanSecondOfNextDay = Clock.fixed(java.time.Instant.parse("2026-10-17T15:00:00Z"), java.time.ZoneOffset.UTC);
+
+		// 만료일 당일 한국 23:59:59까지는 유효하다.
+		SecurityConfig.validateProdBasicAuthPolicy(true, "security-owner", "2026-10-17", prod, lastKoreanSecond);
+		// 한국 자정을 넘기면 UTC 날짜는 아직 만료일이어도 닫혀야 한다(fail-closed).
+		assertThatThrownBy(() -> SecurityConfig.validateProdBasicAuthPolicy(
+			true, "security-owner", "2026-10-17", prod, firstKoreanSecondOfNextDay))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("운영 Basic auth 예외 만료일이 지났습니다.");
+	}
+
+	@Test
 	@DisplayName("운영 프로필은 만료일 있는 Basic auth 예외를 명시하면 시작한다")
 	void prodProfileAllowsBasicAuthWithReleaseException() {
 		contextRunner

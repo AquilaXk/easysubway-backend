@@ -295,11 +295,11 @@ public class JdbcPushNotificationOutboxRepository implements
 		}
 		if (query.createdFrom() != null) {
 			conditions.add("created_at >= ?");
-			arguments.add(BusinessTime.startOfDayUtc(query.createdFrom()));
+			arguments.add(BusinessTime.startOfDayUtcLocal(query.createdFrom()));
 		}
 		if (query.createdTo() != null) {
 			conditions.add("created_at < ?");
-			arguments.add(BusinessTime.startOfNextDayUtc(query.createdTo()));
+			arguments.add(BusinessTime.startOfNextDayUtcLocal(query.createdTo()));
 		}
 		if (conditions.isEmpty()) {
 			return "";
@@ -342,11 +342,11 @@ public class JdbcPushNotificationOutboxRepository implements
 		}
 		if (query.createdFrom() != null) {
 			conditions.add("created_at >= ?");
-			arguments.add(BusinessTime.startOfDayUtc(query.createdFrom()));
+			arguments.add(BusinessTime.startOfDayUtcLocal(query.createdFrom()));
 		}
 		if (query.createdTo() != null) {
 			conditions.add("created_at < ?");
-			arguments.add(BusinessTime.startOfNextDayUtc(query.createdTo()));
+			arguments.add(BusinessTime.startOfNextDayUtcLocal(query.createdTo()));
 		}
 		return " WHERE " + String.join(" AND ", conditions);
 	}

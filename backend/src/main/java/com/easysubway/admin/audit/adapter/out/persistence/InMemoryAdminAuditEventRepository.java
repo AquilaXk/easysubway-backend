@@ -166,11 +166,11 @@ public class InMemoryAdminAuditEventRepository implements AdminAuditEventReposit
 			return false;
 		}
 		LocalDateTime occurredAt = event.occurredAt();
-		if (query.occurredFrom() != null && occurredAt.isBefore(BusinessTime.startOfDayUtc(query.occurredFrom()))) {
+		if (query.occurredFrom() != null && occurredAt.isBefore(BusinessTime.startOfDayUtcLocal(query.occurredFrom()))) {
 			return false;
 		}
 		return query.occurredTo() == null
-			|| occurredAt.isBefore(BusinessTime.startOfNextDayUtc(query.occurredTo()));
+			|| occurredAt.isBefore(BusinessTime.startOfNextDayUtcLocal(query.occurredTo()));
 	}
 
 	private static boolean matchesTarget(AdminAuditEvent event, String keyword) {

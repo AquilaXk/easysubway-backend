@@ -47,11 +47,11 @@ class ErrorEventAdminApiController {
 	}
 
 	private static Instant toInstant(LocalDate date) {
-		return date == null ? null : BusinessTime.startOfDay(date);
+		return date == null ? null : BusinessTime.startOfDayInstant(date);
 	}
 
 	private static Instant toExclusiveInstant(LocalDate date) {
-		return date == null ? null : BusinessTime.startOfDay(date.plusDays(1));
+		return date == null ? null : BusinessTime.startOfNextDayInstant(date);
 	}
 
 	record PageResponse(List<ErrorEventView> items, int page, int size, boolean hasNext) {

@@ -209,11 +209,11 @@ public class InMemoryPushNotificationOutboxRepository implements
 			return false;
 		}
 		LocalDateTime createdAt = notification.createdAt();
-		if (query.createdFrom() != null && createdAt.isBefore(BusinessTime.startOfDayUtc(query.createdFrom()))) {
+		if (query.createdFrom() != null && createdAt.isBefore(BusinessTime.startOfDayUtcLocal(query.createdFrom()))) {
 			return false;
 		}
 		return query.createdTo() == null
-			|| createdAt.isBefore(BusinessTime.startOfNextDayUtc(query.createdTo()));
+			|| createdAt.isBefore(BusinessTime.startOfNextDayUtcLocal(query.createdTo()));
 	}
 
 	@Override
@@ -248,11 +248,11 @@ public class InMemoryPushNotificationOutboxRepository implements
 			return false;
 		}
 		LocalDateTime createdAt = notification.createdAt();
-		if (query.createdFrom() != null && createdAt.isBefore(BusinessTime.startOfDayUtc(query.createdFrom()))) {
+		if (query.createdFrom() != null && createdAt.isBefore(BusinessTime.startOfDayUtcLocal(query.createdFrom()))) {
 			return false;
 		}
 		return query.createdTo() == null
-			|| createdAt.isBefore(BusinessTime.startOfNextDayUtc(query.createdTo()));
+			|| createdAt.isBefore(BusinessTime.startOfNextDayUtcLocal(query.createdTo()));
 	}
 
 	private static boolean matchesKeyword(PushNotification notification, String keyword) {

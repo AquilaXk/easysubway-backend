@@ -43,7 +43,7 @@ class BusinessTimeTest {
 	@Test
 	@DisplayName("한국 날짜의 시작은 전날 UTC 15시 벽시계 시각이다")
 	void startOfKoreanDayIsFifteenHundredUtcOfThePreviousDay() {
-		assertThat(BusinessTime.startOfDayUtc(LocalDate.of(2026, 10, 18)))
+		assertThat(BusinessTime.startOfDayUtcLocal(LocalDate.of(2026, 10, 18)))
 			.isEqualTo(LocalDateTime.of(2026, 10, 17, 15, 0));
 	}
 
@@ -52,8 +52,8 @@ class BusinessTimeTest {
 	void nextDayStartAndInstantStartPointAtTheSameBoundaries() {
 		LocalDate day = LocalDate.of(2026, 10, 18);
 
-		assertThat(BusinessTime.startOfNextDayUtc(day)).isEqualTo(LocalDateTime.of(2026, 10, 18, 15, 0));
-		assertThat(BusinessTime.startOfDay(day)).isEqualTo(Instant.parse("2026-10-17T15:00:00Z"));
+		assertThat(BusinessTime.startOfNextDayUtcLocal(day)).isEqualTo(LocalDateTime.of(2026, 10, 18, 15, 0));
+		assertThat(BusinessTime.startOfDayInstant(day)).isEqualTo(Instant.parse("2026-10-17T15:00:00Z"));
 	}
 
 	@Test

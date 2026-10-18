@@ -97,8 +97,8 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 		}
 
 		LocalDate startDate = today.minusDays(days - 1L);
-		LocalDateTime startAt = BusinessTime.startOfDayUtc(startDate);
-		LocalDateTime endAt = BusinessTime.startOfDayUtc(today.plusDays(1));
+		LocalDateTime startAt = BusinessTime.startOfDayUtcLocal(startDate);
+		LocalDateTime endAt = BusinessTime.startOfDayUtcLocal(today.plusDays(1));
 		Map<LocalDate, Long> activeUsersByDate = activeUsersByDate(startAt, endAt);
 		Map<LocalDate, ApiTrafficSummary> apiTrafficByDate = apiTrafficByDate(startAt, endAt);
 		List<DailyUserActivity> rows = today.datesUntil(startDate.minusDays(1), java.time.Period.ofDays(-1))

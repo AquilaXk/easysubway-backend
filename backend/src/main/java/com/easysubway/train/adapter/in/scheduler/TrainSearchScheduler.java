@@ -1,6 +1,5 @@
 package com.easysubway.train.adapter.in.scheduler;
 
-import com.easysubway.common.time.BusinessTime;
 import com.easysubway.train.application.TrainSearchService;
 import com.easysubway.train.application.TrainSearchService.TrainSearchFailure;
 import org.slf4j.Logger;
@@ -34,7 +33,7 @@ class TrainSearchScheduler {
 
 	@Scheduled(
 		cron = "${easysubway.train-search.catalog-refresh-cron:0 30 3 * * *}",
-		zone = BusinessTime.ZONE_NAME,
+		zone = "Asia/Seoul",
 		scheduler = "trainSearchTaskScheduler"
 	)
 	void refreshCatalog() {
@@ -47,7 +46,7 @@ class TrainSearchScheduler {
 
 	@Scheduled(
 		cron = "${easysubway.train-search.cache-purge-cron:0 10 4 * * *}",
-		zone = BusinessTime.ZONE_NAME,
+		zone = "Asia/Seoul",
 		scheduler = "trainSearchTaskScheduler"
 	)
 	void purgeExpiredCache() {

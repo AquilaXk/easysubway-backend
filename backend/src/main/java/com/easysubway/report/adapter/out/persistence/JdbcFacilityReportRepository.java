@@ -353,14 +353,14 @@ public class JdbcFacilityReportRepository implements
 			// 첨부 유무 필터: 참이면 첨부된 신고, 거짓이면 첨부 없는 신고만. 바인딩 값이 없는 리터럴 술어다.
 			clauses.add(query.hasPhoto() ? HAS_PHOTO_PREDICATE : "NOT " + HAS_PHOTO_PREDICATE);
 		}
-		if (query.createdFrom() != null) {
+		query.createdFromUtc().ifPresent(from -> {
 			clauses.add("created_at >= ?");
-			args.add(query.createdFromUtc());
-		}
-		if (query.createdTo() != null) {
+			args.add(from);
+		});
+		query.createdBeforeUtc().ifPresent(before -> {
 			clauses.add("created_at < ?");
-			args.add(query.createdBeforeUtc());
-		}
+			args.add(before);
+		});
 		if (clauses.isEmpty()) {
 			return "";
 		}

@@ -220,11 +220,11 @@ public class JdbcAdminAuditEventRepository implements AdminAuditEventRepository 
 		}
 		if (query.occurredFrom() != null) {
 			conditions.add("occurred_at >= ?");
-			arguments.add(BusinessTime.startOfDayUtc(query.occurredFrom()));
+			arguments.add(BusinessTime.startOfDayUtcLocal(query.occurredFrom()));
 		}
 		if (query.occurredTo() != null) {
 			conditions.add("occurred_at < ?");
-			arguments.add(BusinessTime.startOfNextDayUtc(query.occurredTo()));
+			arguments.add(BusinessTime.startOfNextDayUtcLocal(query.occurredTo()));
 		}
 		if (query.reasonMissing()) {
 			conditions.add("reason IS NULL");

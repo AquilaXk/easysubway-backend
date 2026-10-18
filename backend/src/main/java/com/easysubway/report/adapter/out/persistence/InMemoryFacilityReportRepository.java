@@ -112,10 +112,8 @@ public class InMemoryFacilityReportRepository implements
 			.filter(report -> !query.hasStation() || query.stationId().equals(report.stationId()))
 			.filter(report -> !query.hasReportType() || report.reportType() == query.reportType())
 			.filter(report -> !query.hasPhotoFilter() || report.hasPhoto() == query.hasPhoto())
-			.filter(report -> query.createdFrom() == null
-				|| !report.createdAt().isBefore(query.createdFromUtc()))
-			.filter(report -> query.createdTo() == null
-				|| report.createdAt().isBefore(query.createdBeforeUtc()));
+			.filter(report -> query.createdFromUtc().map(from -> !report.createdAt().isBefore(from)).orElse(true))
+			.filter(report -> query.createdBeforeUtc().map(before -> report.createdAt().isBefore(before)).orElse(true));
 	}
 
 	// JDBC와 동일하게 정렬 컬럼·방향 + report_id ASC tie-break.
