@@ -54,6 +54,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -1394,5 +1395,24 @@ class TransitMasterServiceTest {
 			routeEdgeLoadCount++;
 			return super.loadRouteEdges();
 		}
+	}
+
+	@Test
+	@DisplayName("시설 상태 갱신일은 UTC로는 전날인 한국 00~09시에도 한국 달력 날짜로 기록한다")
+	void updateFacilityStatusStampsKoreanCalendarDate() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-13T16:00:00Z"), ZoneOffset.UTC)
+		);
+
+		var updated = service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		));
+
+		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
 	}
 }

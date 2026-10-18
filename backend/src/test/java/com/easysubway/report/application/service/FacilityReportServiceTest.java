@@ -46,6 +46,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -2016,5 +2017,27 @@ class FacilityReportServiceTest {
 			}
 			return super.saveReport(report);
 		}
+	}
+
+	@Test
+	@DisplayName("신고 승인은 시설 상태 갱신일을 UTC로는 전날인 한국 00~09시에도 한국 달력 날짜로 기록한다")
+	void acceptedReportStampsFacilityStatusWithKoreanCalendarDate() {
+		var transit = new InMemoryTransitMasterRepository();
+		var serviceAtKoreanDawn = serviceWithClockAndTransitRepository(
+			Clock.fixed(Instant.parse("2026-06-11T16:00:00Z"), ZoneOffset.UTC),
+			transit
+		);
+		var report = serviceAtKoreanDawn.createReport(reportCommand("anonymous-user-dawn", "새벽 신고"));
+
+		serviceAtKoreanDawn.reviewReport(new ReviewFacilityReportCommand(
+			report.id(),
+			FacilityReportReviewDecision.ACCEPT,
+			"admin-1"
+		));
+
+		assertThat(transit.loadAccessibilityFacilities())
+			.filteredOn(facility -> facility.id().equals("facility-sangnoksu-elevator-1"))
+			.extracting(facility -> facility.lastUpdatedAt())
+			.containsExactly(java.time.LocalDate.of(2026, 6, 12));
 	}
 }

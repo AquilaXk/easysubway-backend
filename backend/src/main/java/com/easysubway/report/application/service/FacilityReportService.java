@@ -1,6 +1,7 @@
 package com.easysubway.report.application.service;
 
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.FacilityReportListQuery;
@@ -42,7 +43,6 @@ import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.math.BigDecimal;
 import java.time.Clock;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Comparator;
@@ -952,7 +952,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			saveAccessibilityFacilityStatusPort.saveFacilityStatus(
 				report.facilityId(),
 				status,
-				LocalDate.now(clock)
+				BusinessTime.today(clock)
 			);
 			if (!statusChanged) {
 				return;

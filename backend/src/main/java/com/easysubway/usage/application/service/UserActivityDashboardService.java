@@ -5,6 +5,7 @@ import com.easysubway.usage.application.port.out.SummarizeUserActivityPort;
 import com.easysubway.usage.domain.UserActivityDashboardSummary;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,8 @@ public class UserActivityDashboardService implements UserActivityDashboardUseCas
 
 	@Override
 	public UserActivityDashboardSummary summarizeUserActivity() {
-		return summarizeUserActivityPort.summarizeUserActivity(LocalDate.now(clock), SUMMARY_DAYS);
+		// 집계 쪽이 저장된 UTC 발생 시각을 UTC 달력 날짜로 묶으므로(CAST(occurred_at AS DATE)) 기준일도 UTC 날짜다.
+		LocalDate utcToday = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
+		return summarizeUserActivityPort.summarizeUserActivity(utcToday, SUMMARY_DAYS);
 	}
 }

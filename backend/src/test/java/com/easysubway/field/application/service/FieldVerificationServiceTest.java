@@ -10,6 +10,7 @@ import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatu
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import java.time.Clock;
 import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,8 @@ class FieldVerificationServiceTest {
 		new InMemoryFieldVerificationChangeHistoryRepository();
 	private final InMemoryFieldVerificationSessionRepository sessionRepository =
 		new InMemoryFieldVerificationSessionRepository();
-	private final FieldVerificationService service = new FieldVerificationService(sessionRepository, historyRepository);
+	private final FieldVerificationService service = new FieldVerificationService(
+		sessionRepository, historyRepository, Clock.systemUTC());
 
 	@Test
 	@DisplayName("상록수역 필수 현장 검증 항목을 조회한다")
@@ -195,5 +197,26 @@ class FieldVerificationServiceTest {
 		)))
 			.isInstanceOf(ResourceNotFoundException.class)
 			.hasMessage("현장 확인 항목을 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("현장 검증 변경 이력 시각은 주입된 시계를 UTC 벽시계로 기록한다")
+	void recordsChangeHistoryAtInjectedClockTime() {
+		var fixedService = new FieldVerificationService(
+			sessionRepository,
+			historyRepository,
+			Clock.fixed(java.time.Instant.parse("2026-10-17T16:00:00Z"), java.time.ZoneOffset.UTC));
+
+		fixedService.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sadang",
+			"field-verification-sadang-elevator",
+			FieldVerificationStatus.NEEDS_RECHECK,
+			"엘리베이터 운행 중지 안내문 확인 필요",
+			"admin-user"
+		));
+
+		assertThat(fixedService.listStationChangeHistory("station-sadang"))
+			.extracting(FieldVerificationChangeHistory::changedAt)
+			.containsExactly(java.time.LocalDateTime.of(2026, 10, 17, 16, 0));
 	}
 }

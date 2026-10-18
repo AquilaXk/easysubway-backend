@@ -1,5 +1,6 @@
 package com.easysubway.transit.application.service;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationMasterDataCounts;
@@ -384,7 +385,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			command.status(),
 			command.dataConfidence(),
 			command.dataSourceType(),
-			LocalDate.now(clock)
+			BusinessTime.today(clock)
 		);
 		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility, command.updatedBy());
 		return facility;
@@ -422,7 +423,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			command.status(),
 			command.dataConfidence(),
 			command.dataSourceType(),
-			LocalDate.now(clock)
+			BusinessTime.today(clock)
 		);
 		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility, command.updatedBy());
 		if (existing.status() != command.status()) {
@@ -439,7 +440,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		requireUpdater(command);
 
 		AccessibilityFacility facility = loadAccessibilityFacility(command.facilityId());
-		LocalDate updatedAt = LocalDate.now(clock);
+		LocalDate updatedAt = BusinessTime.today(clock);
 		// 관리자 직접 수정은 역 상세와 경로 추천이 함께 사용하는 운영 상태의 기준값을 바꾼다.
 		requireWritableMasterData();
 		saveAccessibilityFacilityStatusPort.saveFacilityStatus(
@@ -478,7 +479,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 		SimplifiedStationLayout layout = loadSimplifiedStationLayout(command.layoutId());
 		requireExpectedLayoutVersion(command, layout);
-		LocalDate updatedAt = LocalDate.now(clock);
+		LocalDate updatedAt = BusinessTime.today(clock);
 		// 확인 상태는 앱 렌더링 데이터가 아니라 운영자가 배포 가능성을 판단하는 메타데이터만 갱신한다.
 		requireWritableMasterData();
 		saveSimplifiedStationLayoutStatusPort.saveSimplifiedStationLayoutStatus(

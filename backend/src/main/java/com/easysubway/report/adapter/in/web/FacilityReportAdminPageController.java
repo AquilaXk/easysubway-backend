@@ -33,6 +33,7 @@ import java.security.Principal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -312,7 +313,8 @@ class FacilityReportAdminPageController {
 		model.addAttribute("photoFilters", photoFilterOptions(query));
 
 		// 기간 프리셋(오늘·최근 7일·최근 30일·전체 기간). 접수일 기준.
-		LocalDate today = LocalDate.now(clock);
+		// 접수일 필터는 저장된 UTC 접수 시각과 UTC 날짜 경계로 비교하므로(created_at >= 날짜 00:00) "오늘"도 UTC 날짜다.
+		LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
 		LocalDate createdFromDate = query.createdFrom();
 		LocalDate createdToDate = query.createdTo();
 		model.addAttribute("datePresets", List.of(

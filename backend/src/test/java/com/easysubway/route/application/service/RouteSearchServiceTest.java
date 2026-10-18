@@ -67,6 +67,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
@@ -4013,5 +4014,55 @@ class RouteSearchServiceTest {
 			95,
 			true
 		);
+	}
+
+	@Test
+	@DisplayName("접근성 시설 갱신일 경계는 UTC로는 전날인 한국 00~09시에도 한국 날짜에서 센다")
+	void staleAccessibilityBoundaryUsesKoreanCalendarDate() {
+		// 한국 2026-07-13 01:00. 기준일 07-13의 30일 경계는 06-13이므로 06-12 갱신은 오래된 정보다.
+		var repository = new InMemoryRouteSearchRepository();
+		var boundaryService = new RouteSearchService(
+			repository,
+			repository,
+			new BoundaryAccessibilityFacilityTransitMasterPort(),
+			Clock.fixed(Instant.parse("2026-07-12T16:00:00Z"), ZoneOffset.UTC)
+		);
+
+		var result = boundaryService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR
+		));
+
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STALE_ACCESSIBILITY_DATA);
+	}
+
+	private static class BoundaryAccessibilityFacilityTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility(
+					"facility-a-elevator",
+					"station-a",
+					"exit-a-2",
+					AccessibilityFacilityType.ELEVATOR,
+					AccessibilityFacilityStatus.NORMAL,
+					DataConfidenceLevel.HIGH,
+					LocalDate.of(2026, 6, 12)
+				),
+				facility(
+					"facility-b-elevator",
+					"station-b",
+					"exit-b-1",
+					AccessibilityFacilityType.ELEVATOR,
+					AccessibilityFacilityStatus.NORMAL,
+					DataConfidenceLevel.HIGH,
+					LocalDate.of(2026, 6, 12)
+				)
+			);
+		}
 	}
 }

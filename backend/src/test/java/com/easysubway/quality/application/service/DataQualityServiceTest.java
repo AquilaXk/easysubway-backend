@@ -20,6 +20,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -383,5 +384,19 @@ class DataQualityServiceTest {
 		public List<AccessibilityFacility> loadAccessibilityFacilities() {
 			return facilities;
 		}
+	}
+
+	@Test
+	@DisplayName("시설 상태 갱신 지연 기준일은 UTC로는 전날인 한국 00~09시에도 한국 날짜에서 센다")
+	void delayedFacilityStatusThresholdUsesKoreanCalendarDate() {
+		// 한국 2026-06-17 01:00. 기준일은 06-17이므로 30일 경계는 05-18이고 05-17은 지연이다.
+		Clock utcClock = Clock.fixed(Instant.parse("2026-06-16T16:00:00Z"), ZoneOffset.UTC);
+		var service = new DataQualityService(new StubTransitMasterPort(
+			List.of(station("station-sangnoksu", DataQualityLevel.LEVEL_1)),
+			List.of(),
+			List.of(facility("facility-old-broken", AccessibilityFacilityStatus.BROKEN, LocalDate.of(2026, 5, 17)))
+		), utcClock);
+
+		assertThat(service.summarizeDataQuality().delayedFacilityStatusCount()).isEqualTo(1);
 	}
 }

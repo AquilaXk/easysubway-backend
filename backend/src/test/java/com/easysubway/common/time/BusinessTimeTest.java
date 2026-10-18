@@ -1,0 +1,41 @@
+package com.easysubway.common.time;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("업무 시간대 달력 날짜")
+class BusinessTimeTest {
+
+	@Test
+	@DisplayName("UTC로는 전날인 한국 00~09시도 한국 날짜를 돌려준다")
+	void usesKoreanCalendarDateBetweenMidnightAndNineInKorea() {
+		Clock utcClock = Clock.fixed(Instant.parse("2026-10-17T16:00:00Z"), ZoneOffset.UTC);
+
+		assertThat(BusinessTime.today(utcClock)).isEqualTo(LocalDate.of(2026, 10, 18));
+	}
+
+	@Test
+	@DisplayName("한국 자정 직전 순간은 아직 전날이다")
+	void staysOnThePreviousDayJustBeforeKoreanMidnight() {
+		Clock utcClock = Clock.fixed(Instant.parse("2026-10-17T14:59:59Z"), ZoneOffset.UTC);
+
+		assertThat(BusinessTime.today(utcClock)).isEqualTo(LocalDate.of(2026, 10, 17));
+	}
+
+	@Test
+	@DisplayName("주입된 시계의 시간대와 무관하게 같은 순간은 같은 날짜다")
+	void ignoresTheTimeZoneOfTheInjectedClock() {
+		Instant instant = Instant.parse("2026-10-17T16:00:00Z");
+
+		assertThat(BusinessTime.today(Clock.fixed(instant, ZoneId.of("America/Los_Angeles"))))
+			.isEqualTo(BusinessTime.today(Clock.fixed(instant, ZoneOffset.UTC)))
+			.isEqualTo(LocalDate.of(2026, 10, 18));
+	}
+}

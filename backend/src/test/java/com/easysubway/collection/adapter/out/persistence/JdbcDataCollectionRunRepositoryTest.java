@@ -14,6 +14,7 @@ import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -377,7 +378,8 @@ class JdbcDataCollectionRunRepositoryTest {
 			repository,
 			() -> "collection-jdbc-failed-" + idSequence.incrementAndGet(),
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		for (int attempt = 0; attempt < 2; attempt++) {

@@ -4,6 +4,7 @@ import com.easysubway.admin.metric.application.port.out.AdminMetricDailyReposito
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
 import com.easysubway.admin.metric.domain.AdminMetricKeys.AdminMetricKind;
+import com.easysubway.common.time.BusinessTime;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -47,7 +48,7 @@ public class AdminMetricQueryService {
 	public AdminMetricChart chart(Collection<String> requestedKeys, int requestedDays) {
 		int days = ALLOWED_DAYS.contains(requestedDays) ? requestedDays : DEFAULT_DAYS;
 		List<String> keys = normalizeKeys(requestedKeys);
-		LocalDate today = LocalDate.now(clock);
+		LocalDate today = BusinessTime.today(clock);
 		LocalDate from = today.minusDays(days - 1L);
 		List<LocalDate> dates = from.datesUntil(today.plusDays(1)).toList();
 
@@ -82,7 +83,7 @@ public class AdminMetricQueryService {
 	public List<AdminMetricComparison> compare(Collection<String> requestedKeys, int requestedDays) {
 		int days = ALLOWED_DAYS.contains(requestedDays) ? requestedDays : DEFAULT_DAYS;
 		List<String> keys = normalizeKeys(requestedKeys);
-		LocalDate today = LocalDate.now(clock);
+		LocalDate today = BusinessTime.today(clock);
 		LocalDate currentFrom = today.minusDays(days - 1L);
 		LocalDate previousTo = currentFrom.minusDays(1);
 		LocalDate previousFrom = previousTo.minusDays(days - 1L);

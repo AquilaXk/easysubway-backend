@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '911c219357e1b5f44a6dc0948d02ec4af84f5680e294846b0daf66113e4be6db'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '99869d20c3d171681434f67aba48ba8697abce808afb509bb99688b80c6f9ea3');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '80639e8eb98bb049e8f873767e285e02b31371830c00e7eb570e5e13d475dd52');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -541,14 +541,14 @@ test('Backend #234 route search service constructor dispositions are exact', () 
   assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 67);
   const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java', import.meta.url), 'utf8');
   assert.match(source, /private static SaveRouteFeedbackPort requireFeedbackPort\(SaveRouteSearchPort saveRouteSearchPort\)/u);
-  assert.equal(digest(source), '8da9f84369891a3b6f4bdd2f06ddf2b74853ed2c713934dc3a895d3f07ff7f31');
+  assert.equal(digest(source), '0c2741ea79fcdaf1785bba23f93476ed1ef17bf9541d0354118e592e08a5eb96');
   for (const [foundationIdentity, previousIdentity, identity] of [
-    ['093896db4fadc5fbfaa8fc5945bc3c29c10581f6e502c2512fccedb7d565e2ba', 'c760d63255714aee98d9a6c24449b2f7322bb24de6db2dd0c3ce37fef893d05f', '48c6a8ac069922ef02a50b22887a375cc560bd2e43b7d652f4fb0f569d178d06'],
-    ['1528f735d8a2cb23c9c50e1a275d74b716652415a7c8b0cdc1acb23e537121a9', '198b88845e7e1745476a69f37679aefda4ca75b7a9e7c36b1edcf215a7746855', '13c4a133ca790ded176e6154b30f324339dedfec5811d0701f3a32bfd88c0305'],
-    ['167a8027f32711e02e2d3c0b09bc9c0e70dd4ca47b7febbc3f2d51f2b361bad3', '1e7f58ec5e3b2be1562b77de834fb8f403677bb7216fa409e2d53f1ad1de0781', 'a2521ef07db5ca0f213f2312c2c7fa8df0a729aa9e23720365aee7feb02ecdf9'],
+    ['093896db4fadc5fbfaa8fc5945bc3c29c10581f6e502c2512fccedb7d565e2ba', 'c760d63255714aee98d9a6c24449b2f7322bb24de6db2dd0c3ce37fef893d05f', 'c1651aaa0b976cbe217437d4d45b46e33272f705b97344f8aee70dc00db52ad2'],
+    ['1528f735d8a2cb23c9c50e1a275d74b716652415a7c8b0cdc1acb23e537121a9', '198b88845e7e1745476a69f37679aefda4ca75b7a9e7c36b1edcf215a7746855', '6d363e7038fda11a8b656c025553c23317f420734899083016376d3933e15037'],
+    ['167a8027f32711e02e2d3c0b09bc9c0e70dd4ca47b7febbc3f2d51f2b361bad3', '1e7f58ec5e3b2be1562b77de834fb8f403677bb7216fa409e2d53f1ad1de0781', '379b0d6e59c8952df45d8aca6fed090aa493e26047eb26faa301c3098500eed9'],
   ]) {
     const finding = tracked.findings.find((candidate) => candidate.identity === identity);
-    assert.deepEqual([finding.sourceSha256, finding.rebinding], ['8da9f84369891a3b6f4bdd2f06ddf2b74853ed2c713934dc3a895d3f07ff7f31', { foundationIdentity, previousIdentity, reviewIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/534', reason: 'Backend #534 replaces the JVM-default-zone clock fallback with a UTC clock inside the existing constructor body only; the constructor signature, injected collaborators, and fail-fast initialization are unchanged, so the reviewed suppression decision still holds.' }]);
+    assert.deepEqual([finding.sourceSha256, finding.rebinding], ['0c2741ea79fcdaf1785bba23f93476ed1ef17bf9541d0354118e592e08a5eb96', { foundationIdentity, previousIdentity, reviewIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/534', reason: 'Backend #534 replaces the JVM-default-zone clock fallback with a UTC clock and stamps business dates in the Korean time zone inside the existing constructor and method bodies only; the constructor signature, injected collaborators, and fail-fast initialization are unchanged, so the reviewed suppression decision still holds.' }]);
   }
   assert.match(source, /throw new IllegalArgumentException\("경로 피드백 저장 포트가 필요합니다\."\);/u);
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 129, falsePositiveExactSuppression: 64, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });

@@ -1,5 +1,6 @@
 package com.easysubway.quality.application.service;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
@@ -162,7 +163,7 @@ public class DataQualityService implements DataQualityUseCase {
 
 	private boolean isDelayedFacilityStatus(AccessibilityFacility facility) {
 		LocalDate lastUpdatedAt = facility.lastUpdatedAt();
-		return lastUpdatedAt == null || lastUpdatedAt.isBefore(LocalDate.now(clock).minusDays(FACILITY_STATUS_DELAY_DAYS));
+		return lastUpdatedAt == null || lastUpdatedAt.isBefore(BusinessTime.today(clock).minusDays(FACILITY_STATUS_DELAY_DAYS));
 	}
 
 	private long countMissingStationVerificationDate(List<Station> stations) {
