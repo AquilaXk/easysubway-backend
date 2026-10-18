@@ -1,6 +1,7 @@
 package com.easysubway.admin.metric.adapter.in.scheduler;
 
 import com.easysubway.admin.metric.application.service.AdminMetricSnapshotService;
+import com.easysubway.common.time.BusinessTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,7 +25,8 @@ class AdminMetricSnapshotScheduler {
 		this.snapshotService = snapshotService;
 	}
 
-	@Scheduled(cron = "${easysubway.admin.metric.snapshot.cron:0 10 0 * * *}")
+	// 스냅샷 날짜는 업무 시간대(한국) 달력 날짜다. 실행 시각의 기준도 같은 시간대여야 날짜가 어긋나지 않는다.
+	@Scheduled(cron = "${easysubway.admin.metric.snapshot.cron:0 10 0 * * *}", zone = BusinessTime.ZONE_NAME)
 	void snapshotDaily() {
 		try {
 			snapshotService.snapshotToday();

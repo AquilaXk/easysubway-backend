@@ -17,6 +17,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -169,7 +170,7 @@ public class JdbcPushNotificationOutboxRepository implements
 					)
 				""",
 			PushNotificationStatus.PROCESSING.name(),
-			LocalDateTime.now(),
+			LocalDateTime.now(ZoneOffset.UTC),
 			notification.notificationId(),
 			PushNotificationStatus.PENDING.name(),
 			PushNotificationStatus.PROCESSING.name(),
@@ -517,7 +518,7 @@ public class JdbcPushNotificationOutboxRepository implements
 	}
 
 	private LocalDateTime processingClaimExpiresBefore() {
-		return LocalDateTime.now().minus(PROCESSING_CLAIM_TIMEOUT);
+		return LocalDateTime.now(ZoneOffset.UTC).minus(PROCESSING_CLAIM_TIMEOUT);
 	}
 
 	private PushNotification mapPushNotification(ResultSet resultSet, int rowNumber) throws SQLException {

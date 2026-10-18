@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSelection;
@@ -113,7 +114,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			saveRouteSearchPort,
 			saveRouteFeedbackPort,
 			loadTransitMasterPort,
-			Clock.systemDefaultZone(),
+			Clock.systemUTC(),
 			realtimeArrivalResolver.getIfAvailable()
 		);
 	}
@@ -128,7 +129,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			saveRouteSearchPort,
 			requireFeedbackPort(saveRouteSearchPort),
 			loadTransitMasterPort,
-			Clock.systemDefaultZone()
+			Clock.systemUTC()
 		);
 	}
 
@@ -1121,7 +1122,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	private boolean hasStaleAccessibilityData(String stationId) {
-		LocalDate staleBefore = LocalDate.now(clock).minusDays(ACCESSIBILITY_DATA_FRESH_DAYS);
+		LocalDate staleBefore = BusinessTime.today(clock).minusDays(ACCESSIBILITY_DATA_FRESH_DAYS);
 		return stationFacilities(stationId).stream()
 			.anyMatch(facility -> facility.lastUpdatedAt().isBefore(staleBefore));
 	}

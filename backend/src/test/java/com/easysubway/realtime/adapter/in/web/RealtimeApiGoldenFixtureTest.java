@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -78,6 +79,7 @@ class RealtimeApiGoldenFixtureTest {
 		ObjectNode root = (ObjectNode) objectMapper.readTree(body);
 		JsonNode data = root.path("data");
 		if (data instanceof ObjectNode object && object.has("receivedAt")) {
+			requireOffsetDateTime(object, "receivedAt");
 			object.put("receivedAt", "__RECEIVED_AT__");
 		}
 		JsonNode items = root.path("data").path(listName);
@@ -85,15 +87,22 @@ class RealtimeApiGoldenFixtureTest {
 			for (JsonNode item : items) {
 				if (item instanceof ObjectNode object) {
 					if (object.has("receivedAt")) {
+						requireOffsetDateTime(object, "receivedAt");
 						object.put("receivedAt", "__RECEIVED_AT__");
 					}
 					if (object.has("providerReceivedAt")) {
+						requireOffsetDateTime(object, "providerReceivedAt");
 						object.put("providerReceivedAt", "__RECEIVED_AT__");
 					}
 				}
 			}
 		}
 		return root;
+	}
+
+	/** placeholder로 바꾸기 전에 시각이 offset 있는 ISO-8601인지 확인한다(계약: format date-time). */
+	private static void requireOffsetDateTime(ObjectNode object, String field) {
+		assertThat(OffsetDateTime.parse(object.get(field).asText())).as(field).isNotNull();
 	}
 
 	private void assertFixture(String fileName, JsonNode actual) throws Exception {

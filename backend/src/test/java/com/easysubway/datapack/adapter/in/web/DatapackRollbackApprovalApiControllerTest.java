@@ -3,8 +3,6 @@ package com.easysubway.datapack.adapter.in.web;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.hamcrest.Matchers.startsWith;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,7 +59,7 @@ class DatapackRollbackApprovalApiControllerTest {
 			.andExpect(jsonPath("$.failedManifestSha256").value("1".repeat(64)))
 			.andExpect(jsonPath("$.knownGoodManifestSha256").value("2".repeat(64)))
 			.andExpect(jsonPath("$.approvedByRole").value("admin.datapack.rollback"))
-			.andExpect(jsonPath("$.approvedAt").value(startsWith("2026-07-15T01:00:00")))
+			.andExpect(jsonPath("$.approvedAt").value("2026-07-15T01:00:00Z"))
 			.andExpect(jsonPath("$.reasonCode").value("ADMIN_APPROVED_ROLLBACK"));
 	}
 

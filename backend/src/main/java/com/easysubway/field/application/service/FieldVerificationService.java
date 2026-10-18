@@ -10,9 +10,12 @@ import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,12 +59,25 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 	private final FieldVerificationSessionRepository sessionRepository;
 	private final FieldVerificationChangeHistoryRepository historyRepository;
 
+	private final Clock clock;
+
+	@Autowired
 	public FieldVerificationService(
 		FieldVerificationSessionRepository sessionRepository,
-		FieldVerificationChangeHistoryRepository historyRepository
+		FieldVerificationChangeHistoryRepository historyRepository,
+		ObjectProvider<Clock> clockProvider
+	) {
+		this(sessionRepository, historyRepository, clockProvider.getIfAvailable(Clock::systemUTC));
+	}
+
+	public FieldVerificationService(
+		FieldVerificationSessionRepository sessionRepository,
+		FieldVerificationChangeHistoryRepository historyRepository,
+		Clock clock
 	) {
 		this.sessionRepository = sessionRepository;
 		this.historyRepository = historyRepository;
+		this.clock = clock;
 		seedBaselineSession(SANGNOKSU_BASELINE);
 		seedBaselineSession(SADANG_BASELINE);
 	}
@@ -154,7 +170,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 			previousItem.note(),
 			command.note(),
 			command.changedBy(),
-			LocalDateTime.now()
+			LocalDateTime.now(clock)
 		));
 	}
 

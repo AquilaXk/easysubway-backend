@@ -1,6 +1,7 @@
 package com.easysubway.notification.adapter.in.web;
 
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.common.web.UtcTimestamps;
 import com.easysubway.notification.application.port.in.DeliverPushNotificationsCommand;
 import com.easysubway.notification.application.port.in.DispatchPushNotificationCommand;
 import com.easysubway.notification.application.port.in.PushNotificationDeliveryUseCase;
@@ -14,7 +15,7 @@ import com.easysubway.notification.domain.PushNotificationType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -122,7 +123,7 @@ class PushNotificationController {
 		String body,
 		PushNotificationStatus status,
 		String failureReason,
-		LocalDateTime createdAt
+		Instant createdAt
 	) {
 
 		static PushNotificationResponse from(PushNotification notification) {
@@ -135,7 +136,7 @@ class PushNotificationController {
 				notification.body(),
 				notification.status(),
 				notification.failureReason(),
-				notification.createdAt()
+				UtcTimestamps.toInstant(notification.createdAt())
 			);
 		}
 	}

@@ -3,6 +3,7 @@ package com.easysubway.admin.metric.application.service;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.notification.application.port.in.PushNotificationDashboardUseCase;
@@ -68,7 +69,7 @@ public class AdminMetricSnapshotService {
 			userActivityDashboardUseCase,
 			repository,
 			statusHolder,
-			clockProvider.getIfAvailable(Clock::systemDefaultZone));
+			clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	AdminMetricSnapshotService(
@@ -101,7 +102,7 @@ public class AdminMetricSnapshotService {
 	 */
 	@Transactional
 	public void snapshotToday() {
-		snapshot(LocalDate.now(clock));
+		snapshot(BusinessTime.today(clock));
 	}
 
 	/**

@@ -10,6 +10,7 @@ import com.easysubway.admin.metric.application.service.AdminMetricQueryService.A
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -175,5 +176,15 @@ class AdminMetricQueryServiceTest {
 
 	private void save(String key, LocalDate date, double value) {
 		repository.save(AdminMetricDaily.scalar(key, date, value));
+	}
+
+	@Test
+	@DisplayName("지표 차트의 마지막 날짜는 UTC로는 전날인 한국 00~09시에도 한국 달력 날짜다")
+	void chartEndsOnKoreanCalendarDate() {
+		var serviceAtKoreanDawn = new AdminMetricQueryService(
+			repository, Clock.fixed(Instant.parse("2026-07-05T16:00:00Z"), ZoneOffset.UTC));
+
+		assertThat(serviceAtKoreanDawn.chart(List.of(AdminMetricKeys.ROUTE_SEARCHES), 7).labels().getLast())
+			.isEqualTo("2026-07-06");
 	}
 }

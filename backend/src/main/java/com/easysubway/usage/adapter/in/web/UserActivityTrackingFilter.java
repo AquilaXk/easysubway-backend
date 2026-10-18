@@ -40,7 +40,7 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 		this(
 			recordUserActivityPort,
 			recordApiTrafficPort,
-			clockProvider.getIfAvailable(Clock::systemDefaultZone),
+			clockProvider.getIfAvailable(Clock::systemUTC),
 			System::nanoTime
 		);
 	}

@@ -37,7 +37,7 @@ public class DatapackSourceSnapshotCommandService {
 		this.snapshotRepository = snapshotRepository;
 		this.eventInsertTransaction = new TransactionTemplate(transactionManager);
 		this.eventInsertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
-		this.clock = clockProvider.getIfAvailable(Clock::systemDefaultZone);
+		this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
 		this.objectMapper = objectMapper;
 		this.governancePolicy = governancePolicy;
 	}

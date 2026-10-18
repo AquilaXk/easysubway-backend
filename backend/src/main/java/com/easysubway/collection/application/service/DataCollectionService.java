@@ -9,6 +9,7 @@ import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,6 +20,8 @@ import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionException;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -35,14 +38,36 @@ public class DataCollectionService implements DataCollectionUseCase {
 	private final GenerateCollectionRunIdPort generateCollectionRunIdPort;
 	private final JobLauncher jobLauncher;
 	private final Job transitMasterCollectionJob;
+	private final Clock clock;
+
+	@Autowired
+	public DataCollectionService(
+		LoadDataCollectionRunPort loadDataCollectionRunPort,
+		SaveDataCollectionRunPort saveDataCollectionRunPort,
+		GenerateCollectionRunIdPort generateCollectionRunIdPort,
+		JobLauncher jobLauncher,
+		@Qualifier("transitMasterCollectionJob") Job transitMasterCollectionJob,
+		ObjectProvider<Clock> clockProvider
+	) {
+		this(
+			loadDataCollectionRunPort,
+			saveDataCollectionRunPort,
+			generateCollectionRunIdPort,
+			jobLauncher,
+			transitMasterCollectionJob,
+			clockProvider.getIfAvailable(Clock::systemUTC)
+		);
+	}
 
 	public DataCollectionService(
 		LoadDataCollectionRunPort loadDataCollectionRunPort,
 		SaveDataCollectionRunPort saveDataCollectionRunPort,
 		GenerateCollectionRunIdPort generateCollectionRunIdPort,
 		JobLauncher jobLauncher,
-		@Qualifier("transitMasterCollectionJob") Job transitMasterCollectionJob
+		Job transitMasterCollectionJob,
+		Clock clock
 	) {
+		this.clock = clock;
 		this.loadDataCollectionRunPort = loadDataCollectionRunPort;
 		this.saveDataCollectionRunPort = saveDataCollectionRunPort;
 		this.generateCollectionRunIdPort = generateCollectionRunIdPort;
@@ -73,7 +98,7 @@ public class DataCollectionService implements DataCollectionUseCase {
 	}
 
 	private DataCollectionRun launchTransitMasterCollection(String requestedBy) {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(clock);
 		saveDataCollectionRunPort.failOrphanedRunningRun(
 			DataCollectionSource.TRANSIT_MASTER,
 			now.minus(ORPHANED_RUN_AFTER),
@@ -144,7 +169,7 @@ public class DataCollectionService implements DataCollectionUseCase {
 			DataCollectionStatus.FAILED,
 			claimedRun.requestedBy(),
 			claimedRun.startedAt(),
-			LocalDateTime.now(),
+			LocalDateTime.now(clock),
 			claimedRun.collectedCount(),
 			failureMessage,
 			true,

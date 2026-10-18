@@ -563,11 +563,13 @@ components:
           $ref: "#/components/schemas/ReportStatus"
         createdAt:
           type: string
-          description: 접수 시각. 시간대 표기가 없는 지역 시각 문자열입니다.
+          format: date-time
+          description: 접수 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다. 예) `2026-10-18T03:04:05.123456Z`
         reviewedAt:
           type: string
+          format: date-time
           nullable: true
-          description: 처리 시각. 시간대 표기가 없는 지역 시각 문자열입니다.
+          description: 처리 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다. 처리 전에는 null입니다.
     CreatedReport:
       type: object
       additionalProperties: false
@@ -604,11 +606,13 @@ components:
           $ref: "#/components/schemas/ReportStatus"
         createdAt:
           type: string
-          description: 접수 시각. 시간대 표기가 없는 지역 시각 문자열입니다.
+          format: date-time
+          description: 접수 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다. 예) `2026-10-18T03:04:05.123456Z`
         reviewedAt:
           type: string
+          format: date-time
           nullable: true
-          description: 처리 시각. 시간대 표기가 없는 지역 시각 문자열입니다.
+          description: 처리 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다. 처리 전에는 null입니다.
         receiptToken:
           type: string
           nullable: true

@@ -32,7 +32,7 @@ public class NotificationPreferenceService implements NotificationPreferenceUseC
 			loadNotificationPreferencePort,
 			saveRegisteredDevicePort,
 			saveNotificationSettingsPort,
-			Clock.systemDefaultZone()
+			Clock.systemUTC()
 		);
 	}
 

@@ -17,6 +17,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxRequest;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
 import com.easysubway.health.application.port.in.CheckHealthUseCase;
 import com.easysubway.health.domain.HealthComponent;
@@ -31,8 +32,11 @@ import com.easysubway.route.application.port.in.RouteSearchDashboardUseCase;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.usage.application.port.in.UserActivityDashboardUseCase;
 import com.easysubway.usage.domain.UserActivityDashboardSummary;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
@@ -40,6 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -67,6 +72,7 @@ class AdminOverviewPageController {
 	private final AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder;
 	private final AdminMetricQueryService metricQueryService;
 	private final ObjectMapper objectMapper;
+	private final ObjectProvider<Clock> clockProvider;
 
 	AdminOverviewPageController(
 		DataQualityUseCase dataQualityUseCase,
@@ -82,7 +88,8 @@ class AdminOverviewPageController {
 		AdminMetricSnapshotService metricSnapshotService,
 		AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder,
 		AdminMetricQueryService metricQueryService,
-		ObjectMapper objectMapper
+		ObjectMapper objectMapper,
+		ObjectProvider<Clock> clockProvider
 	) {
 		this.dataQualityUseCase = dataQualityUseCase;
 		this.facilityReportUseCase = facilityReportUseCase;
@@ -98,6 +105,7 @@ class AdminOverviewPageController {
 		this.metricSnapshotStatusHolder = metricSnapshotStatusHolder;
 		this.metricQueryService = metricQueryService;
 		this.objectMapper = objectMapper;
+		this.clockProvider = clockProvider;
 	}
 
 	@GetMapping("/admin/dashboard/page")
@@ -106,6 +114,7 @@ class AdminOverviewPageController {
 		Model model,
 		Authentication authentication
 	) {
+		Instant now = clockProvider.getIfAvailable(Clock::systemUTC).instant();
 		DataQualitySummary quality = dataQualityUseCase.summarizeDataQuality();
 		Map<FacilityReportStatus, Long> reportCounts = facilityReportUseCase.countReportsByStatus();
 		long pending = count(reportCounts, FacilityReportStatus.SUBMITTED)
@@ -117,7 +126,8 @@ class AdminOverviewPageController {
 		var snapshotStatus = metricSnapshotStatusHolder.latest().orElse(null);
 		model.addAttribute("dashboard", new DashboardView(
 			pending,
-			facilityReportUseCase.countReportsCreatedSince(LocalDateTime.now().minusHours(24)),
+			facilityReportUseCase.countReportsCreatedSince(
+				LocalDateTime.ofInstant(now, ZoneOffset.UTC).minusHours(24)),
 			quality.needsVerificationFacilityCount(),
 			quality.delayedFacilityStatusCount(),
 			routes.totalCount(),
@@ -135,7 +145,7 @@ class AdminOverviewPageController {
 		));
 		model.addAttribute("snapshotStatus", snapshotStatus);
 		model.addAttribute("snapshotBasisTime",
-			LocalDateTime.now().format(SNAPSHOT_TIME_FORMAT));
+			basisTimeLabel(now));
 		// 데이터팩 출시 준비: 권한 있을 때만 조회. 상세 표의 차단 요인 행은 0건을 숨기고 비-0만 노출한다(#2349).
 		DatapackReleaseBlockerSummaryUseCase.DatapackReleaseBlockerSummary datapackSummary = null;
 		if (AdminAuthorization.hasPermission(authentication, AdminPermission.DATAPACK_READ)) {
@@ -306,6 +316,11 @@ class AdminOverviewPageController {
 
 	static String weeklyCoverageLabel(int presentDays) {
 		return presentDays == 0 ? "집계 대기" : "%d일 집계".formatted(presentDays);
+	}
+
+	/** 운영자가 읽는 "HH:mm 기준" 표시는 업무 시간대(한국 표준시)다. */
+	static String basisTimeLabel(Instant instant) {
+		return instant.atZone(BusinessTime.ZONE).format(SNAPSHOT_TIME_FORMAT);
 	}
 
 	private static String weekdayLabel(LocalDate date) {

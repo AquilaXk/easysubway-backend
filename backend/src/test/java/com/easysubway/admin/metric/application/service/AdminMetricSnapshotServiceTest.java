@@ -29,6 +29,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -277,5 +278,19 @@ class AdminMetricSnapshotServiceTest {
 
 	private static Clock fixedClock() {
 		return Clock.fixed(Instant.parse("2026-07-05T00:30:00Z"), ZoneId.of("Asia/Seoul"));
+	}
+
+	@Test
+	@DisplayName("오늘 스냅샷 날짜는 UTC로는 전날인 한국 00~09시에도 한국 달력 날짜다")
+	void snapshotTodayUsesKoreanCalendarDate() {
+		stubHappyPath();
+		var serviceAtKoreanDawn = new AdminMetricSnapshotService(
+			reportUseCase, qualityUseCase, routeUseCase, feedbackUseCase, pushUseCase, usageUseCase,
+			repository, statusHolder, Clock.fixed(Instant.parse("2026-07-04T16:10:00Z"), ZoneOffset.UTC));
+
+		serviceAtKoreanDawn.snapshotToday();
+
+		assertThat(repository.findByKeysAndDateRange(AdminMetricKeys.all(), LocalDate.of(2026, 7, 5), LocalDate.of(2026, 7, 5)))
+			.hasSize(AdminMetricKeys.all().size());
 	}
 }

@@ -2,6 +2,7 @@ package com.easysubway.report.adapter.in.web;
 
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.common.web.UtcTimestamps;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
@@ -18,7 +19,7 @@ import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.security.Principal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -384,8 +385,8 @@ class FacilityReportController {
 		BigDecimal longitude,
 		String duplicateOfReportId,
 		FacilityReportStatus status,
-		LocalDateTime createdAt,
-		LocalDateTime reviewedAt,
+		Instant createdAt,
+		Instant reviewedAt,
 		String reviewedBy
 	) {
 
@@ -403,8 +404,8 @@ class FacilityReportController {
 				report.longitude(),
 				report.duplicateOfReportId(),
 				report.status(),
-				report.createdAt(),
-				report.reviewedAt(),
+				UtcTimestamps.toInstant(report.createdAt()),
+				UtcTimestamps.toInstant(report.reviewedAt()),
 				report.reviewedBy()
 			);
 		}
@@ -419,8 +420,8 @@ class FacilityReportController {
 		String description,
 		String duplicateOfReportId,
 		FacilityReportStatus status,
-		LocalDateTime createdAt,
-		LocalDateTime reviewedAt
+		Instant createdAt,
+		Instant reviewedAt
 	) {
 
 		static FacilityReportStatusResponse from(FacilityReportSummary report) {
@@ -433,8 +434,8 @@ class FacilityReportController {
 				report.description(),
 				report.duplicateOfReportId(),
 				report.status(),
-				report.createdAt(),
-				report.reviewedAt()
+				UtcTimestamps.toInstant(report.createdAt()),
+				UtcTimestamps.toInstant(report.reviewedAt())
 			);
 		}
 
@@ -449,8 +450,8 @@ class FacilityReportController {
 				report.description(),
 				report.duplicateOfReportId(),
 				report.status(),
-				report.createdAt(),
-				report.reviewedAt()
+				UtcTimestamps.toInstant(report.createdAt()),
+				UtcTimestamps.toInstant(report.reviewedAt())
 			);
 		}
 	}
@@ -464,8 +465,8 @@ class FacilityReportController {
 		String description,
 		String duplicateOfReportId,
 		FacilityReportStatus status,
-		LocalDateTime createdAt,
-		LocalDateTime reviewedAt,
+		Instant createdAt,
+		Instant reviewedAt,
 		String receiptToken
 	) {
 
@@ -479,8 +480,8 @@ class FacilityReportController {
 				report.description(),
 				report.duplicateOfReportId(),
 				report.status(),
-				report.createdAt(),
-				report.reviewedAt(),
+				UtcTimestamps.toInstant(report.createdAt()),
+				UtcTimestamps.toInstant(report.reviewedAt()),
 				receiptToken
 			);
 		}
@@ -524,8 +525,8 @@ class FacilityReportController {
 		BigDecimal longitude,
 		String duplicateOfReportId,
 		FacilityReportStatus status,
-		LocalDateTime createdAt,
-		LocalDateTime reviewedAt,
+		Instant createdAt,
+		Instant reviewedAt,
 		String reviewedBy
 	) {
 
@@ -548,8 +549,8 @@ class FacilityReportController {
 				report.longitude(),
 				report.duplicateOfReportId(),
 				report.status(),
-				report.createdAt(),
-				report.reviewedAt(),
+				UtcTimestamps.toInstant(report.createdAt()),
+				UtcTimestamps.toInstant(report.reviewedAt()),
 				report.reviewedBy()
 			);
 		}

@@ -19,7 +19,7 @@ public class DatapackNormalizationRunCommandService {
 
 	public DatapackNormalizationRunCommandService(DataSource dataSource, ObjectProvider<Clock> clockProvider) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
-		this.clock = clockProvider.getIfAvailable(Clock::systemDefaultZone);
+		this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
 	}
 
 	@Transactional

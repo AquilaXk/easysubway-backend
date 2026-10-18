@@ -12,7 +12,9 @@ import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
@@ -41,7 +43,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-next",
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		assertThatThrownBy(() -> service.runCollection(
@@ -61,7 +64,7 @@ class DataCollectionServiceTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.RUNNING,
 			"stopped-instance",
-			LocalDateTime.now().minusHours(25),
+			LocalDateTime.now(ZoneOffset.UTC).minusHours(25),
 			null,
 			0,
 			null,
@@ -76,8 +79,8 @@ class DataCollectionServiceTest {
 				DataCollectionSource.TRANSIT_MASTER,
 				DataCollectionStatus.COMPLETED,
 				"admin-user",
-				LocalDateTime.now(),
-				LocalDateTime.now(),
+				LocalDateTime.now(ZoneOffset.UTC),
+				LocalDateTime.now(ZoneOffset.UTC),
 				1,
 				null,
 				false,
@@ -92,7 +95,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-recovered",
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		DataCollectionRun recovered = service.runCollection(
@@ -120,7 +124,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-failed",
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		assertThatThrownBy(() -> service.runCollection(
@@ -154,7 +159,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-runtime-failed-" + idSequence.incrementAndGet(),
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		for (int attempt = 0; attempt < 2; attempt++) {
@@ -197,7 +203,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-failed-" + idSequence.incrementAndGet(),
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		assertThatThrownBy(() -> service.runCollection(
@@ -260,7 +267,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-recorded-failed",
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		assertThatThrownBy(() -> service.runCollection(
@@ -299,7 +307,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-unrecorded-completed",
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		assertThatThrownBy(() -> service.runCollection(
@@ -354,7 +363,8 @@ class DataCollectionServiceTest {
 			repository,
 			() -> "collection-recorded-completed",
 			launcher,
-			mock(Job.class)
+			mock(Job.class),
+			Clock.systemUTC()
 		);
 
 		assertThatThrownBy(() -> service.runCollection(
@@ -382,12 +392,50 @@ class DataCollectionServiceTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.RUNNING,
 			"admin-user",
-			LocalDateTime.now().minusMinutes(1),
+			LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1),
 			null,
 			0,
 			null,
 			false,
 			"수집 실행 중입니다."
 		);
+	}
+
+	@Test
+	@DisplayName("수집 실행 시작 시각은 주입된 시계를 UTC 벽시계로 기록한다")
+	void claimedRunStartsAtInjectedClockTime() {
+		var repository = new InMemoryDataCollectionRunRepository();
+		var startedAt = new java.util.concurrent.atomic.AtomicReference<LocalDateTime>();
+		JobLauncher launcher = (job, parameters) -> {
+			var claimed = repository.loadRecentRuns(1).getFirst();
+			startedAt.set(claimed.startedAt());
+			repository.saveRun(new DataCollectionRun(
+				parameters.getString("runId"),
+				DataCollectionSource.TRANSIT_MASTER,
+				DataCollectionStatus.COMPLETED,
+				"admin-user",
+				claimed.startedAt(),
+				claimed.startedAt(),
+				1,
+				null,
+				false,
+				"수집 완료"
+			));
+			JobExecution execution = mock(JobExecution.class);
+			org.mockito.Mockito.when(execution.getStatus()).thenReturn(BatchStatus.COMPLETED);
+			return execution;
+		};
+		var service = new DataCollectionService(
+			repository,
+			repository,
+			() -> "collection-fixed-clock",
+			launcher,
+			mock(Job.class),
+			Clock.fixed(java.time.Instant.parse("2026-10-17T16:00:00Z"), ZoneOffset.UTC)
+		);
+
+		service.runCollection(new RunDataCollectionCommand(DataCollectionSource.TRANSIT_MASTER, "admin-user"));
+
+		assertThat(startedAt.get()).isEqualTo(LocalDateTime.of(2026, 10, 17, 16, 0));
 	}
 }
