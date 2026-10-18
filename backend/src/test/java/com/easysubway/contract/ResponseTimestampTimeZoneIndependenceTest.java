@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.TimeZone;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -127,7 +128,8 @@ class ResponseTimestampTimeZoneIndependenceTest {
 	@DisplayName("공지 발행·만료 시각은 저장한 UTC 순간을 offset과 함께 돌려준다")
 	void noticeTimestampsAreOffsetInstants() throws Exception {
 		jdbcTemplate.update("DELETE FROM service_notice");
-		LocalDateTime publishedAt = LocalDateTime.now(Clock.systemUTC()).minusHours(1);
+		// DB 컬럼은 마이크로초까지 보존하므로 나노초 시계(Linux)에서도 왕복 값이 같도록 밀리초로 자른다.
+		LocalDateTime publishedAt = LocalDateTime.now(Clock.systemUTC()).truncatedTo(ChronoUnit.MILLIS).minusHours(1);
 		LocalDateTime expiresAt = publishedAt.plusHours(5);
 		noticeRepository.save(new ServiceNotice("tz-notice", ServiceNoticeScope.ALL, null,
 			"전체 공지", "본문", ServiceNoticeSeverity.INFO, publishedAt, expiresAt, "operator-a"));
