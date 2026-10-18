@@ -1,5 +1,6 @@
 package com.easysubway.usage.adapter.out.persistence;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.usage.application.port.out.RecordApiTrafficPort;
 import com.easysubway.usage.application.port.out.RecordUserActivityPort;
 import com.easysubway.usage.application.port.out.SummarizeUserActivityPort;
@@ -22,6 +23,12 @@ import org.springframework.stereotype.Repository;
 public class JdbcUserActivityRepository implements RecordUserActivityPort, RecordApiTrafficPort, SummarizeUserActivityPort {
 
 	private static final int USER_ID_MAX_LENGTH = 120;
+	// occurred_at은 UTC 벽시계다. 오프셋을 더한 뒤 날짜로 자르면 한국 날짜가 된다(H2·PostgreSQL 공통 문법).
+	// 행을 거르는 WHERE는 컬럼을 그대로 두어 occurred_at 인덱스를 타고, 이 식은 걸러진 행의 묶기에만 쓴다.
+	// 쿼리 본문의 {koreanDate} 자리에 이 식을 끼운다(String.format은 SpotBugs VA_FORMAT_STRING_USES_NEWLINE 대상이다).
+	private static final String KOREAN_DATE_SQL =
+		"CAST(occurred_at + INTERVAL '" + BusinessTime.UTC_OFFSET_HOURS + "' HOUR AS DATE)";
+	private static final String KOREAN_DATE_TOKEN = "{koreanDate}";
 
 	private final JdbcTemplate jdbcTemplate;
 
@@ -90,8 +97,8 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 		}
 
 		LocalDate startDate = today.minusDays(days - 1L);
-		LocalDateTime startAt = startDate.atStartOfDay();
-		LocalDateTime endAt = today.plusDays(1).atStartOfDay();
+		LocalDateTime startAt = BusinessTime.startOfDayUtc(startDate);
+		LocalDateTime endAt = BusinessTime.startOfDayUtc(today.plusDays(1));
 		Map<LocalDate, Long> activeUsersByDate = activeUsersByDate(startAt, endAt);
 		Map<LocalDate, ApiTrafficSummary> apiTrafficByDate = apiTrafficByDate(startAt, endAt);
 		List<DailyUserActivity> rows = today.datesUntil(startDate.minusDays(1), java.time.Period.ofDays(-1))
@@ -136,13 +143,13 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 	private Map<LocalDate, Long> activeUsersByDate(LocalDateTime startAt, LocalDateTime endAt) {
 		List<DailyActiveUserCount> rows = jdbcTemplate.query(
 			"""
-				SELECT CAST(occurred_at AS DATE) AS activity_date,
+				SELECT {koreanDate} AS activity_date,
 					COUNT(DISTINCT user_id) AS active_user_count
 				FROM user_activity_events
 				WHERE occurred_at >= ?
 					AND occurred_at < ?
-				GROUP BY CAST(occurred_at AS DATE)
-				""",
+				GROUP BY {koreanDate}
+				""".replace(KOREAN_DATE_TOKEN, KOREAN_DATE_SQL),
 			(resultSet, rowNumber) -> new DailyActiveUserCount(
 				resultSet.getDate("activity_date").toLocalDate(),
 				resultSet.getLong("active_user_count")
@@ -158,15 +165,15 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 	private Map<LocalDate, ApiTrafficSummary> apiTrafficByDate(LocalDateTime startAt, LocalDateTime endAt) {
 		List<ApiTrafficSummary> rows = jdbcTemplate.query(
 			"""
-				SELECT CAST(occurred_at AS DATE) AS traffic_date,
+				SELECT {koreanDate} AS traffic_date,
 					COUNT(*) AS request_count,
 					SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS error_count,
 					SUM(duration_millis) AS response_millis
 				FROM api_traffic_events
 				WHERE occurred_at >= ?
 					AND occurred_at < ?
-				GROUP BY CAST(occurred_at AS DATE)
-				""",
+				GROUP BY {koreanDate}
+				""".replace(KOREAN_DATE_TOKEN, KOREAN_DATE_SQL),
 			(resultSet, rowNumber) -> new ApiTrafficSummary(
 				resultSet.getDate("traffic_date").toLocalDate(),
 				resultSet.getLong("request_count"),

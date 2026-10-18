@@ -1,5 +1,6 @@
 package com.easysubway.train.adapter.in.web;
 
+import com.easysubway.common.time.BusinessTime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -57,7 +58,7 @@ class TrainSearchRateLimitFilter extends OncePerRequestFilter {
 			searchDailyLimit,
 			maxKeys,
 			clock,
-			ZoneId.of("Asia/Seoul")
+			BusinessTime.ZONE
 		);
 		this.identityResolver = new TrainSearchClientIdentityResolver(trustedProxies);
 	}

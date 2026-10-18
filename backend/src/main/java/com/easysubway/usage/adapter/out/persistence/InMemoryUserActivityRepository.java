@@ -1,5 +1,6 @@
 package com.easysubway.usage.adapter.out.persistence;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.usage.application.port.out.RecordApiTrafficPort;
 import com.easysubway.usage.application.port.out.RecordUserActivityPort;
 import com.easysubway.usage.application.port.out.SummarizeUserActivityPort;
@@ -33,7 +34,7 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, R
 			throw new InvalidUserActivityException("사용자 활동 시간이 필요합니다.");
 		}
 
-		userIdsByDate.computeIfAbsent(occurredAt.toLocalDate(), ignored -> new HashSet<>()).add(userId.trim());
+		userIdsByDate.computeIfAbsent(BusinessTime.dateOfUtc(occurredAt), ignored -> new HashSet<>()).add(userId.trim());
 	}
 
 	@Override
@@ -48,7 +49,7 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, R
 			throw new InvalidUserActivityException("API 요청 시간이 필요합니다.");
 		}
 
-		apiTrafficByDate.computeIfAbsent(occurredAt.toLocalDate(), ignored -> new ApiTrafficCount())
+		apiTrafficByDate.computeIfAbsent(BusinessTime.dateOfUtc(occurredAt), ignored -> new ApiTrafficCount())
 			.add(statusCode, durationMillis);
 	}
 

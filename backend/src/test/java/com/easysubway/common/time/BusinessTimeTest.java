@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
@@ -37,5 +38,30 @@ class BusinessTimeTest {
 		assertThat(BusinessTime.today(Clock.fixed(instant, ZoneId.of("America/Los_Angeles"))))
 			.isEqualTo(BusinessTime.today(Clock.fixed(instant, ZoneOffset.UTC)))
 			.isEqualTo(LocalDate.of(2026, 10, 18));
+	}
+
+	@Test
+	@DisplayName("한국 날짜의 시작은 전날 UTC 15시 벽시계 시각이다")
+	void startOfKoreanDayIsFifteenHundredUtcOfThePreviousDay() {
+		assertThat(BusinessTime.startOfDayUtc(LocalDate.of(2026, 10, 18)))
+			.isEqualTo(LocalDateTime.of(2026, 10, 17, 15, 0));
+	}
+
+	@Test
+	@DisplayName("UTC 벽시계 시각은 한국 달력 날짜로 묶인다")
+	void groupsUtcWallClockByKoreanDate() {
+		assertThat(BusinessTime.dateOfUtc(LocalDateTime.of(2026, 10, 17, 14, 59, 59)))
+			.isEqualTo(LocalDate.of(2026, 10, 17));
+		assertThat(BusinessTime.dateOfUtc(LocalDateTime.of(2026, 10, 17, 15, 0)))
+			.isEqualTo(LocalDate.of(2026, 10, 18));
+	}
+
+	@Test
+	@DisplayName("SQL 날짜 묶기에 쓰는 UTC 오프셋 시간은 겨울·여름 모두 업무 시간대의 오프셋과 같다")
+	void sqlOffsetHoursMatchTheBusinessZone() {
+		for (String instant : new String[] {"2026-01-01T00:00:00Z", "2026-07-01T00:00:00Z"}) {
+			assertThat(BusinessTime.ZONE.getRules().getOffset(Instant.parse(instant)).getTotalSeconds())
+				.isEqualTo(BusinessTime.UTC_OFFSET_HOURS * 3600);
+		}
 	}
 }

@@ -1,9 +1,11 @@
 package com.easysubway.report.application.port.in;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Locale;
 
 /**
@@ -127,6 +129,22 @@ public record FacilityReportListQuery(
 	private static SortDirection parseSortDirection(String raw) {
 		String value = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
 		return "ASC".equals(value) ? SortDirection.ASC : SortDirection.DESC;
+	}
+
+	/**
+	 * 접수일 시작 경계: 한국 날짜 {@link #createdFrom}의 자정을 저장 시각과 같은 UTC 벽시계 시각으로 옮긴 값.
+	 * 포함 경계({@code >=})로 쓰며 {@code createdFrom}이 있을 때만 호출한다.
+	 */
+	public LocalDateTime createdFromUtc() {
+		return BusinessTime.startOfDayUtc(createdFrom);
+	}
+
+	/**
+	 * 접수일 끝 경계: 한국 날짜 {@link #createdTo}의 다음 날 자정을 UTC 벽시계 시각으로 옮긴 값.
+	 * 제외 경계({@code <})로 쓰며 {@code createdTo}가 있을 때만 호출한다.
+	 */
+	public LocalDateTime createdBeforeUtc() {
+		return BusinessTime.startOfDayUtc(createdTo.plusDays(1));
 	}
 
 	/** 정렬 상태를 URL 토큰(`created_at,desc`)으로 되돌린다. 템플릿의 정렬 링크·저장된 뷰에 쓴다. */

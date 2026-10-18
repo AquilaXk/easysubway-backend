@@ -697,20 +697,27 @@ class JdbcFacilityReportRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("검색 질의는 접수일 기간을 포함 경계로 거른다")
-	void searchFiltersByCreatedDateRangeInclusive() {
-		repository.saveReport(reportAt("r-15", "15일 신고", FacilityReportStatus.SUBMITTED,
-			LocalDateTime.of(2026, 6, 15, 23, 0)));
-		repository.saveReport(reportAt("r-17", "17일 신고", FacilityReportStatus.SUBMITTED,
+	@DisplayName("검색 질의는 접수일 기간을 한국 날짜 경계(UTC 15:00)로 포함해 거른다")
+	void searchFiltersByCreatedDateRangeOnKoreanDayBoundaries() {
+		// 한국 6월 15일 23:59:59 / 6월 16일 00:00 / 6월 18일 23:59:59 / 6월 19일 00:00.
+		repository.saveReport(reportAt("r-before", "경계 전 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 15, 14, 59, 59)));
+		repository.saveReport(reportAt("r-start", "시작 경계 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 15, 15, 0)));
+		repository.saveReport(reportAt("r-middle", "중간 신고", FacilityReportStatus.SUBMITTED,
 			LocalDateTime.of(2026, 6, 17, 12, 0)));
-		repository.saveReport(reportAt("r-19", "19일 신고", FacilityReportStatus.SUBMITTED,
-			LocalDateTime.of(2026, 6, 19, 1, 0)));
-
-		var page = repository.loadReportSummaries(FacilityReportListQuery.of(
+		repository.saveReport(reportAt("r-end", "끝 경계 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 18, 14, 59, 59)));
+		repository.saveReport(reportAt("r-after", "경계 후 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 18, 15, 0)));
+		var query = FacilityReportListQuery.of(
 			null, null, null, null, null,
-			java.time.LocalDate.of(2026, 6, 16), java.time.LocalDate.of(2026, 6, 18), null, 0, 20));
+			java.time.LocalDate.of(2026, 6, 16), java.time.LocalDate.of(2026, 6, 18), null, 0, 20);
 
-		assertThat(page.items()).extracting(FacilityReportSummary::id).containsExactly("r-17");
+		assertThat(repository.loadReportSummaries(query).items())
+			.extracting(FacilityReportSummary::id)
+			.containsExactlyInAnyOrder("r-start", "r-middle", "r-end");
+		assertThat(repository.countReports(query)).isEqualTo(3L);
 	}
 
 	@Test

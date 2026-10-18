@@ -355,11 +355,11 @@ public class JdbcFacilityReportRepository implements
 		}
 		if (query.createdFrom() != null) {
 			clauses.add("created_at >= ?");
-			args.add(query.createdFrom().atStartOfDay());
+			args.add(query.createdFromUtc());
 		}
 		if (query.createdTo() != null) {
 			clauses.add("created_at < ?");
-			args.add(query.createdTo().plusDays(1).atStartOfDay());
+			args.add(query.createdBeforeUtc());
 		}
 		if (clauses.isEmpty()) {
 			return "";

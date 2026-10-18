@@ -1,5 +1,6 @@
 package com.easysubway.journey.analytics;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
@@ -14,7 +15,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
@@ -43,7 +43,6 @@ public class JourneySearchRecorder {
 
 	public static final String FAILURE_METRIC = "easysubway.journey.search_record.failures";
 	private static final Logger LOG = LoggerFactory.getLogger(JourneySearchRecorder.class);
-	private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 	private static final int QUEUE_CAPACITY = 1_000;
 	private static final Duration SHUTDOWN_WAIT = Duration.ofSeconds(5);
 
@@ -57,7 +56,7 @@ public class JourneySearchRecorder {
 	public JourneySearchRecorder(
 		JourneySearchRecordStore store, ObjectProvider<Clock> clockProvider, MeterRegistry meterRegistry
 	) {
-		this(store, newExecutor(), clockProvider.getIfAvailable(() -> Clock.system(SERVICE_ZONE)), meterRegistry);
+		this(store, newExecutor(), clockProvider.getIfAvailable(() -> Clock.system(BusinessTime.ZONE)), meterRegistry);
 	}
 
 	public JourneySearchRecorder(
@@ -169,7 +168,7 @@ public class JourneySearchRecorder {
 		String engineVersion, String mobilityProfile, List<String> categories, String stairFreeStatus
 	) {
 		Instant now = clock.instant();
-		return new JourneySearchRecord(UUID.randomUUID().toString(), LocalDate.ofInstant(now, SERVICE_ZONE),
+		return new JourneySearchRecord(UUID.randomUUID().toString(), LocalDate.ofInstant(now, BusinessTime.ZONE),
 			kind, outcome, httpStatus, machineCode, engineVersion, mobilityProfile, categories, stairFreeStatus);
 	}
 

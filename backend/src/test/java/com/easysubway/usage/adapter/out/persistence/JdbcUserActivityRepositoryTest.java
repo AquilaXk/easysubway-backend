@@ -69,6 +69,14 @@ class JdbcUserActivityRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("UTC로 저장된 활동은 한국 날짜로 묶고 한국 자정 경계로 기간을 자른다")
+	void summarizeUserActivityGroupsByKoreanDate() {
+		var summary = KoreanDateActivityScenario.seedAndSummarize(repository);
+
+		KoreanDateActivityScenario.assertGroupedByKoreanDate(summary);
+	}
+
+	@Test
 	@DisplayName("새 저장소 인스턴스도 기존 사용자 활동 기록을 집계한다")
 	void summarizeUserActivityAfterRepositoryRecreation() {
 		repository.recordUserActivity("anonymous-user-1", LocalDateTime.of(2026, 6, 17, 9, 0));
