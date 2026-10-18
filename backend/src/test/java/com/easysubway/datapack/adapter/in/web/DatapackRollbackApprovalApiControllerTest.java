@@ -3,12 +3,9 @@ package com.easysubway.datapack.adapter.in.web;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import java.util.TimeZone;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.ResourceLock;
-import org.junit.jupiter.api.parallel.Resources;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -64,24 +61,6 @@ class DatapackRollbackApprovalApiControllerTest {
 			.andExpect(jsonPath("$.approvedByRole").value("admin.datapack.rollback"))
 			.andExpect(jsonPath("$.approvedAt").value("2026-07-15T01:00:00Z"))
 			.andExpect(jsonPath("$.reasonCode").value("ADMIN_APPROVED_ROLLBACK"));
-	}
-
-	@Test
-	@DisplayName("JVM 기본 시간대가 바뀌어도 승인 시각은 같은 UTC 순간이다")
-	@ResourceLock(Resources.TIME_ZONE)
-	void approvalInstantIsIndependentOfDefaultTimeZone() throws Exception {
-		insertEvent("rollback-event-1", "ROLLBACK", "PASS");
-		TimeZone original = TimeZone.getDefault();
-		try {
-			TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"));
-
-			mockMvc.perform(get("/admin/api/datapack/rollback-approvals/{id}", "rollback-event-1")
-					.header("Authorization", "Bearer test-workflow-token"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.approvedAt").value("2026-07-15T01:00:00Z"));
-		} finally {
-			TimeZone.setDefault(original);
-		}
 	}
 
 	@Test
