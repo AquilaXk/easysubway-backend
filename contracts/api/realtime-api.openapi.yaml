@@ -208,8 +208,9 @@ components:
           description: 사용자에게 그대로 보여줄 수 있는 안내 문구
         receivedAt:
           type: string
+          format: date-time
           nullable: true
-          description: 정보를 받은 시각
+          description: 정보를 받은 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다.
         providerId:
           type: string
         arrivals:
@@ -238,7 +239,9 @@ components:
           nullable: true
         receivedAt:
           type: string
+          format: date-time
           nullable: true
+          description: 정보를 받은 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다.
         providerId:
           type: string
         sourceNotice:
@@ -295,7 +298,9 @@ components:
           nullable: true
         providerReceivedAt:
           type: string
+          format: date-time
           nullable: true
+          description: 원천이 정보를 보낸 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다.
         servicePattern:
           type: string
           nullable: true
@@ -343,4 +348,6 @@ components:
           nullable: true
         providerReceivedAt:
           type: string
+          format: date-time
           nullable: true
+          description: 원천이 정보를 보낸 시각. offset이 있는 ISO-8601 문자열이며 항상 UTC(`Z`)입니다.

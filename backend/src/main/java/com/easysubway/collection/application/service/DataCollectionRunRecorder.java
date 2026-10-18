@@ -29,7 +29,7 @@ public class DataCollectionRunRecorder {
 		FetchTransitMasterCollectionSourcePort fetchTransitMasterCollectionSourcePort,
 		SaveDataCollectionRunPort saveDataCollectionRunPort
 	) {
-		this(fetchTransitMasterCollectionSourcePort, saveDataCollectionRunPort, Clock.systemDefaultZone());
+		this(fetchTransitMasterCollectionSourcePort, saveDataCollectionRunPort, Clock.systemUTC());
 	}
 
 	public DataCollectionRunRecorder(

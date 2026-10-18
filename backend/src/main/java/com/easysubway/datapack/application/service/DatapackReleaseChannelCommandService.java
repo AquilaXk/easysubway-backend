@@ -24,7 +24,7 @@ public class DatapackReleaseChannelCommandService {
 		ObjectProvider<Clock> clockProvider
 	) {
 		this.repository = repository;
-		this.clock = clockProvider.getIfAvailable(Clock::systemDefaultZone);
+		this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
 	}
 
 	@Transactional

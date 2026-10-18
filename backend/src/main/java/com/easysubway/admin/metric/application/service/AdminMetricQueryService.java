@@ -36,7 +36,7 @@ public class AdminMetricQueryService {
 
 	@Autowired
 	public AdminMetricQueryService(AdminMetricDailyRepository repository, ObjectProvider<Clock> clockProvider) {
-		this(repository, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+		this(repository, clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	AdminMetricQueryService(AdminMetricDailyRepository repository, Clock clock) {

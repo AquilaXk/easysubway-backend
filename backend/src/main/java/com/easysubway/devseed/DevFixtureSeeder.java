@@ -87,7 +87,7 @@ public class DevFixtureSeeder implements ApplicationRunner {
 			saveFacilityReportPort,
 			storeFacilityReportPhotoPort,
 			adminMetricDailyRepository,
-			clockProvider.getIfAvailable(Clock::systemDefaultZone)
+			clockProvider.getIfAvailable(Clock::systemUTC)
 		);
 	}
 

@@ -110,7 +110,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			saveFacilityReportReviewAuditPort,
 			loadFacilityReportReviewAuditPort,
 			loadFacilityReportPhotoPort,
-			Clock.systemDefaultZone(),
+			Clock.systemUTC(),
 			validateReceiptTokenPepper(receiptTokenPepper, environment)
 		);
 	}
@@ -133,7 +133,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			},
 			audit -> audit,
 			reportId -> List.of(),
-			Clock.systemDefaultZone()
+			Clock.systemUTC()
 		);
 	}
 

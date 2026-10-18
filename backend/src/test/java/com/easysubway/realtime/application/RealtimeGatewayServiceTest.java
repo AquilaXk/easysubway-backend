@@ -83,6 +83,23 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider의 TOPIS 로컬(KST) recptnDt인 열차 위치도 경계에서 ISO providerReceivedAt으로 정규화되어 emit된다")
+	void normalizesTrainPositionProviderTimestampToIsoAtBoundary() {
+		// 17:00:00 KST = 08:00:00Z. 시간대 표기가 없는 provider 원문이 응답으로 새면 받는 쪽이 UTC로 읽어 9시간 어긋난다.
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:20Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26 17:00:00")
+		);
+
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().providerReceivedAt()).isEqualTo("2026-06-26T08:00:00Z");
+	}
+
+	@Test
 	@DisplayName("provider의 TOPIS 로컬(KST) recptnDt는 경계에서 ISO providerReceivedAt으로 정규화되어 emit된다")
 	void normalizesProviderTimestampToIsoAtBoundary() {
 		// TOPIS recptnDt는 "yyyy-MM-dd HH:mm:ss"(KST). 17:00:00 KST = 08:00:00Z, clock과 20초 차 → fresh.

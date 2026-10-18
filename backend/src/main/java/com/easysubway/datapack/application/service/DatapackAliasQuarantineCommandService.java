@@ -19,7 +19,7 @@ public class DatapackAliasQuarantineCommandService {
 		ObjectProvider<Clock> clockProvider
 	) {
 		this.repository = repository;
-		this.clock = clockProvider.getIfAvailable(Clock::systemDefaultZone);
+		this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
 	}
 
 	@Transactional

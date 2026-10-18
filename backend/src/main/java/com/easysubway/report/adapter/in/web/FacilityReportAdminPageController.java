@@ -92,7 +92,7 @@ class FacilityReportAdminPageController {
 			auditWriter,
 			labelResolver,
 			savedViewUseCase,
-			clockProvider.getIfAvailable(Clock::systemDefaultZone)
+			clockProvider.getIfAvailable(Clock::systemUTC)
 		);
 	}
 

@@ -2,7 +2,7 @@ package com.easysubway.datapack.adapter.in.web;
 
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository.ReleaseChannelEventRow;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,7 +43,7 @@ public class DatapackRollbackApprovalApiController {
 		body.put("knownGoodManifestSha256", event.nextManifestSha256());
 		body.put("approvedBy", event.approvedBy());
 		body.put("approvedByRole", APPROVER_ROLE);
-		body.put("approvedAt", event.createdAt().atZone(ZoneId.systemDefault())
+		body.put("approvedAt", event.createdAt().atOffset(ZoneOffset.UTC)
 			.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
 		body.put("reasonCode", REASON_CODE);
 		return body;

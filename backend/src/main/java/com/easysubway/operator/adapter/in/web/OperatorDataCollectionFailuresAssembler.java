@@ -28,7 +28,7 @@ class OperatorDataCollectionFailuresAssembler {
 		DataCollectionUseCase dataCollectionUseCase,
 		ObjectProvider<Clock> clockProvider
 	) {
-		this(dataCollectionUseCase, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+		this(dataCollectionUseCase, clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	OperatorDataCollectionFailuresAssembler(DataCollectionUseCase dataCollectionUseCase, Clock clock) {

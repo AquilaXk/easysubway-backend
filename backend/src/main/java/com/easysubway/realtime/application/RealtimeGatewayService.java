@@ -445,7 +445,7 @@ public class RealtimeGatewayService {
 			if (providerReceivedAt == null || !isProviderFresh(providerReceivedAt, receivedAt)) {
 				continue;
 			}
-			freshTrainPositions.add(trainPosition);
+			freshTrainPositions.add(trainPosition.withProviderReceivedAt(providerReceivedAt.toString()));
 		}
 		return List.copyOf(freshTrainPositions);
 	}

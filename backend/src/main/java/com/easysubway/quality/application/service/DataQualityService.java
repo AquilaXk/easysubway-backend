@@ -38,11 +38,11 @@ public class DataQualityService implements DataQualityUseCase {
 
 	@Autowired
 	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort, ObjectProvider<Clock> clockProvider) {
-		this(loadTransitMasterPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+		this(loadTransitMasterPort, clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort) {
-		this(loadTransitMasterPort, Clock.systemDefaultZone());
+		this(loadTransitMasterPort, Clock.systemUTC());
 	}
 
 	DataQualityService(LoadTransitMasterPort loadTransitMasterPort, Clock clock) {

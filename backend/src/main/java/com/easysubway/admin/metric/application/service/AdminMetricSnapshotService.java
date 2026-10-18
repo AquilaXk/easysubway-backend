@@ -68,7 +68,7 @@ public class AdminMetricSnapshotService {
 			userActivityDashboardUseCase,
 			repository,
 			statusHolder,
-			clockProvider.getIfAvailable(Clock::systemDefaultZone));
+			clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	AdminMetricSnapshotService(

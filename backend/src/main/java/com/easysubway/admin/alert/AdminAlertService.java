@@ -45,7 +45,7 @@ public class AdminAlertService {
 	private final AutomationStatusUseCase automationStatusUseCase;
 	private final Clock clock;
 
-	// Clock은 전역 빈이 아니라서(코드베이스 규약) 있으면 쓰고 없으면 시스템 기본으로 폴백한다.
+	// Clock은 전역 빈이 아니라서(코드베이스 규약) 있으면 쓰고 없으면 UTC 시계를 쓴다.
 	@Autowired
 	public AdminAlertService(
 		FacilityReportUseCase facilityReportUseCase,
@@ -63,7 +63,7 @@ public class AdminAlertService {
 			datapackReleaseBlockerSummaryUseCase,
 			metricSnapshotStatusHolder,
 			automationStatusUseCase,
-			clockProvider.getIfAvailable(Clock::systemDefaultZone));
+			clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	AdminAlertService(

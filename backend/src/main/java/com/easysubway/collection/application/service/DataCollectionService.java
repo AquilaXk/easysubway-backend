@@ -11,6 +11,7 @@ import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.batch.core.BatchStatus;
@@ -73,7 +74,7 @@ public class DataCollectionService implements DataCollectionUseCase {
 	}
 
 	private DataCollectionRun launchTransitMasterCollection(String requestedBy) {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 		saveDataCollectionRunPort.failOrphanedRunningRun(
 			DataCollectionSource.TRANSIT_MASTER,
 			now.minus(ORPHANED_RUN_AFTER),
@@ -144,7 +145,7 @@ public class DataCollectionService implements DataCollectionUseCase {
 			DataCollectionStatus.FAILED,
 			claimedRun.requestedBy(),
 			claimedRun.startedAt(),
-			LocalDateTime.now(),
+			LocalDateTime.now(ZoneOffset.UTC),
 			claimedRun.collectedCount(),
 			failureMessage,
 			true,

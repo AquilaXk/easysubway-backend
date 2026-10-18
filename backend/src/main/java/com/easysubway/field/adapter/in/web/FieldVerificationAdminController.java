@@ -3,6 +3,7 @@ package com.easysubway.field.adapter.in.web;
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.common.web.UtcTimestamps;
 import com.easysubway.common.web.export.EgovExcelExportSupport;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
@@ -16,8 +17,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -287,7 +288,7 @@ class FieldVerificationAdminController {
 		String previousNote,
 		String newNote,
 		String changedBy,
-		LocalDateTime changedAt
+		Instant changedAt
 	) {
 
 		static FieldVerificationChangeHistoryView from(FieldVerificationChangeHistory history) {
@@ -301,7 +302,7 @@ class FieldVerificationAdminController {
 				history.previousNote(),
 				history.newNote(),
 				history.changedBy(),
-				history.changedAt()
+				UtcTimestamps.toInstant(history.changedAt())
 			);
 		}
 	}

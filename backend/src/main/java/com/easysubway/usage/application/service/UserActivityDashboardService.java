@@ -22,7 +22,7 @@ public class UserActivityDashboardService implements UserActivityDashboardUseCas
 		SummarizeUserActivityPort summarizeUserActivityPort,
 		ObjectProvider<Clock> clockProvider
 	) {
-		this(summarizeUserActivityPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+		this(summarizeUserActivityPort, clockProvider.getIfAvailable(Clock::systemUTC));
 	}
 
 	UserActivityDashboardService(SummarizeUserActivityPort summarizeUserActivityPort, Clock clock) {

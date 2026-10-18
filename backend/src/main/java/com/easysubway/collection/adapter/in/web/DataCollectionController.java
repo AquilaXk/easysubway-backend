@@ -9,10 +9,11 @@ import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.common.web.UtcTimestamps;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -123,8 +124,8 @@ class DataCollectionController {
 		DataCollectionSource source,
 		DataCollectionStatus status,
 		String requestedBy,
-		LocalDateTime startedAt,
-		LocalDateTime completedAt,
+		Instant startedAt,
+		Instant completedAt,
 		int collectedCount,
 		String failureMessage,
 		boolean retryable,
@@ -138,8 +139,8 @@ class DataCollectionController {
 				run.source(),
 				run.status(),
 				run.requestedBy(),
-				run.startedAt(),
-				run.completedAt(),
+				UtcTimestamps.toInstant(run.startedAt()),
+				UtcTimestamps.toInstant(run.completedAt()),
 				run.collectedCount(),
 				run.failureMessage(),
 				run.retryable(),

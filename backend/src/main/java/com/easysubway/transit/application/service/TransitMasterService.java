@@ -102,7 +102,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			saveRouteNodePort,
 			saveRouteEdgePort,
 			facilityStatusAlertUseCase,
-			Clock.systemDefaultZone()
+			Clock.systemUTC()
 		);
 	}
 
@@ -119,7 +119,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			routeEdgePortOrNoop(loadTransitMasterPort),
 			command -> {
 			},
-			Clock.systemDefaultZone()
+			Clock.systemUTC()
 		);
 	}
 

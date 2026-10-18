@@ -13,6 +13,7 @@ import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
@@ -61,7 +62,7 @@ class DataCollectionServiceTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.RUNNING,
 			"stopped-instance",
-			LocalDateTime.now().minusHours(25),
+			LocalDateTime.now(ZoneOffset.UTC).minusHours(25),
 			null,
 			0,
 			null,
@@ -76,8 +77,8 @@ class DataCollectionServiceTest {
 				DataCollectionSource.TRANSIT_MASTER,
 				DataCollectionStatus.COMPLETED,
 				"admin-user",
-				LocalDateTime.now(),
-				LocalDateTime.now(),
+				LocalDateTime.now(ZoneOffset.UTC),
+				LocalDateTime.now(ZoneOffset.UTC),
 				1,
 				null,
 				false,
@@ -382,7 +383,7 @@ class DataCollectionServiceTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.RUNNING,
 			"admin-user",
-			LocalDateTime.now().minusMinutes(1),
+			LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1),
 			null,
 			0,
 			null,

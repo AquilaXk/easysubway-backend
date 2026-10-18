@@ -33,6 +33,7 @@ import com.easysubway.usage.application.port.in.UserActivityDashboardUseCase;
 import com.easysubway.usage.domain.UserActivityDashboardSummary;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
@@ -106,6 +107,7 @@ class AdminOverviewPageController {
 		Model model,
 		Authentication authentication
 	) {
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 		DataQualitySummary quality = dataQualityUseCase.summarizeDataQuality();
 		Map<FacilityReportStatus, Long> reportCounts = facilityReportUseCase.countReportsByStatus();
 		long pending = count(reportCounts, FacilityReportStatus.SUBMITTED)
@@ -117,7 +119,7 @@ class AdminOverviewPageController {
 		var snapshotStatus = metricSnapshotStatusHolder.latest().orElse(null);
 		model.addAttribute("dashboard", new DashboardView(
 			pending,
-			facilityReportUseCase.countReportsCreatedSince(LocalDateTime.now().minusHours(24)),
+			facilityReportUseCase.countReportsCreatedSince(now.minusHours(24)),
 			quality.needsVerificationFacilityCount(),
 			quality.delayedFacilityStatusCount(),
 			routes.totalCount(),
@@ -135,7 +137,7 @@ class AdminOverviewPageController {
 		));
 		model.addAttribute("snapshotStatus", snapshotStatus);
 		model.addAttribute("snapshotBasisTime",
-			LocalDateTime.now().format(SNAPSHOT_TIME_FORMAT));
+			now.format(SNAPSHOT_TIME_FORMAT));
 		// 데이터팩 출시 준비: 권한 있을 때만 조회. 상세 표의 차단 요인 행은 0건을 숨기고 비-0만 노출한다(#2349).
 		DatapackReleaseBlockerSummaryUseCase.DatapackReleaseBlockerSummary datapackSummary = null;
 		if (AdminAuthorization.hasPermission(authentication, AdminPermission.DATAPACK_READ)) {

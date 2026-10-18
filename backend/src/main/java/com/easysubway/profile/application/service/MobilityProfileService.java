@@ -24,7 +24,7 @@ public class MobilityProfileService implements MobilityProfileUseCase {
 		LoadMobilityProfilePort loadMobilityProfilePort,
 		SaveMobilityProfilePort saveMobilityProfilePort
 	) {
-		this(loadMobilityProfilePort, saveMobilityProfilePort, Clock.systemDefaultZone());
+		this(loadMobilityProfilePort, saveMobilityProfilePort, Clock.systemUTC());
 	}
 
 	public MobilityProfileService(

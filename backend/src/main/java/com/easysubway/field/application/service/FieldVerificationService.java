@@ -12,6 +12,7 @@ import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -154,7 +155,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 			previousItem.note(),
 			command.note(),
 			command.changedBy(),
-			LocalDateTime.now()
+			LocalDateTime.now(ZoneOffset.UTC)
 		));
 	}
 

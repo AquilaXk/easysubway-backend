@@ -31,7 +31,7 @@ public class PushNotificationDispatchService implements PushNotificationDispatch
 		LoadNotificationPreferencePort loadNotificationPreferencePort,
 		SavePushNotificationOutboxPort savePushNotificationOutboxPort
 	) {
-		this(loadNotificationPreferencePort, savePushNotificationOutboxPort, Clock.systemDefaultZone());
+		this(loadNotificationPreferencePort, savePushNotificationOutboxPort, Clock.systemUTC());
 	}
 
 	public PushNotificationDispatchService(

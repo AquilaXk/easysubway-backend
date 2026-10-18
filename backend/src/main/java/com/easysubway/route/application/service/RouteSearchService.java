@@ -113,7 +113,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			saveRouteSearchPort,
 			saveRouteFeedbackPort,
 			loadTransitMasterPort,
-			Clock.systemDefaultZone(),
+			Clock.systemUTC(),
 			realtimeArrivalResolver.getIfAvailable()
 		);
 	}
@@ -128,7 +128,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			saveRouteSearchPort,
 			requireFeedbackPort(saveRouteSearchPort),
 			loadTransitMasterPort,
-			Clock.systemDefaultZone()
+			Clock.systemUTC()
 		);
 	}
 

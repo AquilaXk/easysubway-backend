@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.JsonPath;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -135,8 +136,10 @@ class FacilityReportApiGoldenFixtureTest {
 			assertHasNonNull(data, "receiptToken");
 		}
 		data.put("id", "__REPORT_ID__");
+		requireOffsetDateTime(data, "createdAt");
 		data.put("createdAt", "__CREATED_AT__");
 		if (data.has("reviewedAt") && !data.get("reviewedAt").isNull()) {
+			requireOffsetDateTime(data, "reviewedAt");
 			data.put("reviewedAt", "__REVIEWED_AT__");
 		}
 		if (data.has("receiptToken") || includeReceiptToken) {
@@ -147,6 +150,11 @@ class FacilityReportApiGoldenFixtureTest {
 			data.put("publicReceiptCode", "__PUBLIC_RECEIPT_CODE__");
 		}
 		return root;
+	}
+
+	/** placeholder로 바꾸기 전에 시각이 offset 있는 ISO-8601인지 확인한다(계약: format date-time). */
+	private static void requireOffsetDateTime(ObjectNode data, String field) {
+		assertThat(OffsetDateTime.parse(data.get(field).asText())).as(field).isNotNull();
 	}
 
 	private void assertHasNonNull(ObjectNode data, String... fields) {
