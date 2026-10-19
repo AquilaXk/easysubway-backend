@@ -30,6 +30,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @DisplayName("관리자 데이터팩 facility evidence matrix 화면")
 class FacilityEvidenceAdminPageControllerTest {
 
+	private static final String SOURCE_ID = "kric-station-convenience-standard";
+	private static final String RAW_OBJECT_URI_PREFIX = "s3://easysubway-datapack-sources/" + SOURCE_ID + "/";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -140,12 +143,12 @@ class FacilityEvidenceAdminPageControllerTest {
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
-			VALUES ('snapshot-kric-20260629', 'kric-station-elevator', '국가철도공단',
+			VALUES ('snapshot-kric-20260629', '%1$s', '국가철도공단',
 				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345, 12345,
-				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json',
+				?, '%2$ssnapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')
-			""",
+			""".formatted(SOURCE_ID, RAW_OBJECT_URI_PREFIX),
 			"a".repeat(64),
 			"b".repeat(64),
 			"c".repeat(64)
@@ -182,12 +185,12 @@ class FacilityEvidenceAdminPageControllerTest {
 				created_at
 			)
 			VALUES ('facility-evidence-elevator-1', 'station-sangnoksu', 'line-4',
-				'ELEVATOR', 'EXISTS', 'kric-station-elevator', 'snapshot-kric-20260629',
+				'ELEVATOR', 'EXISTS', '%1$s', 'snapshot-kric-20260629',
 				?, 'OPERATOR_CONFIRMED', 'INSTALLED', 'AVAILABLE',
 				'2026-06-29 03:00:00', '2026-06-29 03:00:00',
 				'2026-07-06 03:00:00', 95, TRUE, NULL, 'NONE', NULL,
 				'2026-06-29 03:10:00')
-			""",
+			""".formatted(SOURCE_ID),
 			"e".repeat(64)
 		);
 	}
@@ -203,12 +206,12 @@ class FacilityEvidenceAdminPageControllerTest {
 				created_at
 			)
 			VALUES ('facility-evidence-lift-unknown', 'station-sadang', 'line-2',
-				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-elevator',
+				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', '%1$s',
 				'snapshot-kric-20260629', ?, 'STATIC_LOCATION', 'UNKNOWN',
 				'UNKNOWN', '2026-06-29 03:00:00', '2026-06-29 03:00:00',
 				'2026-07-06 03:00:00', 40, FALSE, '운행 상태 확인 필요',
 				'UNRESOLVED', 'override-facility-1', '2026-06-29 03:11:00')
-			""",
+			""".formatted(SOURCE_ID),
 			"f".repeat(64)
 		);
 	}

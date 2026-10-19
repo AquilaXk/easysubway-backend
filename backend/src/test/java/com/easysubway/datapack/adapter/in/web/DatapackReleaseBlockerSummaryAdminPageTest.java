@@ -32,6 +32,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("관리자 데이터팩 release blocker 요약")
 class DatapackReleaseBlockerSummaryAdminPageTest {
 
+	private static final String SOURCE_ID = "kric-station-convenience-standard";
+
 	private static final String SHA_A = "a".repeat(64);
 	private static final String SHA_B = "b".repeat(64);
 	private static final String SHA_C = "c".repeat(64);
@@ -456,12 +458,12 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				freshness_expires_at, raw_retention_expires_at
 			)
 			VALUES (
-				'snapshot-release-blocked', 'kric-station-elevator', 'KRIC',
+				'snapshot-release-blocked', '%1$s', 'KRIC',
 				'2026-06-29 03:00:00', '2026-06-28 03:00:00', 10, 10, ?, 's3://raw/snapshot',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
 				'2026-07-07 03:00:00', '2026-09-29 03:00:00'
 			)
-			""", SHA_A, SHA_B, SHA_C);
+			""".formatted(SOURCE_ID), SHA_A, SHA_B, SHA_C);
 	}
 
 	private void insertCandidate() {
@@ -545,19 +547,19 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				confidence, match_method, approval_status, requested_by,
 				evidence_hash, created_at
 			)
-			VALUES ('alias-pending', 'kric-station-elevator', 'snapshot-release-blocked',
+			VALUES ('alias-pending', '%1$s', 'snapshot-release-blocked',
 				'STATION', 'provider-station', 'STATION', 'station-sangnoksu',
 				73, 'AUTO', 'PENDING', 'data-operator', ?, '2026-06-29 03:31:00')
-			""", SHA_D);
+			""".formatted(SOURCE_ID), SHA_D);
 		jdbcTemplate.update("""
 			INSERT INTO source_quarantine_records (
 				id, source_id, source_snapshot_id, provider_record_hash, reason_code,
 				severity, redacted_excerpt, resolution_status, created_at
 			)
-			VALUES ('quarantine-open', 'kric-station-elevator', 'snapshot-release-blocked',
+			VALUES ('quarantine-open', '%1$s', 'snapshot-release-blocked',
 				?, 'MISSING_FIELD', 'HIGH', 'station redacted', 'OPEN',
 				'2026-06-29 03:32:00')
-			""", SHA_E);
+			""".formatted(SOURCE_ID), SHA_E);
 		jdbcTemplate.update("""
 			INSERT INTO manual_overrides (
 				id, entity_type, entity_id, field_name, before_value, after_value,
@@ -614,12 +616,12 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				strict_route_eligible_reason, conflict_status, created_at
 			)
 			VALUES ('facility-blocker', 'station-sangnoksu', 'line-4',
-				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-elevator',
+				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', '%1$s',
 				'snapshot-release-blocked', ?, 'STATIC_LOCATION', 'UNKNOWN',
 				'UNKNOWN', '2026-06-29 03:34:00', '2026-06-29 03:34:00',
 				'2026-07-07 03:34:00', 40, FALSE, 'UNKNOWN_PENDING_REVIEW',
 				'NONE', '2026-06-29 03:34:00')
-			""", SHA_A);
+			""".formatted(SOURCE_ID), SHA_A);
 		jdbcTemplate.update("""
 			INSERT INTO route_edge_evidence (
 				id, station_id, line_id, edge_id, edge_type, source_id,
@@ -628,10 +630,10 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				blocker_reason, created_at
 			)
 			VALUES ('route-blocker', 'station-sangnoksu', 'line-4', 'edge-generated',
-				'GENERATED_CONNECTOR', 'kric-station-elevator', 'snapshot-release-blocked',
+				'GENERATED_CONNECTOR', '%1$s', 'snapshot-release-blocked',
 				'GENERATED', 'GENERATED', '2026-06-29 03:35:00', ?, FALSE,
 				'GENERATED_CONNECTOR', '2026-06-29 03:35:00')
-			""", SHA_B);
+			""".formatted(SOURCE_ID), SHA_B);
 	}
 
 	@TestConfiguration

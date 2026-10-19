@@ -30,6 +30,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @DisplayName("관리자 데이터팩 alias/quarantine 검수 큐 화면")
 class AliasQuarantineAdminPageControllerTest {
 
+	private static final String SOURCE_ID = "kric-station-convenience-standard";
+	private static final String RAW_OBJECT_URI_PREFIX = "s3://easysubway-datapack-sources/" + SOURCE_ID + "/";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -182,12 +185,12 @@ class AliasQuarantineAdminPageControllerTest {
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
-			VALUES ('snapshot-kric-20260629', 'kric-station-elevator', '국가철도공단',
+			VALUES ('snapshot-kric-20260629', '%1$s', '국가철도공단',
 				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345, 12345,
-				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json',
+				?, '%2$ssnapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')
-			""",
+			""".formatted(SOURCE_ID, RAW_OBJECT_URI_PREFIX),
 			"a".repeat(64),
 			"b".repeat(64),
 			"c".repeat(64)
@@ -206,11 +209,11 @@ class AliasQuarantineAdminPageControllerTest {
 				approval_status, requested_by, approved_by, approved_at, evidence_hash,
 				superseded_by, created_at
 			)
-			VALUES (?, 'kric-station-elevator', 'snapshot-kric-20260629',
+			VALUES (?, '%1$s', 'snapshot-kric-20260629',
 				'STATION', ?, 'STATION', 'station-sangnoksu',
 				92, 'AUTO_NAME_LINE', 'PENDING', 'qa-operator', NULL, NULL, ?,
 				NULL, '2026-06-29 03:10:00')
-			""",
+			""".formatted(SOURCE_ID),
 			aliasId,
 			providerEntityId,
 			"d".repeat(64)
@@ -228,10 +231,10 @@ class AliasQuarantineAdminPageControllerTest {
 				severity, redacted_excerpt, resolution_status, resolved_by, resolved_at,
 				created_at
 			)
-			VALUES (?, 'kric-station-elevator', 'snapshot-kric-20260629',
+			VALUES (?, '%1$s', 'snapshot-kric-20260629',
 				?, 'ALIAS_CONFLICT', 'P1', ?,
 				'OPEN', NULL, NULL, '2026-06-29 03:20:00')
-			""",
+			""".formatted(SOURCE_ID),
 			quarantineId,
 			"e".repeat(64),
 			redactedExcerpt
@@ -245,10 +248,10 @@ class AliasQuarantineAdminPageControllerTest {
 				severity, redacted_excerpt, resolution_status, resolved_by, resolved_at,
 				created_at
 			)
-			VALUES ('quarantine-resolved-1', 'kric-station-elevator', 'snapshot-kric-20260629',
+			VALUES ('quarantine-resolved-1', '%1$s', 'snapshot-kric-20260629',
 				?, 'MISSING_CANONICAL_STATION', 'P2', 'provider station=사당',
 				'RESOLVED', 'qa-reviewer', '2026-06-29 03:35:00', '2026-06-29 03:30:00')
-			""",
+			""".formatted(SOURCE_ID),
 			"f".repeat(64)
 		);
 		jdbcTemplate.update("""
