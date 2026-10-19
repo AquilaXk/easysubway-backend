@@ -140,9 +140,9 @@ class FacilityEvidenceAdminPageControllerTest {
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
-			VALUES ('snapshot-kric-20260629', 'kric-station-elevator', '국가철도공단',
+			VALUES ('snapshot-kric-20260629', 'kric-station-convenience-standard', '국가철도공단',
 				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345, 12345,
-				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json',
+				?, 's3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')
 			""",
@@ -182,7 +182,7 @@ class FacilityEvidenceAdminPageControllerTest {
 				created_at
 			)
 			VALUES ('facility-evidence-elevator-1', 'station-sangnoksu', 'line-4',
-				'ELEVATOR', 'EXISTS', 'kric-station-elevator', 'snapshot-kric-20260629',
+				'ELEVATOR', 'EXISTS', 'kric-station-convenience-standard', 'snapshot-kric-20260629',
 				?, 'OPERATOR_CONFIRMED', 'INSTALLED', 'AVAILABLE',
 				'2026-06-29 03:00:00', '2026-06-29 03:00:00',
 				'2026-07-06 03:00:00', 95, TRUE, NULL, 'NONE', NULL,
@@ -203,7 +203,7 @@ class FacilityEvidenceAdminPageControllerTest {
 				created_at
 			)
 			VALUES ('facility-evidence-lift-unknown', 'station-sadang', 'line-2',
-				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-elevator',
+				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-convenience-standard',
 				'snapshot-kric-20260629', ?, 'STATIC_LOCATION', 'UNKNOWN',
 				'UNKNOWN', '2026-06-29 03:00:00', '2026-06-29 03:00:00',
 				'2026-07-06 03:00:00', 40, FALSE, '운행 상태 확인 필요',

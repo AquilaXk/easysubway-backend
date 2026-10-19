@@ -182,9 +182,9 @@ class AliasQuarantineAdminPageControllerTest {
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
-			VALUES ('snapshot-kric-20260629', 'kric-station-elevator', '국가철도공단',
+			VALUES ('snapshot-kric-20260629', 'kric-station-convenience-standard', '국가철도공단',
 				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345, 12345,
-				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json',
+				?, 's3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')
 			""",
@@ -206,7 +206,7 @@ class AliasQuarantineAdminPageControllerTest {
 				approval_status, requested_by, approved_by, approved_at, evidence_hash,
 				superseded_by, created_at
 			)
-			VALUES (?, 'kric-station-elevator', 'snapshot-kric-20260629',
+			VALUES (?, 'kric-station-convenience-standard', 'snapshot-kric-20260629',
 				'STATION', ?, 'STATION', 'station-sangnoksu',
 				92, 'AUTO_NAME_LINE', 'PENDING', 'qa-operator', NULL, NULL, ?,
 				NULL, '2026-06-29 03:10:00')
@@ -228,7 +228,7 @@ class AliasQuarantineAdminPageControllerTest {
 				severity, redacted_excerpt, resolution_status, resolved_by, resolved_at,
 				created_at
 			)
-			VALUES (?, 'kric-station-elevator', 'snapshot-kric-20260629',
+			VALUES (?, 'kric-station-convenience-standard', 'snapshot-kric-20260629',
 				?, 'ALIAS_CONFLICT', 'P1', ?,
 				'OPEN', NULL, NULL, '2026-06-29 03:20:00')
 			""",
@@ -245,7 +245,7 @@ class AliasQuarantineAdminPageControllerTest {
 				severity, redacted_excerpt, resolution_status, resolved_by, resolved_at,
 				created_at
 			)
-			VALUES ('quarantine-resolved-1', 'kric-station-elevator', 'snapshot-kric-20260629',
+			VALUES ('quarantine-resolved-1', 'kric-station-convenience-standard', 'snapshot-kric-20260629',
 				?, 'MISSING_CANONICAL_STATION', 'P2', 'provider station=사당',
 				'RESOLVED', 'qa-reviewer', '2026-06-29 03:35:00', '2026-06-29 03:30:00')
 			""",

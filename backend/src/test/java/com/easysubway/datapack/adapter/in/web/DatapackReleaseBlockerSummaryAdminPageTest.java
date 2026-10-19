@@ -456,7 +456,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				freshness_expires_at, raw_retention_expires_at
 			)
 			VALUES (
-				'snapshot-release-blocked', 'kric-station-elevator', 'KRIC',
+				'snapshot-release-blocked', 'kric-station-convenience-standard', 'KRIC',
 				'2026-06-29 03:00:00', '2026-06-28 03:00:00', 10, 10, ?, 's3://raw/snapshot',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
 				'2026-07-07 03:00:00', '2026-09-29 03:00:00'
@@ -545,7 +545,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				confidence, match_method, approval_status, requested_by,
 				evidence_hash, created_at
 			)
-			VALUES ('alias-pending', 'kric-station-elevator', 'snapshot-release-blocked',
+			VALUES ('alias-pending', 'kric-station-convenience-standard', 'snapshot-release-blocked',
 				'STATION', 'provider-station', 'STATION', 'station-sangnoksu',
 				73, 'AUTO', 'PENDING', 'data-operator', ?, '2026-06-29 03:31:00')
 			""", SHA_D);
@@ -554,7 +554,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				id, source_id, source_snapshot_id, provider_record_hash, reason_code,
 				severity, redacted_excerpt, resolution_status, created_at
 			)
-			VALUES ('quarantine-open', 'kric-station-elevator', 'snapshot-release-blocked',
+			VALUES ('quarantine-open', 'kric-station-convenience-standard', 'snapshot-release-blocked',
 				?, 'MISSING_FIELD', 'HIGH', 'station redacted', 'OPEN',
 				'2026-06-29 03:32:00')
 			""", SHA_E);
@@ -614,7 +614,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				strict_route_eligible_reason, conflict_status, created_at
 			)
 			VALUES ('facility-blocker', 'station-sangnoksu', 'line-4',
-				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-elevator',
+				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-convenience-standard',
 				'snapshot-release-blocked', ?, 'STATIC_LOCATION', 'UNKNOWN',
 				'UNKNOWN', '2026-06-29 03:34:00', '2026-06-29 03:34:00',
 				'2026-07-07 03:34:00', 40, FALSE, 'UNKNOWN_PENDING_REVIEW',
@@ -628,7 +628,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				blocker_reason, created_at
 			)
 			VALUES ('route-blocker', 'station-sangnoksu', 'line-4', 'edge-generated',
-				'GENERATED_CONNECTOR', 'kric-station-elevator', 'snapshot-release-blocked',
+				'GENERATED_CONNECTOR', 'kric-station-convenience-standard', 'snapshot-release-blocked',
 				'GENERATED', 'GENERATED', '2026-06-29 03:35:00', ?, FALSE,
 				'GENERATED_CONNECTOR', '2026-06-29 03:35:00')
 			""", SHA_B);

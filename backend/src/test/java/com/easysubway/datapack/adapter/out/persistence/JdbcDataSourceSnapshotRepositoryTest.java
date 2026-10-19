@@ -98,7 +98,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"snapshot-unredacted",
 			"a".repeat(64),
 			13,
-			"s3://easysubway-datapack-sources/kric-station-elevator/snapshot-unredacted.json",
+			"s3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-unredacted.json",
 			false
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
@@ -107,7 +107,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"snapshot-uri-secret",
 			"a".repeat(64),
 			13,
-			"s3://easysubway-datapack-sources/kric-station-elevator/snapshot-uri-secret.json?serviceKey=secret",
+			"s3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-uri-secret.json?serviceKey=secret",
 			true
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
@@ -116,7 +116,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"snapshot-uri-userinfo",
 			"a".repeat(64),
 			13,
-			"s3://access:secret@easysubway-datapack-sources/kric-station-elevator/snapshot-uri-userinfo.json",
+			"s3://access:secret@easysubway-datapack-sources/kric-station-convenience-standard/snapshot-uri-userinfo.json",
 			true
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
@@ -125,7 +125,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"snapshot-uri-object-key-at",
 			"a".repeat(64),
 			13,
-			"s3://easysubway-datapack-sources/kric-station-elevator/provider@example.json",
+			"s3://easysubway-datapack-sources/kric-station-convenience-standard/provider@example.json",
 			true
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
@@ -134,7 +134,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"snapshot-uri-fragment",
 			"a".repeat(64),
 			13,
-			"oci://easysubway-datapack-sources/kric-station-elevator/snapshot-uri-fragment.json#token=secret",
+			"oci://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-uri-fragment.json#token=secret",
 			true
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
@@ -143,7 +143,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"snapshot-uri-empty-bucket",
 			"a".repeat(64),
 			13,
-			"s3:///kric-station-elevator/snapshot-uri-empty-bucket.json",
+			"s3:///kric-station-convenience-standard/snapshot-uri-empty-bucket.json",
 			true
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
@@ -221,7 +221,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
-			VALUES ('snapshot-legacy-unsafe', 'kric-station-elevator', '국가철도공단',
+			VALUES ('snapshot-legacy-unsafe', 'kric-station-convenience-standard', '국가철도공단',
 				'2026-06-29 03:00:00', NULL, 13, ?, 's3:///legacy-unsafe.json', ?, ?,
 				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, FALSE, NULL, 'legacy unsafe row',
 				'2026-07-06 03:00:00', '2026-06-29 03:00:00')
@@ -237,7 +237,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			snapshotId,
 			rawSha256,
 			rowCount,
-			"s3://easysubway-datapack-sources/kric-station-elevator/%s.json".formatted(snapshotId),
+			"s3://easysubway-datapack-sources/kric-station-convenience-standard/%s.json".formatted(snapshotId),
 			true
 		);
 	}
@@ -251,7 +251,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 	) {
 		return new DataSourceSnapshot(
 			snapshotId,
-			"kric-station-elevator",
+			"kric-station-convenience-standard",
 			"국가철도공단",
 			LocalDateTime.of(2026, 6, 29, 3, 0, 0, 123456789),
 			LocalDateTime.of(2026, 6, 28, 0, 0, 0, 987654321),
