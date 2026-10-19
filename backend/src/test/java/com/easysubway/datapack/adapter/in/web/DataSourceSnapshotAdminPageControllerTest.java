@@ -41,6 +41,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @AutoConfigureMockMvc
 @DisplayName("관리자 데이터팩 source snapshot 화면")
 class DataSourceSnapshotAdminPageControllerTest {
+
+	private static final String SOURCE_ID = "kric-station-convenience-standard";
+	private static final String RAW_OBJECT_URI_PREFIX = "s3://easysubway-datapack-sources/" + SOURCE_ID + "/";
 	private static final String GOVERNANCE_POLICY_VERSION = "2026-07-15";
 	private static final String GOVERNANCE_POLICY_SHA256 = "ef5ee1bcc79a620e947568e752eedc3b286be59a611b3ad83e0962ccc214bc4e";
 	private static final String RAW_RETENTION_EXPIRES_AT = "2026-09-28T03:00:00";
@@ -74,12 +77,12 @@ class DataSourceSnapshotAdminPageControllerTest {
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
-			VALUES ('snapshot-kric-20260629', 'kric-station-convenience-standard', '국가철도공단',
+			VALUES ('snapshot-kric-20260629', '%1$s', '국가철도공단',
 				'2026-06-29 03:00:00', '2026-06-28 00:00:00', NULL, NULL, 12345, 12345,
-				?, 's3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260629.json',
+				?, '%2$ssnapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')
-			""",
+			""".formatted(SOURCE_ID, RAW_OBJECT_URI_PREFIX),
 			"a".repeat(64),
 			"b".repeat(64),
 			"c".repeat(64)
@@ -104,7 +107,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 		assertThat(html)
 			.contains("원천 스냅샷")
 			.contains("원천 스냅샷 검색")
-			.contains("kric-station-convenience-standard")
+			.contains(SOURCE_ID)
 			.contains("국가철도공단")
 			.contains("12345")
 			.contains("LOCKED")
@@ -123,7 +126,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 		String html = mockMvc.perform(get("/admin/datapack/source-snapshots/page")
 				.param("page", "1")
 				.param("size", "1")
-				.param("query", "kric-station-convenience-standard")
+				.param("query", SOURCE_ID)
 				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
 			.andExpect(status().isOk())
 			.andReturn()
@@ -148,7 +151,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 		assertThat(html)
 			.contains("snapshot-kric-20260629")
 			.contains("raw sha256")
-			.contains("s3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260629.json")
+			.contains(RAW_OBJECT_URI_PREFIX + "snapshot-kric-20260629.json")
 			.contains("자격증명 마스킹")
 			.contains("원본 보존")
 			.contains("name=\"commandToken\"")
@@ -184,14 +187,14 @@ class DataSourceSnapshotAdminPageControllerTest {
 					new SimpleGrantedAuthority("admin.datapack.source.run")
 				))
 				.param("snapshotId", "snapshot-kric-20260630")
-				.param("sourceId", "kric-station-convenience-standard")
+				.param("sourceId", SOURCE_ID)
 				.param("provider", "국가철도공단")
 				.param("retrievedAt", "2026-06-30T03:00:00")
 				.param("sourceUpdatedAt", "2026-06-29T00:00:00")
 				.param("rowCount", "12357")
 				.param("coverageCount", "12357")
 				.param("rawSha256", "d".repeat(64))
-				.param("rawObjectUri", "s3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260630.json")
+				.param("rawObjectUri", RAW_OBJECT_URI_PREFIX + "snapshot-kric-20260630.json")
 				.param("redactedRequestFingerprint", "e".repeat(64))
 				.param("schemaFingerprint", "f".repeat(64))
 				.param("schemaStatus", "PASS")
@@ -247,12 +250,12 @@ class DataSourceSnapshotAdminPageControllerTest {
 		doReturn(Optional.empty())
 			.doCallRealMethod()
 			.when(snapshotRepository)
-			.findEventByIdempotencyKey("kric-station-convenience-standard", "source-snapshot-1162-20260630");
+			.findEventByIdempotencyKey(SOURCE_ID, "source-snapshot-1162-20260630");
 		doThrow(new DuplicateKeyException("duplicate idempotency key"))
 			.when(snapshotRepository)
 			.insertEvent(
 				anyString(),
-				eq("kric-station-convenience-standard"),
+				eq(SOURCE_ID),
 				eq("snapshot-kric-20260630"),
 				eq("CREATE_LOCKED"),
 				eq("PASS"),
@@ -270,14 +273,14 @@ class DataSourceSnapshotAdminPageControllerTest {
 					new SimpleGrantedAuthority("admin.datapack.source.run")
 				))
 				.param("snapshotId", "snapshot-kric-20260630")
-				.param("sourceId", "kric-station-convenience-standard")
+				.param("sourceId", SOURCE_ID)
 				.param("provider", "국가철도공단")
 				.param("retrievedAt", "2026-06-30T03:00:00")
 				.param("sourceUpdatedAt", "2026-06-29T00:00:00")
 				.param("rowCount", "12357")
 				.param("coverageCount", "12357")
 				.param("rawSha256", "d".repeat(64))
-				.param("rawObjectUri", "s3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260630.json")
+				.param("rawObjectUri", RAW_OBJECT_URI_PREFIX + "snapshot-kric-20260630.json")
 				.param("redactedRequestFingerprint", "e".repeat(64))
 				.param("schemaFingerprint", "f".repeat(64))
 				.param("schemaStatus", "PASS")
@@ -308,7 +311,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 				.with(commandToken("/admin/datapack/source-snapshots/snapshot-kric-20260629/page"))
 				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read")))
 				.param("snapshotId", "snapshot-denied")
-				.param("sourceId", "kric-station-convenience-standard")
+				.param("sourceId", SOURCE_ID)
 				.param("provider", "국가철도공단")
 				.param("retrievedAt", "2026-06-30T03:00:00")
 				.param("rowCount", "1")
@@ -348,7 +351,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 		return jdbcTemplate.queryForObject(
 			"SELECT " + column + " FROM datapack_source_snapshot_events WHERE source_id = ? AND idempotency_key = ?",
 			Object.class,
-			"kric-station-convenience-standard",
+			SOURCE_ID,
 			idempotencyKey
 		);
 	}
@@ -368,11 +371,11 @@ class DataSourceSnapshotAdminPageControllerTest {
 				id, source_id, snapshot_id, operation_type, operation_status,
 				requested_by, reason, idempotency_key, created_at
 			)
-			VALUES ('event-source-snapshot-20260630', 'kric-station-convenience-standard',
+			VALUES ('event-source-snapshot-20260630', '%1$s',
 				'snapshot-kric-20260630', 'CREATE_LOCKED', 'PASS',
 				'source-runner', 'official source refresh',
 				'source-snapshot-1162-20260630', '2026-06-30 03:01:00')
-			""");
+			""".formatted(SOURCE_ID));
 	}
 
 	private void insertSecondSnapshot() {
@@ -385,15 +388,15 @@ class DataSourceSnapshotAdminPageControllerTest {
 				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
 				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
 			)
-			VALUES ('snapshot-kric-20260630', 'kric-station-convenience-standard', '국가철도공단',
+			VALUES ('snapshot-kric-20260630', '%1$s', '국가철도공단',
 				'2026-06-30 03:00:00', '2026-06-29 00:00:00',
 				'2026-06-30 03:00:00', NULL, 12357, 12357,
-				?, 's3://easysubway-datapack-sources/kric-station-convenience-standard/snapshot-kric-20260630.json',
+				?, '%2$ssnapshot-kric-20260630.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
 				'snapshot-kric-20260629', '이전 snapshot 대비 +12 rows',
 				'{"status":"CHANGED","rawHashChanged":true,"schemaHashChanged":true,"requestHashChanged":true,"sourceUpdatedAtChanged":true,"rowDelta":12,"coverageDelta":12}',
 				'2026-09-28 03:00:00', '2026-09-28 03:00:00', '2026-07-15', ?)
-			""",
+			""".formatted(SOURCE_ID, RAW_OBJECT_URI_PREFIX),
 			"d".repeat(64),
 			"e".repeat(64),
 			"f".repeat(64),
