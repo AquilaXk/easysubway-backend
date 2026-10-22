@@ -56,6 +56,16 @@ public final class BusinessTime {
 		return startOfDayInstant(koreanDate.plusDays(1));
 	}
 
+	/** 한국 벽시계로 입력된 시각을 UTC 벽시계 시각으로 옮긴다. 운영자가 입력한 시각을 UTC로 저장할 때 쓴다. */
+	public static LocalDateTime toUtcLocal(LocalDateTime koreanWallClock) {
+		return koreanWallClock.atZone(ZONE).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+	}
+
+	/** UTC 벽시계로 저장된 시각을 한국 벽시계 시각으로 옮긴다. 저장된 시각을 운영자 화면에 보여 줄 때 쓴다. */
+	public static LocalDateTime fromUtcLocal(LocalDateTime utcWallClock) {
+		return utcWallClock.atOffset(ZoneOffset.UTC).atZoneSameInstant(ZONE).toLocalDateTime();
+	}
+
 	/** UTC 벽시계로 저장된 시각이 속한 한국 달력 날짜. */
 	public static LocalDate dateOfUtc(LocalDateTime utcWallClock) {
 		return utcWallClock.atOffset(ZoneOffset.UTC).atZoneSameInstant(ZONE).toLocalDate();

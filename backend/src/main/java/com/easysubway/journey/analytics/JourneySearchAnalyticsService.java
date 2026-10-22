@@ -39,7 +39,7 @@ public class JourneySearchAnalyticsService {
 
 	public JourneySearchAnalyticsSummary summarize(int requestedDays) {
 		int days = ALLOWED_DAYS.contains(requestedDays) ? requestedDays : DEFAULT_DAYS;
-		LocalDate today = LocalDate.now(clock);
+		LocalDate today = BusinessTime.today(clock);
 		LocalDate from = today.minusDays(days - 1L);
 		List<JourneySearchAggregateRow> rows = store.aggregate(from, today);
 

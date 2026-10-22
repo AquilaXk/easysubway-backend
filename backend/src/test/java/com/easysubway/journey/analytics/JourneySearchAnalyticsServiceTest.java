@@ -91,4 +91,28 @@ class JourneySearchAnalyticsServiceTest {
 		assertThat(service.summarize(90).days()).hasSize(90);
 		assertThat(service.summarize(7).totalCount()).isZero();
 	}
+
+	@Test
+	@DisplayName("UTC 시계에서 한국 날짜가 UTC보다 하루 앞서면 한국 오늘을 기준으로 집계한다")
+	void summarizesByKoreanTodayWhenUtcClockLagsOneDay() {
+		Clock utcBeforeKoreanMidnight = Clock.fixed(Instant.parse("2026-10-03T16:00:00Z"), ZoneOffset.UTC);
+		var store = new JourneySearchRecorderTest.InMemoryStore() {
+			@Override
+			public List<JourneySearchAggregateRow> aggregate(LocalDate from, LocalDate to) {
+				assertThat(from).isEqualTo(LocalDate.parse("2026-09-28"));
+				assertThat(to).isEqualTo(LocalDate.parse("2026-10-04"));
+				return List.of(row("2026-10-04", JourneySearchKind.DEPART_AT, JourneySearchOutcome.FOUND,
+					JourneySearchRecord.UNKNOWN, "UNDETERMINED", "FASTEST", 2));
+			}
+		};
+		var recorder = new JourneySearchRecorder(store, Runnable::run, utcBeforeKoreanMidnight,
+			new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+		var service = new JourneySearchAnalyticsService(store, recorder, utcBeforeKoreanMidnight);
+
+		JourneySearchAnalyticsSummary summary = service.summarize(7);
+
+		assertThat(summary.days()).extracting(JourneySearchAnalyticsSummary.DayRow::day)
+			.endsWith(LocalDate.parse("2026-10-04"));
+		assertThat(summary.days().get(6).total()).isEqualTo(2);
+	}
 }

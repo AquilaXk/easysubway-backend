@@ -73,4 +73,22 @@ class BusinessTimeTest {
 				.isEqualTo(BusinessTime.UTC_OFFSET_HOURS * 3600);
 		}
 	}
+
+	@Test
+	@DisplayName("한국 벽시계 시각은 9시간 앞선 UTC 벽시계 시각으로 옮겨진다")
+	void koreanWallClockMapsToUtcNineHoursEarlier() {
+		assertThat(BusinessTime.toUtcLocal(LocalDateTime.of(2026, 10, 24, 9, 0)))
+			.isEqualTo(LocalDateTime.of(2026, 10, 24, 0, 0));
+		assertThat(BusinessTime.toUtcLocal(LocalDateTime.of(2026, 10, 24, 0, 30)))
+			.isEqualTo(LocalDateTime.of(2026, 10, 23, 15, 30));
+	}
+
+	@Test
+	@DisplayName("UTC 벽시계 시각은 9시간 뒤의 한국 벽시계 시각으로 옮겨지고 왕복해도 같다")
+	void utcWallClockMapsToKoreanNineHoursLaterAndRoundTrips() {
+		LocalDateTime utc = LocalDateTime.of(2026, 10, 23, 15, 30);
+
+		assertThat(BusinessTime.fromUtcLocal(utc)).isEqualTo(LocalDateTime.of(2026, 10, 24, 0, 30));
+		assertThat(BusinessTime.toUtcLocal(BusinessTime.fromUtcLocal(utc))).isEqualTo(utc);
+	}
 }
