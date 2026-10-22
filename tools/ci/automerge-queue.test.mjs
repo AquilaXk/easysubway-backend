@@ -204,6 +204,10 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
   const fallbackBody =
+    '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->';
+  const aquilaFallbackBody =
+    '**Actionable comments posted: 0**\n<!-- Review source: Aquila fallback; canonical visible structure: PR #1926 Review 4676157515 -->';
+  const codexMarkerBody =
     '**Actionable comments posted: 0**\n<!-- Review source: Codex CLI fallback; canonical visible structure: PR #1926 Review 4676157515 -->';
   const review = (id, state, submittedAt, body = '', overrides = {}) => ({
     id,
@@ -257,6 +261,13 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
   assert.notEqual(
     runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z')]),
+    0,
+  );
+  assert.equal(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)]), 0);
+  assert.equal(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', aquilaFallbackBody)]), 0);
+  assert.notEqual(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', codexMarkerBody)]), 0);
+  assert.notEqual(
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '**Actionable comments posted: 0**')]),
     0,
   );
   // 폴백 리뷰는 규약 양식의 제목줄과 provenance marker를 모두 가져야 한다.
@@ -438,7 +449,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
     runReviewFilter([review(1, 'APPROVED', '2026-08-01T00:00:00Z')], [[{ sha: 'other-head' }]]),
     0,
   );
-  // canonical Codex discovery는 current head가 아니어도 PR commit set에 남아 있으면 허용된다.
+  // canonical Aquila discovery는 current head가 아니어도 PR commit set에 남아 있으면 허용된다.
   assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
@@ -448,7 +459,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
     0,
   );
   // frozen discovery에는 github-actions[bot]의 exact current-head marker가 필요하다.
-  const frozenCodex = [
+  const frozenAquila = [
     review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, { commit_id: 'previous-head' }),
   ];
   for (const commentPages of [
@@ -457,7 +468,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
     [[{ id: 1, body: marker, user: { ...actionsBot, id: 1 } }]],
   ]) {
     assert.notEqual(
-      runReviewFilter(frozenCodex, [[{ sha: 'previous-head' }, { sha: 'head' }]], commentPages),
+      runReviewFilter(frozenAquila, [[{ sha: 'previous-head' }, { sha: 'head' }]], commentPages),
       0,
     );
   }
@@ -2053,12 +2064,14 @@ test('marker 복구는 canonical marker가 없고 게이트가 인정하는 disc
     body: '',
     user: { login: 'coderabbitai[bot]', id: 136622811, type: 'Bot' },
   };
+  const aquilaFallbackBody =
+    '**Actionable comments posted: 1**\n<!-- Review source: Aquila fallback; canonical visible structure: PR #1 Review 1 -->';
   const codexBody =
     '**Actionable comments posted: 1**\n<!-- Review source: Codex CLI fallback; canonical visible structure: PR #1 Review 1 -->';
 
   for (const [label, options] of [
     ['Aquila discovery on an earlier PR commit', {}],
-    ['Codex fallback discovery', { reviews: [discoveryReview(previous, { body: codexBody })] }],
+    ['Aquila fallback discovery', { reviews: [discoveryReview(previous, { body: aquilaFallbackBody })] }],
     ['CodeRabbit discovery', { reviews: [discoveryReview(head, codeRabbit)] }],
     ['spoofed marker is not canonical', { comments: [[{ id: 7, body: markerFor(previous), user: { ...actionsBotUser, id: 1 } }]] }],
   ]) {
@@ -2075,6 +2088,7 @@ test('marker 복구는 canonical marker가 없고 게이트가 인정하는 disc
   for (const [label, options] of [
     ['no review', { reviews: [] }],
     ['approval only', { reviews: [discoveryReview(head, { state: 'APPROVED', body: '' })] }],
+    ['Codex marker discovery', { reviews: [discoveryReview(previous, { body: codexBody })] }],
     ['non-canonical comment review', { reviews: [discoveryReview(previous, { body: 'looks fine' })] }],
     ['discovery outside the PR commit set', { reviews: [discoveryReview(outside)] }],
     ['discovery without a commit', { reviews: [discoveryReview(null)] }],
@@ -2148,7 +2162,7 @@ test('marker 동기화의 discovery 판정은 리뷰 게이트와 같은 정의�
   const gate = workflow.match(/# review-state-filter-begin\n([\s\S]*?)\n\s+# review-state-filter-end/)?.[1];
   assert.ok(gate, 'review gate must stay testable');
   const normalize = (text) => text.replace(/\s+/g, ' ').trim();
-  for (const name of ['is_coderabbit', 'is_canonical_codex']) {
+  for (const name of ['is_coderabbit', 'is_canonical_aquila']) {
     const definition = (source) => source.match(new RegExp(`def ${name}:[\\s\\S]*?;\\n`))?.[0];
     assert.ok(definition(gate), `gate must define ${name}`);
     assert.equal(
