@@ -203,7 +203,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   )?.[1];
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
-  const fallbackBody =
+  const universalBody =
     '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->';
   const aquilaFallbackBody =
     '**Actionable comments posted: 0**\n<!-- Review source: Aquila fallback; canonical visible structure: PR #1926 Review 4676157515 -->';
@@ -263,7 +263,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
     runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z')]),
     0,
   );
-  assert.equal(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)]), 0);
+  assert.equal(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody)]), 0);
   assert.equal(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', aquilaFallbackBody)]), 0);
   assert.notEqual(runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', codexMarkerBody)]), 0);
   assert.notEqual(
@@ -272,13 +272,13 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
   // 폴백 리뷰는 규약 양식의 제목줄과 provenance marker를 모두 가져야 한다.
   assert.notEqual(
-    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)], [[{ sha: 'head' }]], [[]]),
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody)], [[{ sha: 'head' }]], [[]]),
     0,
   );
   // 신뢰되지 않는 author_association은 어떤 본문으로도 게이트를 통과하지 못한다.
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         author_association: 'NONE',
       }),
     ]),
@@ -360,7 +360,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   // login, immutable id, Bot type 중 하나라도 다르면 NONE 리뷰는 신뢰하지 않는다.
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         ...codeRabbit,
         user: { ...codeRabbit.user, type: 'User' },
       }),
@@ -378,7 +378,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         ...codeRabbit,
         user: { ...codeRabbit.user, login: 'other-bot[bot]' },
       }),
@@ -387,7 +387,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         ...codeRabbit,
         user: { ...codeRabbit.user, id: 1 },
       }),
@@ -415,7 +415,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
         commit_id: 'previous-head',
         user: { login: 'reviewer-one' },
       }),
-      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', fallbackBody, {
+      review(2, 'COMMENTED', '2026-08-01T00:01:00Z', universalBody, {
         user: { login: 'reviewer-two' },
       }),
     ]),
@@ -452,7 +452,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   // canonical Aquila discovery는 current head가 아니어도 PR commit set에 남아 있으면 허용된다.
   assert.equal(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         commit_id: 'previous-head',
       }),
     ], [[{ sha: 'previous-head' }, { sha: 'head' }]]),
@@ -460,7 +460,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
   // frozen discovery에는 github-actions[bot]의 exact current-head marker가 필요하다.
   const frozenAquila = [
-    review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, { commit_id: 'previous-head' }),
+    review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, { commit_id: 'previous-head' }),
   ];
   for (const commentPages of [
     [[]],
@@ -475,7 +475,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   // frozen discovery 역시 empty/missing-current-head commit set으로는 통과할 수 없다.
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         commit_id: 'previous-head',
       }),
     ], [[]]),
@@ -483,7 +483,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
   assert.notEqual(
     runReviewFilter([
-      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', universalBody, {
         commit_id: 'previous-head',
       }),
     ], [[{ sha: 'previous-head' }]]),
