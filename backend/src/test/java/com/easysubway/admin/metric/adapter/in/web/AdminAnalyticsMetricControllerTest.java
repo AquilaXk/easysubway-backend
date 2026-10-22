@@ -16,6 +16,7 @@ import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
+import com.easysubway.common.time.BusinessTime;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,10 +50,14 @@ class AdminAnalyticsMetricControllerTest {
 	@Autowired
 	private InMemoryAdminAuditEventRepository auditEventRepository;
 
+	@Autowired
+	private AdminMetricTestClock clock;
+
 	@BeforeEach
 	void seed() {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, LocalDate.now(), 40));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, LocalDate.now().minusDays(7), 10));
+		LocalDate businessToday = BusinessTime.today(clock);
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, businessToday, 40));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, businessToday.minusDays(7), 10));
 	}
 
 	@Test
