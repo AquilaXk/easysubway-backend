@@ -5,14 +5,15 @@ import com.easysubway.ads.domain.AdCreative;
 import com.easysubway.ads.domain.AdEventType;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.error.ResourceNotFoundException;
+import com.easysubway.common.time.BusinessTime;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Clock;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
@@ -37,8 +38,13 @@ public class AdService {
 	@Autowired
 	public AdService(
 		AdRepository repository,
+		ObjectProvider<Clock> clockProvider,
 		@Value("${easysubway.ads.asset-origin:}") String assetOrigin
 	) {
+		this(repository, clockProvider.getIfAvailable(Clock::systemUTC), assetOrigin);
+	}
+
+	public AdService(AdRepository repository, String assetOrigin) {
 		this(repository, Clock.systemUTC(), assetOrigin);
 	}
 
@@ -97,7 +103,7 @@ public class AdService {
 	}
 
 	public void recordEvent(String placementId, String creativeId, AdEventType eventType) {
-		repository.incrementEvent(placementId, creativeId, eventType, LocalDate.now(clock));
+		repository.incrementEvent(placementId, creativeId, eventType, BusinessTime.today(clock));
 	}
 
 	private AdCreative validate(AdCreative creative) {
