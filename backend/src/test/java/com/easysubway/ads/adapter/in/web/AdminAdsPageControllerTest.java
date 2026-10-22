@@ -292,6 +292,8 @@ class AdminAdsPageControllerTest {
 			.andExpect(status().is3xxRedirection());
 		AdCreative created = repository.findById("seconds-ad").orElseThrow();
 		assertThat(created.startsAt().toInstant(ZoneOffset.UTC)).isEqualTo(Instant.parse("2026-10-23T15:30:15Z"));
+		assertThat(created.endsAt()).isNull();
+		assertThat(getAdsHtml(session)).contains("2026-10-24 00:30");
 	}
 
 	@Test

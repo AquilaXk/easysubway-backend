@@ -40,9 +40,9 @@
 			<input id="landing-url" name="landingUrl" type="url" required maxlength="1000">
 			<label for="alt-text">대체텍스트</label>
 			<textarea id="alt-text" name="altText" required maxlength="500" rows="2"></textarea>
-			<label for="starts-at">시작 일시</label>
+			<label for="starts-at">시작 일시 (한국 시간)</label>
 			<input id="starts-at" name="startsAt" type="datetime-local" required>
-			<label for="ends-at">종료 일시</label>
+			<label for="ends-at">종료 일시 (한국 시간)</label>
 			<input id="ends-at" name="endsAt" type="datetime-local">
 			<label for="save-reason">변경 사유</label>
 			<input id="save-reason" name="reason" required maxlength="500">
@@ -63,8 +63,8 @@
 				<th scope="col">이미지</th>
 				<th scope="col">랜딩</th>
 				<th scope="col">대체텍스트</th>
-				<th scope="col">시작</th>
-				<th scope="col">종료</th>
+				<th scope="col">시작 (한국 시간)</th>
+				<th scope="col">종료 (한국 시간)</th>
 				<th scope="col">상태·액션</th>
 			</tr>
 			</thead>
@@ -81,8 +81,8 @@
 				<td><a th:href="${creative.landingUrl}" rel="noopener noreferrer"
 				       th:aria-label="${creative.id + ' ' + creative.advertiserName + ' 랜딩 페이지 열기'}">랜딩 열기</a></td>
 				<td th:text="${creative.altText}">대체텍스트</td>
-				<td th:text="${#temporals.format(creative.startsAt, 'yyyy-MM-dd HH:mm')}">2026-07-11 00:00</td>
-				<td th:if="${creative.endsAt != null}" th:text="${#temporals.format(creative.endsAt, 'yyyy-MM-dd HH:mm')}">2026-07-12 00:00</td>
+				<td th:text="${creative.startsAt}">2026-07-11 00:00</td>
+				<td th:if="${creative.endsAt != null}" th:text="${creative.endsAt}">2026-07-12 00:00</td>
 				<td th:unless="${creative.endsAt != null}" th:insert="~{admin/fragments/missing-value :: value(null, '없음')}">—</td>
 				<td>
 					<span th:text="${creative.enabled ? '활성' : '비활성'}">비활성</span>

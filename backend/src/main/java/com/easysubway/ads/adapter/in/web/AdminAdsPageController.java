@@ -5,10 +5,12 @@ import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.ads.application.service.AdService;
 import com.easysubway.ads.domain.AdCreative;
 import com.easysubway.common.error.InvalidRequestException;
+import com.easysubway.common.time.BusinessTime;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -35,7 +37,7 @@ class AdminAdsPageController {
 
 	@GetMapping("/admin/ads/page")
 	String page(Model model) {
-		model.addAttribute("creatives", service.creatives());
+		model.addAttribute("creatives", service.creatives().stream().map(CreativeRow::from).toList());
 		return "admin/ads/list";
 	}
 
@@ -105,6 +107,32 @@ class AdminAdsPageController {
 		return cleaned;
 	}
 
+	/** 저장된 UTC 노출 시각을 운영자가 입력한 한국 시간으로 되돌려 보여 주는 목록 행. */
+	record CreativeRow(
+		String id,
+		String placementId,
+		String advertiserName,
+		String imageUrl,
+		String landingUrl,
+		String altText,
+		String startsAt,
+		String endsAt,
+		boolean enabled
+	) {
+		private static final DateTimeFormatter DISPLAY = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+		static CreativeRow from(AdCreative creative) {
+			return new CreativeRow(
+				creative.id(), creative.placementId(), creative.advertiserName(), creative.imageUrl(),
+				creative.landingUrl(), creative.altText(), koreanTime(creative.startsAt()),
+				koreanTime(creative.endsAt()), creative.enabled());
+		}
+
+		private static String koreanTime(LocalDateTime utcWallClock) {
+			return utcWallClock == null ? null : DISPLAY.format(BusinessTime.fromUtcLocal(utcWallClock));
+		}
+	}
+
 	record AdForm(
 		String id,
 		String placementId,
@@ -135,7 +163,7 @@ class AdminAdsPageController {
 				if (trimmed.endsWith("Z") || trimmed.contains("+") || (trimmed.lastIndexOf('-') > 10)) {
 					return LocalDateTime.ofInstant(Instant.parse(trimmed), ZoneOffset.UTC);
 				}
-				return LocalDateTime.parse(trimmed);
+				return BusinessTime.toUtcLocal(LocalDateTime.parse(trimmed));
 			} catch (DateTimeParseException exception) {
 				try {
 					return LocalDateTime.ofInstant(Instant.parse(trimmed), ZoneOffset.UTC);
