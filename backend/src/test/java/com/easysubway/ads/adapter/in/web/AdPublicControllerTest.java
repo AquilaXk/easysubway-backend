@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.common.time.BusinessTime;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -163,18 +164,20 @@ class AdPublicControllerTest {
 		insertPlacement("route-result-bottom");
 		insertCreative("active", "route-result-bottom", now.minusHours(1), now.plusHours(1), true);
 
+		LocalDate koreanDateBefore = LocalDate.now(BusinessTime.ZONE);
 		mockMvc.perform(post("/api/ads/events")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{"placement":"route-result-bottom","creativeId":"active","eventType":"IMPRESSION"}
 					"""))
 			.andExpect(status().isNoContent());
+		LocalDate koreanDateAfter = LocalDate.now(BusinessTime.ZONE);
 
 		Integer count = jdbcTemplate.queryForObject("""
 			SELECT event_count
 			FROM ad_event_daily
-			WHERE event_date=? AND placement_id=? AND creative_id=? AND event_type=?
-			""", Integer.class, LocalDate.now(ZoneOffset.UTC), "route-result-bottom", "active", "IMPRESSION");
+			WHERE event_date IN (?, ?) AND placement_id=? AND creative_id=? AND event_type=?
+			""", Integer.class, koreanDateBefore, koreanDateAfter, "route-result-bottom", "active", "IMPRESSION");
 		Assertions.assertThat(count).isEqualTo(1);
 	}
 
