@@ -24,7 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -33,6 +35,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 	"easysubway.admin.password=admin-test-password"
 })
 @AutoConfigureMockMvc
+@Import(AdminMetricTestClock.Configuration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("분석 데이터 API")
 class AdminAnalyticsMetricControllerTest {
 
@@ -47,8 +51,9 @@ class AdminAnalyticsMetricControllerTest {
 
 	@BeforeEach
 	void seed() {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, LocalDate.now(), 40));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, LocalDate.now().minusDays(7), 10));
+		LocalDate businessToday = AdminMetricTestClock.KOREAN_BUSINESS_DAY;
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, businessToday, 40));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_SEARCHES, businessToday.minusDays(7), 10));
 	}
 
 	@Test

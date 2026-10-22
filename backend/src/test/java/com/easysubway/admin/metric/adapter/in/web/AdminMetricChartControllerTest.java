@@ -11,14 +11,15 @@ import com.easysubway.admin.authorization.AdminPermission;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
-import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -27,6 +28,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 	"easysubway.admin.password=admin-test-password"
 })
 @AutoConfigureMockMvc
+@Import(AdminMetricTestClock.Configuration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("차트 데이터 API")
 class AdminMetricChartControllerTest {
 
@@ -38,7 +41,7 @@ class AdminMetricChartControllerTest {
 
 	@BeforeEach
 	void seed() {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now(), 12));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 12));
 	}
 
 	@Test
@@ -51,7 +54,7 @@ class AdminMetricChartControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.days").value(7))
 			.andExpect(jsonPath("$.labels.length()").value(7))
-			.andExpect(jsonPath("$.labels[6]").value(LocalDate.now().toString()))
+			.andExpect(jsonPath("$.labels[6]").value(AdminMetricTestClock.KOREAN_BUSINESS_DAY.toString()))
 			.andExpect(jsonPath("$.series[0].key").value(AdminMetricKeys.REPORTS_RECENT_24H))
 			.andExpect(jsonPath("$.series[0].label").value("제보 접수(24시간)"))
 			.andExpect(jsonPath("$.series[0].values.length()").value(7))
