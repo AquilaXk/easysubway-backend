@@ -325,6 +325,29 @@ class AdminAdsPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("폼으로 저장한 한국 시각은 공개 노출 판정의 시작 시각과 일치한다")
+	void formStartTimeControlsPublicActivation() throws Exception {
+		LocalDateTime now = LocalDateTime.parse("2026-10-24T00:30:00");
+		MockHttpSession session = new MockHttpSession();
+		postCreative(session, "on-time-ad", "광고주", "노출 시작", "2026-10-24T09:00", "")
+			.andExpect(status().is3xxRedirection());
+		postCreative(session, "future-ad", "광고주", "노출 예정", "2026-10-24T10:00", "")
+			.andExpect(status().is3xxRedirection());
+		postState(session, "/admin/ads/future-ad/enable", "노출 예정 활성화")
+			.andExpect(status().is3xxRedirection());
+
+		assertThat(repository.findActive("route-result-bottom", now)).isEmpty();
+
+		postState(session, "/admin/ads/future-ad/disable", "노출 예정 비활성화")
+			.andExpect(status().is3xxRedirection());
+		postState(session, "/admin/ads/on-time-ad/enable", "노출 시작 활성화")
+			.andExpect(status().is3xxRedirection());
+
+		assertThat(repository.findActive("route-result-bottom", now))
+			.map(AdCreative::id).contains("on-time-ad");
+	}
+
+	@Test
 	@DisplayName("오프셋이 포함된 시작·종료 일시 입력을 UTC instant로 정상 변환한다")
 	void acceptsOffsetDatetimeFormat() throws Exception {
 		MockHttpSession session = new MockHttpSession();

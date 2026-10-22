@@ -108,24 +108,11 @@ class AdminAdsPageController {
 	}
 
 	/** 저장된 UTC 노출 시각을 운영자가 입력한 한국 시간으로 되돌려 보여 주는 목록 행. */
-	record CreativeRow(
-		String id,
-		String placementId,
-		String advertiserName,
-		String imageUrl,
-		String landingUrl,
-		String altText,
-		String startsAt,
-		String endsAt,
-		boolean enabled
-	) {
+	record CreativeRow(AdCreative creative, String startsAtKst, String endsAtKst) {
 		private static final DateTimeFormatter DISPLAY = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
 		static CreativeRow from(AdCreative creative) {
-			return new CreativeRow(
-				creative.id(), creative.placementId(), creative.advertiserName(), creative.imageUrl(),
-				creative.landingUrl(), creative.altText(), koreanTime(creative.startsAt()),
-				koreanTime(creative.endsAt()), creative.enabled());
+			return new CreativeRow(creative, koreanTime(creative.startsAt()), koreanTime(creative.endsAt()));
 		}
 
 		private static String koreanTime(LocalDateTime utcWallClock) {
