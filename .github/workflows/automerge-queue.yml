@@ -511,11 +511,10 @@ jobs:
                   .user.login == "coderabbitai[bot]" and
                   .user.id == 136622811 and
                   .user.type == "Bot";
-                def is_canonical_codex:
+                def is_canonical_aquila:
                   ((.body // "" | startswith("**Actionable comments posted: ")) and
                   ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
-                   (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")) or
-                   (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))));
+                   (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->"))));
                 ($commit_pages | flatten | map(.sha) | unique) as $commit_ids |
                 any(flatten[];
                   (
@@ -527,7 +526,7 @@ jobs:
                   .state == "COMMENTED" and
                   (.commit_id | type == "string") and
                   (.commit_id as $review_commit | $commit_ids | index($review_commit) != null) and
-                  (is_coderabbit or is_canonical_codex)
+                  (is_coderabbit or is_canonical_aquila)
                 )
               ' <<<"${review_pages}" >/dev/null; then
                 echo "PR #${target}: no authorization marker and no gate-recognized discovery review in the PR commit set; authorization is not recovered."
@@ -699,11 +698,10 @@ jobs:
                 .user.login == "coderabbitai[bot]" and
                 .user.id == 136622811 and
                 .user.type == "Bot";
-              def is_canonical_codex:
+              def is_canonical_aquila:
                 ((.body // "" | startswith("**Actionable comments posted: ")) and
                 ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
-                 (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")) or
-                 (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))));
+                 (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->"))));
               def is_exact_head_marker:
                 .user.login == "github-actions[bot]" and
                 .user.id == 41898282 and
@@ -740,7 +738,7 @@ jobs:
                     .state == "COMMENTED" and
                     (.commit_id | type == "string") and
                     (.commit_id as $review_commit | $commit_ids | index($review_commit) != null) and
-                    (is_coderabbit or is_canonical_codex)
+                    (is_coderabbit or is_canonical_aquila)
                   )
                 )
               )
