@@ -269,17 +269,57 @@ class AdminAdsPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("datetime-local 형식의 시작·종료 일시 입력을 정상 파싱하여 저장한다")
-	void acceptsDatetimeLocalFormat() throws Exception {
+	@DisplayName("datetime-local 입력은 한국 시간으로 읽어 UTC instant로 저장한다")
+	void readsDatetimeLocalAsKoreanTime() throws Exception {
 		MockHttpSession session = new MockHttpSession();
 		String id = "datetime-local-ad";
 		postCreative(
 			session, id, "광고주", "datetime-local 등록",
-			"2026-07-11T14:30", "2026-07-12T18:00")
+			"2026-10-24T09:00", "2026-10-25T18:00")
 			.andExpect(status().is3xxRedirection());
 		AdCreative created = repository.findById(id).orElseThrow();
-		assertThat(created.startsAt()).isEqualTo(LocalDateTime.parse("2026-07-11T14:30:00"));
-		assertThat(created.endsAt()).isEqualTo(LocalDateTime.parse("2026-07-12T18:00:00"));
+		assertThat(created.startsAt().toInstant(ZoneOffset.UTC)).isEqualTo(Instant.parse("2026-10-24T00:00:00Z"));
+		assertThat(created.endsAt().toInstant(ZoneOffset.UTC)).isEqualTo(Instant.parse("2026-10-25T09:00:00Z"));
+	}
+
+	@Test
+	@DisplayName("초 단위가 있는 datetime-local 입력도 한국 시간으로 읽는다")
+	void readsDatetimeLocalWithSecondsAsKoreanTime() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		postCreative(
+			session, "seconds-ad", "광고주", "초 단위 등록",
+			"2026-10-24T00:30:15", "")
+			.andExpect(status().is3xxRedirection());
+		AdCreative created = repository.findById("seconds-ad").orElseThrow();
+		assertThat(created.startsAt().toInstant(ZoneOffset.UTC)).isEqualTo(Instant.parse("2026-10-23T15:30:15Z"));
+	}
+
+	@Test
+	@DisplayName("저장된 UTC 시각을 목록에는 한국 시간으로 보여 준다")
+	void rendersStoredInstantsInKoreanTime() throws Exception {
+		repository.save(new AdCreative(
+			"utc-stored", "route-result-bottom", "https://assets.easysubway.example/ads/utc-stored.png",
+			"https://partner.example/utc-stored", "광고주", "대체텍스트",
+			LocalDateTime.parse("2026-10-24T00:00:00"), LocalDateTime.parse("2026-10-25T09:00:00"), false));
+
+		String html = getAdsHtml(new MockHttpSession());
+
+		assertThat(html).contains("2026-10-24 09:00", "2026-10-25 18:00")
+			.doesNotContain("2026-10-24 00:00", "2026-10-25 09:00");
+	}
+
+	@Test
+	@DisplayName("입력한 한국 시각이 저장을 거쳐 목록에 같은 값으로 돌아온다")
+	void roundTripsKoreanTimeThroughStorageAndList() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		postCreative(
+			session, "round-trip-ad", "광고주", "왕복 확인",
+			"2026-10-24T09:00", "2026-10-25T18:00")
+			.andExpect(status().is3xxRedirection());
+
+		String html = getAdsHtml(session);
+
+		assertThat(html).contains("2026-10-24 09:00", "2026-10-25 18:00");
 	}
 
 	@Test
