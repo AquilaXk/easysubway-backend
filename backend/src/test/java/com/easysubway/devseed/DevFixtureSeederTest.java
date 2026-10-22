@@ -146,4 +146,29 @@ class DevFixtureSeederTest {
 
 		assertThat(metricRepository.find(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now(FIXED_CLOCK))).isPresent();
 	}
+
+	@Test
+	void seedsMetricTrendEndingOnKoreanBusinessDay() {
+		// UTC 2026-07-19 16:00 = KST 2026-07-20 01:00. 대시보드는 한국 날짜 "오늘"까지를 읽는다.
+		Clock kstEarlyMorning = Clock.fixed(Instant.parse("2026-07-19T16:00:00Z"), ZoneOffset.UTC);
+		InMemoryAdminMetricDailyRepository metricRepository = new InMemoryAdminMetricDailyRepository();
+		LoadTransitMasterPort emptyMasterPort = mock(LoadTransitMasterPort.class);
+		when(emptyMasterPort.loadAccessibilityFacilities()).thenReturn(List.of());
+
+		new DevFixtureSeeder(
+			emptyMasterPort,
+			mock(SaveAccessibilityFacilityStatusPort.class),
+			mock(SaveFacilityReportPort.class),
+			new LocalFacilityReportPhotoStorage(photoStorageDir),
+			metricRepository,
+			kstEarlyMorning
+		).run(null);
+
+		assertThat(metricRepository.find(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.parse("2026-07-20")))
+			.isPresent();
+		assertThat(metricRepository.find(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.parse("2026-06-21")))
+			.isPresent();
+		assertThat(metricRepository.find(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.parse("2026-06-20")))
+			.isEmpty();
+	}
 }
