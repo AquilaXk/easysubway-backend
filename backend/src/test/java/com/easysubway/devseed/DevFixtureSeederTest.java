@@ -171,4 +171,29 @@ class DevFixtureSeederTest {
 		assertThat(metricRepository.find(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.parse("2026-06-20")))
 			.isEmpty();
 	}
+
+	@Test
+	void seedsFacilityUpdateDatesRelativeToKoreanBusinessDay() {
+		// 한국 2026-07-20 01:00(UTC로는 07-19). 시설 갱신일은 한국 날짜의 3일 전과 1일 전이다.
+		Clock kstEarlyMorning = Clock.fixed(Instant.parse("2026-07-19T16:00:00Z"), ZoneOffset.UTC);
+		InMemoryTransitMasterRepository transitMasterRepository = new InMemoryTransitMasterRepository();
+
+		new DevFixtureSeeder(
+			transitMasterRepository,
+			transitMasterRepository,
+			new InMemoryFacilityReportRepository(),
+			new LocalFacilityReportPhotoStorage(photoStorageDir),
+			new InMemoryAdminMetricDailyRepository(),
+			kstEarlyMorning
+		).run(null);
+
+		assertThat(transitMasterRepository.loadAccessibilityFacilities())
+			.filteredOn(facility -> facility.id().equals("facility-sadang-elevator-1"))
+			.extracting(facility -> facility.lastUpdatedAt())
+			.containsExactly(LocalDate.of(2026, 7, 17));
+		assertThat(transitMasterRepository.loadAccessibilityFacilities())
+			.filteredOn(facility -> facility.id().equals("facility-sadang-accessible-toilet"))
+			.extracting(facility -> facility.lastUpdatedAt())
+			.containsExactly(LocalDate.of(2026, 7, 19));
+	}
 }

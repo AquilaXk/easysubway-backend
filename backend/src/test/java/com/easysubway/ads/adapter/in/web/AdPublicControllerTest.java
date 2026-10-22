@@ -7,18 +7,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.easysubway.common.time.BusinessTime;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -31,13 +38,25 @@ import org.springframework.util.DigestUtils;
 	"easysubway.ads.event-daily-cap=2"
 })
 @AutoConfigureMockMvc
+@Import(AdPublicControllerTest.MutableClock.Configuration.class)
 @DisplayName("무추적 광고 공개 API")
 class AdPublicControllerTest {
+
+	/** 2026-10-23 01:00 한국. UTC 날짜로는 아직 2026-10-22다. */
+	private static final Instant KOREAN_EARLY_MORNING = Instant.parse("2026-10-22T16:00:00Z");
+	private static final LocalDate KOREAN_BUSINESS_DAY = LocalDate.of(2026, 10, 23);
 
 	@Autowired
 	private MockMvc mockMvc;
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+	@Autowired
+	private MutableClock clock;
+
+	@AfterEach
+	void restoreSystemClock() {
+		clock.useSystemTime();
+	}
 
 	@BeforeEach
 	void setUp() {
@@ -164,20 +183,19 @@ class AdPublicControllerTest {
 		insertPlacement("route-result-bottom");
 		insertCreative("active", "route-result-bottom", now.minusHours(1), now.plusHours(1), true);
 
-		LocalDate koreanDateBefore = LocalDate.now(BusinessTime.ZONE);
+		clock.fixAt(KOREAN_EARLY_MORNING);
 		mockMvc.perform(post("/api/ads/events")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{"placement":"route-result-bottom","creativeId":"active","eventType":"IMPRESSION"}
 					"""))
 			.andExpect(status().isNoContent());
-		LocalDate koreanDateAfter = LocalDate.now(BusinessTime.ZONE);
 
 		Integer count = jdbcTemplate.queryForObject("""
 			SELECT event_count
 			FROM ad_event_daily
-			WHERE event_date IN (?, ?) AND placement_id=? AND creative_id=? AND event_type=?
-			""", Integer.class, koreanDateBefore, koreanDateAfter, "route-result-bottom", "active", "IMPRESSION");
+			WHERE event_date=? AND placement_id=? AND creative_id=? AND event_type=?
+			""", Integer.class, KOREAN_BUSINESS_DAY, "route-result-bottom", "active", "IMPRESSION");
 		Assertions.assertThat(count).isEqualTo(1);
 	}
 
@@ -261,5 +279,45 @@ class AdPublicControllerTest {
 			startsAt,
 			endsAt,
 			enabled);
+	}
+
+	/** 기본은 실제 시각이고, 특정 테스트만 순간을 고정한다. */
+	static final class MutableClock extends Clock {
+
+		private volatile Instant fixedInstant;
+
+		void fixAt(Instant instant) {
+			this.fixedInstant = instant;
+		}
+
+		void useSystemTime() {
+			this.fixedInstant = null;
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return Clock.fixed(instant(), zone);
+		}
+
+		@Override
+		public Instant instant() {
+			Instant fixed = fixedInstant;
+			return fixed != null ? fixed : Instant.now();
+		}
+
+		@TestConfiguration
+		static class Configuration {
+
+			@Bean
+			@Primary
+			MutableClock mutableClock() {
+				return new MutableClock();
+			}
+		}
 	}
 }

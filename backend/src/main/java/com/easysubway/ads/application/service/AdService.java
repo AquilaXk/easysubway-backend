@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
@@ -37,8 +38,13 @@ public class AdService {
 	@Autowired
 	public AdService(
 		AdRepository repository,
+		ObjectProvider<Clock> clockProvider,
 		@Value("${easysubway.ads.asset-origin:}") String assetOrigin
 	) {
+		this(repository, clockProvider.getIfAvailable(Clock::systemUTC), assetOrigin);
+	}
+
+	public AdService(AdRepository repository, String assetOrigin) {
 		this(repository, Clock.systemUTC(), assetOrigin);
 	}
 
