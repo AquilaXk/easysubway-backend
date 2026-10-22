@@ -3,6 +3,7 @@ package com.easysubway.devseed;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoreFacilityReportPhotoCommand;
@@ -136,7 +137,7 @@ public class DevFixtureSeeder implements ApplicationRunner {
 			AccessibilityFacilityStatus.BROKEN,
 			DataConfidenceLevel.MEDIUM,
 			DataSourceType.USER_REPORT,
-			LocalDate.now(clock).minusDays(3)
+			BusinessTime.today(clock).minusDays(3)
 		));
 		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(new AccessibilityFacility(
 			"facility-sadang-accessible-toilet",
@@ -152,7 +153,7 @@ public class DevFixtureSeeder implements ApplicationRunner {
 			AccessibilityFacilityStatus.UNKNOWN,
 			DataConfidenceLevel.NEEDS_VERIFICATION,
 			DataSourceType.USER_REPORT,
-			LocalDate.now(clock).minusDays(1)
+			BusinessTime.today(clock).minusDays(1)
 		));
 	}
 
@@ -256,7 +257,7 @@ public class DevFixtureSeeder implements ApplicationRunner {
 	);
 
 	private int seedAdminMetrics() {
-		LocalDate today = LocalDate.now(clock);
+		LocalDate today = BusinessTime.today(clock);
 		LocalDate from = today.minusDays(METRIC_TREND_DAYS - 1L);
 		int saved = 0;
 		for (String metricKey : SEED_METRIC_KEYS) {

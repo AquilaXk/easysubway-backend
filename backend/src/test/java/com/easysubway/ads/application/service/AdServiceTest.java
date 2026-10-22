@@ -10,10 +10,12 @@ import static org.mockito.Mockito.when;
 
 import com.easysubway.ads.application.port.out.AdRepository;
 import com.easysubway.ads.domain.AdCreative;
+import com.easysubway.ads.domain.AdEventType;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.error.ResourceNotFoundException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -25,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
@@ -240,6 +243,26 @@ class AdServiceTest {
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("asset origin");
 		}
+	}
+
+	@ParameterizedTest(name = "{0} UTC에 받은 이벤트는 한국 업무일 {1}로 집계한다")
+	@DisplayName("광고 이벤트 집계 날짜는 운영 시계가 UTC여도 한국 날짜 경계를 따른다")
+	@CsvSource({
+		"2026-10-22T14:59:59Z, 2026-10-22",
+		"2026-10-22T15:00:00Z, 2026-10-23",
+		"2026-10-22T15:30:00Z, 2026-10-23",
+		"2026-10-22T23:59:59Z, 2026-10-23",
+		"2026-10-23T00:00:00Z, 2026-10-23",
+		"2026-12-31T15:00:00Z, 2027-01-01"
+	})
+	void recordsEventOnKoreanBusinessDay(String utcInstant, String expectedKoreanDate) {
+		Clock utcClock = Clock.fixed(Instant.parse(utcInstant), ZoneOffset.UTC);
+		AdService utcService = new AdService(repository, utcClock, "https://assets.easysubway.example");
+
+		utcService.recordEvent(PLACEMENT, "creative-1", AdEventType.IMPRESSION);
+
+		verify(repository).incrementEvent(
+			PLACEMENT, "creative-1", AdEventType.IMPRESSION, LocalDate.parse(expectedKoreanDate));
 	}
 
 	private AdCreative creative(String id, boolean enabled) {
