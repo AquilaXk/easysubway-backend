@@ -9,7 +9,8 @@ name: Automerge Queue
 # 끊게 되는 immutable image producer 체인을 head_sha 기준으로 명시 dispatch로 잇는다.
 # PR head는 PR-owning worktree의 push가 만든다. 예외는 게이트를 모두 통과한 BEHIND 후보의
 # base 갱신 병합 커밋 하나이며, 이 호출은 CI가 붙도록 AUTOMERGE_PAT로만 한다.
-# 그 외 트리거 공백은 pull_request_review 및 workflow_run 완료 이벤트가 메운다.
+# 그 외 트리거 공백은 pull_request_review 및 workflow_run 완료 이벤트가 메우고, 그 이벤트 뒤에도 건너뛴
+# 후보가 다음 이벤트 없이 남는 공백은 schedule이 메운다(#3036).
 
 on:
   pull_request_target:
@@ -21,18 +22,48 @@ on:
     types: [completed]
   push:
     branches: [main]
+  # 이벤트가 오지 않는 재평가 공백의 안전망이다(#3036). 정시 혼잡을 피해 분을 비튼다.
+  schedule:
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
 permissions: {}
 
-concurrency:
-  group: automerge-queue
-  cancel-in-progress: false
-
 jobs:
+  # schedule tick은 draft가 아닌 라벨 PR이 있을 때만 coordinate를 띄운다(coordinate도 draft는 처리하지 않는다). 빈 큐 tick은 checkout 없이 목록 조회 한 번으로 끝난다.
+  queue-probe:
+    name: Automerge queue probe
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      pull-requests: read
+    outputs:
+      labeled: ${{ steps.probe.outputs.labeled }}
+    steps:
+      - name: Probe labeled pull requests
+        id: probe
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count="$(gh pr list --repo "${GITHUB_REPOSITORY}" --base main --state open --label automerge --draft=false --limit 1 --json number --jq 'length')"
+          [[ "${count}" =~ ^[0-9]+$ ]]
+          if [[ "${count}" -gt 0 ]]; then
+            echo "labeled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "labeled=false" >> "${GITHUB_OUTPUT}"
+          fi
+
   coordinate:
     name: Automerge Queue
-    if: github.event_name != 'pull_request_target' || github.event.label.name == 'automerge'
+    needs: queue-probe
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.queue-probe.outputs.labeled == 'true') && (github.event_name != 'pull_request_target' || github.event.label.name == 'automerge') }}
+    # 빈 큐 tick이 대기 중인 라벨 run을 밀어내지 않도록 동시성 그룹은 coordinate job만 점유한다.
+    concurrency:
+      group: automerge-queue
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
