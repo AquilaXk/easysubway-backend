@@ -27,13 +27,13 @@ test("release workflow는 exact Journey contract OCI publication과 digest 재�
   assert.match(workflow, /backend\/build\/journey-contract-preflight-a\/journey-v3-contract-bundle-v2\.json/);
   assert.match(workflow, /backend\/build\/journey-contract-preflight-b\/journey-v3-contract-bundle-v2\.json/);
   assert.match(workflow, /cmp --silent .*journey-contract-preflight-a.*journey-contract-preflight-b/s);
-  assert.match(workflow, /oras-project\/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d/);
+  assert.match(workflow, /oras-project\/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4/);
   assert.match(workflow, /version:\s*1\.3\.3/);
   assert.match(workflow, /tag="git-\$\{GITHUB_SHA\}-run-\$\{GITHUB_RUN_ID\}-\$\{GITHUB_RUN_ATTEMPT\}"/);
   assert.match(workflow, /artifact_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2"/);
   assert.match(workflow, /layer_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2\+json"/);
   assert.match(workflow, /created="\$\(git show -s --format=%cI "\$\{GITHUB_SHA\}"\)"/);
-  assert.match(workflow, /docker\/login-action@dbcb813823bdd20940b903addbd779551569679f/);
+  assert.match(workflow, /docker\/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6/);
   assert.match(workflow, /registry: ghcr\.io\s+username: \$\{\{ github\.actor \}\}\s+password: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
   assert.match(workflow, /oras login ghcr\.io .*--password-stdin/);
   assert.match(workflow, /raw_manifest=release-artifacts\/backend\/journey-v3-contract-bundle-v2-manifest\.json/);
