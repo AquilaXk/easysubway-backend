@@ -74,7 +74,7 @@ test('Backend #416 test shards run every shard through the init script and uploa
 test('Backend #416 aggregate merges all shard execution data before the unchanged coverage gate', () => {
   const backend = job('backend');
   const download = step(backend, 'Download test shard evidence');
-  assert.match(download, /uses: actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n        with:\n          pattern: backend-test-shard-\*-\$\{\{ github\.sha \}\}\n          path: \$\{\{ runner\.temp \}\}\/backend-test-shards/);
+  assert.match(download, /uses: actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333\n        with:\n          pattern: backend-test-shard-\*-\$\{\{ github\.sha \}\}\n          path: \$\{\{ runner\.temp \}\}\/backend-test-shards/);
   const merge = step(backend, 'Test and package backend');
   for (const literal of [
     'id: test_backend',
