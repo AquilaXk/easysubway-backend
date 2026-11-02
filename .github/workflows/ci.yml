@@ -37,7 +37,7 @@ jobs:
       - name: Scan immutable PR base
         if: ${{ github.event_name == 'pull_request' }}
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
@@ -62,7 +62,7 @@ jobs:
       - name: Scan tested PR head
         if: ${{ github.event_name == 'pull_request' }}
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
@@ -111,7 +111,7 @@ jobs:
       - name: Scan immutable dispatch SHA
         if: ${{ github.event_name == 'workflow_dispatch' }}
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
