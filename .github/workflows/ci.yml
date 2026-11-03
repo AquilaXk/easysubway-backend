@@ -75,7 +75,7 @@ jobs:
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"
       - name: Report PR dependency vulnerabilities
         if: ${{ github.event_name == 'pull_request' }}
-        uses: google/osv-scanner-action/osv-reporter-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        uses: google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
             --output=/github/runner_temp/results.sarif
@@ -124,7 +124,7 @@ jobs:
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/results.json"
       - name: Report dispatch dependency vulnerabilities
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: google/osv-scanner-action/osv-reporter-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        uses: google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
             --output=/github/runner_temp/results.sarif
