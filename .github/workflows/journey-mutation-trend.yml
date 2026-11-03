@@ -40,7 +40,7 @@ jobs:
       # PIT 도구(플러그인·PIT·JUnit 플러그인과 전이 의존성)는 backend/gradle.lockfile 밖에서 해석되므로 같은 좌표 목록을 따로 OSV로 검사한다.
       # 알려진 취약점이 있으면 job이 실패한다. 받은 jar가 목록과 같은지는 init script가 sha256으로 대조한다.
       - name: Scan the PIT toolchain with OSV
-        uses: google/osv-scanner-action/osv-scanner-action@8ac9e5ce44cc7178e0e04229a91bdcc003166e57
+        uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
             --lockfile=tools/ci/gradle/journey-mutation/gradle.lockfile
