@@ -50,7 +50,7 @@ const ISSUE4_TITLE = '[Build][Backend][P1] current SpotBugs findings 정리·enf
 const BUILD_SCRIPT_DIGEST = '536b95342623abeaa3542aa0eacd1d9884b05f5ebbfa0b4be300edda91f2a807';
 // SpotBugs job의 Java·계약 staging 단계가 들어 있는 composite. 내용이 바뀌면 이 digest를 함께 갱신해야 gate가 통과한다.
 const SETUP_COMPOSITE_PATH = '.github/actions/backend-setup/action.yml';
-const SETUP_COMPOSITE_DIGEST = 'b5b84f7cca189fe486d40e5a909cb0adf25e1c95173b261d63f8b35aa0726128';
+const SETUP_COMPOSITE_DIGEST = 'a4cc6279eef489a3a2831b5daa03f80fc597d96aa4bd5f30aeb0358df537e7d6';
 const SPOTBUGS_TEST_TRIGGERS = ['test output becomes packaged/runtime', 'custom source set mixes test and production outputs', 'bootJar or image admits test classes', 'Gradle source-set/classpath semantics change'];
 const EXCLUSION_TRIGGERS = ['source byte change', 'class/member/annotation or responsibility change', 'plugin/JDK/task/source-set change', 'broader class/package Match', 'Backend #4 remediation'];
 const FINAL_REQUIREMENTS = ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'];
