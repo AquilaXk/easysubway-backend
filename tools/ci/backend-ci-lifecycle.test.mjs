@@ -10,7 +10,7 @@ import { loadConfiguredOsvLockfiles, validateCiExecutionControl, validateOsvResu
 const workflowUrl = new URL('../../.github/workflows/ci.yml', import.meta.url);
 const compositeUrl = new URL('../../.github/actions/backend-setup/action.yml', import.meta.url);
 const policyUrl = new URL('../../backend/quality/ci-execution-control.json', import.meta.url);
-const scanner = '8ac9e5ce44cc7178e0e04229a91bdcc003166e57';
+const scanner = '9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347';
 const countSetupJavaReferences = (workflow) => (
   workflow.match(/^[ \t]*uses:[ \t]*actions\/setup-java@[^\s#]+/gm) || []
 ).length;
