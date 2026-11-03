@@ -103,7 +103,7 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.equal(countSetupJavaReferences(workflow), 0, 'workflow must reach setup-java only through the backend-setup composite');
   const composite = readFileSync(compositeUrl, 'utf8');
   assert.equal(countSetupJavaReferences(composite), 1, 'the composite must hold the single setup-java reference');
-  assert.ok(composite.includes('      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961\n      with:\n        distribution: temurin\n        java-version: "21.0.11"\n'), 'the composite setup-java step must be the pinned Temurin 21.0.11 step');
+  assert.ok(composite.includes('      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad\n      with:\n        distribution: temurin\n        java-version: "21.0.11"\n'), 'the composite setup-java step must be the pinned Temurin 21.0.11 step');
 });
 
 test('setup-java reference count rejects an additional tag-based action', async () => {
