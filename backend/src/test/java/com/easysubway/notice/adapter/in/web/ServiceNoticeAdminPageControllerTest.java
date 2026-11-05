@@ -84,7 +84,7 @@ class ServiceNoticeAdminPageControllerTest {
 		String noticeId = publishedNotice.id();
 		assertThat(auditRecorded("PUBLISH_NOTICE", noticeId)).isTrue();
 
-		var viewFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+		var viewFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 		String expectedKstPublishedAt = com.easysubway.common.time.BusinessTime.fromUtcLocal(publishedNotice.publishedAt())
 			.format(viewFormatter);
 		String expectedKstExpiresAt = kstExpiresAt.format(viewFormatter);
