@@ -277,15 +277,14 @@ public class JdbcDataCollectionRunRepository implements
 	}
 
 	private DataCollectionRun mapRun(ResultSet resultSet, int rowNumber) throws SQLException {
-		var completedAt = resultSet.getTimestamp("completed_at");
 		String runId = resultSet.getString("run_id");
 		return new DataCollectionRun(
 			runId,
 			DataCollectionSource.valueOf(resultSet.getString("source")),
 			DataCollectionStatus.valueOf(resultSet.getString("status")),
 			resultSet.getString("requested_by"),
-			resultSet.getTimestamp("started_at").toLocalDateTime(),
-			completedAt == null ? null : completedAt.toLocalDateTime(),
+			resultSet.getObject("started_at", LocalDateTime.class),
+			resultSet.getObject("completed_at", LocalDateTime.class),
 			resultSet.getInt("collected_count"),
 			resultSet.getString("failure_message"),
 			resultSet.getBoolean("retryable"),

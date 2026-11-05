@@ -151,8 +151,7 @@ public class JdbcAliasQuarantineQueueRepository {
 	}
 
 	private LocalDateTime toLocalDateTime(ResultSet resultSet, String column) throws SQLException {
-		var timestamp = resultSet.getTimestamp(column);
-		return timestamp == null ? null : timestamp.toLocalDateTime();
+		return resultSet.getObject(column, LocalDateTime.class);
 	}
 
 	public record AliasApprovalRow(

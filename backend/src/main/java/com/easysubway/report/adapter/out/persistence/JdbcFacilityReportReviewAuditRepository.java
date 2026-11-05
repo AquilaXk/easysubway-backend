@@ -7,6 +7,7 @@ import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -85,7 +86,7 @@ public class JdbcFacilityReportReviewAuditRepository implements
 			FacilityReportReviewDecision.valueOf(resultSet.getString("decision")),
 			FacilityReportStatus.valueOf(resultSet.getString("previous_status")),
 			FacilityReportStatus.valueOf(resultSet.getString("next_status")),
-			resultSet.getTimestamp("created_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class)
 		);
 	}
 }

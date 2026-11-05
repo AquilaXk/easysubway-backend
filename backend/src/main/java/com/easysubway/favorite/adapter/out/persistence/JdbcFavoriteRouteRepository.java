@@ -18,6 +18,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -360,12 +361,12 @@ public class JdbcFavoriteRouteRepository implements
 			readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE),
 			RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE)),
 			readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE),
-			resultSet.getTimestamp("route_created_at").toLocalDateTime()
+			resultSet.getObject("route_created_at", LocalDateTime.class)
 		);
 		return new FavoriteRoute(
 			resultSet.getString("user_id"),
 			route,
-			resultSet.getTimestamp("added_at").toLocalDateTime()
+			resultSet.getObject("added_at", LocalDateTime.class)
 		);
 	}
 

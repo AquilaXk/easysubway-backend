@@ -34,6 +34,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -283,7 +284,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 			resultSet.getString("entity_id"),
 			resultSet.getString("action"),
 			resultSet.getString("updated_by"),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		), entityType, entityId);
 	}
 

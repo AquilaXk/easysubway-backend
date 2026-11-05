@@ -151,7 +151,7 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 				GROUP BY {koreanDate}
 				""".replace(KOREAN_DATE_TOKEN, KOREAN_DATE_SQL),
 			(resultSet, rowNumber) -> new DailyActiveUserCount(
-				resultSet.getDate("activity_date").toLocalDate(),
+				resultSet.getObject("activity_date", LocalDate.class),
 				resultSet.getLong("active_user_count")
 			),
 			startAt,
@@ -175,7 +175,7 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 				GROUP BY {koreanDate}
 				""".replace(KOREAN_DATE_TOKEN, KOREAN_DATE_SQL),
 			(resultSet, rowNumber) -> new ApiTrafficSummary(
-				resultSet.getDate("traffic_date").toLocalDate(),
+				resultSet.getObject("traffic_date", LocalDate.class),
 				resultSet.getLong("request_count"),
 				resultSet.getLong("error_count"),
 				resultSet.getLong("response_millis")

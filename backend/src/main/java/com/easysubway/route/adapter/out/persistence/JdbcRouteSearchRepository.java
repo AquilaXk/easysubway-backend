@@ -28,6 +28,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -187,7 +188,7 @@ public class JdbcRouteSearchRepository
 				resultSet.getString("origin_station_name"),
 				resultSet.getString("destination_station_name"),
 				MobilityType.valueOf(resultSet.getString("mobility_type")),
-				resultSet.getTimestamp("feedback_created_at").toLocalDateTime()
+				resultSet.getObject("feedback_created_at", LocalDateTime.class)
 			)
 		);
 	}
@@ -511,7 +512,7 @@ public class JdbcRouteSearchRepository
 			readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE),
 			RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE)),
 			readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE),
-			resultSet.getTimestamp("created_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class)
 		);
 	}
 

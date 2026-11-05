@@ -437,8 +437,8 @@ public class JdbcFacilityReportRepository implements
 				WHERE reviewed_at IS NOT NULL
 				""",
 			(resultSet, rowNumber) -> Duration.between(
-				resultSet.getTimestamp("created_at").toLocalDateTime(),
-				resultSet.getTimestamp("reviewed_at").toLocalDateTime()
+				resultSet.getObject("created_at", LocalDateTime.class),
+				resultSet.getObject("reviewed_at", LocalDateTime.class)
 			).toMinutes()
 		).stream()
 			.filter(minutes -> minutes >= 0)
@@ -1114,8 +1114,8 @@ public class JdbcFacilityReportRepository implements
 			resultSet.getBigDecimal("longitude"),
 			resultSet.getString("duplicate_of_report_id"),
 			FacilityReportStatus.valueOf(resultSet.getString("status")),
-			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			timestampOrNull(resultSet, "reviewed_at"),
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("reviewed_at", LocalDateTime.class),
 			resultSet.getString("reviewed_by")
 		);
 	}
@@ -1139,17 +1139,12 @@ public class JdbcFacilityReportRepository implements
 			resultSet.getBigDecimal("longitude"),
 			resultSet.getString("duplicate_of_report_id"),
 			FacilityReportStatus.valueOf(resultSet.getString("status")),
-			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			timestampOrNull(resultSet, "reviewed_at"),
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("reviewed_at", LocalDateTime.class),
 			resultSet.getString("reviewed_by"),
 			resultSet.getString("client_submission_id"),
 			resultSet.getString("receipt_token_hash")
 		);
-	}
-
-	private LocalDateTime timestampOrNull(ResultSet resultSet, String columnLabel) throws SQLException {
-		var timestamp = resultSet.getTimestamp(columnLabel);
-		return timestamp == null ? null : timestamp.toLocalDateTime();
 	}
 
 	private Long photoSizeBytes(ResultSet resultSet) throws SQLException {

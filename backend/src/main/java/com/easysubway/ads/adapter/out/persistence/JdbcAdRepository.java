@@ -259,8 +259,8 @@ class JdbcAdRepository implements AdRepository {
 			resultSet.getString("landing_url"),
 			resultSet.getString("advertiser_name"),
 			resultSet.getString("alt_text"),
-			resultSet.getTimestamp("starts_at").toLocalDateTime(),
-			resultSet.getTimestamp("ends_at") == null ? null : resultSet.getTimestamp("ends_at").toLocalDateTime(),
+			resultSet.getObject("starts_at", LocalDateTime.class),
+			resultSet.getObject("ends_at", LocalDateTime.class),
 			resultSet.getBoolean("enabled"));
 	}
 

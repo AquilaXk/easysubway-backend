@@ -533,7 +533,7 @@ public class JdbcPushNotificationOutboxRepository implements
 			resultSet.getString("body"),
 			PushNotificationStatus.valueOf(resultSet.getString("status")),
 			resultSet.getString("failure_reason"),
-			resultSet.getTimestamp("created_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class)
 		);
 	}
 

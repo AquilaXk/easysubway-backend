@@ -10,7 +10,6 @@ import com.easysubway.datapack.application.service.CallbackSignature.CanonicalFi
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.CatalogIdentity;
 import java.nio.charset.StandardCharsets;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import javax.crypto.Mac;
@@ -78,7 +77,7 @@ class DatapackReleaseCallbackApiControllerTest {
                 + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             approvalId, "cand-ctrl-1", "scope-1", "staging",
             SHA, SHA, SHA, "alice", "bob", "DISPATCHED", "idem-key", null,
-            Timestamp.valueOf(T0), Timestamp.valueOf(T0), Timestamp.valueOf(T0),
+            T0, T0, T0,
             null, null);
     }
 

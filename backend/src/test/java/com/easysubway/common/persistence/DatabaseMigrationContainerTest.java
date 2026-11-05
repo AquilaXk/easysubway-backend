@@ -10,7 +10,6 @@ import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.train.adapter.out.persistence.JdbcTrainSearchCache;
 import com.easysubway.train.application.TrainSearchCache.CachedLeg;
 import com.zaxxer.hikari.HikariDataSource;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.Duration;
 import java.time.ZoneId;
@@ -1172,7 +1171,7 @@ class DatabaseMigrationContainerTest {
 			"b".repeat(64),
 			"c".repeat(64),
 			credentialRedacted,
-			Timestamp.valueOf(rawRetentionExpiresAt)
+			LocalDateTime.parse(rawRetentionExpiresAt.replace(' ', 'T'))
 		);
 	}
 
@@ -1255,7 +1254,7 @@ class DatabaseMigrationContainerTest {
 			aliasReviewCount,
 			"7".repeat(64),
 			status,
-			completedAt == null ? null : Timestamp.valueOf(completedAt)
+			completedAt == null ? null : LocalDateTime.parse(completedAt.replace(' ', 'T'))
 		);
 	}
 

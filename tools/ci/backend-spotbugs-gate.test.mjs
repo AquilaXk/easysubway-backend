@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '965c924ed8dfdcc961c3ac8a19f4d53b78520cc7c54270dfd6d08d11ae6aae55'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '371d5d8cd615ce7b44f538cc83271a654c8c8c031efa2eceb939a2aa7c6fdf96');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '8ed73aec414a8f2cf7197554c312449b1c89211a7644876657e9c835ec0315ed');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -626,17 +626,17 @@ test('Backend #237 JDBC route search repository remediation is source-complete',
   assert.match(excludeFilter, new RegExp('<Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>\\s*<Class name="com\\.easysubway\\.route\\.adapter\\.out\\.persistence\\.JdbcRouteSearchRepository"/>\\s*<Method name="summarizeRouteFeedbacks" params="" returns="com\\.easysubway\\.route\\.domain\\.RouteFeedbackDashboardSummary"/>', 'u'));
   assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 67);
   const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteSearchRepository.java', import.meta.url), 'utf8');
-  assert.equal(digest(source), '318be018b0694e4761c71ef9036864ce30efaff0b3b6c18362e54cd4d5d8f974');
+  assert.equal(digest(source), 'c0dc54c721b8646c92997310ccd5b046275ecfaaecf255f1c9adb33f25701fb4');
   assert.match(source, /RouteFeedbackDashboardSummary countSummary = jdbcTemplate\.queryForObject\(/u);
   const repositoryRebindings = [
-    ['0f2bad439027143868dc6bbad2e1b507a23c979977dacb527f7347f790374010', 'c54c378d8751200633ccaa31090f3168928629d78de704f975e199f34adf2bf2', '1407ccf01b48ec705793832a43a06735be30a3ee71fe35b7e429e8e1b1fae50b', 'Backend #428 removed legacy Jackson annotations from route domain and adapted repository JSON serialization; reviewed fail-fast repository constructor initialization is unchanged.'],
-    ['229ae32908060789dd99fcd681b11a8a92c260e5aff58d57536bc636227621e4', '6cfbcf63fe6d87c5fee5b31d5e75bd0e55879262065ef75ed7e93e158aece4cc', '85727693392b7c1120c634ba4c87a783f748bfb793d597cc84b3ba2d38870fdd', 'Backend #428 removed legacy Jackson annotations from route domain and adapted repository JSON serialization; reviewed fail-fast repository constructor initialization is unchanged.'],
-    ['18aa99be5a2668cc6485abd3af50a745c399747cb5de78c1725cae80b2aa76b8', 'ce61986a85b87fa332ca346b57f15211af0ad44c0a30754b55b2f607c3a21ca9', '242068a361eaed3293793849dce82d82ec44bb7440f2111c76b8bef1a29212c7', 'Backend #428 removed legacy Jackson annotations from route domain and adapted repository JSON serialization; reviewed fail-fast repository constructor initialization is unchanged.'],
-    ['4deadab6b3c471e871af1c461c8ea32c74e2e580abd1cd1ade1a7f92a22d5bb0', '3929e2e7fa2a67ad571b5c58d3edf24035200b67fe5488a3e298b7c0869375ca', '98db8996e587732fefbb394a3bfec4d7de0b8099370e71391bc42ad1554460b2', 'Backend #428 removed legacy Jackson annotations from route domain and adapted repository JSON serialization; single-row non-null route feedback aggregate query and mapper are unchanged.'],
+    ['0f2bad439027143868dc6bbad2e1b507a23c979977dacb527f7347f790374010', '1407ccf01b48ec705793832a43a06735be30a3ee71fe35b7e429e8e1b1fae50b', '046016e1faabbdf9b83041483ebef479db73bf9838ef39f26c92547b570681ec', 'Backend #546 replaced JDBC Timestamp conversions with LocalDateTime JDBC 4.2 bindings; reviewed fail-fast repository constructor initialization is unchanged.'],
+    ['229ae32908060789dd99fcd681b11a8a92c260e5aff58d57536bc636227621e4', '85727693392b7c1120c634ba4c87a783f748bfb793d597cc84b3ba2d38870fdd', 'd4811c4916ce8741ba16355c2b1225ab6a044602cacca1c1ea20edef389f7643', 'Backend #546 replaced JDBC Timestamp conversions with LocalDateTime JDBC 4.2 bindings; reviewed fail-fast repository constructor initialization is unchanged.'],
+    ['18aa99be5a2668cc6485abd3af50a745c399747cb5de78c1725cae80b2aa76b8', '242068a361eaed3293793849dce82d82ec44bb7440f2111c76b8bef1a29212c7', '8c91146a22eec296bef1c37f6505b5ea2d349d4b2a3e916859a34ad9ee286e2e', 'Backend #546 replaced JDBC Timestamp conversions with LocalDateTime JDBC 4.2 bindings; reviewed fail-fast repository constructor initialization is unchanged.'],
+    ['4deadab6b3c471e871af1c461c8ea32c74e2e580abd1cd1ade1a7f92a22d5bb0', '98db8996e587732fefbb394a3bfec4d7de0b8099370e71391bc42ad1554460b2', 'c7a37f24bd46e29e598886b7aa554596325a8885f6333d15e42e6398c61a342c', 'Backend #546 replaced JDBC Timestamp conversions with LocalDateTime JDBC 4.2 bindings; single-row non-null route feedback aggregate query and mapper are unchanged.'],
   ];
   for (const [foundationIdentity, previousIdentity, identity, reason] of repositoryRebindings) {
     const finding = tracked.findings.find((candidate) => candidate.identity === identity);
-    assert.deepEqual([finding.sourceSha256, finding.rebinding], ['318be018b0694e4761c71ef9036864ce30efaff0b3b6c18362e54cd4d5d8f974', { foundationIdentity, previousIdentity, reviewIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/428', reason }]);
+    assert.deepEqual([finding.sourceSha256, finding.rebinding], ['c0dc54c721b8646c92997310ccd5b046275ecfaaecf255f1c9adb33f25701fb4', { foundationIdentity, previousIdentity, reviewIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/546', reason }]);
   }
   assert.doesNotMatch(source, /^public\s+final\s+class JdbcRouteSearchRepository\b/mu);
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 129, falsePositiveExactSuppression: 64, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
@@ -660,7 +660,7 @@ test('Backend #110 datapack projection is exact', () => {
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
   assert.equal(datapack.length, 26);
   assert.equal(new Set(datapack.map(({ sourcePath }) => sourcePath)).size, 14);
-  assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), '3c34417ca0f2dee1e35c6ce75befba1dfd5103fe558c5c945940def194baaefc');
+  assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), '5d9871d07f7715964a18a96ef93cf8adb3dc89840da5cd8801e8d9c556758f78');
   const callbackServiceSource = readFileSync(new URL('../../backend/src/main/java/com/easysubway/datapack/application/service/DatapackReleaseCallbackService.java', import.meta.url), 'utf8');
   assert.equal(digest(callbackServiceSource), '4315d4f891f2d310e249c9e14ad5f5556e8a55c11665351d3da3641906e7d604');
   const callbackServiceReason = 'Backend #456 adds the git-origin release callback observation path inside existing methods only; the constructor signature, injected collaborators, and fail-fast initialization are unchanged, so the reviewed suppression decision still holds.';
@@ -787,7 +787,7 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
   const partition = tracked.findings.filter(({ sourcePath }) => admittedPaths.has(sourcePath));
   assert.equal(partition.length, 34);
   assert.equal(new Set(partition.map(({ sourcePath }) => sourcePath)).size, 21);
-  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), '2b41e19d8429e95f5a58bb934d959c09deaf9de92ed0be804df7d34384929c6a');
+  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), '9b0624c6eaf18abf60ba9c65fedbdb72eed189854acaadecec47f371feb1c4cb');
   assert.equal(partition.filter(({ disposition }) => disposition === 'FIXED').length, 13);
   assert.equal(partition.filter(({ disposition }) => disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION').length, 21);
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 129, falsePositiveExactSuppression: 64, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
@@ -1346,7 +1346,7 @@ test('Backend #413 rebinding cannot change the reviewed member, pattern, disposi
   ]) {
     assert.throws(() => validatePriorLedger(reboundLedger(prior, index, { sourceSha256: 'e'.repeat(64), ...changes }), prior), /rebinding changes the reviewed finding/, JSON.stringify(changes));
   }
-  assert.throws(() => validatePriorLedger(reboundLedger(prior, index, { startLine: 63, endLine: 63 }), prior), /rebinding requires a changed sourceSha256/);
+  assert.throws(() => validatePriorLedger(reboundLedger(prior, index, { startLine: entry.startLine + 1, endLine: entry.endLine + 1 }), prior), /rebinding requires a changed sourceSha256/);
 });
 
 test('Backend #413 rebinding lineage fields are exact', () => {

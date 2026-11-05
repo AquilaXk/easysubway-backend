@@ -74,8 +74,7 @@ public class JdbcFacilityEvidenceMatrixRepository {
 	}
 
 	private LocalDateTime toLocalDateTime(ResultSet resultSet, String column) throws SQLException {
-		var timestamp = resultSet.getTimestamp(column);
-		return timestamp == null ? null : timestamp.toLocalDateTime();
+		return resultSet.getObject(column, LocalDateTime.class);
 	}
 
 	public record FacilityEvidenceRow(

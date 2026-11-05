@@ -5,6 +5,7 @@ import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -92,7 +93,7 @@ public class JdbcFieldVerificationChangeHistoryRepository implements FieldVerifi
 			resultSet.getString("previous_note"),
 			resultSet.getString("new_note"),
 			resultSet.getString("changed_by"),
-			resultSet.getTimestamp("changed_at").toLocalDateTime()
+			resultSet.getObject("changed_at", LocalDateTime.class)
 		);
 	}
 }
