@@ -265,8 +265,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			.comparing((ChainedCandidate chained) -> chained.candidate().realtimeArrivalTime() != null
 				? chained.candidate().realtimeArrivalTime()
 				: chained.candidate().plannedArrivalTime())
-			.thenComparingLong(chained -> chained.candidate().durationSeconds())
-			.thenComparingInt(chained -> chained.candidate().transferCount());
+			.thenComparingInt(chained -> chained.candidate().transferCount())
+			.thenComparingLong(chained -> chained.candidate().durationSeconds());
 		List<ChainedCandidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
 			candidates.add(new ChainedCandidate(

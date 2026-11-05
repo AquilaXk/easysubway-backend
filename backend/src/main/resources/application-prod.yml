@@ -3,6 +3,8 @@ logging:
     com.easysubway: INFO
 
 management:
+  server:
+    port: ${EASYSUBWAY_MANAGEMENT_PORT:}
   endpoint:
     health:
       group:
