@@ -6,6 +6,7 @@ import com.easysubway.admin.operations.domain.AdminIncidentStatus;
 import com.easysubway.admin.operations.domain.AdminIncidentTransition;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -164,7 +165,6 @@ public class JdbcAdminIncidentRepository implements AdminIncidentRepository {
 	}
 
 	private AdminIncident mapIncident(ResultSet resultSet, int rowNumber) throws SQLException {
-		var resolvedAt = resultSet.getTimestamp("resolved_at");
 		return new AdminIncident(
 			resultSet.getString("incident_id"),
 			resultSet.getString("severity"),
@@ -172,8 +172,8 @@ public class JdbcAdminIncidentRepository implements AdminIncidentRepository {
 			resultSet.getString("source"),
 			resultSet.getString("summary"),
 			resultSet.getString("owner"),
-			resultSet.getTimestamp("opened_at").toLocalDateTime(),
-			resolvedAt == null ? null : resolvedAt.toLocalDateTime(),
+			resultSet.getObject("opened_at", LocalDateTime.class),
+			resultSet.getObject("resolved_at", LocalDateTime.class),
 			resultSet.getString("resolution"),
 			resultSet.getString("station_id"),
 			resultSet.getString("line_id")
@@ -186,7 +186,7 @@ public class JdbcAdminIncidentRepository implements AdminIncidentRepository {
 			resultSet.getString("incident_id"),
 			fromStatus == null ? null : AdminIncidentStatus.from(fromStatus),
 			AdminIncidentStatus.from(resultSet.getString("to_status")),
-			resultSet.getTimestamp("changed_at").toLocalDateTime(),
+			resultSet.getObject("changed_at", LocalDateTime.class),
 			resultSet.getString("changed_by"),
 			resultSet.getString("note")
 		);

@@ -4,6 +4,7 @@ import com.easysubway.admin.savedview.application.port.out.AdminSavedViewReposit
 import com.easysubway.admin.savedview.domain.AdminSavedView;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -132,8 +133,8 @@ public class JdbcAdminSavedViewRepository implements AdminSavedViewRepository {
 			resultSet.getString("name"),
 			resultSet.getString("query_params"),
 			resultSet.getBoolean("is_default"),
-			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 }

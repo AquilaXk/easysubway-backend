@@ -7,6 +7,7 @@ import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -264,7 +265,7 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 			sessionId,
 			resultSet.getString("station_id"),
 			resultSet.getString("station_name"),
-			resultSet.getDate("verified_at").toLocalDate(),
+			resultSet.getObject("verified_at", LocalDate.class),
 			resultSet.getString("verified_by"),
 			FieldVerificationStatus.valueOf(resultSet.getString("status")),
 			resultSet.getString("note"),

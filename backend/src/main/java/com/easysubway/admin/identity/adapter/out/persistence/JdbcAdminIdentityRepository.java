@@ -8,7 +8,6 @@ import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import com.easysubway.admin.identity.domain.AdminLoginAudit;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -236,14 +235,14 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 			AdminIdentityRole.valueOf(resultSet.getString("role")),
 			AdminIdentityStatus.valueOf(resultSet.getString("status")),
 			resultSet.getInt("failed_login_count"),
-			toLocalDateTime(resultSet.getTimestamp("locked_until")),
-			resultSet.getTimestamp("password_changed_at").toLocalDateTime(),
-			toLocalDateTime(resultSet.getTimestamp("password_expires_at")),
+			resultSet.getObject("locked_until", LocalDateTime.class),
+			resultSet.getObject("password_changed_at", LocalDateTime.class),
+			resultSet.getObject("password_expires_at", LocalDateTime.class),
 			resultSet.getBoolean("credential_rotation_required"),
 			resultSet.getString("break_glass_reason"),
 			resultSet.getBoolean("bootstrap_managed"),
-			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 
@@ -264,10 +263,6 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
-	}
-
-	private static java.time.LocalDateTime toLocalDateTime(Timestamp timestamp) {
-		return timestamp == null ? null : timestamp.toLocalDateTime();
 	}
 
 	private static String normalize(String loginId) {

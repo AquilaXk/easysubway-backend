@@ -16,7 +16,6 @@ import com.easysubway.datapack.application.service.DatapackReleaseCallbackServic
 import com.easysubway.datapack.application.service.DatapackReleaseCallbackService.CallbackResult;
 import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.CatalogIdentity;
 import com.easysubway.datapack.domain.DatapackReleaseDelivery;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
@@ -94,7 +93,7 @@ class DatapackReleaseCallbackServiceTest {
             APPROVAL_ID, "cand-1", "scope-1", targetChannel,
             SHA, SHA, SHA,
             "alice", "bob", status, "idem-key", null,
-            Timestamp.valueOf(T0), Timestamp.valueOf(T0), Timestamp.valueOf(T0),
+            T0, T0, T0,
             null, null);
     }
 
@@ -645,7 +644,7 @@ class DatapackReleaseCallbackServiceTest {
 				binding_signature_sha256, delivery_idempotency_key, workflow_run_url, observed_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			""", CHANNEL, releaseSequence, manifestSha256, releaseRequestId, "9".repeat(64),
-			releaseRequestId + ":" + releaseSequence + ":" + manifestSha256, null, Timestamp.valueOf(T0));
+			releaseRequestId + ":" + releaseSequence + ":" + manifestSha256, null, T0);
 	}
 
 	@Test

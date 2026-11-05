@@ -3,7 +3,6 @@ package com.easysubway.datapack.adapter.out.persistence;
 import com.easysubway.datapack.application.port.out.DatapackReleaseDeliveryRepository;
 import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.datapack.domain.DatapackReleaseDelivery.State;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -27,11 +26,11 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			rs.getString("channel"), rs.getString("candidate_id"),
 			rs.getString("payload_sha256"), rs.getString("signature_sha256"),
 			State.valueOf(rs.getString("state")), rs.getInt("attempts"),
-			ldt(rs.getTimestamp("next_attempt_at")), ldt(rs.getTimestamp("reconcile_deadline")),
-			ldt(rs.getTimestamp("dead_letter_deadline")), rs.getString("http_class"),
-			rs.getString("sanitized_detail"), ldt(rs.getTimestamp("claimed_at")),
-			rs.getString("claim_owner"), ldt(rs.getTimestamp("created_at")),
-			ldt(rs.getTimestamp("updated_at")));
+			rs.getObject("next_attempt_at", LocalDateTime.class), rs.getObject("reconcile_deadline", LocalDateTime.class),
+			rs.getObject("dead_letter_deadline", LocalDateTime.class), rs.getString("http_class"),
+			rs.getString("sanitized_detail"), rs.getObject("claimed_at", LocalDateTime.class),
+			rs.getString("claim_owner"), rs.getObject("created_at", LocalDateTime.class),
+			rs.getObject("updated_at", LocalDateTime.class));
 
 	private final JdbcTemplate jdbcTemplate;
 	private final boolean postgresql;
@@ -83,7 +82,7 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			SET payload_sha256=?, signature_sha256=?, updated_at=?
 			WHERE idempotency_key=?
 			  AND (payload_sha256 IS NULL OR state='RECONCILIATION_REQUIRED')
-			""", incoming.payloadSha256(), incoming.signatureSha256(), ts(incoming.updatedAt()),
+			""", incoming.payloadSha256(), incoming.signatureSha256(), incoming.updatedAt(),
 			incoming.idempotencyKey());
 		var refreshed = findByIdempotencyKey(incoming.idempotencyKey())
 			.orElseThrow(() -> new DuplicateKeyException("callback delivery disappeared during refresh"));
@@ -105,9 +104,9 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			ON CONFLICT DO NOTHING
 			""", d.idempotencyKey(), d.releaseRequestId(), d.releaseSequence(), d.manifestSha256(),
 			d.channel(), d.candidateId(), d.payloadSha256(), d.signatureSha256(), d.state().name(),
-			d.attempts(), ts(d.nextAttemptAt()), ts(d.reconcileDeadline()), ts(d.deadLetterDeadline()),
-			d.httpClass(), d.sanitizedDetail(), ts(d.claimedAt()), d.claimOwner(),
-			ts(d.createdAt()), ts(d.updatedAt()));
+			d.attempts(), d.nextAttemptAt(), d.reconcileDeadline(), d.deadLetterDeadline(),
+			d.httpClass(), d.sanitizedDetail(), d.claimedAt(), d.claimOwner(),
+			d.createdAt(), d.updatedAt());
 	}
 
 	public Optional<DatapackReleaseDelivery> findByIdempotencyKey(String idempotencyKey) {
@@ -136,7 +135,7 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			  AND (claimed_at IS NULL OR claimed_at <= ?)
 			ORDER BY created_at, idempotency_key
 			LIMIT ?
-			""", String.class, ts(now), ts(reclaimBefore), limit);
+			""", String.class, now, reclaimBefore, limit);
 		var claimed = new ArrayList<DatapackReleaseDelivery>();
 		for (String key : keys) {
 			int changed = claimKeyIfDue(now, owner, reclaimBefore, key);
@@ -151,7 +150,7 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			WHERE idempotency_key=? AND (claimed_at IS NULL OR claimed_at <= ?)
 			  AND state IN ('PENDING', 'RETRY_SCHEDULED', 'RECONCILIATION_REQUIRED')
 			  AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-			""", ts(now), owner, ts(now), key, ts(reclaimBefore), ts(now));
+			""", now, owner, now, key, reclaimBefore, now);
 	}
 
 	public void mark(String idempotencyKey, State state, int attempts, LocalDateTime nextAttemptAt,
@@ -161,7 +160,7 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			SET state=?, attempts=?, next_attempt_at=?, http_class=?, sanitized_detail=?,
 			    claimed_at=NULL, claim_owner=NULL, updated_at=?
 			WHERE idempotency_key=?
-			""", state.name(), attempts, ts(nextAttemptAt), httpClass, detail, ts(now), idempotencyKey);
+			""", state.name(), attempts, nextAttemptAt, httpClass, detail, now, idempotencyKey);
 	}
 
 	@Override
@@ -172,7 +171,7 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			SET state=?, attempts=?, next_attempt_at=?, http_class=?, sanitized_detail=?,
 			    claimed_at=NULL, claim_owner=NULL, updated_at=?
 			WHERE idempotency_key=? AND claim_owner=?
-			""", state.name(), attempts, ts(nextAttemptAt), httpClass, detail, ts(now),
+			""", state.name(), attempts, nextAttemptAt, httpClass, detail, now,
 			idempotencyKey, owner);
 		if (changed != 1) throw new IllegalStateException("delivery claim is no longer owned");
 	}
@@ -190,7 +189,7 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			UPDATE datapack_release_deliveries
 			SET state='RETRY_SCHEDULED', next_attempt_at=?, claimed_at=NULL, claim_owner=NULL, updated_at=?
 			WHERE idempotency_key=? AND state=?
-			""", ts(now), ts(now), idempotencyKey, before.name());
+			""", now, now, idempotencyKey, before.name());
 		if (changed != 1) {
 			throw new IllegalStateException("delivery changed while manual repair was scheduled");
 		}
@@ -215,16 +214,8 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			""", d.idempotencyKey(), d.releaseRequestId(), d.releaseSequence(), d.manifestSha256(),
 			d.channel(), d.candidateId(), d.payloadSha256(), d.signatureSha256(), d.state().name(),
-			d.attempts(), ts(d.nextAttemptAt()), ts(d.reconcileDeadline()), ts(d.deadLetterDeadline()),
-			d.httpClass(), d.sanitizedDetail(), ts(d.claimedAt()), d.claimOwner(),
-			ts(d.createdAt()), ts(d.updatedAt()));
-	}
-
-	private static Timestamp ts(LocalDateTime value) {
-		return value == null ? null : Timestamp.valueOf(value);
-	}
-
-	private static LocalDateTime ldt(Timestamp value) {
-		return value == null ? null : value.toLocalDateTime();
+			d.attempts(), d.nextAttemptAt(), d.reconcileDeadline(), d.deadLetterDeadline(),
+			d.httpClass(), d.sanitizedDetail(), d.claimedAt(), d.claimOwner(),
+			d.createdAt(), d.updatedAt());
 	}
 }

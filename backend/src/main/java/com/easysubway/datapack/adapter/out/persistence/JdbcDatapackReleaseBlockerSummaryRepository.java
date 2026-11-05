@@ -155,7 +155,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			resultSet.getString("validator_status"),
 			resultSet.getString("route_regression_status"),
 			resultSet.getString("android_evidence_status"),
-			resultSet.getTimestamp("created_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class)
 		);
 	}
 
@@ -275,7 +275,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		String placeholders = String.join(", ", snapshotIds.stream().map(ignored -> "?").toList());
 		List<LocalDateTime> expiresAtValues = jdbcTemplate.query(
 			"SELECT freshness_expires_at FROM data_source_snapshots WHERE snapshot_id IN (" + placeholders + ")",
-			(resultSet, rowNumber) -> resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
+			(resultSet, rowNumber) -> resultSet.getObject("freshness_expires_at", LocalDateTime.class),
 			snapshotIds.toArray()
 		);
 		long missingSnapshotBlockers = snapshotIds.size() - expiresAtValues.size();

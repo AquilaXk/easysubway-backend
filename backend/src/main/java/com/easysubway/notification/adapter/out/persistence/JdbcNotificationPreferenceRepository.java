@@ -9,6 +9,7 @@ import com.easysubway.notification.domain.RegisteredDevice;
 import com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -236,7 +237,7 @@ public class JdbcNotificationPreferenceRepository implements
 			resultSet.getBoolean("favorite_route_facility_alerts"),
 			resultSet.getBoolean("report_status_alerts"),
 			resultSet.getBoolean("data_quality_alerts"),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 
@@ -245,7 +246,7 @@ public class JdbcNotificationPreferenceRepository implements
 			resultSet.getString("user_id"),
 			DevicePlatform.valueOf(resultSet.getString("platform")),
 			resultSet.getString("device_token"),
-			resultSet.getTimestamp("registered_at").toLocalDateTime()
+			resultSet.getObject("registered_at", LocalDateTime.class)
 		);
 	}
 

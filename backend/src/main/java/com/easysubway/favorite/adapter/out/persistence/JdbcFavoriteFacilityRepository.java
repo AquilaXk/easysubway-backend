@@ -9,6 +9,7 @@ import com.easysubway.favorite.domain.InvalidFavoriteFacilityException;
 import com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -167,7 +168,7 @@ public class JdbcFavoriteFacilityRepository implements
 		return new FavoriteFacility(
 			resultSet.getString("user_id"),
 			resultSet.getString("facility_id"),
-			resultSet.getTimestamp("added_at").toLocalDateTime()
+			resultSet.getObject("added_at", LocalDateTime.class)
 		);
 	}
 }

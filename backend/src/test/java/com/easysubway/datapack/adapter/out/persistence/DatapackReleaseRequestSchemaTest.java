@@ -2,6 +2,7 @@ package com.easysubway.datapack.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,7 @@ class DatapackReleaseRequestSchemaTest {
 	@Test
 	@DisplayName("insert/select이 모든 컬럼을 왕복한다")
 	void roundTripsAllColumns() {
+		LocalDateTime timestamp = LocalDateTime.of(2026, 7, 6, 0, 0);
 		jdbcTemplate.update("DELETE FROM datapack_release_request");
 		jdbcTemplate.update(
 			"INSERT INTO datapack_release_request ("
@@ -26,7 +28,7 @@ class DatapackReleaseRequestSchemaTest {
 				+ " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
 			"appr-1", "cand-1", "scope-1", "staging", "a".repeat(64),
 			"b".repeat(64), "c".repeat(64), "requester", "REQUESTED",
-			java.sql.Timestamp.valueOf("2026-07-06 00:00:00"), java.sql.Timestamp.valueOf("2026-07-06 00:00:00"));
+			timestamp, timestamp);
 
 		var row = jdbcTemplate.queryForMap(
 			"SELECT candidate_id, scope_id, target_channel, build_spec_sha256, source_snapshot_set_hash,"

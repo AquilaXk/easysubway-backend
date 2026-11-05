@@ -5,6 +5,7 @@ import com.easysubway.admin.code.domain.AdminCommonCode;
 import com.easysubway.admin.code.domain.AdminCommonCodeGroup;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -124,8 +125,8 @@ public class JdbcAdminCommonCodeRepository implements AdminCommonCodeRepository 
 			resultSet.getString("description"),
 			resultSet.getInt("sort_order"),
 			resultSet.getBoolean("enabled"),
-			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 
@@ -137,8 +138,8 @@ public class JdbcAdminCommonCodeRepository implements AdminCommonCodeRepository 
 			resultSet.getString("description"),
 			resultSet.getInt("sort_order"),
 			resultSet.getBoolean("enabled"),
-			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 }

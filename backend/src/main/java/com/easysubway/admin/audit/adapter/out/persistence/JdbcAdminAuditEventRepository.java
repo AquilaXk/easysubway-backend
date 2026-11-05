@@ -9,6 +9,7 @@ import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.time.BusinessTime;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -257,7 +258,7 @@ public class JdbcAdminAuditEventRepository implements AdminAuditEventRepository 
 			resultSet.getString("action"),
 			AdminAuditOutcome.valueOf(resultSet.getString("outcome")),
 			resultSet.getString("reason"),
-			resultSet.getTimestamp("occurred_at").toLocalDateTime()
+			resultSet.getObject("occurred_at", LocalDateTime.class)
 		);
 	}
 }

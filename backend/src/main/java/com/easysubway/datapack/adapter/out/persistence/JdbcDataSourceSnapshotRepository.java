@@ -268,17 +268,14 @@ public class JdbcDataSourceSnapshotRepository {
 	}
 
 	private DataSourceSnapshot mapSnapshot(ResultSet resultSet, int rowNumber) throws SQLException {
-		var sourceUpdatedAt = resultSet.getTimestamp("source_updated_at");
-		var freshnessBasisAt = resultSet.getTimestamp("freshness_basis_at");
-		var providerValidUntil = resultSet.getTimestamp("provider_valid_until");
 		return new DataSourceSnapshot(
 			resultSet.getString("snapshot_id"),
 			resultSet.getString("source_id"),
 			resultSet.getString("provider"),
-			resultSet.getTimestamp("retrieved_at").toLocalDateTime(),
-			sourceUpdatedAt == null ? null : sourceUpdatedAt.toLocalDateTime(),
-			freshnessBasisAt == null ? null : freshnessBasisAt.toLocalDateTime(),
-			providerValidUntil == null ? null : providerValidUntil.toLocalDateTime(),
+			resultSet.getObject("retrieved_at", LocalDateTime.class),
+			resultSet.getObject("source_updated_at", LocalDateTime.class),
+			resultSet.getObject("freshness_basis_at", LocalDateTime.class),
+			resultSet.getObject("provider_valid_until", LocalDateTime.class),
 			resultSet.getInt("row_count"),
 			resultSet.getInt("coverage_count"),
 			resultSet.getString("raw_sha256"),
@@ -294,8 +291,8 @@ public class JdbcDataSourceSnapshotRepository {
 			resultSet.getString("previous_snapshot_id"),
 			resultSet.getString("diff_summary"),
 			resultSet.getString("diff_summary_json"),
-			resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
-			resultSet.getTimestamp("raw_retention_expires_at").toLocalDateTime(),
+			resultSet.getObject("freshness_expires_at", LocalDateTime.class),
+			resultSet.getObject("raw_retention_expires_at", LocalDateTime.class),
 			resultSet.getString("governance_policy_version"),
 			resultSet.getString("governance_policy_sha256")
 		);
@@ -379,7 +376,7 @@ public class JdbcDataSourceSnapshotRepository {
 			resultSet.getString("requested_by"),
 			resultSet.getString("reason"),
 			resultSet.getString("idempotency_key"),
-			resultSet.getTimestamp("created_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class)
 		);
 	}
 

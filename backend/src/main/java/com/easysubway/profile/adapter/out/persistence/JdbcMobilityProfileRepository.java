@@ -7,6 +7,7 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -150,7 +151,7 @@ public class JdbcMobilityProfileRepository implements
 			resultSet.getBoolean("large_text"),
 			resultSet.getBoolean("high_contrast"),
 			resultSet.getBoolean("simple_view"),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 }

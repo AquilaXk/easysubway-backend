@@ -5,7 +5,6 @@ import com.easysubway.journey.analytics.JourneySearchKind;
 import com.easysubway.journey.analytics.JourneySearchOutcome;
 import com.easysubway.journey.analytics.JourneySearchRecord;
 import com.easysubway.journey.analytics.JourneySearchRecordStore;
-import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
 import javax.sql.DataSource;
@@ -32,7 +31,7 @@ public class JdbcJourneySearchRecordStore implements JourneySearchRecordStore {
 				http_status, machine_code, engine_version, mobility_profile, alternative_categories, stair_free_status)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
-			record.recordId(), Date.valueOf(record.recordedOn()),
+			record.recordId(), record.recordedOn(),
 			record.kind().name(), record.outcome().name(), record.httpStatus(), record.machineCode(),
 			record.engineVersion(), record.mobilityProfile(), record.alternativeCategoriesText(),
 			record.stairFreeStatus());
@@ -50,17 +49,17 @@ public class JdbcJourneySearchRecordStore implements JourneySearchRecordStore {
 			ORDER BY recorded_on
 			""",
 			(rs, rowNum) -> new JourneySearchAggregateRow(
-				rs.getDate("recorded_on").toLocalDate(),
+				rs.getObject("recorded_on", LocalDate.class),
 				JourneySearchKind.valueOf(rs.getString("search_kind")),
 				JourneySearchOutcome.valueOf(rs.getString("outcome")),
 				rs.getString("engine_version"), rs.getString("mobility_profile"),
 				rs.getString("alternative_categories"), rs.getString("stair_free_status"),
 				rs.getLong("record_count")),
-			Date.valueOf(fromInclusive), Date.valueOf(toInclusive));
+			fromInclusive, toInclusive);
 	}
 
 	@Override
 	public int purgeRecordedBefore(LocalDate cutoff) {
-		return jdbcTemplate.update("DELETE FROM journey_v3_search_records WHERE recorded_on < ?", Date.valueOf(cutoff));
+		return jdbcTemplate.update("DELETE FROM journey_v3_search_records WHERE recorded_on < ?", cutoff);
 	}
 }

@@ -56,7 +56,7 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			resultSet.getString("manifest_sha256"),
 			resultSet.getString("release_request_id"),
 			resultSet.getString("workflow_run_url"),
-			resultSet.getTimestamp("observed_at").toLocalDateTime()));
+			resultSet.getObject("observed_at", LocalDateTime.class)));
 	}
 
 	public List<ReleaseChannelEventRow> listRecentEvents(int limit) {
@@ -304,7 +304,7 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			resultSet.getString("approved_by"),
 			resultSet.getString("reason"),
 			resultSet.getString("idempotency_key"),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
+			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
 	}
 
@@ -324,7 +324,7 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			resultSet.getString("reason"),
 			resultSet.getString("idempotency_key"),
 			workflowRunUrl == null || workflowRunUrl.isBlank() ? "-" : workflowRunUrl,
-			resultSet.getTimestamp("created_at").toLocalDateTime()
+			resultSet.getObject("created_at", LocalDateTime.class)
 		);
 	}
 

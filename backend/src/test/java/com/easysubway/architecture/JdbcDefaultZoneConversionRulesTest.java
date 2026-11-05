@@ -7,7 +7,6 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaCodeUnit;
 import com.tngtech.archunit.core.domain.JavaCodeUnitAccess;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
-import com.tngtech.archunit.core.importer.ImportOption;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -26,19 +25,20 @@ import org.junit.jupiter.api.Test;
  */
 class JdbcDefaultZoneConversionRulesTest {
 
+	private static final String FIXTURE_PACKAGE = "com.easysubway.architecture.fixture.jdbczone";
+
 	private static final Map<String, Set<String>> DEFAULT_ZONE_CONVERSIONS = Map.of(
 		"java.sql.Timestamp", Set.of("valueOf", "toLocalDateTime"),
 		"java.sql.Date", Set.of("valueOf", "toLocalDate"),
 		"java.util.Calendar", Set.of("getInstance"));
 
-	private static final JavaClasses PRODUCTION_CLASSES = new ClassFileImporter()
-		.withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+	private static final JavaClasses ALL_CLASSES = new ClassFileImporter()
 		.importPackages("com.easysubway");
 
 	@Test
-	@DisplayName("기본 시간대 JDBC 변환은 허용 목록 밖에서 쓰지 않는다")
+	@DisplayName("기본 시간대 JDBC 변환은 운영·테스트 코드 모두 허용 목록 밖에서 쓰지 않는다")
 	void noNewDefaultZoneConversions() {
-		Set<String> unlisted = new TreeSet<>(conversionSites(PRODUCTION_CLASSES));
+		Set<String> unlisted = new TreeSet<>(guardedConversionSites());
 		unlisted.removeAll(JdbcDefaultZoneConversionAllowlist.SITES);
 
 		assertThat(unlisted)
@@ -50,7 +50,7 @@ class JdbcDefaultZoneConversionRulesTest {
 	@DisplayName("허용 목록에는 더 이상 쓰지 않는 항목이 남지 않는다")
 	void allowlistHasNoStaleEntries() {
 		Set<String> stale = new TreeSet<>(JdbcDefaultZoneConversionAllowlist.SITES);
-		stale.removeAll(conversionSites(PRODUCTION_CLASSES));
+		stale.removeAll(guardedConversionSites());
 
 		assertThat(stale).as("사용처를 정리했다면 허용 목록에서도 지운다").isEmpty();
 	}
@@ -59,7 +59,7 @@ class JdbcDefaultZoneConversionRulesTest {
 	@DisplayName("규칙은 호출과 메서드 참조, 람다 안의 사용을 둘러싼 메서드로 식별한다")
 	void identifiesSitesByEnclosingMethod() {
 		JavaClasses fixture = new ClassFileImporter()
-			.importPackages("com.easysubway.architecture.fixture.jdbczone");
+			.importPackages(FIXTURE_PACKAGE);
 
 		assertThat(conversionSites(fixture)).containsExactlyInAnyOrder(
 			"com.easysubway.architecture.fixture.jdbczone.JdbcZoneFixture#toColumn",
@@ -70,15 +70,31 @@ class JdbcDefaultZoneConversionRulesTest {
 			"com.easysubway.architecture.fixture.jdbczone.JdbcZoneFixture#calendar");
 	}
 
+	private static Set<String> guardedConversionSites() {
+		Set<String> sites = new TreeSet<>();
+		for (JavaClass javaClass : ALL_CLASSES) {
+			String packageName = javaClass.getPackageName();
+			if (packageName.equals(FIXTURE_PACKAGE) || packageName.startsWith(FIXTURE_PACKAGE + ".")) {
+				continue;
+			}
+			collectConversionSites(javaClass, sites);
+		}
+		return sites;
+	}
+
 	/** 변환을 쓰는 곳을 {@code 클래스#메서드}로 모은다. 줄 번호와 람다 번호는 키에 넣지 않는다. */
 	private static Set<String> conversionSites(JavaClasses classes) {
 		Set<String> sites = new TreeSet<>();
 		for (JavaClass javaClass : classes) {
-			Stream.concat(javaClass.getMethodCallsFromSelf().stream(), javaClass.getMethodReferencesFromSelf().stream())
-				.filter(JdbcDefaultZoneConversionRulesTest::isDefaultZoneConversion)
-				.forEach(access -> sites.add(javaClass.getName() + "#" + enclosingMethodName(access.getOrigin())));
+			collectConversionSites(javaClass, sites);
 		}
 		return sites;
+	}
+
+	private static void collectConversionSites(JavaClass javaClass, Set<String> sites) {
+		Stream.concat(javaClass.getMethodCallsFromSelf().stream(), javaClass.getMethodReferencesFromSelf().stream())
+			.filter(JdbcDefaultZoneConversionRulesTest::isDefaultZoneConversion)
+			.forEach(access -> sites.add(javaClass.getName() + "#" + enclosingMethodName(access.getOrigin())));
 	}
 
 	private static boolean isDefaultZoneConversion(JavaCodeUnitAccess<?> access) {
