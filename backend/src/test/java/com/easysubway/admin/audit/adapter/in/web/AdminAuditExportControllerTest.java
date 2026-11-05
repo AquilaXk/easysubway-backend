@@ -203,7 +203,12 @@ class AdminAuditExportControllerTest {
 			.filter(event -> "AUDIT_EXPORT".equals(event.targetType()))
 			.toList();
 		assertThat(exportAudits)
-			.noneMatch(event -> event.outcome() == AdminAuditOutcome.SUCCESS);
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.action()).isEqualTo("EXPORT_AUDIT_JSON");
+				assertThat(event.reason()).contains("감사 로그 내보내기 실패 format=json");
+			});
 	}
 
 	private AdminAuditEvent eventAt(

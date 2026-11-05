@@ -389,7 +389,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("신고 상세 조회는 인증된 신고 소유자만 사용할 수 있다")
 	void reportDetailRequiresAuthenticationAndOwner() throws Exception {
-		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "소유자만 볼 수 있는 신고");
+		String reportId = createReport("basic-user", "spoofed-user", "소유자만 볼 수 있는 신고");
 
 		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
 			.andExpect(status().isNotFound());
@@ -405,7 +405,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("관리자 신고 목록은 상세 사진 메타데이터 없이 첨부 여부만 반환한다")
 	void reportListsReturnPhotoSummaryWithoutDetailMetadata() throws Exception {
-		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
+		createReportWithPhoto("basic-user", "spoofed-user", "사진이 있는 신고");
 
 		String adminReportsResponse = mockMvc.perform(get("/admin/reports")
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -480,7 +480,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("이미 검수된 신고 재검수는 공통 409 응답을 반환한다")
 	void repeatedReviewReportReturnsCommonConflictError() throws Exception {
-		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "이미 검수된 신고");
+		String reportId = createReport("basic-user", "spoofed-user", "이미 검수된 신고");
 		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
 				.with(csrf())
@@ -510,7 +510,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("신고 작성자는 처리 결과를 확인 완료 상태로 바꿀 수 있다")
 	void reporterConfirmsReviewedReportResult() throws Exception {
-		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "처리 결과를 확인할 신고");
+		String reportId = createReport("basic-user", "spoofed-user", "처리 결과를 확인할 신고");
 
 		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
@@ -633,7 +633,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("다른 사용자의 신고 처리 결과 확인은 공통 404 응답을 반환한다")
 	void confirmReportResultRequiresOwner() throws Exception {
-		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "다른 사용자가 확인하면 안 되는 신고");
+		String reportId = createReport("basic-user", "spoofed-user", "다른 사용자가 확인하면 안 되는 신고");
 
 		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
@@ -658,7 +658,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("검수 전 신고 처리 결과 확인은 공통 400 응답을 반환한다")
 	void confirmReportResultRequiresReviewedStatus() throws Exception {
-		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "아직 검수되지 않은 신고");
+		String reportId = createReport("basic-user", "spoofed-user", "아직 검수되지 않은 신고");
 
 		mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", reportId)
 				.with(user("basic-user"))
@@ -919,7 +919,7 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("사용자 신고 상세는 사진과 위치 메타데이터를 반환하지 않는다")
 	void userReportDetailDoesNotReturnPhotoOrLocationMetadata() throws Exception {
-		String reportId = createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
+		String reportId = createReportWithPhoto("basic-user", "spoofed-user", "사진이 있는 신고");
 
 		String response = mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
 				.with(user("basic-user")))
@@ -1198,21 +1198,19 @@ class FacilityReportControllerTest {
 	}
 
 	private String createReport(String userId, String description) throws Exception {
-		return createReport("basic-user", "user-test-password", userId, description);
+		return createReport("basic-user", userId, description);
 	}
 
 	private String createReport(
 		String username,
-		String password,
 		String userId,
 		String description
 	) throws Exception {
-		return createReport(username, password, userId, description, "");
+		return createReport(username, userId, description, "");
 	}
 
 	private String createReportWithPhoto(
 		String username,
-		String password,
 		String userId,
 		String description
 	) throws Exception {
@@ -1224,7 +1222,6 @@ class FacilityReportControllerTest {
 		);
 		return createReport(
 			username,
-			password,
 			userId,
 			description,
 			"""
@@ -1242,7 +1239,6 @@ class FacilityReportControllerTest {
 
 	private String createReport(
 		String username,
-		String password,
 		String userId,
 		String description,
 		String photoJson

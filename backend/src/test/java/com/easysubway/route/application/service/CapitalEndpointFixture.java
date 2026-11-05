@@ -25,10 +25,6 @@ public final class CapitalEndpointFixture {
 		return CapitalRealDerivedFixture.load();
 	}
 
-	public static RouteTimetable freshTimetable() {
-		return CapitalRealDerivedFixture.readFresh();
-	}
-
 	public static List<String> stations() {
 		return CapitalRealDerivedFixture.stations();
 	}

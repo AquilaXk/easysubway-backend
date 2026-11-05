@@ -1,6 +1,7 @@
 package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.admin.web.AdminFormErrorView;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
@@ -12,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -19,6 +21,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,18 +40,18 @@ class TransitFacilityAdminPageController {
 
 	private final TransitFacilityStatusAssembler facilityStatusAssembler;
 	private final TransitMasterAdminUseCase transitMasterAdminUseCase;
-	private final java.time.Clock clock;
+	private final Clock clock;
 
-	@org.springframework.beans.factory.annotation.Autowired
+	@Autowired
 	TransitFacilityAdminPageController(
 		TransitFacilityStatusAssembler facilityStatusAssembler,
 		TransitMasterAdminUseCase transitMasterAdminUseCase,
-		org.springframework.beans.factory.ObjectProvider<java.time.Clock> clockProvider
+		ObjectProvider<Clock> clockProvider
 	) {
 		this(
 			facilityStatusAssembler,
 			transitMasterAdminUseCase,
-			clockProvider.getIfAvailable(java.time.Clock::systemUTC)
+			clockProvider.getIfAvailable(Clock::systemUTC)
 		);
 	}
 
@@ -55,13 +59,13 @@ class TransitFacilityAdminPageController {
 		TransitFacilityStatusAssembler facilityStatusAssembler,
 		TransitMasterAdminUseCase transitMasterAdminUseCase
 	) {
-		this(facilityStatusAssembler, transitMasterAdminUseCase, java.time.Clock.systemUTC());
+		this(facilityStatusAssembler, transitMasterAdminUseCase, Clock.systemUTC());
 	}
 
 	TransitFacilityAdminPageController(
 		TransitFacilityStatusAssembler facilityStatusAssembler,
 		TransitMasterAdminUseCase transitMasterAdminUseCase,
-		java.time.Clock clock
+		Clock clock
 	) {
 		this.facilityStatusAssembler = facilityStatusAssembler;
 		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
@@ -151,7 +155,7 @@ class TransitFacilityAdminPageController {
 		model.addAttribute("selectedStationFilter", activeStation);
 		model.addAttribute("selectedSort", blankToNull(sort));
 		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
-		model.addAttribute("today", com.easysubway.common.time.BusinessTime.today(clock));
+		model.addAttribute("today", BusinessTime.today(clock));
 	}
 
 	private static List<FilterOption> distinctTypeOptions(List<FacilityStatusRow> rows, String selected) {

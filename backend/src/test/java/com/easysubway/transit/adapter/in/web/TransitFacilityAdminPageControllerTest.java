@@ -250,9 +250,9 @@ class TransitFacilityAdminPageControllerTest {
 			reportUseCase,
 			null,
 			com.easysubway.admin.web.AdminMasterLabelResolver.empty(),
-			messages,
-			koreanEarlyMorningClock
+			messages
 		);
+		stationController.setClock(koreanEarlyMorningClock);
 		var stationModel = new org.springframework.ui.ConcurrentModel();
 		stationController.stationsPage(null, null, null, null, 0, 20, stationModel);
 		assertThat(stationModel.getAttribute("today")).isEqualTo(java.time.LocalDate.of(2026, 6, 13));

@@ -65,10 +65,6 @@ final class CapitalRealDerivedFixture {
 		return cached;
 	}
 
-	static RouteTimetable readFresh() {
-		return read();
-	}
-
 	static List<String> stations() {
 		List<String> stations = new ArrayList<>();
 		load().transitStopTimes().forEach(stop -> {

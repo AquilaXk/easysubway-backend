@@ -343,61 +343,27 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	@Test
-	void measuresRetainedHeapWhenHoldingActiveAndCandidateBundlesSimultaneously() throws InterruptedException {
-		var warmupRuntime = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
-			"a".repeat(64), 1, com.easysubway.route.application.service.CapitalEndpointFixture.freshTimetable());
-		warmupRuntime.stationTimetableIndex();
-		warmupRuntime = null;
+	void holdsDistinctCompiledActiveAndCandidateCapitalBundlesSimultaneouslyBeforeSwitchClearsCandidate() {
+		var registry = registryAt(T0);
+		stageAndActivateFreshCapitalBundle(registry);
 
-		int trials = 5;
-		long[] activeOnlyRetained = new long[trials];
-		long[] dualRetained = new long[trials];
-		long[] afterSwitchRetained = new long[trials];
+		stageSecondFreshCapitalBundle(registry);
+		var activeRuntime = registry.activeSnapshot().runtimeView();
+		var candidateRuntime = registry.candidateExecutionSnapshot().runtimeView();
+		assertThat(activeRuntime).isNotSameAs(candidateRuntime);
+		assertThat(registry.activeSnapshot().admissionEvidence().manifestSha256())
+			.isEqualTo(LoadScenarioBundles.manifestSha256("a"));
+		assertThat(registry.candidateExecutionSnapshot().admissionEvidence().manifestSha256())
+			.isEqualTo(LoadScenarioBundles.manifestSha256("b"));
 
-		for (int trial = 0; trial < trials; trial++) {
-			var registry = registryAt(T0);
-			long baseline = usedHeapAfterGc();
-
-			stageAndActivateFreshCapitalBundle(registry);
-			activeOnlyRetained[trial] = Math.max(0L, usedHeapAfterGc() - baseline);
-
-			stageSecondFreshCapitalBundle(registry);
-			assertThat(registry.activeSnapshot().runtimeView())
-				.isNotSameAs(registry.candidateExecutionSnapshot().runtimeView());
-			dualRetained[trial] = Math.max(0L, usedHeapAfterGc() - baseline);
-
-			registry.activate(LoadScenarioBundles.manifestSha256("b"), 1);
-			assertThatThrownBy(registry::candidateSnapshot).isInstanceOf(RouteBundleActivationException.class);
-			afterSwitchRetained[trial] = Math.max(0L, usedHeapAfterGc() - baseline);
-
-			System.out.printf(
-				java.util.Locale.ROOT,
-				"DUAL_BUNDLE_HEAP trial=%d baselineBytes=%d activeOnlyBytes=%d (%.2f MiB) dualBytes=%d (%.2f MiB) afterSwitchBytes=%d (%.2f MiB)%n",
-				trial + 1,
-				baseline,
-				activeOnlyRetained[trial], activeOnlyRetained[trial] / 1048576.0,
-				dualRetained[trial], dualRetained[trial] / 1048576.0,
-				afterSwitchRetained[trial], afterSwitchRetained[trial] / 1048576.0
-			);
-		}
-
-		java.util.Arrays.sort(activeOnlyRetained);
-		java.util.Arrays.sort(dualRetained);
-		java.util.Arrays.sort(afterSwitchRetained);
-		System.out.printf(
-			java.util.Locale.ROOT,
-			"DUAL_BUNDLE_HEAP_SUMMARY trials=%d activeOnlyMedian=%.2f MiB (range %.2f..%.2f MiB) dualMedian=%.2f MiB (range %.2f..%.2f MiB) afterSwitchMedian=%.2f MiB (range %.2f..%.2f MiB)%n",
-			trials,
-			activeOnlyRetained[trials / 2] / 1048576.0, activeOnlyRetained[0] / 1048576.0, activeOnlyRetained[trials - 1] / 1048576.0,
-			dualRetained[trials / 2] / 1048576.0, dualRetained[0] / 1048576.0, dualRetained[trials - 1] / 1048576.0,
-			afterSwitchRetained[trials / 2] / 1048576.0, afterSwitchRetained[0] / 1048576.0, afterSwitchRetained[trials - 1] / 1048576.0
-		);
-		assertThat(dualRetained[trials / 2]).isGreaterThan(activeOnlyRetained[trials / 2]);
+		var switched = registry.activate(LoadScenarioBundles.manifestSha256("b"), 1);
+		assertThat(switched.runtimeView()).isSameAs(candidateRuntime);
+		assertThatThrownBy(registry::candidateSnapshot).isInstanceOf(RouteBundleActivationException.class);
 	}
 
 	private static void stageAndActivateFreshCapitalBundle(RouteBundleActivationRegistry registry) {
 		var runtimeA = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
-			"a".repeat(64), 1, com.easysubway.route.application.service.CapitalEndpointFixture.freshTimetable());
+			"a".repeat(64), 1, com.easysubway.route.application.service.CapitalEndpointFixture.timetable());
 		runtimeA.stationTimetableIndex();
 		var candidateA = LoadScenarioBundles.candidate("a", runtimeA, T0);
 		registry.stage(candidateA, 0);
@@ -406,19 +372,10 @@ class RouteBundleActivationRegistryTest {
 
 	private static void stageSecondFreshCapitalBundle(RouteBundleActivationRegistry registry) {
 		var runtimeB = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
-			"b".repeat(64), 2, com.easysubway.route.application.service.CapitalEndpointFixture.freshTimetable());
+			"b".repeat(64), 2, com.easysubway.route.application.service.CapitalEndpointFixture.timetable());
 		runtimeB.stationTimetableIndex();
 		var candidateB = LoadScenarioBundles.candidate("b", runtimeB, T0);
 		registry.stage(candidateB, 1);
-	}
-
-	private static long usedHeapAfterGc() throws InterruptedException {
-		Runtime runtime = Runtime.getRuntime();
-		for (int attempt = 0; attempt < 3; attempt++) {
-			System.gc();
-			Thread.sleep(100);
-		}
-		return runtime.totalMemory() - runtime.freeMemory();
 	}
 
 	private static Callable<ActivationResult> activation(

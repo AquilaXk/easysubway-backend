@@ -7,6 +7,7 @@ import com.easysubway.admin.batch.application.service.AdminBatchOperationService
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService.JobExecutionHistory;
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService.RunExecution;
 import com.easysubway.admin.batch.domain.AdminBatchJob;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.collection.domain.DataCollectionRun;
@@ -160,7 +161,7 @@ class AdminBatchPageController {
 
 	private BatchHistoryChart historyChart(JobExecutionHistory history) {
 		List<String> labels = history.executions().stream()
-			.map(execution -> HISTORY_LABEL.format(com.easysubway.common.time.BusinessTime.fromUtcLocal(execution.startedAt())))
+			.map(execution -> HISTORY_LABEL.format(BusinessTime.fromUtcLocal(execution.startedAt())))
 			.toList();
 		List<Long> values = history.executions().stream()
 			.map(AdminBatchPageController::durationMillisOrZero)
@@ -214,7 +215,7 @@ class AdminBatchPageController {
 
 		static HistoryCell from(RunExecution execution) {
 			return new HistoryCell(
-				com.easysubway.common.time.BusinessTime.fromUtcLocal(execution.startedAt()).toString(),
+				BusinessTime.fromUtcLocal(execution.startedAt()).toString(),
 				statusLabel(execution.status()),
 				execution.durationMillis() == null ? "—" : execution.durationMillis() + "ms"
 			);
@@ -319,8 +320,8 @@ class AdminBatchPageController {
 					job.label(),
 					statusLabel(run.status()),
 					run.requestedBy(),
-					com.easysubway.common.time.BusinessTime.fromUtcLocal(run.startedAt()),
-					run.completedAt() == null ? null : com.easysubway.common.time.BusinessTime.fromUtcLocal(run.completedAt()),
+					BusinessTime.fromUtcLocal(run.startedAt()),
+					run.completedAt() == null ? null : BusinessTime.fromUtcLocal(run.completedAt()),
 					run.collectedCount(),
 					valueOrDash(run.failureMessage()),
 					run.retryable(),
