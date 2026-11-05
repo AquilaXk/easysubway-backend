@@ -88,6 +88,7 @@ class AdminAuditExportController {
 		AdminAuditQuery query = params.toQuery(forcedEventType, excludePrivacyRead, 0, null);
 		List<AdminAuditEvent> events = auditEventRepository.findForExport(query, MAX_EXPORT_ROWS);
 		boolean json = "json".equalsIgnoreCase(format);
+		String formatLabel = json ? "json" : "csv";
 		String action = "EXPORT_AUDIT_" + (json ? "JSON" : "CSV");
 
 		byte[] body;
@@ -100,7 +101,7 @@ class AdminAuditExportController {
 				filenameBase,
 				action,
 				AdminAuditOutcome.FAILURE,
-				"업무 맥락: 감사 로그 내보내기 실패 format=%s rows=%d".formatted(json ? "json" : "csv", events.size())
+				"업무 맥락: 감사 로그 내보내기 실패 format=%s rows=%d".formatted(formatLabel, events.size())
 			);
 			throw exception;
 		}
@@ -111,7 +112,7 @@ class AdminAuditExportController {
 			filenameBase,
 			action,
 			AdminAuditOutcome.SUCCESS,
-			"업무 맥락: 감사 로그 내보내기 format=%s rows=%d".formatted(json ? "json" : "csv", events.size())
+			"업무 맥락: 감사 로그 내보내기 format=%s rows=%d".formatted(formatLabel, events.size())
 		);
 
 		HttpHeaders headers = new HttpHeaders();
