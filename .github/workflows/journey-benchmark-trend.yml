@@ -63,7 +63,7 @@ jobs:
 
       # 결과는 저장소에 커밋하지 않는다(자동 PR 누적 방지). 보존 기간 안의 직전 성공 run들과만 비교한다.
       - name: Upload the benchmark result
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: journey-engine-benchmark-${{ github.sha }}
           path: ${{ runner.temp }}/journey-benchmark/
