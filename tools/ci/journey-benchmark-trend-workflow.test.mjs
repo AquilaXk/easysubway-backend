@@ -77,7 +77,7 @@ test('Backend #516 measures through the init script task with the repeat count f
 
 test('Backend #516 uploads the result with a bounded retention under the name prefix the previous-run lookup searches for', () => {
   const upload = step(workflow, 'Upload the benchmark result');
-  assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
+  assert.match(upload, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.ok(upload.includes(`name: ${ARTIFACT_PREFIX}\${{ github.sha }}`), 'the artifact name must start with ARTIFACT_PREFIX');
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-benchmark\//);
   assert.match(upload, /retention-days: 14/);

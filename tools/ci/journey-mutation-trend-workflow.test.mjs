@@ -92,7 +92,7 @@ test('Backend #523 summarizes the report directory the Gradle task writes, then 
   assert.match(summarize, new RegExp(`node tools/ci/journey-mutation-trend\\.mjs summarize --report-dir ${REPORT_DIRECTORY} --output "\\$\\{RUNNER_TEMP\\}/journey-mutation/result\\.json"`));
   assert.match(summarize, /cp -R backend\/build\/reports\/pitest "\$\{RUNNER_TEMP\}\/journey-mutation\/report"/);
   const upload = step(workflow, 'Upload the mutation result');
-  assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
+  assert.match(upload, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.ok(upload.includes(`name: ${ARTIFACT_PREFIX}\${{ github.sha }}`), 'the artifact name must start with ARTIFACT_PREFIX');
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-mutation\//);
   assert.match(upload, /retention-days: 14/);
@@ -172,7 +172,7 @@ test('Backend #523 the init script verifies the toolchain jars before they run a
 test('Backend #523 keeps the raw PIT report even when the summary fails, under a name the previous-run lookup does not match', () => {
   const raw = step(workflow, 'Upload the raw PIT report');
   assert.match(raw, /if: always\(\)/);
-  assert.match(raw, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
+  assert.match(raw, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(raw, new RegExp(`path: ${REPORT_DIRECTORY}/`));
   assert.match(raw, /retention-days: 14/);
   assert.match(raw, /if-no-files-found: ignore/);

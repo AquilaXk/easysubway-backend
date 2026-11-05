@@ -695,7 +695,7 @@ export function validateWorkflow(workflow) {
   for (const literal of [
     'id: test_backend', 'id: coverage_analyze', 'id: coverage_artifact', 'id: coverage_summary',
     'node tools/ci/backend-coverage-gate.mjs analyze', 'node tools/ci/backend-coverage-gate.mjs verdict',
-    'if: always() && !cancelled()', 'uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f', 'name: backend-critical-coverage-${{ github.sha }}',
+    'if: always() && !cancelled()', 'uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9', 'name: backend-critical-coverage-${{ github.sha }}',
     'retention-days: 5', 'if-no-files-found: error', '--gradle-evidence', '--summary-outcome',
   ]) if (!workflow.includes(literal)) fail(`workflow missing ${literal}`);
   const coverageHeadExpression = "COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}";
@@ -718,7 +718,7 @@ export function validateWorkflow(workflow) {
   }
   for (const literal of [
     'id: coverage_artifact', 'if: always() && !cancelled()',
-    'uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f',
+    'uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
     'name: backend-critical-coverage-${{ github.sha }}',
     '${{ runner.temp }}/backend-critical-coverage/jacocoTestReport.xml',
     '${{ runner.temp }}/backend-critical-coverage/backend-critical-coverage-baseline.json',
