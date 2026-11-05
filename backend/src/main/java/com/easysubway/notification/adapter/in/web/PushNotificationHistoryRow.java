@@ -1,5 +1,6 @@
 package com.easysubway.notification.adapter.in.web;
 
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
@@ -41,7 +42,7 @@ record PushNotificationHistoryRow(
 			statusTone(notification.status()),
 			notification.title(),
 			notification.failureReason(),
-			notification.createdAt()
+			BusinessTime.fromUtcLocal(notification.createdAt())
 		);
 	}
 

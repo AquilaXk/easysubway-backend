@@ -6,6 +6,7 @@ import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxRequest;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxTrigger;
@@ -331,7 +332,7 @@ class AdminAuditPageController {
 				orDash(event.reason()),
 				// 사유 누락은 표시 문자열("—")이 아니라 실제 도메인 값(null·공백)으로 판정한다.
 				event.reason() == null || event.reason().isBlank(),
-				event.occurredAt().format(DATE_TIME_FORMATTER)
+				BusinessTime.fromUtcLocal(event.occurredAt()).format(DATE_TIME_FORMATTER)
 			);
 		}
 

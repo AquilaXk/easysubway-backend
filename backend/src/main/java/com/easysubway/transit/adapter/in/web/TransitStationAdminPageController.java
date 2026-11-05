@@ -80,6 +80,30 @@ class TransitStationAdminPageController {
 	private final FieldVerificationUseCase fieldVerificationUseCase;
 	private final AdminMasterLabelResolver labelResolver;
 	private final WebMessageResolver messages;
+	private final java.time.Clock clock;
+
+	@org.springframework.beans.factory.annotation.Autowired
+	TransitStationAdminPageController(
+		TransitMasterQueryUseCase transitMasterQueryUseCase,
+		TransitMasterAdminUseCase transitMasterAdminUseCase,
+		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase,
+		FacilityReportUseCase facilityReportUseCase,
+		FieldVerificationUseCase fieldVerificationUseCase,
+		AdminMasterLabelResolver labelResolver,
+		WebMessageResolver messages,
+		org.springframework.beans.factory.ObjectProvider<java.time.Clock> clockProvider
+	) {
+		this(
+			transitMasterQueryUseCase,
+			transitMasterAdminUseCase,
+			datapackReleaseBlockerSummaryUseCase,
+			facilityReportUseCase,
+			fieldVerificationUseCase,
+			labelResolver,
+			messages,
+			clockProvider.getIfAvailable(java.time.Clock::systemUTC)
+		);
+	}
 
 	TransitStationAdminPageController(
 		TransitMasterQueryUseCase transitMasterQueryUseCase,
@@ -90,6 +114,28 @@ class TransitStationAdminPageController {
 		AdminMasterLabelResolver labelResolver,
 		WebMessageResolver messages
 	) {
+		this(
+			transitMasterQueryUseCase,
+			transitMasterAdminUseCase,
+			datapackReleaseBlockerSummaryUseCase,
+			facilityReportUseCase,
+			fieldVerificationUseCase,
+			labelResolver,
+			messages,
+			java.time.Clock.systemUTC()
+		);
+	}
+
+	TransitStationAdminPageController(
+		TransitMasterQueryUseCase transitMasterQueryUseCase,
+		TransitMasterAdminUseCase transitMasterAdminUseCase,
+		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase,
+		FacilityReportUseCase facilityReportUseCase,
+		FieldVerificationUseCase fieldVerificationUseCase,
+		AdminMasterLabelResolver labelResolver,
+		WebMessageResolver messages,
+		java.time.Clock clock
+	) {
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
 		this.datapackReleaseBlockerSummaryUseCase = datapackReleaseBlockerSummaryUseCase;
@@ -97,6 +143,7 @@ class TransitStationAdminPageController {
 		this.fieldVerificationUseCase = fieldVerificationUseCase;
 		this.labelResolver = labelResolver;
 		this.messages = messages;
+		this.clock = clock;
 	}
 
 	@GetMapping("/admin/stations/page")
@@ -180,6 +227,7 @@ class TransitStationAdminPageController {
 		model.addAttribute("selectedRegion", activeRegion);
 		model.addAttribute("selectedLine", activeLine);
 		model.addAttribute("selectedSort", blankToNull(sort));
+		model.addAttribute("today", com.easysubway.common.time.BusinessTime.today(clock));
 	}
 
 	private static List<FilterOption> distinctRegions(List<StationWithLines> stations, String selected) {
@@ -741,7 +789,7 @@ class TransitStationAdminPageController {
 				facilityLabels.getOrDefault(summary.facilityId(), summary.facilityId()),
 				messages.enumLabel("admin.report.type", summary.reportType()),
 				messages.enumLabel("admin.report.status", summary.status()),
-				summary.createdAt(),
+				com.easysubway.common.time.BusinessTime.fromUtcLocal(summary.createdAt()),
 				summary.hasPhoto(),
 				"/admin/reports/%s/page".formatted(summary.id())
 			);
@@ -785,7 +833,7 @@ class TransitStationAdminPageController {
 				TransitStationAdminPageController.fieldStatusLabel(history.previousStatus()),
 				TransitStationAdminPageController.fieldStatusLabel(history.newStatus()),
 				history.changedBy(),
-				history.changedAt()
+				com.easysubway.common.time.BusinessTime.fromUtcLocal(history.changedAt())
 			);
 		}
 	}

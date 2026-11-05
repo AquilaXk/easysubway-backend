@@ -83,7 +83,7 @@ class OperatorRepeatedBrokenFacilitiesControllerTest {
 
 	private void createReport(String stationId, String facilityId, String reportType, String description) throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("basic-user"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

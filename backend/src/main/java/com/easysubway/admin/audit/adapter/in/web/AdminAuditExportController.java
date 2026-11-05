@@ -6,6 +6,7 @@ import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.time.BusinessTime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -87,14 +88,28 @@ class AdminAuditExportController {
 		AdminAuditQuery query = params.toQuery(forcedEventType, excludePrivacyRead, 0, null);
 		List<AdminAuditEvent> events = auditEventRepository.findForExport(query, MAX_EXPORT_ROWS);
 		boolean json = "json".equalsIgnoreCase(format);
+		String action = "EXPORT_AUDIT_" + (json ? "JSON" : "CSV");
 
-		byte[] body = (json ? toJson(events) : toCsv(events)).getBytes(StandardCharsets.UTF_8);
+		byte[] body;
+		try {
+			body = (json ? toJson(events) : toCsv(events)).getBytes(StandardCharsets.UTF_8);
+		} catch (RuntimeException exception) {
+			auditWriter.auditExport(
+				authentication,
+				request,
+				filenameBase,
+				action,
+				AdminAuditOutcome.FAILURE,
+				"업무 맥락: 감사 로그 내보내기 실패 format=%s rows=%d".formatted(json ? "json" : "csv", events.size())
+			);
+			throw exception;
+		}
 
 		auditWriter.auditExport(
 			authentication,
 			request,
 			filenameBase,
-			"EXPORT_AUDIT_" + (json ? "JSON" : "CSV"),
+			action,
 			AdminAuditOutcome.SUCCESS,
 			"업무 맥락: 감사 로그 내보내기 format=%s rows=%d".formatted(json ? "json" : "csv", events.size())
 		);
@@ -114,7 +129,7 @@ class AdminAuditExportController {
 		csv.append("occurred_at,event_type,actor,role_permission,request_id,client_ip,user_agent,")
 			.append("target_type,target_id,action,outcome,reason\r\n");
 		for (AdminAuditEvent event : events) {
-			csv.append(csvField(event.occurredAt().toString())).append(',')
+			csv.append(csvField(BusinessTime.fromUtcLocal(event.occurredAt()).toString())).append(',')
 				.append(csvField(event.eventType().name())).append(',')
 				.append(csvField(event.actor())).append(',')
 				.append(csvField(nullToEmpty(event.rolePermission()))).append(',')
@@ -134,7 +149,7 @@ class AdminAuditExportController {
 		List<Map<String, Object>> rows = new ArrayList<>();
 		for (AdminAuditEvent event : events) {
 			Map<String, Object> row = new LinkedHashMap<>();
-			row.put("occurredAt", event.occurredAt().toString());
+			row.put("occurredAt", BusinessTime.fromUtcLocal(event.occurredAt()).toString());
 			row.put("eventType", event.eventType().name());
 			row.put("actor", event.actor());
 			row.put("rolePermission", event.rolePermission());
@@ -151,7 +166,7 @@ class AdminAuditExportController {
 		try {
 			return objectMapper.writeValueAsString(rows);
 		} catch (JsonProcessingException exception) {
-			return "[]";
+			throw new IllegalStateException("감사 로그 JSON 직렬화에 실패했습니다.", exception);
 		}
 	}
 

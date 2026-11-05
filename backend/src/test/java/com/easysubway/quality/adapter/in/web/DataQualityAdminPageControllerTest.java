@@ -195,7 +195,7 @@ class DataQualityAdminPageControllerTest {
 
 	private String createReport(String description) throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("basic-user"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

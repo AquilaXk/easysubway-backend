@@ -3,6 +3,7 @@ package com.easysubway.notice.adapter.in.web;
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.error.InvalidRequestException;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.notice.application.port.out.ServiceNoticeRepository;
 import com.easysubway.notice.application.service.PublishNoticeCommand;
 import com.easysubway.notice.application.service.ServiceNoticeService;
@@ -106,7 +107,7 @@ class ServiceNoticeAdminPageController {
 				return null;
 			}
 			try {
-				return LocalDateTime.parse(value);
+				return BusinessTime.toUtcLocal(LocalDateTime.parse(value));
 			} catch (DateTimeParseException exception) {
 				throw new InvalidRequestException("expiresAt 형식이 올바르지 않습니다.", exception);
 			}
@@ -143,8 +144,8 @@ class ServiceNoticeAdminPageController {
 				notice.title(),
 				notice.body(),
 				notice.severity().name(),
-				notice.publishedAt(),
-				notice.expiresAt(),
+				BusinessTime.fromUtcLocal(notice.publishedAt()),
+				notice.expiresAt() == null ? null : BusinessTime.fromUtcLocal(notice.expiresAt()),
 				notice.publishedBy());
 		}
 	}

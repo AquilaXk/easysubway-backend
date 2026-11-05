@@ -658,6 +658,62 @@ class FacilityReportAdminPageControllerTest {
 			.andExpect(header().string("Location", "/admin/reports/page"));
 	}
 
+	@Test
+	@DisplayName("신고 관리자 목록·상세·검수 감사 행은 UTC 시각을 한국 표준시(KST)로 변환한다")
+	void reportAdminViewModelsConvertUtcTimestampsToKoreanStandardTime() {
+		var messages = com.easysubway.common.web.WebMessageResolver.defaultMessages();
+		var utcCreatedAt = java.time.LocalDateTime.of(2026, 6, 27, 15, 30);
+		var utcReviewedAt = java.time.LocalDateTime.of(2026, 6, 27, 16, 15);
+		var report = new com.easysubway.report.domain.FacilityReport(
+			"report-kst-1",
+			"basic-user",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			com.easysubway.report.domain.FacilityReportType.BROKEN,
+			"엘리베이터 멈춤",
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			com.easysubway.report.domain.FacilityReportStatus.RESOLVED,
+			utcCreatedAt,
+			utcReviewedAt,
+			"admin-test",
+			null,
+			null
+		);
+		var summary = com.easysubway.report.domain.FacilityReportSummary.from(report);
+		var listRow = FacilityReportAdminPageController.FacilityReportListPageRow.from(
+			summary,
+			messages,
+			java.util.Map.of("station-sangnoksu", "상록수"),
+			java.util.Map.of("facility-sangnoksu-elevator-1", "1번 출구 엘리베이터"),
+			utcReviewedAt
+		);
+		assertThat(listRow.createdAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 0, 30));
+
+		var detailView = FacilityReportAdminPageController.FacilityReportDetailPageView.from(report, messages);
+		assertThat(detailView.createdAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 0, 30));
+		assertThat(detailView.reviewedAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 1, 15));
+
+		var audit = new com.easysubway.report.domain.FacilityReportReviewAudit(
+			"audit-kst-1",
+			"report-kst-1",
+			"admin-test",
+			com.easysubway.report.domain.FacilityReportReviewDecision.ACCEPT,
+			com.easysubway.report.domain.FacilityReportStatus.SUBMITTED,
+			com.easysubway.report.domain.FacilityReportStatus.RESOLVED,
+			utcReviewedAt
+		);
+		var auditRow = FacilityReportAdminPageController.FacilityReportReviewAuditPageRow.from(audit, messages);
+		assertThat(auditRow.createdAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 1, 15));
+	}
+
 	private String createReport(String description) throws Exception {
 		return createReport(description, "BROKEN", "");
 	}
@@ -772,7 +828,7 @@ class FacilityReportAdminPageControllerTest {
 
 	private String createReport(String description, String reportType, String optionalJson) throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("basic-user"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					  {

@@ -296,7 +296,7 @@ class FacilityOperationalStatusAdminPageControllerTest {
 	@DisplayName("미검증 시민 제보는 운영 상태 테이블에 쓰지 않는다")
 	void unverifiedCitizenReportDoesNotWriteOperationalStatus() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("basic-user"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

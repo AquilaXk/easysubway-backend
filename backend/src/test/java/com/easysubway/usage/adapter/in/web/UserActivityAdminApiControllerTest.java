@@ -48,7 +48,7 @@ class UserActivityAdminApiControllerTest {
 	@DisplayName("관리자는 사용자 활동 요약을 JSON으로 조회한다")
 	void adminGetsUserActivitySummary() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("basic-user"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

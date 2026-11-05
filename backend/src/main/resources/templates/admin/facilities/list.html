@@ -137,7 +137,7 @@
 						<!-- 갱신일: 상대 시간 + 정확한 날짜 병기. lastUpdatedAt은 LocalDate라 표시 계층에서
 						     상대 시간을 계산한다. 값이 없으면 '기록 없음'으로만 표기한다(placeholder 데이터 없음). -->
 						<th:block th:if="${facility.lastUpdatedAt != null}"
-						          th:with="daysAgo=${T(java.time.temporal.ChronoUnit).DAYS.between(facility.lastUpdatedAt, T(java.time.LocalDate).now())}">
+						          th:with="daysAgo=${T(java.time.temporal.ChronoUnit).DAYS.between(facility.lastUpdatedAt, today)}">
 							<span class="data-verified">
 								<span class="data-verified-relative"
 								      th:title="${#temporals.format(facility.lastUpdatedAt, 'yyyy-MM-dd')}"

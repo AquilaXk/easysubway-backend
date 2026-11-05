@@ -36,13 +36,36 @@ class TransitFacilityAdminPageController {
 
 	private final TransitFacilityStatusAssembler facilityStatusAssembler;
 	private final TransitMasterAdminUseCase transitMasterAdminUseCase;
+	private final java.time.Clock clock;
+
+	@org.springframework.beans.factory.annotation.Autowired
+	TransitFacilityAdminPageController(
+		TransitFacilityStatusAssembler facilityStatusAssembler,
+		TransitMasterAdminUseCase transitMasterAdminUseCase,
+		org.springframework.beans.factory.ObjectProvider<java.time.Clock> clockProvider
+	) {
+		this(
+			facilityStatusAssembler,
+			transitMasterAdminUseCase,
+			clockProvider.getIfAvailable(java.time.Clock::systemUTC)
+		);
+	}
 
 	TransitFacilityAdminPageController(
 		TransitFacilityStatusAssembler facilityStatusAssembler,
 		TransitMasterAdminUseCase transitMasterAdminUseCase
 	) {
+		this(facilityStatusAssembler, transitMasterAdminUseCase, java.time.Clock.systemUTC());
+	}
+
+	TransitFacilityAdminPageController(
+		TransitFacilityStatusAssembler facilityStatusAssembler,
+		TransitMasterAdminUseCase transitMasterAdminUseCase,
+		java.time.Clock clock
+	) {
 		this.facilityStatusAssembler = facilityStatusAssembler;
 		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
+		this.clock = clock;
 	}
 
 	@GetMapping("/admin/facilities/page")
@@ -128,6 +151,7 @@ class TransitFacilityAdminPageController {
 		model.addAttribute("selectedStationFilter", activeStation);
 		model.addAttribute("selectedSort", blankToNull(sort));
 		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
+		model.addAttribute("today", com.easysubway.common.time.BusinessTime.today(clock));
 	}
 
 	private static List<FilterOption> distinctTypeOptions(List<FacilityStatusRow> rows, String selected) {
