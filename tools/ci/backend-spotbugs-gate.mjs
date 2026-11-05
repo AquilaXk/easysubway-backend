@@ -42,12 +42,12 @@ const REVIEW_ISSUE_URL = /^https:\/\/github\.com\/AquilaXk\/easysubway-backend\/
 const POLICY_PATH = 'backend/quality/spotbugs-suppression-policy.json';
 const REVIEWED_ENGINE_DIGEST = 'c97898ba01f21977e5301dfecb5a1b46c7f5e65548028d1b49b7bcb86ef547ee';
 const FOUNDATION_IDENTITIES_DIGEST = '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0';
-const REVIEWED_INPUT_DIGESTS = { engineClasspathDigest: '3e7e6a2c1cae35e8e755d359ee41a78fe06f421a2484c574489f3f0c23012974', javaLauncherDigest: 'b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2', classpathDigest: '911c219357e1b5f44a6dc0948d02ec4af84f5680e294846b0daf66113e4be6db', pluginClasspathDigest: '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570' };
+const REVIEWED_INPUT_DIGESTS = { engineClasspathDigest: '3e7e6a2c1cae35e8e755d359ee41a78fe06f421a2484c574489f3f0c23012974', javaLauncherDigest: 'b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2', classpathDigest: '965c924ed8dfdcc961c3ac8a19f4d53b78520cc7c54270dfd6d08d11ae6aae55', pluginClasspathDigest: '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570' };
 const FINDING_REASON = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
 const FINDING_REMOVAL = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
 const FINDING_TRIGGER = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
 const ISSUE4_TITLE = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
-const BUILD_SCRIPT_DIGEST = '536b95342623abeaa3542aa0eacd1d9884b05f5ebbfa0b4be300edda91f2a807';
+const BUILD_SCRIPT_DIGEST = '3143d8ef730327634a402ae88e847c35772689ebd43839f349b4143a7313eba1';
 // SpotBugs job의 Java·계약 staging 단계가 들어 있는 composite. 내용이 바뀌면 이 digest를 함께 갱신해야 gate가 통과한다.
 const SETUP_COMPOSITE_PATH = '.github/actions/backend-setup/action.yml';
 const SETUP_COMPOSITE_DIGEST = 'a4cc6279eef489a3a2831b5daa03f80fc597d96aa4bd5f30aeb0358df537e7d6';

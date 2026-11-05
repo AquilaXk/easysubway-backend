@@ -1,3 +1,13 @@
 # backend Gradle lockfile 취약점 예외 목록. 예외는 취약점 ID 단위로 좁게, 사유를
 # lockfile 옆에 유지한다 — 새 advisory는 PR 게이트에서 실패한다.
 # 새 ignore는 ignoreUntil + reason + tracking 이슈가 필요하다 / New ignores need ignoreUntil + reason + tracking.
+
+[[IgnoredVulns]]
+id = "GHSA-j9f9-w8pj-32f8"
+ignoreUntil = 2027-02-05
+reason = "spring-webmvc 6.2.19 SSE fragment 렌더링 취약점이나 SseEmitter·ServerSentEvent·FragmentsRendering·text/event-stream 사용처가 없고 Spring 6.2 계열 OSS 수정이 없다. Spring Boot 4 이전 전 재검토(#551)."
+
+[[IgnoredVulns]]
+id = "GHSA-pc63-qcmh-9cmg"
+ignoreUntil = 2027-02-05
+reason = "spring-webmvc 6.2.19 XsltView 경로 제한 취약점이나 XsltView 사용처가 없고 Spring 6.2 계열 OSS 수정이 없다. Spring Boot 4 이전 전 재검토(#551)."
