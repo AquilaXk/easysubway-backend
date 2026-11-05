@@ -33,6 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
 })
 @AutoConfigureMockMvc
 @Import(AdminMetricTestClock.Configuration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("통합 대시보드 재설계")
 class AdminDashboardPageTest {
 

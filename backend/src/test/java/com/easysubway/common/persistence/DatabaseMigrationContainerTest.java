@@ -802,9 +802,9 @@ class DatabaseMigrationContainerTest {
 				run_id, source, status, requested_by, started_at, completed_at,
 				collected_count, failure_message, retryable, operator_action
 			)
-			VALUES (?, 'TRANSIT_MASTER', 'RUNNING', 'legacy-admin', CURRENT_TIMESTAMP,
+			VALUES (?, 'TRANSIT_MASTER', 'RUNNING', 'legacy-admin', ?,
 				NULL, 0, NULL, FALSE, '수집 실행 중입니다.')
-			""".formatted(prefix), runId);
+			""".formatted(prefix), runId, LocalDateTime.now(ZoneOffset.UTC));
 	}
 
 	private org.flywaydb.core.api.configuration.FluentConfiguration flyway(
