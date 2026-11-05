@@ -201,7 +201,7 @@ final class FacilityReportPhotoProcessor {
 
 	private PhotoDimensions readWebpDimensions(byte[] bytes) {
 		int offset = 12;
-		while (offset + 8 <= bytes.length) {
+		while (offset <= bytes.length - 8) {
 			String chunkType = chunkType(bytes, offset);
 			int chunkSize = chunkSize(bytes, offset);
 			int dataOffset = offset + 8;
@@ -216,7 +216,7 @@ final class FacilityReportPhotoProcessor {
 				case "VP8X" -> {
 					return readVp8ExtendedDimensions(bytes, dataOffset, chunkSize);
 				}
-				default -> offset = nextChunkOffset(dataOffset, chunkSize);
+				default -> offset = nextChunkOffset(bytes, dataOffset, chunkSize);
 			}
 		}
 		throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
@@ -260,12 +260,11 @@ final class FacilityReportPhotoProcessor {
 		ByteArrayOutputStream output = new ByteArrayOutputStream(bytes.length);
 		output.write(bytes, 0, 12);
 		int offset = 12;
-		while (offset + 8 <= bytes.length) {
+		while (offset <= bytes.length - 8) {
 			String chunkType = chunkType(bytes, offset);
 			int chunkSize = chunkSize(bytes, offset);
 			int dataOffset = offset + 8;
-			requireChunkBounds(bytes, dataOffset, chunkSize);
-			int nextOffset = nextChunkOffset(dataOffset, chunkSize);
+			int nextOffset = nextChunkOffset(bytes, dataOffset, chunkSize);
 			if (!"EXIF".equals(chunkType) && !"XMP ".equals(chunkType)) {
 				output.write(bytes, offset, nextOffset - offset);
 			}
@@ -314,13 +313,18 @@ final class FacilityReportPhotoProcessor {
 	}
 
 	private void requireChunkBounds(byte[] bytes, int dataOffset, int chunkSize) {
-		if (chunkSize < 0 || dataOffset > bytes.length || dataOffset + chunkSize > bytes.length) {
+		if (chunkSize < 0 || dataOffset < 0 || dataOffset > bytes.length || chunkSize > bytes.length - dataOffset) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
 	}
 
-	private int nextChunkOffset(int dataOffset, int chunkSize) {
-		return dataOffset + chunkSize + (chunkSize % 2);
+	private int nextChunkOffset(byte[] bytes, int dataOffset, int chunkSize) {
+		requireChunkBounds(bytes, dataOffset, chunkSize);
+		int padding = chunkSize & 1;
+		if (padding > bytes.length - dataOffset - chunkSize) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		return dataOffset + chunkSize + padding;
 	}
 
 	private int littleEndianUnsignedShort(byte[] bytes, int offset) {

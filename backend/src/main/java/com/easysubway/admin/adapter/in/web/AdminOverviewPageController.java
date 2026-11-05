@@ -230,12 +230,11 @@ class AdminOverviewPageController {
 		return new TrendChart(id, title, chart, toJson(chart), chart.empty());
 	}
 
-	// Chart.js가 읽을 데이터 섬(JSON). 직렬화 실패 시 빈 차트로 안전 폴백.
 	private String toJson(AdminMetricChart chart) {
 		try {
 			return objectMapper.writeValueAsString(chart);
 		} catch (JsonProcessingException exception) {
-			return "{\"labels\":[],\"series\":[]}";
+			throw new IllegalStateException("차트 데이터 JSON 직렬화에 실패했습니다.", exception);
 		}
 	}
 

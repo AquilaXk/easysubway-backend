@@ -212,6 +212,92 @@ class TransitFacilityAdminPageControllerTest {
 			.andExpect(forwardedUrl("/admin/error/page"));
 	}
 
+	@Test
+	@DisplayName("시설·역 목록의 경과일 기준(today)과 역 상세 제보·현장 확인 시각은 한국 표준시(KST)를 따른다")
+	void facilityAndStationControllersUseKoreanStandardTimeTodayAndTimestamps() {
+		java.time.Clock koreanEarlyMorningClock = java.time.Clock.fixed(
+			java.time.Instant.parse("2026-06-12T16:00:00Z"),
+			java.time.ZoneOffset.UTC
+		);
+		var repository = new com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository();
+		var transitMasterService = new com.easysubway.transit.application.service.TransitMasterService(
+			repository,
+			repository,
+			koreanEarlyMorningClock
+		);
+		var reportUseCase = org.mockito.Mockito.mock(
+			com.easysubway.report.application.port.in.FacilityReportUseCase.class
+		);
+		org.mockito.Mockito.when(reportUseCase.countPendingReportsByStation())
+			.thenReturn(java.util.Map.of());
+
+		var assembler = new TransitFacilityStatusAssembler(transitMasterService);
+		var messages = com.easysubway.common.web.WebMessageResolver.defaultMessages();
+
+		var facilityController = new TransitFacilityAdminPageController(
+			assembler,
+			transitMasterService,
+			koreanEarlyMorningClock
+		);
+		var facilityModel = new org.springframework.ui.ConcurrentModel();
+		facilityController.facilitiesPage(null, null, null, null, null, 0, 20, facilityModel);
+		assertThat(facilityModel.getAttribute("today")).isEqualTo(java.time.LocalDate.of(2026, 6, 13));
+
+		var stationController = new TransitStationAdminPageController(
+			transitMasterService,
+			transitMasterService,
+			null,
+			reportUseCase,
+			null,
+			com.easysubway.admin.web.AdminMasterLabelResolver.empty(),
+			messages
+		);
+		stationController.setClock(koreanEarlyMorningClock);
+		var stationModel = new org.springframework.ui.ConcurrentModel();
+		stationController.stationsPage(null, null, null, null, 0, 20, stationModel);
+		assertThat(stationModel.getAttribute("today")).isEqualTo(java.time.LocalDate.of(2026, 6, 13));
+
+		var utcTime = java.time.LocalDateTime.of(2026, 6, 27, 15, 30);
+		var reportSummary = new com.easysubway.report.domain.FacilityReportSummary(
+			"report-station-kst",
+			"R-KST",
+			"basic-user",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			com.easysubway.report.domain.FacilityReportType.BROKEN,
+			"고장",
+			false,
+			null,
+			null,
+			null,
+			com.easysubway.report.domain.FacilityReportStatus.SUBMITTED,
+			utcTime,
+			null,
+			null
+		);
+		var stationReportRow = TransitStationAdminPageController.StationReportRow.from(
+			reportSummary,
+			messages,
+			java.util.Map.of("facility-sangnoksu-elevator-1", "1번 출구 엘리베이터")
+		);
+		assertThat(stationReportRow.createdAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 0, 30));
+
+		var fieldHistory = new com.easysubway.field.domain.FieldVerificationChangeHistory(
+			"history-kst",
+			"session-1",
+			"station-sangnoksu",
+			"item-1",
+			com.easysubway.field.domain.FieldVerificationStatus.PLANNED,
+			com.easysubway.field.domain.FieldVerificationStatus.VERIFIED,
+			"operator",
+			"note",
+			"reason",
+			utcTime
+		);
+		var historyRow = TransitStationAdminPageController.StationFieldHistoryRow.from(fieldHistory);
+		assertThat(historyRow.changedAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 0, 30));
+	}
+
 	private String getAdminHtml(String path, MockHttpSession session) throws Exception {
 		return mockMvc.perform(get(path)
 				.session(session)

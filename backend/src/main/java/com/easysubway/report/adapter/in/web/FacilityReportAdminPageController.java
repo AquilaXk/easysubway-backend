@@ -778,7 +778,7 @@ class FacilityReportAdminPageController {
 				messages.enumLabel("admin.report.type", report.reportType()),
 				report.description(),
 				messages.enumLabel("admin.report.status", report.status()),
-				report.createdAt(),
+				BusinessTime.fromUtcLocal(report.createdAt()),
 				FacilityReportAdminPageController.hasCompletePhoto(report),
 				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude()),
 				sla.label(),
@@ -818,8 +818,8 @@ class FacilityReportAdminPageController {
 				messages.enumLabel("admin.report.type", report.reportType()),
 				report.description(),
 				messages.enumLabel("admin.report.status", report.status()),
-				report.createdAt(),
-				report.reviewedAt(),
+				BusinessTime.fromUtcLocal(report.createdAt()),
+				report.reviewedAt() == null ? null : BusinessTime.fromUtcLocal(report.reviewedAt()),
 				report.reviewedBy(),
 				report.photoFileName(),
 				report.photoContentType(),
@@ -955,7 +955,7 @@ class FacilityReportAdminPageController {
 				messages.enumLabel("admin.report.review-decision", audit.decision()),
 				messages.enumLabel("admin.report.status", audit.previousStatus()),
 				messages.enumLabel("admin.report.status", audit.nextStatus()),
-				audit.createdAt()
+				BusinessTime.fromUtcLocal(audit.createdAt())
 			);
 		}
 	}

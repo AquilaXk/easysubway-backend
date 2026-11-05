@@ -93,4 +93,25 @@ class UserActivityAdminPageControllerTest {
 		assertThat(view.apiErrorAlertLabel()).isEqualTo("정상");
 		assertThat(view.apiErrorAlertClass()).isEqualTo("ok");
 	}
+
+	@Test
+	@DisplayName("사용자 활동 추이 차트 직렬화 실패 시 빈 시리즈 fallback 없이 예외를 던진다")
+	void userActivityTrendsFailsClosedWhenSerializationFails() {
+		UserActivityDashboardUseCase useCase = mock(UserActivityDashboardUseCase.class);
+		when(useCase.summarizeUserActivity()).thenReturn(new UserActivityDashboardSummary(0, 0, 0, 0, List.of()));
+		AdminMetricQueryService metricQueryService = mock(AdminMetricQueryService.class);
+		when(metricQueryService.chart(any(), anyInt())).thenReturn(new AdminMetricChart(7, List.of(), List.of()));
+		when(metricQueryService.compare(any(), anyInt())).thenReturn(List.of());
+		ObjectMapper failingMapper = new ObjectMapper() {
+			@Override
+			public String writeValueAsString(Object value) throws com.fasterxml.jackson.core.JsonProcessingException {
+				throw new com.fasterxml.jackson.core.JsonGenerationException("boom", (com.fasterxml.jackson.core.JsonGenerator) null);
+			}
+		};
+		var controller = new UserActivityAdminPageController(useCase, metricQueryService, failingMapper);
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+			controller.userActivityDashboardPage(7, new ExtendedModelMap())
+		).isInstanceOf(IllegalStateException.class);
+	}
 }

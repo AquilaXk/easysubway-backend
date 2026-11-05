@@ -307,6 +307,25 @@ class FacilityReportPhotoProcessorTest {
 	}
 
 	@Test
+	@DisplayName("WebP 청크 크기가 Integer.MAX_VALUE 부근이거나 홀수 패딩 바이트가 누락되면 500 예외 없이 400 도메인 예외로 거부한다")
+	void rejectWebpChunkSizeOverflowAndMissingPadding() {
+		byte[] trailingOverflowChunkWebp = appendRawChunkHeader(VALID_WEBP_BYTES, "ALPH", Integer.MAX_VALUE, new byte[4]);
+		assertThatThrownBy(() -> processor.processBytes("overflow-alph.webp", "image/webp", trailingOverflowChunkWebp))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		byte[] leadingOverflowChunkWebp = leadingChunkWithSize("JUNK", Integer.MAX_VALUE);
+		assertThatThrownBy(() -> processor.processBytes("overflow-junk.webp", "image/webp", leadingOverflowChunkWebp))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		byte[] missingOddPaddingWebp = appendRawChunkHeader(VALID_WEBP_BYTES, "ALPH", 3, new byte[] {1, 2, 3});
+		assertThatThrownBy(() -> processor.processBytes("missing-padding.webp", "image/webp", missingOddPaddingWebp))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
 	@DisplayName("PhotoMediaType은 canonical 미디어 타입과 확장을 올바르게 반환하고 비교한다")
 	void photoMediaTypeCanonicalAndExtension() {
 		com.easysubway.report.domain.FacilityReport.PhotoMediaType jpeg =
@@ -387,6 +406,28 @@ class FacilityReportPhotoProcessorTest {
 		output.writeBytes(new byte[] {0, 0, 0});
 		writeLittleEndian24(output, width - 1);
 		writeLittleEndian24(output, height - 1);
+		return output.toByteArray();
+	}
+
+	private byte[] appendRawChunkHeader(byte[] webpBytes, String chunkType, int declaredSize, byte[] actualPayload) {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		output.writeBytes(webpBytes);
+		output.writeBytes(chunkType.getBytes(StandardCharsets.US_ASCII));
+		writeLittleEndianInt(output, declaredSize);
+		output.writeBytes(actualPayload);
+		byte[] bytes = output.toByteArray();
+		writeLittleEndianInt(bytes, 4, bytes.length - 8);
+		return bytes;
+	}
+
+	private byte[] leadingChunkWithSize(String chunkType, int declaredSize) {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		output.writeBytes("RIFF".getBytes(StandardCharsets.US_ASCII));
+		writeLittleEndianInt(output, 16);
+		output.writeBytes("WEBP".getBytes(StandardCharsets.US_ASCII));
+		output.writeBytes(chunkType.getBytes(StandardCharsets.US_ASCII));
+		writeLittleEndianInt(output, declaredSize);
+		output.writeBytes(new byte[4]);
 		return output.toByteArray();
 	}
 

@@ -342,6 +342,42 @@ class RouteBundleActivationRegistryTest {
 		assertThat(currentSnapshot.identity()).isEqualTo(second.identity());
 	}
 
+	@Test
+	void holdsDistinctCompiledActiveAndCandidateCapitalBundlesSimultaneouslyBeforeSwitchClearsCandidate() {
+		var registry = registryAt(T0);
+		stageAndActivateFreshCapitalBundle(registry);
+
+		stageSecondFreshCapitalBundle(registry);
+		var activeRuntime = registry.activeSnapshot().runtimeView();
+		var candidateRuntime = registry.candidateExecutionSnapshot().runtimeView();
+		assertThat(activeRuntime).isNotSameAs(candidateRuntime);
+		assertThat(registry.activeSnapshot().admissionEvidence().manifestSha256())
+			.isEqualTo(LoadScenarioBundles.manifestSha256("a"));
+		assertThat(registry.candidateExecutionSnapshot().admissionEvidence().manifestSha256())
+			.isEqualTo(LoadScenarioBundles.manifestSha256("b"));
+
+		var switched = registry.activate(LoadScenarioBundles.manifestSha256("b"), 1);
+		assertThat(switched.runtimeView()).isSameAs(candidateRuntime);
+		assertThatThrownBy(registry::candidateSnapshot).isInstanceOf(RouteBundleActivationException.class);
+	}
+
+	private static void stageAndActivateFreshCapitalBundle(RouteBundleActivationRegistry registry) {
+		var runtimeA = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
+			"a".repeat(64), 1, com.easysubway.route.application.service.CapitalEndpointFixture.timetable());
+		runtimeA.stationTimetableIndex();
+		var candidateA = LoadScenarioBundles.candidate("a", runtimeA, T0);
+		registry.stage(candidateA, 0);
+		registry.activate(LoadScenarioBundles.manifestSha256("a"), 0);
+	}
+
+	private static void stageSecondFreshCapitalBundle(RouteBundleActivationRegistry registry) {
+		var runtimeB = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
+			"b".repeat(64), 2, com.easysubway.route.application.service.CapitalEndpointFixture.timetable());
+		runtimeB.stationTimetableIndex();
+		var candidateB = LoadScenarioBundles.candidate("b", runtimeB, T0);
+		registry.stage(candidateB, 1);
+	}
+
 	private static Callable<ActivationResult> activation(
 		RouteBundleActivationRegistry registry, VerifiedRouteBundleCandidate candidate, CyclicBarrier barrier) {
 		return () -> {

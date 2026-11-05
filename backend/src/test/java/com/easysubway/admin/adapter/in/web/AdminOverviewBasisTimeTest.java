@@ -22,4 +22,49 @@ class AdminOverviewBasisTimeTest {
 		assertThat(AdminOverviewPageController.basisTimeLabel(Instant.parse("2026-10-17T16:00:00Z")))
 			.isEqualTo("01:00");
 	}
+
+	@Test
+	@DisplayName("관리자 개요 추이 차트 직렬화 실패 시 빈 시리즈 fallback 없이 예외를 던진다")
+	void overviewTrendsFailsClosedWhenSerializationFails() {
+		var metricQueryService = org.mockito.Mockito.mock(
+			com.easysubway.admin.metric.application.service.AdminMetricQueryService.class
+		);
+		org.mockito.Mockito.when(
+			metricQueryService.chart(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())
+		).thenReturn(
+			new com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart(
+				7, java.util.List.of(), java.util.List.of()
+			)
+		);
+		org.mockito.Mockito.when(
+			metricQueryService.compare(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())
+		).thenReturn(java.util.List.of());
+		var failingMapper = new com.fasterxml.jackson.databind.ObjectMapper() {
+			@Override
+			public String writeValueAsString(Object value) throws com.fasterxml.jackson.core.JsonProcessingException {
+				throw new com.fasterxml.jackson.core.JsonGenerationException("boom", (com.fasterxml.jackson.core.JsonGenerator) null);
+			}
+		};
+		var controller = new AdminOverviewPageController(
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			metricQueryService,
+			failingMapper,
+			null
+		);
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+			controller.dashboardTrends(7, new org.springframework.ui.ConcurrentModel())
+		).isInstanceOf(IllegalStateException.class);
+	}
 }

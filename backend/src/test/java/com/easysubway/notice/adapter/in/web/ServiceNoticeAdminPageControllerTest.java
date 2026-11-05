@@ -60,6 +60,9 @@ class ServiceNoticeAdminPageControllerTest {
 			.contains("name=\"commandToken\"")
 			.contains("등록된 공지가 없습니다.");
 
+		LocalDateTime utcExpiresAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(1).withSecond(0).withNano(0);
+		LocalDateTime kstExpiresAt = com.easysubway.common.time.BusinessTime.fromUtcLocal(utcExpiresAt);
+
 		mockMvc.perform(post("/admin/notices/page")
 				.with(csrf())
 				.with(commandToken())
@@ -70,14 +73,21 @@ class ServiceNoticeAdminPageControllerTest {
 				.param("severity", "DISRUPTION")
 				.param("title", "2호선 지연")
 				.param("body", "강남-역삼 상행 지연입니다.")
-				.param("expiresAt", LocalDateTime.now(ZoneOffset.UTC).plusHours(1).toString()))
+				.param("expiresAt", kstExpiresAt.toString()))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/admin/notices/page"));
 
 		var notices = repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC));
 		assertThat(notices).hasSize(1);
-		String noticeId = notices.getFirst().id();
+		var publishedNotice = notices.getFirst();
+		assertThat(publishedNotice.expiresAt()).isEqualTo(utcExpiresAt);
+		String noticeId = publishedNotice.id();
 		assertThat(auditRecorded("PUBLISH_NOTICE", noticeId)).isTrue();
+
+		var viewFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+		String expectedKstPublishedAt = com.easysubway.common.time.BusinessTime.fromUtcLocal(publishedNotice.publishedAt())
+			.format(viewFormatter);
+		String expectedKstExpiresAt = kstExpiresAt.format(viewFormatter);
 
 		String populatedPage = mockMvc.perform(get("/admin/notices/page")
 				.with(operationsManager()))
@@ -86,6 +96,8 @@ class ServiceNoticeAdminPageControllerTest {
 		assertThat(populatedPage)
 			.contains("2호선 지연")
 			.contains("강남-역삼 상행 지연입니다.")
+			.contains(expectedKstPublishedAt)
+			.contains(expectedKstExpiresAt)
 			.contains("/admin/notices/" + noticeId + "/unpublish/page");
 
 		mockMvc.perform(post("/admin/notices/{id}/unpublish/page", noticeId)

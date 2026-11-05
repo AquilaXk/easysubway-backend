@@ -3,6 +3,7 @@ package com.easysubway.report.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -66,7 +67,7 @@ class FacilityReportApiGoldenFixtureTest {
 
 		String confirmedReportId = createReportForConfirmation();
 		String confirmBody = mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", confirmedReportId)
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(user("basic-user"))
 				.with(csrf()))
 			.andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsString();
@@ -101,7 +102,7 @@ class FacilityReportApiGoldenFixtureTest {
 
 	private String createReportForConfirmation() throws Exception {
 		String body = mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+				.with(user("basic-user"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

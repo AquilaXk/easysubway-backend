@@ -81,8 +81,8 @@ class AdminAuditExportControllerTest {
 	@DisplayName("CSV 내보내기는 수식 인젝션 위험 값(=,+,-,@ 시작)을 작은따옴표로 무력화한다")
 	void csvExportNeutralizesFormulaInjection() throws Exception {
 		auditEventRepository.save(new AdminAuditEvent(
-			null, AdminAuditEventType.ADMIN_ACTION, "=cmd|calc", "admin.view", "req", "127.0.0.1",
-			"@SUM(1)", "FACILITY_REPORT", "report-1", "VIEW", AdminAuditOutcome.SUCCESS, "업무 맥락",
+			null, AdminAuditEventType.ADMIN_ACTION, "=cmd|calc", null, "", "127.0.0.1",
+			"@SUM(1)", "FACILITY_REPORT", "report-1", "VIEW", AdminAuditOutcome.SUCCESS, "업무 맥락, \"상세\"",
 			LocalDateTime.of(2026, 6, 27, 9, 0)));
 
 		String csv = mockMvc.perform(get("/admin/audits/export")
@@ -92,7 +92,7 @@ class AdminAuditExportControllerTest {
 			.getResponse()
 			.getContentAsString();
 
-		assertThat(csv).contains("'=cmd|calc").contains("'@SUM(1)");
+		assertThat(csv).contains("'=cmd|calc").contains("'@SUM(1)").contains("\"업무 맥락, \"\"상세\"\"\"");
 		assertThat(csv).doesNotContain(",=cmd|calc,").doesNotContain(",@SUM(1),");
 	}
 
@@ -133,6 +133,82 @@ class AdminAuditExportControllerTest {
 		mockMvc.perform(get("/admin/audits/privacy/export")
 				.with(user("privacy").authorities(new SimpleGrantedAuthority("admin.privacy-log.read"))))
 			.andExpect(status().isOk());
+	}
+
+	@Test
+	@DisplayName("CSV·JSON 내보내기는 UTC 발생 시각을 한국 표준시(KST)로 변환해 내보낸다")
+	void exportConvertsOccurredAtToKoreanStandardTime() throws Exception {
+		auditEventRepository.save(eventAt(
+			AdminAuditEventType.ADMIN_ACTION,
+			"alice",
+			"KST_EXPORT_ROW",
+			AdminAuditOutcome.SUCCESS,
+			LocalDateTime.of(2026, 6, 27, 15, 30)
+		));
+
+		String csv = mockMvc.perform(get("/admin/audits/export")
+				.param("actor", "alice")
+				.with(user("auditor").authorities(new SimpleGrantedAuthority("admin.audit.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(csv)
+			.contains("2026-06-28T00:30")
+			.doesNotContain("2026-06-27T15:30");
+
+		String json = mockMvc.perform(get("/admin/audits/export")
+				.param("actor", "alice")
+				.param("format", "json")
+				.with(user("auditor").authorities(new SimpleGrantedAuthority("admin.audit.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(json)
+			.contains("\"occurredAt\":\"2026-06-28T00:30\"")
+			.doesNotContain("2026-06-27T15:30");
+	}
+
+	@Test
+	@DisplayName("JSON 내보내기 직렬화 실패 시 빈 배열 fallback 없이 예외를 던지고 성공 감사를 남기지 않는다")
+	void jsonExportFailsClosedWhenSerializationFails() {
+		var failingMapper = new com.fasterxml.jackson.databind.ObjectMapper() {
+			@Override
+			public String writeValueAsString(Object value) throws com.fasterxml.jackson.core.JsonProcessingException {
+				throw new com.fasterxml.jackson.core.JsonGenerationException("boom", (com.fasterxml.jackson.core.JsonGenerator) null);
+			}
+		};
+		var auditWriter = new com.easysubway.admin.audit.application.service.AdminAuditWriter(auditEventRepository);
+		var controller = new AdminAuditExportController(auditEventRepository, auditWriter, failingMapper);
+		var auth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+			"auditor", "N/A", java.util.List.of(new SimpleGrantedAuthority("admin.audit.read"))
+		);
+		var request = new org.springframework.mock.web.MockHttpServletRequest("GET", "/admin/audits/export");
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+			controller.exportAudits(
+				new AuditFilterParams(null, null, null, null, null, null, null, null, null),
+				"json",
+				auth,
+				request
+			)
+		).isInstanceOf(IllegalStateException.class);
+
+		var exportAudits = auditEventRepository.findForExport(
+				new AdminAuditQuery(null, null, null, null, null, null, false, 0, 100), 100)
+			.stream()
+			.filter(event -> "AUDIT_EXPORT".equals(event.targetType()))
+			.toList();
+		assertThat(exportAudits)
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.action()).isEqualTo("EXPORT_AUDIT_JSON");
+				assertThat(event.reason()).contains("감사 로그 내보내기 실패 format=json");
+			});
 	}
 
 	private AdminAuditEvent eventAt(

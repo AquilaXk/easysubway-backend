@@ -436,7 +436,6 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().permitAll()
 			)
-			.httpBasic(Customizer.withDefaults())
 			.build();
 	}
 

@@ -7,6 +7,7 @@ import com.easysubway.admin.batch.application.service.AdminBatchOperationService
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService.JobExecutionHistory;
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService.RunExecution;
 import com.easysubway.admin.batch.domain.AdminBatchJob;
+import com.easysubway.common.time.BusinessTime;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.collection.domain.DataCollectionRun;
@@ -160,7 +161,7 @@ class AdminBatchPageController {
 
 	private BatchHistoryChart historyChart(JobExecutionHistory history) {
 		List<String> labels = history.executions().stream()
-			.map(execution -> HISTORY_LABEL.format(execution.startedAt()))
+			.map(execution -> HISTORY_LABEL.format(BusinessTime.fromUtcLocal(execution.startedAt())))
 			.toList();
 		List<Long> values = history.executions().stream()
 			.map(AdminBatchPageController::durationMillisOrZero)
@@ -188,12 +189,11 @@ class AdminBatchPageController {
 		return durationMillis == null ? Long.valueOf(0L) : durationMillis;
 	}
 
-	// Chart.js가 읽을 데이터 섬(JSON). 직렬화 실패 시 빈 차트로 안전 폴백(details 표가 대체).
 	private String toJson(Map<String, Object> chart) {
 		try {
 			return objectMapper.writeValueAsString(chart);
 		} catch (JsonProcessingException exception) {
-			return "{\"labels\":[],\"values\":[],\"statuses\":[]}";
+			throw new IllegalStateException("배치 실행 이력 차트 JSON 직렬화에 실패했습니다.", exception);
 		}
 	}
 
@@ -215,7 +215,7 @@ class AdminBatchPageController {
 
 		static HistoryCell from(RunExecution execution) {
 			return new HistoryCell(
-				execution.startedAt().toString(),
+				BusinessTime.fromUtcLocal(execution.startedAt()).toString(),
 				statusLabel(execution.status()),
 				execution.durationMillis() == null ? "—" : execution.durationMillis() + "ms"
 			);
@@ -320,8 +320,8 @@ class AdminBatchPageController {
 					job.label(),
 					statusLabel(run.status()),
 					run.requestedBy(),
-					run.startedAt(),
-					run.completedAt(),
+					BusinessTime.fromUtcLocal(run.startedAt()),
+					run.completedAt() == null ? null : BusinessTime.fromUtcLocal(run.completedAt()),
 					run.collectedCount(),
 					valueOrDash(run.failureMessage()),
 					run.retryable(),

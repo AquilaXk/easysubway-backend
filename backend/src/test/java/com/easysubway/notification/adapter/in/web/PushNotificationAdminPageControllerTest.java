@@ -335,6 +335,58 @@ class PushNotificationAdminPageControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	@DisplayName("푸시 발송 이력 행은 UTC 생성 시각을 한국 표준시(KST)로 변환하고 추이 차트 직렬화 실패 시 예외를 던진다")
+	void pushHistoryRowConvertsCreatedAtToKstAndTrendsFailsClosed() {
+		var notification = new com.easysubway.notification.domain.PushNotification(
+			"push-kst-1",
+			"anonymous-user-1",
+			DevicePlatform.ANDROID,
+			"secret-device-token",
+			com.easysubway.notification.domain.PushNotificationType.REPORT_STATUS,
+			"신고 처리 알림",
+			"상록수역 시설 상태를 확인하세요.",
+			com.easysubway.notification.domain.PushNotificationStatus.SENT,
+			java.time.LocalDateTime.of(2026, 6, 27, 15, 30)
+		);
+		PushNotificationHistoryRow row = PushNotificationHistoryRow.from(notification, true);
+		assertThat(row.createdAt()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 28, 0, 30));
+
+		var metricQueryService = org.mockito.Mockito.mock(
+			com.easysubway.admin.metric.application.service.AdminMetricQueryService.class
+		);
+		org.mockito.Mockito.when(
+			metricQueryService.chart(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())
+		).thenReturn(
+			new com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart(
+				7, java.util.List.of(), java.util.List.of()
+			)
+		);
+		org.mockito.Mockito.when(
+			metricQueryService.compare(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())
+		).thenReturn(java.util.List.of());
+		var failingMapper = new com.fasterxml.jackson.databind.ObjectMapper() {
+			@Override
+			public String writeValueAsString(Object value) throws com.fasterxml.jackson.core.JsonProcessingException {
+				throw new com.fasterxml.jackson.core.JsonGenerationException("boom", (com.fasterxml.jackson.core.JsonGenerator) null);
+			}
+		};
+		var controller = new PushNotificationAdminPageController(
+			null,
+			null,
+			null,
+			null,
+			metricQueryService,
+			null,
+			com.easysubway.admin.audit.application.service.AdminAuditWriter.noop(),
+			failingMapper
+		);
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+			controller.pushNotificationTrends(7, new org.springframework.ui.ConcurrentModel())
+		).isInstanceOf(IllegalStateException.class);
+	}
+
 	private void registerDevice() {
 		notificationPreferenceUseCase.registerDevice(new RegisterDeviceCommand(
 			"anonymous-user-1",

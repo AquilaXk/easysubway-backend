@@ -166,7 +166,7 @@
 						     값이 없으면 '기록 없음'으로만 표기한다(placeholder 데이터 없음). -->
 						<th:block th:if="${station.lastVerifiedAt != null and station.lastVerifiedAt != 'null'}"
 						          th:with="verifiedDate=${T(java.time.LocalDate).parse(station.lastVerifiedAt)},
-						                   daysAgo=${T(java.time.temporal.ChronoUnit).DAYS.between(verifiedDate, T(java.time.LocalDate).now())}">
+						                   daysAgo=${T(java.time.temporal.ChronoUnit).DAYS.between(verifiedDate, today)}">
 							<span class="data-verified">
 								<span class="data-verified-relative"
 								      th:title="${#temporals.format(verifiedDate, 'yyyy-MM-dd')}"

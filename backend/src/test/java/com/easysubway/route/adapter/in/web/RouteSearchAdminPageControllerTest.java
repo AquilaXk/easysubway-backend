@@ -258,6 +258,47 @@ class RouteSearchAdminPageControllerTest {
 		assertThat(html).contains("경로 탐색 종류별 결과").contains("기록 없음");
 	}
 
+	@Test
+	@DisplayName("경로 검색·피드백 추이 차트 직렬화 실패 시 빈 시리즈 fallback 없이 예외를 던진다")
+	void routeTrendControllersFailClosedWhenSerializationFails() {
+		var metricQueryService = org.mockito.Mockito.mock(
+			com.easysubway.admin.metric.application.service.AdminMetricQueryService.class
+		);
+		org.mockito.Mockito.when(
+			metricQueryService.chart(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())
+		).thenReturn(
+			new com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart(
+				7, java.util.List.of(), java.util.List.of()
+			)
+		);
+		org.mockito.Mockito.when(
+			metricQueryService.compare(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())
+		).thenReturn(java.util.List.of());
+		var failingMapper = new com.fasterxml.jackson.databind.ObjectMapper() {
+			@Override
+			public String writeValueAsString(Object value) throws com.fasterxml.jackson.core.JsonProcessingException {
+				throw new com.fasterxml.jackson.core.JsonGenerationException("boom", (com.fasterxml.jackson.core.JsonGenerator) null);
+			}
+		};
+
+		var journeyAnalyticsService = org.mockito.Mockito.mock(
+			com.easysubway.journey.analytics.JourneySearchAnalyticsService.class
+		);
+		org.mockito.Mockito.when(journeyAnalyticsService.summarize(org.mockito.ArgumentMatchers.anyInt()))
+			.thenReturn(new com.easysubway.journey.analytics.JourneySearchAnalyticsSummary(
+				7, 0, java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), 0
+			));
+		var searchController = new RouteSearchAdminPageController(null, metricQueryService, failingMapper, journeyAnalyticsService);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+			searchController.routeSearchTrends(7, new org.springframework.ui.ConcurrentModel())
+		).isInstanceOf(IllegalStateException.class);
+
+		var feedbackController = new RouteFeedbackAdminPageController(null, metricQueryService, failingMapper);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+			feedbackController.routeFeedbackTrends(7, new org.springframework.ui.ConcurrentModel())
+		).isInstanceOf(IllegalStateException.class);
+	}
+
 	private static JourneySearchRecord journeyRecord(java.time.LocalDate day, JourneySearchKind kind,
 		JourneySearchOutcome outcome, String engine, java.util.List<String> categories, String stairFree) {
 		return new JourneySearchRecord(java.util.UUID.randomUUID().toString(), day, kind,

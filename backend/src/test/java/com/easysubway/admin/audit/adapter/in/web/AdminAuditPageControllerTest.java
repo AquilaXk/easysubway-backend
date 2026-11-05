@@ -263,6 +263,29 @@ class AdminAuditPageControllerTest {
 			.contains("다음");
 	}
 
+	@Test
+	@DisplayName("감사 조회 화면과 상세 드로어는 UTC 발생 시각을 한국 표준시(KST)로 표시한다")
+	void auditPageDisplaysOccurredAtInKoreanStandardTime() throws Exception {
+		auditEventRepository.save(eventAt(
+			AdminAuditEventType.ADMIN_ACTION,
+			"alice",
+			"KST_CHECK_ACTION",
+			LocalDateTime.of(2026, 6, 27, 15, 30)
+		));
+
+		String html = mockMvc.perform(get("/admin/audits/page")
+				.with(user("auditor").authorities(new SimpleGrantedAuthority("admin.audit.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("KST_CHECK_ACTION")
+			.contains("2026-06-28 00:30")
+			.doesNotContain("2026-06-27 15:30");
+	}
+
 	private AdminAuditEvent event(AdminAuditEventType type, String action) {
 		return event(type, "admin-user", action, AdminAuditOutcome.SUCCESS, "업무 맥락: 신고 상세 조회");
 	}

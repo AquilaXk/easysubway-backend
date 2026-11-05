@@ -957,6 +957,95 @@ class SecurityConfigTest {
 		}
 	}
 
+	@Test
+	@DisplayName("신고 및 업로드 공개 경로는 Basic 인증 헤더를 처리하지 않아 관리자·운영기관 잠금 카운터를 올리지 않는다")
+	void reportChainIgnoresBasicAuthHeadersWithoutIncrementingAdminOrOperatorLockout() {
+		contextRunner
+			.withUserConfiguration(ReportProbeController.class)
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
+				"easysubway.admin.basic-auth.enabled=false",
+				"easysubway.operator.username=operator-user",
+				"easysubway.operator.password=operator-password"
+			)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(context)
+					.apply(springSecurity())
+					.build();
+
+				for (int attempt = 0; attempt < 5; attempt++) {
+					mockMvc.perform(post("/api/v1/reports")
+							.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
+								"admin-user", "wrong-password-" + attempt)))
+						.andExpect(status().isOk());
+					mockMvc.perform(get("/api/v1/reports/report-1")
+							.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
+								"operator-user", "wrong-password-" + attempt)))
+						.andExpect(status().isOk());
+					mockMvc.perform(post("/api/v1/reports/report-1/confirm")
+							.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
+								"admin-user", "wrong-password-" + attempt)))
+						.andExpect(status().isOk());
+					mockMvc.perform(post("/api/v1/report-uploads")
+							.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
+								"operator-user", "wrong-password-" + attempt)))
+						.andExpect(status().isOk());
+					mockMvc.perform(get("/api/v1/report-uploads/upload-1")
+							.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
+								"admin-user", "wrong-password-" + attempt)))
+						.andExpect(status().isOk());
+				}
+
+				InMemoryAdminIdentityRepository repository = context.getBean(InMemoryAdminIdentityRepository.class);
+				AdminIdentity adminIdentity = repository.findByLoginId("admin-user").orElseThrow();
+				AdminIdentity operatorIdentity = repository.findByLoginId("operator-user").orElseThrow();
+				assertThat(adminIdentity.failedLoginCount()).isZero();
+				assertThat(adminIdentity.status()).isEqualTo(AdminIdentityStatus.ACTIVE);
+				assertThat(operatorIdentity.failedLoginCount()).isZero();
+				assertThat(operatorIdentity.status()).isEqualTo(AdminIdentityStatus.ACTIVE);
+
+				AuthenticationManager authenticationManager = context.getBean(AuthenticationConfiguration.class)
+					.getAuthenticationManager();
+				assertThat(authenticate(authenticationManager, "admin-user", "admin-password").isAuthenticated())
+					.isTrue();
+				assertThat(authenticate(authenticationManager, "operator-user", "operator-password").isAuthenticated())
+					.isTrue();
+			});
+	}
+
+	@RestController
+	static class ReportProbeController {
+
+		@PostMapping("/api/v1/reports")
+		String createReport() {
+			return "ok";
+		}
+
+		@GetMapping("/api/v1/reports/{reportId}")
+		String getReport() {
+			return "ok";
+		}
+
+		@PostMapping("/api/v1/reports/{reportId}/confirm")
+		String confirmReport() {
+			return "ok";
+		}
+
+		@PostMapping("/api/v1/report-uploads")
+		String createUpload() {
+			return "ok";
+		}
+
+		@GetMapping("/api/v1/report-uploads/{uploadId}")
+		String getUpload() {
+			return "ok";
+		}
+	}
+
 	@RestController
 	static class DatapackProbeController {
 
