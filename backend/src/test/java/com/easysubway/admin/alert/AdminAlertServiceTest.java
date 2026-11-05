@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -215,8 +216,8 @@ class AdminAlertServiceTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			status,
 			"scheduler",
-			LocalDateTime.now(),
-			LocalDateTime.now(),
+			LocalDateTime.now(ZoneOffset.UTC),
+			LocalDateTime.now(ZoneOffset.UTC),
 			0,
 			status == DataCollectionStatus.FAILED ? "수집 실패" : null,
 			status == DataCollectionStatus.FAILED,
@@ -228,6 +229,6 @@ class AdminAlertServiceTest {
 			"candidate", "scope", "sourceHash", "manifestHash", "evidenceHash", "workflowUrl",
 			"prodCandidate", "rollbackCandidate", "검토 필요",
 			totalBlockers, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			List.of(), LocalDateTime.now());
+			List.of(), LocalDateTime.now(ZoneOffset.UTC));
 	}
 }

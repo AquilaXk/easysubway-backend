@@ -15,12 +15,12 @@ import org.springframework.context.annotation.Primary;
  * <p>기본 순간은 한국 2026-10-23 02:20이다. UTC 날짜로는 아직 2026-10-22라서, 시스템 시간대로 "오늘"을
  * 세는 기대값은 이 순간에 한국 날짜를 쓰는 서버와 하루 어긋난다(backend PR #539 CI 실패 시각).
  */
-final class AdminMetricTestClock extends Clock {
+public final class AdminMetricTestClock extends Clock {
 
 	static final Instant KOREAN_EARLY_MORNING = Instant.parse("2026-10-22T17:20:00Z");
 
 	/** {@link #KOREAN_EARLY_MORNING}의 한국 날짜. 시계로 계산하지 않고 요구사항 값을 그대로 적는다. */
-	static final LocalDate KOREAN_BUSINESS_DAY = LocalDate.of(2026, 10, 23);
+	public static final LocalDate KOREAN_BUSINESS_DAY = LocalDate.of(2026, 10, 23);
 
 	private volatile Instant instant = KOREAN_EARLY_MORNING;
 
@@ -44,7 +44,7 @@ final class AdminMetricTestClock extends Clock {
 	}
 
 	@TestConfiguration
-	static class Configuration {
+	public static class Configuration {
 
 		@Bean
 		@Primary

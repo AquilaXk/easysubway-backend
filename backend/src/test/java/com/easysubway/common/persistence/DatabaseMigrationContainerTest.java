@@ -14,6 +14,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.Duration;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -367,11 +368,11 @@ class DatabaseMigrationContainerTest {
 			scopedDataSource.setSchema(schema);
 			var scopedJdbc = new JdbcTemplate(scopedDataSource);
 			var repository = new JdbcDataCollectionRunRepository(scopedDataSource);
-			LocalDateTime staleBefore = LocalDateTime.now().plusMinutes(1);
+			LocalDateTime staleBefore = LocalDateTime.now(ZoneOffset.UTC).plusMinutes(1);
 			assertThat(repository.failOrphanedRunningRun(
 				DataCollectionSource.TRANSIT_MASTER,
 				staleBefore,
-				LocalDateTime.now(),
+				LocalDateTime.now(ZoneOffset.UTC),
 				"배치 실행 소유권이 만료되어 고아 실행으로 정리되었습니다.",
 				"이전 실행이 비정상 종료되었습니다. 새 실행 결과를 확인하세요."
 			)).isTrue();
@@ -386,7 +387,7 @@ class DatabaseMigrationContainerTest {
 					JOB_EXECUTION_ID, VERSION, JOB_INSTANCE_ID, CREATE_TIME,
 					START_TIME, STATUS, LAST_UPDATED
 				) VALUES (1, 0, 1, ?, ?, 'STARTED', ?)
-				""", LocalDateTime.now(), LocalDateTime.now(), staleBefore.plusMinutes(1));
+				""", LocalDateTime.now(ZoneOffset.UTC), LocalDateTime.now(ZoneOffset.UTC), staleBefore.plusMinutes(1));
 			scopedJdbc.update("""
 				INSERT INTO BATCH_JOB_EXECUTION_PARAMS (
 					JOB_EXECUTION_ID, PARAMETER_NAME, PARAMETER_TYPE, PARAMETER_VALUE, IDENTIFYING
@@ -396,7 +397,7 @@ class DatabaseMigrationContainerTest {
 			assertThat(repository.failOrphanedRunningRun(
 				DataCollectionSource.TRANSIT_MASTER,
 				staleBefore,
-				LocalDateTime.now(),
+				LocalDateTime.now(ZoneOffset.UTC),
 				"배치 실행 소유권이 만료되어 고아 실행으로 정리되었습니다.",
 				"이전 실행이 비정상 종료되었습니다. 새 실행 결과를 확인하세요."
 			)).isFalse();
