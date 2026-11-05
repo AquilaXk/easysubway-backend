@@ -67,7 +67,7 @@ test('Backend #416 test shards run every shard through the init script and uploa
   const collect = step(shards, 'Collect shard evidence');
   for (const literal of ['test -s backend/build/jacoco/test.exec', 'cp -R backend/build/test-results/test "${evidence}/test-results"', 'node tools/ci/backend-test-shards.mjs digest-classes --dir backend/build/classes/java/main']) assert.ok(collect.includes(literal), literal);
   const upload = step(shards, 'Upload shard evidence');
-  for (const literal of ['uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f', 'name: backend-test-shard-${{ matrix.shard }}-${{ github.sha }}', 'retention-days: 5', 'if-no-files-found: error']) assert.ok(upload.includes(literal), literal);
+  for (const literal of ['uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9', 'name: backend-test-shard-${{ matrix.shard }}-${{ github.sha }}', 'retention-days: 5', 'if-no-files-found: error']) assert.ok(upload.includes(literal), literal);
   assert.doesNotMatch(shards, /continue-on-error/);
 });
 

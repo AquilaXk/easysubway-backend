@@ -57,7 +57,7 @@ jobs:
       # 요약 단계가 실패해도 PIT 원본(mutations.xml·HTML)을 원인 분석에 쓸 수 있게 먼저 올린다. 이전 결과 조회가 쓰는 접두사와 다른 이름이라 기준선에 섞이지 않고, run_attempt를 붙여 같은 run을 재실행해도 이름이 겹치지 않는다.
       - name: Upload the raw PIT report
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: journey-pit-report-${{ github.sha }}-${{ github.run_attempt }}
           path: backend/build/reports/pitest/
@@ -74,7 +74,7 @@ jobs:
 
       # 결과는 저장소에 커밋하지 않는다(자동 PR 누적 방지). 보존 기간 안의 직전 성공 run들과만 비교한다.
       - name: Upload the mutation result
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: journey-mutation-${{ github.sha }}
           path: ${{ runner.temp }}/journey-mutation/

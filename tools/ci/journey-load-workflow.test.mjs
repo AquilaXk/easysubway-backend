@@ -62,7 +62,7 @@ test('Backend #520 runs the scenarios through the tested runner with the staged 
 test('Backend #520 uploads the result even when the run failed, with a bounded retention', () => {
   const upload = step(workflow, 'Upload the load result');
   assert.match(upload, /if: \$\{\{ !cancelled\(\) \}\}/);
-  assert.match(upload, /uses: actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
+  assert.match(upload, /uses: actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(upload, /name: journey-load-\$\{\{ github\.sha \}\}/);
   assert.match(upload, /path: \$\{\{ runner\.temp \}\}\/journey-load\//);
   assert.match(upload, /retention-days: 14/);

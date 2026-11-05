@@ -22,5 +22,5 @@ test("prepublication workflow는 trusted main과 exact same-repository PR source
   assert.match(workflow, /oras pull "\$\{repository\}@\$\{manifest_digest\}"/);
   assert.match(workflow, /\$\{RUNNER_TEMP\}\/pullback\/journey-v3-contract-bundle-v2\.json/);
   assert.match(workflow, /journey-contract-prepublication-run-metadata\.json/);
-  assert.match(workflow, /actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
+  assert.match(workflow, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
 });
