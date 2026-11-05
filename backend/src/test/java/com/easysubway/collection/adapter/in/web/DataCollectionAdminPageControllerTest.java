@@ -16,6 +16,7 @@ import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.DataCollectionStepStatus;
 import jakarta.servlet.http.HttpSession;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -223,7 +224,7 @@ class DataCollectionAdminPageControllerTest {
 	}
 
 	private DataCollectionRun runningRun(String runId) {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 		return new DataCollectionRun(
 			runId,
 			DataCollectionSource.TRANSIT_MASTER,

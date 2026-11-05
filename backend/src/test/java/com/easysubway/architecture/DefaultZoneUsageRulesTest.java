@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,8 +59,23 @@ class DefaultZoneUsageRulesTest {
 		Map.entry(Year.class.getName(), Set.of("now")),
 		Map.entry(YearMonth.class.getName(), Set.of("now")));
 
+	private static final Set<String> TIME_ZONE_RESTORE_TESTS = Set.of(
+		"com.easysubway.contract.ResponseTimestampTimeZoneIndependenceTest",
+		"com.easysubway.datapack.adapter.in.web.DatapackRollbackApprovalTimeZoneTest",
+		"com.easysubway.route.application.service.JourneyGoldenRegressionTest");
+
 	@ArchTest
 	static final ArchRule 운영_코드는_JVM_기본_시간대에_의존하지_않는다 = defaultZoneRule();
+
+	@Test
+	@DisplayName("테스트 코드도 JVM 기본 시간대에 의존하지 않는다")
+	void testClassesMustNotUseImplicitDefaultZoneOrClock() {
+		JavaClasses testClasses = new ClassFileImporter()
+			.withImportOption(ImportOption.Predefined.ONLY_INCLUDE_TESTS)
+			.importPackages("com.easysubway");
+
+		testDefaultZoneRule().check(testClasses);
+	}
 
 	@Test
 	@DisplayName("규칙은 기본 시간대 호출과 메서드 참조를 모두 위반으로 잡는다")
@@ -90,16 +106,23 @@ class DefaultZoneUsageRulesTest {
 
 	private static ArchRule defaultZoneRule() {
 		return noClasses()
-			.should(useJvmDefaultTimeZone())
+			.should(useJvmDefaultTimeZone(access -> false))
 			.because("시각은 UTC 또는 명시한 서비스 시간대의 Clock으로만 얻는다");
 	}
 
-	private static ArchCondition<JavaClass> useJvmDefaultTimeZone() {
+	private static ArchRule testDefaultZoneRule() {
+		return noClasses()
+			.that().resideOutsideOfPackage("com.easysubway.architecture.fixture.defaultzone..")
+			.should(useJvmDefaultTimeZone(DefaultZoneUsageRulesTest::isTimeZoneSaveForIsolationTest))
+			.because("테스트도 고정 Clock 또는 명시한 시간대를 써서 실행 환경 시간대에 흔들리지 않아야 한다");
+	}
+
+	private static ArchCondition<JavaClass> useJvmDefaultTimeZone(Predicate<JavaCodeUnitAccess<?>> allowedException) {
 		return new ArchCondition<>("use the JVM default time zone") {
 			@Override
 			public void check(JavaClass javaClass, ConditionEvents events) {
 				Stream.concat(javaClass.getMethodCallsFromSelf().stream(), javaClass.getMethodReferencesFromSelf().stream())
-					.filter(access -> readsDefaultZone(access))
+					.filter(access -> readsDefaultZone(access) && !allowedException.test(access))
 					.forEach(access -> events.add(SimpleConditionEvent.satisfied(access, access.getDescription())));
 			}
 		};
@@ -109,5 +132,12 @@ class DefaultZoneUsageRulesTest {
 		CodeUnitAccessTarget target = access.getTarget();
 		return DEFAULT_ZONE_SOURCES.getOrDefault(target.getOwner().getName(), Set.of()).contains(target.getName())
 			&& target.getRawParameterTypes().isEmpty();
+	}
+
+	private static boolean isTimeZoneSaveForIsolationTest(JavaCodeUnitAccess<?> access) {
+		CodeUnitAccessTarget target = access.getTarget();
+		return TIME_ZONE_RESTORE_TESTS.contains(access.getOriginOwner().getName())
+			&& target.getOwner().getName().equals(TimeZone.class.getName())
+			&& target.getName().equals("getDefault");
 	}
 }

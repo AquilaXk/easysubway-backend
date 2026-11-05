@@ -10,10 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.metric.adapter.in.web.AdminMetricTestClock;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
-import java.time.LocalDate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -31,6 +32,8 @@ import org.springframework.test.web.servlet.MockMvc;
 	"easysubway.admin.password=admin-test-password"
 })
 @AutoConfigureMockMvc
+@Import(AdminMetricTestClock.Configuration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("통합 대시보드 재설계")
 class AdminDashboardPageTest {
 
@@ -44,8 +47,10 @@ class AdminDashboardPageTest {
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.BEFORE_METHOD)
 	@DisplayName("현재 운영 상태와 최근 7일 제보 흐름을 실제 지표로 렌더한다")
 	void rendersCurrentOperationsAndSevenDayReportFlow() throws Exception {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now().minusDays(1), 4));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now(), 7));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_RECENT_24H, AdminMetricTestClock.KOREAN_BUSINESS_DAY.minusDays(1), 4));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_RECENT_24H, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 7));
 
 		String html = mockMvc.perform(get("/admin/dashboard/page")
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -76,7 +81,7 @@ class AdminDashboardPageTest {
 			.contains("data-weekday=\"토\"")
 			.contains("data-weekday=\"일\"")
 			.containsPattern("class=\"dashboard-week-day\\s+is-today[\\s\"]")
-			.containsPattern("class=\"dashboard-weekly-total\">[1-2]일 집계")
+			.contains("class=\"dashboard-weekly-total\">2일 집계")
 			.contains("aria-label=\"이번 주 최근 24시간 제보 스냅샷\"")
 			.doesNotContain("aria-label=\"최근 7일 제보 접수 현황\"")
 			.doesNotContain("처리 완료")
@@ -99,8 +104,10 @@ class AdminDashboardPageTest {
 	@Test
 	@DisplayName("핵심 카드가 클릭 가능하고 스냅샷 이력이 있으면 스파크라인을 그린다")
 	void rendersClickableCardsWithSparkline() throws Exception {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now().minusDays(1), 3));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now(), 8));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_PENDING, AdminMetricTestClock.KOREAN_BUSINESS_DAY.minusDays(1), 3));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_PENDING, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 8));
 
 		String html = mockMvc.perform(get("/admin/dashboard/page")
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -124,8 +131,10 @@ class AdminDashboardPageTest {
 	@Test
 	@DisplayName("축과 범례가 없는 장식 운영 추이를 렌더하지 않는다")
 	void omitsDecorativeReferenceTrend() throws Exception {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now().minusDays(1), 3));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now(), 8));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_PENDING, AdminMetricTestClock.KOREAN_BUSINESS_DAY.minusDays(1), 3));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_PENDING, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 8));
 
 		String html = mockMvc.perform(get("/admin/dashboard/page")
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -260,10 +269,14 @@ class AdminDashboardPageTest {
 	// 추이 섹션이 참조하는 4개 지표 키(REPORTS_RECENT_24H·REPORTS_PENDING·ROUTE_BLOCKED_RATE·
 	// API_ERROR_RATE) 모두에 오늘자 스냅샷을 채워 두 추이 패널이 모두 데이터를 갖게 한다(#2327).
 	private void seedAllTrendMetrics() {
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now(), 5));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now(), 3));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_BLOCKED_RATE, LocalDate.now(), 12));
-		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.API_ERROR_RATE, LocalDate.now(), 1));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_RECENT_24H, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 5));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.REPORTS_PENDING, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 3));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.ROUTE_BLOCKED_RATE, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 12));
+		repository.save(AdminMetricDaily.scalar(
+			AdminMetricKeys.API_ERROR_RATE, AdminMetricTestClock.KOREAN_BUSINESS_DAY, 1));
 	}
 
 	private String issueCommandToken(MockHttpSession session) throws Exception {

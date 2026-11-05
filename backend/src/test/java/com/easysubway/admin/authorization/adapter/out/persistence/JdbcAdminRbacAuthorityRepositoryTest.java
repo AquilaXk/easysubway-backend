@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.easysubway.admin.authorization.AdminRbacRole;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
@@ -81,7 +82,7 @@ class JdbcAdminRbacAuthorityRepositoryTest {
 		var jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.update(
 			"INSERT INTO admin_user_roles (created_at, role_code, login_id) VALUES (?, ?, ?)",
-			LocalDateTime.now(),
+			LocalDateTime.now(ZoneOffset.UTC),
 			"SUPER_ADMIN",
 			"env-admin"
 		);
@@ -120,7 +121,7 @@ class JdbcAdminRbacAuthorityRepositoryTest {
 		// 운영자가 수동 부여한 role은 granted_by NULL로 존재한다.
 		jdbcTemplate.update(
 			"INSERT INTO admin_user_roles (created_at, role_code, login_id) VALUES (?, ?, ?)",
-			LocalDateTime.now(),
+			LocalDateTime.now(ZoneOffset.UTC),
 			"SUPER_ADMIN",
 			"manual-admin"
 		);

@@ -17,6 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -107,7 +108,7 @@ abstract class SecurityPathBoundarySupport {
 
 	@BeforeAll
 	void registerPermissionCallers() {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 		// bcrypt 해시 계산이 느리므로 모든 permission caller가 같은 해시를 공유한다.
 		String passwordHash = passwordEncoder.encode(PASSWORD);
 		for (AdminPermission permission : AdminPermission.values()) {

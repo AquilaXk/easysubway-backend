@@ -15,6 +15,7 @@ import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -197,7 +198,7 @@ class LoginNoticeSecurityTest {
 		AdminIdentityRole role,
 		AdminIdentityStatus status
 	) {
-		LocalDateTime now = LocalDateTime.now().minusDays(1);
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC).minusDays(1);
 		return new AdminIdentity(
 			username,
 			"테스트 관리자",
