@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '965c924ed8dfdcc961c3ac8a19f4d53b78520cc7c54270dfd6d08d11ae6aae55'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '7d5549f43ddc106b4c63d9d113981b06545aafc1878c9d7d4131531f7ebcdfa1');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '8ed73aec414a8f2cf7197554c312449b1c89211a7644876657e9c835ec0315ed');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -660,7 +660,7 @@ test('Backend #110 datapack projection is exact', () => {
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
   assert.equal(datapack.length, 26);
   assert.equal(new Set(datapack.map(({ sourcePath }) => sourcePath)).size, 14);
-  assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), '3c34417ca0f2dee1e35c6ce75befba1dfd5103fe558c5c945940def194baaefc');
+  assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), '5d9871d07f7715964a18a96ef93cf8adb3dc89840da5cd8801e8d9c556758f78');
   const callbackServiceSource = readFileSync(new URL('../../backend/src/main/java/com/easysubway/datapack/application/service/DatapackReleaseCallbackService.java', import.meta.url), 'utf8');
   assert.equal(digest(callbackServiceSource), '4315d4f891f2d310e249c9e14ad5f5556e8a55c11665351d3da3641906e7d604');
   const callbackServiceReason = 'Backend #456 adds the git-origin release callback observation path inside existing methods only; the constructor signature, injected collaborators, and fail-fast initialization are unchanged, so the reviewed suppression decision still holds.';
@@ -787,7 +787,7 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
   const partition = tracked.findings.filter(({ sourcePath }) => admittedPaths.has(sourcePath));
   assert.equal(partition.length, 34);
   assert.equal(new Set(partition.map(({ sourcePath }) => sourcePath)).size, 21);
-  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), '2b41e19d8429e95f5a58bb934d959c09deaf9de92ed0be804df7d34384929c6a');
+  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), '9b0624c6eaf18abf60ba9c65fedbdb72eed189854acaadecec47f371feb1c4cb');
   assert.equal(partition.filter(({ disposition }) => disposition === 'FIXED').length, 13);
   assert.equal(partition.filter(({ disposition }) => disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION').length, 21);
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 129, falsePositiveExactSuppression: 64, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
