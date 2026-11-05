@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.binder.MeterBinder;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Status;
 import org.springframework.boot.actuate.health.StatusAggregator;
@@ -25,6 +26,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -279,6 +281,80 @@ class HealthCheckControllerTest {
 		ResponseEntity<String> response = restTemplate.getForEntity(
 			"http://localhost:" + port + "/error", String.class);
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+	}
+
+	@Nested
+	@SpringBootTest(
+		webEnvironment = WebEnvironment.RANDOM_PORT,
+		properties = {
+			"management.endpoint.health.show-details=always",
+			"EASYSUBWAY_MANAGEMENT_PORT=0"
+		}
+	)
+	@AutoConfigureObservability
+	@DisplayName("전용 관리 포트 분리")
+	class DedicatedManagementPortTest {
+
+		@LocalServerPort
+		private int serverPort;
+
+		@LocalManagementPort
+		private int managementPort;
+
+		@Autowired
+		private TestRestTemplate managementRestTemplate;
+
+		@Test
+		@DisplayName("EASYSUBWAY_MANAGEMENT_PORT 설정 시 액추에이터를 전용 관리 포트로만 분리 노출한다")
+		void isolatesActuatorEndpointsToDedicatedManagementPort() {
+			assertThat(managementPort).isNotEqualTo(serverPort);
+
+			ResponseEntity<String> healthOnManagement = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + managementPort + "/actuator/health",
+				String.class
+			);
+			assertThat(healthOnManagement.getStatusCode()).isEqualTo(HttpStatus.OK);
+			assertThat(healthOnManagement.getBody()).contains("\"status\":\"UP\"");
+
+			ResponseEntity<String> livenessOnManagement = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + managementPort + "/actuator/health/liveness",
+				String.class
+			);
+			assertThat(livenessOnManagement.getStatusCode()).isEqualTo(HttpStatus.OK);
+			assertThat(livenessOnManagement.getBody()).contains("\"status\":\"UP\"");
+
+			ResponseEntity<String> readinessOnManagement = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + managementPort + "/actuator/health/readiness",
+				String.class
+			);
+			assertThat(readinessOnManagement.getStatusCode()).isEqualTo(HttpStatus.OK);
+			assertThat(readinessOnManagement.getBody()).contains("\"status\":\"UP\"");
+
+			ResponseEntity<String> prometheusLoopbackOnManagement = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + managementPort + "/actuator/prometheus",
+				String.class
+			);
+			assertThat(prometheusLoopbackOnManagement.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+			ResponseEntity<String> readinessOnServer = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + serverPort + "/actuator/health/readiness",
+				String.class
+			);
+			assertThat(readinessOnServer.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+			ResponseEntity<String> prometheusOnServer = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + serverPort + "/actuator/prometheus",
+				String.class
+			);
+			assertThat(prometheusOnServer.getStatusCode()).isIn(HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND);
+
+			ResponseEntity<String> apiHealthOnServer = managementRestTemplate.getForEntity(
+				"http://127.0.0.1:" + serverPort + "/api/health",
+				String.class
+			);
+			assertThat(apiHealthOnServer.getStatusCode()).isEqualTo(HttpStatus.OK);
+			assertThat(apiHealthOnServer.getBody()).contains("\"status\":\"UP\"");
+		}
 	}
 
 	// TimetableFreshnessMonitor는 prod|staging|release|prod-like 프로파일에서만 활성화되므로 기본 테스트
