@@ -1064,7 +1064,7 @@ class JourneyRaptorAdapterTest {
 
 	@Test
 	void viaSearchPreservesReachableSecondLegWhenJunctionTransferExceeds180SecondsAndEarlierTripExists() {
-		var base = waypointTimetable("IN_STATION", 240, 33_300, true);
+		var base = waypointTimetable("IN_STATION", 300, 0, 33_300, true, "STEP_FREE");
 		var trips = List.of(
 			new TransitTrip("trip-first", "route-first", "daily", "station-transfer", "down", "SUBWAY", "LOCAL", "2001", 0),
 			new TransitTrip("trip-second-early", "route-second", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002-early", 0),
@@ -1072,8 +1072,8 @@ class JourneyRaptorAdapterTest {
 		var stopTimes = List.of(
 			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
 			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
-			new TransitStopTime("trip-second-early", 1, "station-transfer", "line-b", 33_200, 33_200, 0, 0),
-			new TransitStopTime("trip-second-early", 2, "station-b", "line-b", 33_800, 33_800, 0, 0),
+			new TransitStopTime("trip-second-early", 1, "station-transfer", "line-b", 33_240, 33_240, 0, 0),
+			new TransitStopTime("trip-second-early", 2, "station-b", "line-b", 33_840, 33_840, 0, 0),
 			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 33_300, 33_300, 0, 0),
 			new TransitStopTime("trip-second", 2, "station-b", "line-b", 33_900, 33_900, 0, 0));
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, new RouteTimetable(
@@ -1090,7 +1090,38 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.candidates()).hasSize(1);
 		var candidate = result.candidates().getFirst();
 		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:25:00Z"));
-		assertThat(((JourneyCandidate.Transfer) candidate.legs().get(1)).durationSeconds()).isEqualTo(240);
+		assertThat(((JourneyCandidate.Transfer) candidate.legs().get(1)).durationSeconds()).isEqualTo(300);
+	}
+
+	@Test
+	void rejectsRealtimeWaypointCandidateWhenDelayedFirstLegShrinksJunctionSlackBelowVerifiedDuration() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable("IN_STATION", 240, 0, 33_300, true, "STEP_FREE"));
+		var departure1 = new JourneyTimetableRealtimeResolver.Departure(
+			"station-a", "line-a", "trip-first", "2001", "LOCAL", LocalDate.of(2026, 7, 1), 1,
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(32_400).toInstant(),
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(32_400).toInstant());
+		var departure2 = new JourneyTimetableRealtimeResolver.Departure(
+			"station-transfer", "line-b", "trip-second", "2002", "LOCAL", LocalDate.of(2026, 7, 1), 1,
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(33_300).toInstant(),
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(33_300).toInstant());
+		var update1 = new JourneyTimetableRealtimeResolver.Update(
+			departure1, 120, 120, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var update2 = new JourneyTimetableRealtimeResolver.Update(
+			departure2, 0, 0, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates(List.of(update1, update2)));
+		var observation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, observation, measurement());
+
+		assertThat(result.candidates()).isEmpty();
 	}
 
 	@Test
@@ -1244,7 +1275,7 @@ class JourneyRaptorAdapterTest {
 	@Test
 	void rejectsWaypointWhenTransferDurationExceedsAvailableSlack() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
-			waypointTimetable("IN_STATION", 1500, 34_200, true)); // 1,500s walk > 1,200s slack
+			waypointTimetable("IN_STATION", 1500, 0, 34_200, true, "STEP_FREE"));
 		var request = new JourneyRequest(
 			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
@@ -2018,6 +2049,17 @@ class JourneyRaptorAdapterTest {
 	private static RouteTimetable waypointTimetable(
 		String transferType, int transferDuration, int tripSecondDeparture, boolean hasTransferRule, String transferStairState
 	) {
+		return waypointTimetable(transferType, transferDuration, 100, tripSecondDeparture, hasTransferRule, transferStairState);
+	}
+
+	private static RouteTimetable waypointTimetable(
+		String transferType,
+		int transferDuration,
+		int transferDistanceMeters,
+		int tripSecondDeparture,
+		boolean hasTransferRule,
+		String transferStairState
+	) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -2044,7 +2086,7 @@ class JourneyRaptorAdapterTest {
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration,
-				transferDuration == 120 ? 100 : 0, false, false, 100,
+				transferDistanceMeters, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(transferStairState),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,

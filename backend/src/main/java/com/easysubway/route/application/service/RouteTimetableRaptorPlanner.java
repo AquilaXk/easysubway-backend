@@ -331,11 +331,11 @@ public final class RouteTimetableRaptorPlanner {
 			transfersUsed, accessMovementSeconds, accessDistanceMeters, accessibilityBurden, connectionSlack);
 	}
 
-	private static Instant effectiveDeparture(JourneyRideProjection ride) {
+	static Instant effectiveDeparture(JourneyRideProjection ride) {
 		return ride.realtimeDepartureTime() == null ? ride.plannedDepartureTime() : ride.realtimeDepartureTime();
 	}
 
-	private static Instant effectiveArrival(JourneyRideProjection ride) {
+	static Instant effectiveArrival(JourneyRideProjection ride) {
 		return ride.realtimeArrivalTime() == null ? ride.plannedArrivalTime() : ride.realtimeArrivalTime();
 	}
 
@@ -2029,6 +2029,14 @@ public final class RouteTimetableRaptorPlanner {
 			input.walkingSpeedMetersPerHour(), input.requiresVerifiedJourneyDistance(), input.cancellationSignal());
 	}
 
+
+	static int boardingSlackSeconds(com.easysubway.journey.application.JourneyRequest request) {
+		return switch (request.mobilityProfile()) {
+			case STANDARD, NO_STAIRS -> journeyBoardingSlackSeconds(JourneyAccessProfile.STANDARD);
+			case SLOW -> journeyBoardingSlackSeconds(JourneyAccessProfile.SLOW);
+			case STEP_FREE -> journeyBoardingSlackSeconds(JourneyAccessProfile.STEP_FREE);
+		};
+	}
 
 	private static int journeyBoardingSlackSeconds(JourneyAccessProfile accessProfile) {
 		return switch (accessProfile) {

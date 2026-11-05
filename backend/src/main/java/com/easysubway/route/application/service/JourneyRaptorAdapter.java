@@ -195,10 +195,11 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			}
 
 			int fromLine = timetable.lineIndex(lastRide1.lineId());
+			Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
 			for (int readySlackSeconds : leg2ReadySlacks(
 				requiredRequest, timetable, viaStation, fromLine, facilityOverlay
 			)) {
-				Instant leg2ReadyAt = lastRide1.plannedArrivalTime().plusSeconds(readySlackSeconds);
+				Instant leg2ReadyAt = leg1Arrival.plusSeconds(readySlackSeconds);
 
 				JourneyRequest leg2Request = new JourneyRequest(
 					requiredRequest.requestId(),
@@ -311,7 +312,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	) {
 		String via = request.viaStationId();
 		int station = timetable.stationIndex(via);
-		long availableSlack = Duration.between(lastRide1.plannedArrivalTime(), firstRide2.plannedDepartureTime()).getSeconds();
+		Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
+		Instant leg2Departure = RouteTimetableRaptorPlanner.effectiveDeparture(firstRide2);
+		long availableSlack = Duration.between(leg1Arrival, leg2Departure).getSeconds();
 
 		int duration = 0;
 		int distance = 0;
@@ -355,11 +358,11 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			if (timetable.isOutOfStationTransition(transition)) {
 				transferType = "OUT_OF_STATION";
 				int alightSeconds = (int) Duration.between(
-					lastRide1.plannedArrivalTime().atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
-					lastRide1.plannedArrivalTime()).getSeconds();
+					leg1Arrival.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
+					leg1Arrival).getSeconds();
 				int boardSeconds = (int) Duration.between(
-					firstRide2.plannedDepartureTime().atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
-					firstRide2.plannedDepartureTime()).getSeconds();
+					leg2Departure.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
+					leg2Departure).getSeconds();
 				int elapsed = (int) availableSlack;
 				int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
 				boolean timeout = elapsed > limit;
@@ -455,6 +458,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
 		java.util.Set<Integer> slacks = new java.util.LinkedHashSet<>();
+		int boardingSlack = RouteTimetableRaptorPlanner.boardingSlackSeconds(request);
+		slacks.add(Math.max(0, 180 - boardingSlack));
 		slacks.add(180);
 		int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
 		int lineCount = timetable.lineCount();
@@ -469,7 +474,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 					timetable.transitionDurationSeconds(transition),
 					timetable.transitionDistanceMeters(transition)
 				);
-				slacks.add(Math.max(duration, 180));
+				slacks.add(Math.max(0, Math.max(duration, 180) - boardingSlack));
 			}
 		}
 		return slacks;
