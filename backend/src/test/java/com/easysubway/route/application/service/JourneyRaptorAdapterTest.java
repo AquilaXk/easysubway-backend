@@ -1125,6 +1125,80 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void realtimeViaSearchSelectsEarlierRealtimeArrivalAheadOfDelayedEarlierPlannedArrival() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-first", "line-a", "A", "First", "station-transfer", "Asia/Seoul"),
+			new TransitRoute("route-second-b", "line-b", "B", "SecondB", "station-b", "Asia/Seoul"),
+			new TransitRoute("route-second-c", "line-c", "C", "SecondC", "station-b", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip("trip-first", "route-first", "daily", "station-transfer", "down", "SUBWAY", "LOCAL", "2001", 0),
+			new TransitTrip("trip-second-on-time", "route-second-b", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002", 0),
+			new TransitTrip("trip-second-delayed", "route-second-c", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2003", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second-on-time", 1, "station-transfer", "line-b", 33_180, 33_180, 0, 0),
+			new TransitStopTime("trip-second-on-time", 2, "station-b", "line-b", 33_780, 33_780, 0, 0),
+			new TransitStopTime("trip-second-delayed", 1, "station-transfer", "line-c", 33_180, 33_180, 0, 0),
+			new TransitStopTime("trip-second-delayed", 2, "station-b", "line-c", 33_600, 33_600, 0, 0));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("platform-transfer-a", "station-transfer", "line-a", "PLATFORM"),
+				new PathwayNode("platform-transfer-b", "station-transfer", "line-b", "PLATFORM"),
+				new PathwayNode("platform-transfer-c", "station-transfer", "line-c", "PLATFORM")),
+			List.of(
+				new PathwayEdge("transfer-b", "platform-transfer-a", "platform-transfer-b", 120, 100, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+				new PathwayEdge("transfer-c", "platform-transfer-a", "platform-transfer-c", 300, 0, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")),
+			List.of(
+				new TransferRule("rule-b", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION",
+					120, "transfer-b", "transfer-b", "VERIFIED"),
+				new TransferRule("rule-c", "station-transfer", "line-a", "station-transfer", "line-c", "IN_STATION",
+					300, "transfer-c", "transfer-c", "VERIFIED")),
+			List.of(
+				new RouteEdgeEvidence("ev-b", "station-transfer", "line-b", "transfer-b", "TRANSFER",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new RouteEdgeEvidence("ev-c", "station-transfer", "line-c", "transfer-c", "TRANSFER",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, new RouteTimetable(
+				List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access));
+		LocalDate serviceDate = LocalDate.of(2026, 7, 1);
+		var update1 = new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure("station-a", "line-a", "trip-first", "2001", "LOCAL",
+				serviceDate, 1, serviceInstant(serviceDate, 32_400), serviceInstant(serviceDate, 32_400)),
+			0, 0, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var update2 = new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure("station-transfer", "line-b", "trip-second-on-time", "2002", "LOCAL",
+				serviceDate, 1, serviceInstant(serviceDate, 33_180), serviceInstant(serviceDate, 33_180)),
+			0, 0, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var update3 = new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure("station-transfer", "line-c", "trip-second-delayed", "2003", "LOCAL",
+				serviceDate, 1, serviceInstant(serviceDate, 33_180), serviceInstant(serviceDate, 33_180)),
+			300, 300, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates(List.of(update1, update2, update3)));
+		var observation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, observation, measurement());
+
+		assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:23:00Z"));
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:23:00Z"));
+		});
+	}
+
+	@Test
 	void plansWaypointTransferOnSameLineWithZeroWalkingMovementAndPlatformDwell() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, sameLineWaypointTimetable());
 		var sameLineRequest = new JourneyRequest(

@@ -76,9 +76,10 @@ updates:
         update-types:
           - "version-update:semver-major"
 
-  # (3) github-actions — 워크플로 4개의 action 핀.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/backend-setup"
     schedule:
       interval: "weekly"
       day: "tuesday"

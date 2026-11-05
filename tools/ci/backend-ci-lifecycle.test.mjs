@@ -104,6 +104,20 @@ test('workflow and machine policy close event identities and retain bounded loca
   const composite = readFileSync(compositeUrl, 'utf8');
   assert.equal(countSetupJavaReferences(composite), 1, 'the composite must hold the single setup-java reference');
   assert.ok(composite.includes('      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad\n      with:\n        distribution: temurin\n        java-version: "21.0.11"\n'), 'the composite setup-java step must be the pinned Temurin 21.0.11 step');
+  const dependabot = readFileSync(new URL('../../.github/dependabot.yml', import.meta.url), 'utf8');
+  assert.ok(dependabot.includes('  - package-ecosystem: "github-actions"\n    directories:\n      - "/"\n      - "/.github/actions/backend-setup"\n'), 'dependabot must cover both root workflows and the backend-setup composite action');
+  const releaseWorkflow = readFileSync(new URL('../../.github/workflows/release-artifacts.yml', import.meta.url), 'utf8');
+  const extractUploadArtifactRefs = (text) => (
+    text.match(/uses:[ \t]*actions\/upload-artifact@[^\s#]+/g) || []
+  ).map((match) => match.replace(/^uses:[ \t]*/, ''));
+  const ciUploadArtifactRefs = extractUploadArtifactRefs(workflow);
+  const releaseUploadArtifactRefs = extractUploadArtifactRefs(releaseWorkflow);
+  assert.ok(ciUploadArtifactRefs.length > 0 && releaseUploadArtifactRefs.length > 0);
+  assert.deepEqual(
+    new Set(releaseUploadArtifactRefs),
+    new Set(ciUploadArtifactRefs),
+    'release-artifacts.yml and ci.yml must use the aligned actions/upload-artifact SHA'
+  );
 });
 
 test('setup-java reference count rejects an additional tag-based action', async () => {
