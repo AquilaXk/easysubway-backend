@@ -262,7 +262,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 
 		Comparator<ChainedCandidate> arrivalOrder = Comparator
-			.comparing((ChainedCandidate chained) -> chained.candidate().plannedArrivalTime())
+			.comparing((ChainedCandidate chained) -> chained.candidate().realtimeArrivalTime() != null
+				? chained.candidate().realtimeArrivalTime()
+				: chained.candidate().plannedArrivalTime())
 			.thenComparingLong(chained -> chained.candidate().durationSeconds())
 			.thenComparingInt(chained -> chained.candidate().transferCount());
 		List<ChainedCandidate> candidates = new ArrayList<>();
@@ -460,7 +462,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		java.util.Set<Integer> slacks = new java.util.LinkedHashSet<>();
 		int boardingSlack = RouteTimetableRaptorPlanner.boardingSlackSeconds(request);
 		slacks.add(Math.max(0, 180 - boardingSlack));
-		slacks.add(180);
 		int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
 		int lineCount = timetable.lineCount();
 		for (int toLine = 0; toLine < lineCount; toLine++) {
