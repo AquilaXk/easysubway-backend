@@ -225,8 +225,7 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			RealtimeEvidence evidence = ride.realtimeOverlay().evidence(ride.scheduledTrip());
 			boolean nextIsTransfer = (index + 1 < path.size());
-			boolean stepFree = (input.constraintMode() == ConstraintMode.STRICT_STEP_FREE
-				|| input.mobilityPreset() == MobilityPreset.STEP_FREE);
+			boolean stepFree = stepFreeAlightingCarDoors(input.mobilityPreset(), input.constraintMode());
 			List<AlightingCarDoor> alightingCarDoors = timetable.selectAlightingCarDoors(
 				ride.to().stationId(),
 				ride.lineId(),
@@ -1881,6 +1880,19 @@ public final class RouteTimetableRaptorPlanner {
 	 * 있으면(#454·data#876) {@link ProfileWalkTimeCalculator#measuredJourneySeconds}로 실측 시간을 하한으로 쓴다.
 	 */
 	static int verifiedTransferSeconds(
+		com.easysubway.journey.application.JourneyRequest request,
+		int durationSeconds,
+		int distanceMeters
+	) {
+		return verifiedTransferSeconds(
+			durationSeconds,
+			distanceMeters,
+			request.walkingPace().speedMetersPerHour(),
+			mobilityPreset(request.mobilityProfile())
+		);
+	}
+
+	static int verifiedTransferSeconds(
 		int durationSeconds,
 		int distanceMeters,
 		int walkingSpeedMetersPerHour,
@@ -1892,6 +1904,27 @@ public final class RouteTimetableRaptorPlanner {
 		}
 		return ProfileWalkTimeCalculator.measuredJourneySeconds(
 			durationSeconds, walkingSpeedMetersPerHour, mobilityPreset, false);
+	}
+
+	static boolean stepFreeAlightingCarDoors(com.easysubway.journey.application.JourneyRequest request) {
+		return request.constraintMode() == com.easysubway.journey.application.JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+			|| mobilityPreset(request.mobilityProfile()) == MobilityPreset.STEP_FREE;
+	}
+
+	static boolean stepFreeAlightingCarDoors(MobilityPreset mobilityPreset, ConstraintMode constraintMode) {
+		return constraintMode == ConstraintMode.STRICT_STEP_FREE
+			|| mobilityPreset == MobilityPreset.STEP_FREE;
+	}
+
+	private static MobilityPreset mobilityPreset(
+		com.easysubway.journey.application.JourneyRequest.MobilityProfile mobilityProfile
+	) {
+		return switch (mobilityProfile) {
+			case STANDARD -> MobilityPreset.STANDARD;
+			case SLOW -> MobilityPreset.SLOW;
+			case NO_STAIRS -> MobilityPreset.NO_STAIRS;
+			case STEP_FREE -> MobilityPreset.STEP_FREE;
+		};
 	}
 
 	static int profileBit(com.easysubway.profile.domain.MobilityType mobilityType, ConstraintMode constraintMode) {

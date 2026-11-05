@@ -404,7 +404,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.candidates().get(0).legs())
 			.filteredOn(JourneyCandidate.Transfer.class::isInstance)
 			.singleElement()
-			.isEqualTo(new JourneyCandidate.Transfer("v", "v", 60));
+			.isEqualTo(new JourneyCandidate.Transfer("v", "v", 560));
 	}
 
 	@Test
@@ -467,7 +467,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.candidates().get(0).legs())
 			.filteredOn(JourneyCandidate.Transfer.class::isInstance)
 			.singleElement()
-			.isEqualTo(new JourneyCandidate.Transfer("v", "v", 60));
+			.isEqualTo(new JourneyCandidate.Transfer("v", "v", 560));
 	}
 
 	@Test
@@ -998,13 +998,99 @@ class JourneyRaptorAdapterTest {
 		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(1);
 		assertThat(transfer.fromStationId()).isEqualTo("station-transfer");
 		assertThat(transfer.toStationId()).isEqualTo("station-transfer");
-		assertThat(transfer.durationSeconds()).isEqualTo(120);
+		assertThat(transfer.durationSeconds()).isEqualTo(80);
 		assertThat(transfer.transferType()).isNull();
 		assertThat(transfer.farePenaltyApplies()).isNull();
 		assertThat(transfer.transferLimitMinutes()).isNull();
 		assertThat(candidate.legs().get(2)).isEqualTo(TestRides.candidateRide(
 			"line-b", "trip-second", "station-b", "station-transfer", "station-b",
 			Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null));
+	}
+
+	@Test
+	void viaSearchUsesStepFreeAlightingCarDoorRuleFromPlannerWhenMobilityProfileIsStepFree() {
+		var stepFreePrefRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+		assertThat(RouteTimetableRaptorPlanner.stepFreeAlightingCarDoors(stepFreePrefRequest)).isTrue();
+
+		var base = waypointTimetable();
+		var hints = List.of(
+			new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "TRANSFER", 3, 2),
+			new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "STAIR", 1, 1),
+			new LoadRouteTimetablePort.CarDoorHint("station-b", "line-b", "DOWN", "ELEVATOR", 2, 3),
+			new LoadRouteTimetablePort.CarDoorHint("station-b", "line-b", "DOWN", "STAIR", 4, 1));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			base.routeAccessData().pathwayNodes(),
+			base.routeAccessData().pathwayEdges(),
+			base.routeAccessData().transferRules(),
+			base.routeAccessData().routeEdgeEvidence(),
+			hints);
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, new RouteTimetable(
+			base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(), base.transitTrips(),
+			base.transitStopTimes(), base.transitFrequencies(), List.of(), null, access));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			stepFreePrefRequest, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+		var firstRide = (JourneyCandidate.Ride) candidate.legs().get(0);
+		var secondRide = (JourneyCandidate.Ride) candidate.legs().get(2);
+		assertThat(firstRide.alightingCarDoors()).containsExactly(
+			new JourneyCandidate.AlightingCarDoor(3, 2, "TRANSFER"));
+		assertThat(secondRide.alightingCarDoors()).containsExactly(
+			new JourneyCandidate.AlightingCarDoor(2, 3, "ELEVATOR"));
+	}
+
+	@Test
+	void viaSearchAppliesVerifiedTransferSecondsForSlowAndStepFreeProfiles() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable());
+		var slowRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+		var stepFreeRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var slowCandidate = new JourneyRaptorAdapter().plan(
+			slowRequest, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+		var stepFreeCandidate = new JourneyRaptorAdapter().plan(
+			stepFreeRequest, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+
+		assertThat(((JourneyCandidate.Transfer) slowCandidate.legs().get(1)).durationSeconds()).isEqualTo(103);
+		assertThat(((JourneyCandidate.Transfer) stepFreeCandidate.legs().get(1)).durationSeconds()).isEqualTo(140);
+	}
+
+	@Test
+	void viaSearchPreservesReachableSecondLegWhenJunctionTransferExceeds180SecondsAndEarlierTripExists() {
+		var base = waypointTimetable("IN_STATION", 240, 33_300, true);
+		var trips = List.of(
+			new TransitTrip("trip-first", "route-first", "daily", "station-transfer", "down", "SUBWAY", "LOCAL", "2001", 0),
+			new TransitTrip("trip-second-early", "route-second", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002-early", 0),
+			new TransitTrip("trip-second", "route-second", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second-early", 1, "station-transfer", "line-b", 33_200, 33_200, 0, 0),
+			new TransitStopTime("trip-second-early", 2, "station-b", "line-b", 33_800, 33_800, 0, 0),
+			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 33_300, 33_300, 0, 0),
+			new TransitStopTime("trip-second", 2, "station-b", "line-b", 33_900, 33_900, 0, 0));
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, new RouteTimetable(
+			base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(), trips, stopTimes,
+			base.transitFrequencies(), List.of(), null, base.routeAccessData()));
+		var waypointRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			waypointRequest, snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(result.candidates()).hasSize(1);
+		var candidate = result.candidates().getFirst();
+		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:25:00Z"));
+		assertThat(((JourneyCandidate.Transfer) candidate.legs().get(1)).durationSeconds()).isEqualTo(240);
 	}
 
 	@Test
@@ -1957,7 +2043,8 @@ class JourneyRaptorAdapterTest {
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
 			new PathwayEdge(
-				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration, 100, false, false, 100,
+				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration,
+				transferDuration == 120 ? 100 : 0, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState(transferStairState),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
