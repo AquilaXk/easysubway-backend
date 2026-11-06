@@ -44,7 +44,7 @@ class OperatorDataCollectionFailuresAssembler {
 	OperatorDataCollectionFailuresView assemble(OperatorReportQuery query) {
 		List<DataCollectionRun> runs = dataCollectionUseCase.listRecentRuns(DEFAULT_RECENT_RUN_LIMIT);
 		List<OperatorDataCollectionFailuresView.DataCollectionRunRow> rows = runs.stream()
-			.filter(run -> query.includesDate(run.startedAt() == null ? null : BusinessTime.dateOfUtc(run.startedAt())))
+			.filter(run -> query.includesDate(BusinessTime.dateOfUtc(run.startedAt())))
 			.filter(run -> query.matches(
 				sourceLabel(run.source()),
 				statusLabel(run.status()),

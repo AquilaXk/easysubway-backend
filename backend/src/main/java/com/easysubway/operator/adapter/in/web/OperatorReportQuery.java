@@ -47,9 +47,6 @@ record OperatorReportQuery(
 	}
 
 	boolean includesDate(LocalDate date) {
-		if (from == null && to == null) {
-			return true;
-		}
 		if (date == null) {
 			return false;
 		}
