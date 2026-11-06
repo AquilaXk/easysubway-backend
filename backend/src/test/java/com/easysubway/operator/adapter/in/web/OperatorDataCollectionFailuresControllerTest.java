@@ -1,5 +1,6 @@
 package com.easysubway.operator.adapter.in.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,6 +12,7 @@ import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
@@ -41,6 +43,9 @@ class OperatorDataCollectionFailuresControllerTest {
 
 	@Autowired
 	private SaveDataCollectionRunPort saveDataCollectionRunPort;
+
+	@Autowired
+	private OperatorDataCollectionFailuresAssembler dataCollectionFailuresAssembler;
 
 	@TestConfiguration
 	static class FixedClockConfiguration {
@@ -203,6 +208,18 @@ class OperatorDataCollectionFailuresControllerTest {
 	@DisplayName("UTC 자정을 넘기는 수집 시각은 한국 표준시 날짜와 시각으로 표시한다")
 	void displaysUtcMidnightCrossingRunInKoreanStandardTime() throws Exception {
 		saveRun(new DataCollectionRun(
+			"collection-kst-running",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.RUNNING,
+			"admin-user",
+			LocalDateTime.parse("2026-06-17T15:30:00"),
+			null,
+			5,
+			null,
+			false,
+			"수집 실행 중입니다."
+		));
+		saveRun(new DataCollectionRun(
 			"collection-kst-midnight",
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.FAILED,
@@ -219,7 +236,28 @@ class OperatorDataCollectionFailuresControllerTest {
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T01:30"))
-			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T01:31"));
+			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T01:31"))
+			.andExpect(jsonPath("$.data.rows[1].startedAtLabel").value("2026-06-18T00:30"))
+			.andExpect(jsonPath("$.data.rows[1].completedAtLabel").value("—"));
+
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-17"), LocalDate.parse("2026-06-17"), null, null)
+		).rows()).isEmpty();
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "startedAt", "asc")
+		).rows()).extracting(OperatorDataCollectionFailuresView.DataCollectionRunRow::startedAtLabel)
+			.containsExactly("2026-06-18T00:30", "2026-06-18T01:30");
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "source", "asc")
+		).rows()).hasSize(2);
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "status", "asc")
+		).rows()).extracting(OperatorDataCollectionFailuresView.DataCollectionRunRow::statusLabel)
+			.containsExactly("실패", "실행 중");
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "collectedCount", "asc")
+		).rows()).extracting(OperatorDataCollectionFailuresView.DataCollectionRunRow::collectedCount)
+			.containsExactly(0, 5);
 	}
 
 	@Test
