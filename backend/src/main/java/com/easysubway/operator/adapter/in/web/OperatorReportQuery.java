@@ -43,7 +43,13 @@ record OperatorReportQuery(
 		if (from == null && to == null) {
 			return true;
 		}
-		LocalDate date = parseDate(label);
+		return includesDate(parseDate(label));
+	}
+
+	boolean includesDate(LocalDate date) {
+		if (from == null && to == null) {
+			return true;
+		}
 		if (date == null) {
 			return false;
 		}

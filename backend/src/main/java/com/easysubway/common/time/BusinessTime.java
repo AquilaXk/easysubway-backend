@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 
@@ -64,6 +65,10 @@ public final class BusinessTime {
 	/** UTC 벽시계로 저장된 시각을 한국 벽시계 시각으로 옮긴다. 저장된 시각을 운영자 화면에 보여 줄 때 쓴다. */
 	public static LocalDateTime fromUtcLocal(LocalDateTime utcWallClock) {
 		return utcWallClock.atOffset(ZoneOffset.UTC).atZoneSameInstant(ZONE).toLocalDateTime();
+	}
+
+	public static OffsetDateTime toOffsetDateTime(LocalDateTime utcWallClock) {
+		return utcWallClock.atOffset(ZoneOffset.UTC).atZoneSameInstant(ZONE).toOffsetDateTime();
 	}
 
 	/** UTC 벽시계로 저장된 시각이 속한 한국 달력 날짜. */

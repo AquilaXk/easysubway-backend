@@ -86,15 +86,15 @@ class OperatorDataCollectionFailuresControllerTest {
 			.andExpect(jsonPath("$.data.totalRunCount").value(2))
 			.andExpect(jsonPath("$.data.failedRunCount").value(1))
 			.andExpect(jsonPath("$.data.retryableRunCount").value(1))
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T09:01"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T18:01"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("점검 필요"))
 			.andExpect(jsonPath("$.data.freshnessAlertDescription")
 				.value("도시철도 마스터 수집 완료 기록이 24시간 이상 갱신되지 않았습니다."))
 			.andExpect(jsonPath("$.data.freshnessAlertClass").value("stale"))
 			.andExpect(jsonPath("$.data.rows[0].sourceLabel").value("도시철도 마스터"))
 			.andExpect(jsonPath("$.data.rows[0].statusLabel").value("실패"))
-			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T10:00"))
-			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T10:00:30"))
+			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T19:00"))
+			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T19:00:30"))
 			.andExpect(jsonPath("$.data.rows[0].collectedCount").value(0))
 			.andExpect(jsonPath("$.data.rows[0].failureMessage").value("공공데이터 응답 지연"))
 			.andExpect(jsonPath("$.data.rows[0].retryable").value(true))
@@ -127,7 +127,7 @@ class OperatorDataCollectionFailuresControllerTest {
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T10:01"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T19:01"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("정상"))
 			.andExpect(jsonPath("$.data.freshnessAlertDescription")
 				.value("최근 24시간 이내 데이터 수집 완료 기록이 있습니다."))
@@ -168,7 +168,7 @@ class OperatorDataCollectionFailuresControllerTest {
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.totalRunCount").value(20))
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T09:01"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T18:01"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("정상"))
 			.andExpect(jsonPath("$.data.freshnessAlertClass").value("ok"))
 			.andExpect(jsonPath("$.data.rows[0].statusLabel").value("실패"))
@@ -194,9 +194,32 @@ class OperatorDataCollectionFailuresControllerTest {
 		mockMvc.perform(get("/operator/api/data-collection-failures")
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T12:00"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T21:00"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("점검 필요"))
 			.andExpect(jsonPath("$.data.freshnessAlertClass").value("stale"));
+	}
+
+	@Test
+	@DisplayName("UTC 자정을 넘기는 수집 시각은 한국 표준시 날짜와 시각으로 표시한다")
+	void displaysUtcMidnightCrossingRunInKoreanStandardTime() throws Exception {
+		saveRun(new DataCollectionRun(
+			"collection-kst-midnight",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.FAILED,
+			"admin-user",
+			LocalDateTime.parse("2026-06-17T16:30:00"),
+			LocalDateTime.parse("2026-06-17T16:31:00"),
+			0,
+			"공공데이터 응답 지연",
+			true,
+			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
+		));
+
+		mockMvc.perform(get("/operator/api/data-collection-failures")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T01:30"))
+			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T01:31"));
 	}
 
 	@Test
