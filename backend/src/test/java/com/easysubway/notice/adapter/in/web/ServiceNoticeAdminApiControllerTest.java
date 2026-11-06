@@ -93,6 +93,44 @@ class ServiceNoticeAdminApiControllerTest {
 	}
 
 	@Test
+	@DisplayName("오프셋이 포함된 만료 시각 입력은 UTC로 저장되고 Z 오프셋으로 반환된다")
+	void publishConvertsExplicitOffsetExpiresAtToUtc() throws Exception {
+		PublishNoticeRequest fixedRequest = new PublishNoticeRequest(
+			"LINE",
+			"2",
+			"2호선 점검",
+			"심야 점검 안내",
+			"INFO",
+			 java.time.Instant.parse("2026-06-27T09:00:00+09:00")
+		);
+		assertThat(fixedRequest.toCommand().expiresAt()).isEqualTo(LocalDateTime.of(2026, 6, 27, 0, 0));
+
+		LocalDateTime expectedUtcExpiresAt = LocalDateTime.now(ZoneOffset.UTC)
+			.plusDays(1)
+			.withHour(0)
+			.withMinute(0)
+			.withSecond(0)
+			.withNano(0);
+		String kstOffsetInput = expectedUtcExpiresAt.toLocalDate() + "T09:00:00+09:00";
+		String expectedResponseInstant = expectedUtcExpiresAt.toInstant(ZoneOffset.UTC).toString();
+
+		mockMvc.perform(post("/admin/notices")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{"scope":"LINE","scopeValue":"2","title":"2호선 점검",
+					"body":"심야 점검 안내","severity":"INFO","expiresAt":"%s"}
+					""".formatted(kstOffsetInput)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.expiresAt").value(expectedResponseInstant));
+
+		ServiceNotice saved = repository.findRecent(1).getFirst();
+		assertThat(saved.expiresAt()).isEqualTo(expectedUtcExpiresAt);
+	}
+
+	@Test
 	@DisplayName("게시 중단은 row를 보존하고 활성에서 제외하며 audit에 기록한다")
 	void unpublishSoftUnpublishesAndAudits() throws Exception {
 		saveActiveNotice("n1");

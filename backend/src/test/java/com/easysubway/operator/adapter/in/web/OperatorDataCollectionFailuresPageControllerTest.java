@@ -103,7 +103,7 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			.contains("데이터 갱신 상태")
 			.contains("점검 필요")
 			.contains("최신 완료 수집")
-			.contains("2026-06-17T09:01")
+			.contains("2026-06-17T18:01")
 			.contains("도시철도 마스터 수집 완료 기록이 24시간 이상 갱신되지 않았습니다.")
 			.contains("최근 수집 실행")
 			.contains("수집 원천")
@@ -116,8 +116,8 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			.contains("도시철도 마스터")
 			.contains("실패")
 			.contains("완료")
-			.contains("2026-06-18T10:00")
-			.contains("2026-06-18T10:00:30")
+			.contains("2026-06-18T19:00")
+			.contains("2026-06-18T19:00:30")
 			.contains("공공데이터 응답 지연")
 			.contains("일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요.")
 			.doesNotContain("collection-failed")
@@ -146,8 +146,8 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.FAILED,
 			"admin-user",
-			LocalDateTime.parse("2026-06-18T10:00:00"),
-			LocalDateTime.parse("2026-06-18T10:00:30"),
+			LocalDateTime.parse("2026-06-17T16:30:00"),
+			LocalDateTime.parse("2026-06-17T16:30:30"),
 			0,
 			"공공데이터 응답 지연",
 			true,
@@ -166,6 +166,7 @@ class OperatorDataCollectionFailuresPageControllerTest {
 
 		assertThat(html)
 			.contains("공공데이터 응답 지연")
+			.contains("2026-06-18T01:30")
 			.contains("value=\"응답 지연\"")
 			.contains("value=\"2026-06-18\"")
 			.doesNotContain("수집이 완료되었습니다.");

@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
@@ -90,5 +91,14 @@ class BusinessTimeTest {
 
 		assertThat(BusinessTime.fromUtcLocal(utc)).isEqualTo(LocalDateTime.of(2026, 10, 24, 0, 30));
 		assertThat(BusinessTime.toUtcLocal(BusinessTime.fromUtcLocal(utc))).isEqualTo(utc);
+	}
+
+	@Test
+	@DisplayName("UTC 벽시계 시각은 +09:00 오프셋이 명시된 한국 표준시로 변환된다")
+	void utcWallClockMapsToKoreanOffsetDateTime() {
+		LocalDateTime utc = LocalDateTime.of(2026, 6, 27, 15, 30);
+
+		assertThat(BusinessTime.toOffsetDateTime(utc))
+			.isEqualTo(OffsetDateTime.parse("2026-06-28T00:30+09:00"));
 	}
 }

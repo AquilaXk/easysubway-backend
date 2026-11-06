@@ -155,7 +155,7 @@ class AdminAuditExportControllerTest {
 			.getContentAsString();
 
 		assertThat(csv)
-			.contains("2026-06-28T00:30")
+			.contains("2026-06-28T00:30+09:00")
 			.doesNotContain("2026-06-27T15:30");
 
 		String json = mockMvc.perform(get("/admin/audits/export")
@@ -168,7 +168,7 @@ class AdminAuditExportControllerTest {
 			.getContentAsString();
 
 		assertThat(json)
-			.contains("\"occurredAt\":\"2026-06-28T00:30\"")
+			.contains("\"occurredAt\":\"2026-06-28T00:30+09:00\"")
 			.doesNotContain("2026-06-27T15:30");
 	}
 

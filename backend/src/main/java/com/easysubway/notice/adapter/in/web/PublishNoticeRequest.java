@@ -4,7 +4,9 @@ import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.notice.application.service.PublishNoticeCommand;
 import com.easysubway.notice.domain.ServiceNoticeScope;
 import com.easysubway.notice.domain.ServiceNoticeSeverity;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 관리자 공지 발행 요청. scope/severity는 문자열로 받아 도메인 enum으로 변환한다.
@@ -15,7 +17,7 @@ public record PublishNoticeRequest(
 	String title,
 	String body,
 	String severity,
-	LocalDateTime expiresAt
+	Instant expiresAt
 ) {
 
 	public PublishNoticeCommand toCommand() {
@@ -25,7 +27,7 @@ public record PublishNoticeRequest(
 			title,
 			body,
 			parseEnum(ServiceNoticeSeverity.class, severity, "severity"),
-			expiresAt
+			expiresAt == null ? null : LocalDateTime.ofInstant(expiresAt, ZoneOffset.UTC)
 		);
 	}
 

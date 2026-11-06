@@ -4,6 +4,7 @@ import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
+import com.easysubway.common.time.BusinessTime;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -43,15 +44,15 @@ class OperatorDataCollectionFailuresAssembler {
 	OperatorDataCollectionFailuresView assemble(OperatorReportQuery query) {
 		List<DataCollectionRun> runs = dataCollectionUseCase.listRecentRuns(DEFAULT_RECENT_RUN_LIMIT);
 		List<OperatorDataCollectionFailuresView.DataCollectionRunRow> rows = runs.stream()
-			.map(OperatorDataCollectionFailuresAssembler::row)
-			.filter(row -> query.matches(
-				row.sourceLabel(),
-				row.statusLabel(),
-				row.failureMessage(),
-				row.operatorAction()
+			.filter(run -> query.includesDate(BusinessTime.dateOfUtc(run.startedAt())))
+			.filter(run -> query.matches(
+				sourceLabel(run.source()),
+				statusLabel(run.status()),
+				failureLabel(run.failureMessage()),
+				run.operatorAction()
 			))
-			.filter(row -> query.includesDateLabel(row.startedAtLabel()))
 			.sorted(dataCollectionComparator(query))
+			.map(OperatorDataCollectionFailuresAssembler::row)
 			.toList();
 		long failedRunCount = rows.stream()
 			.filter(row -> "실패".equals(row.statusLabel()))
@@ -94,16 +95,14 @@ class OperatorDataCollectionFailuresAssembler {
 			.count();
 	}
 
-	private static Comparator<OperatorDataCollectionFailuresView.DataCollectionRunRow> dataCollectionComparator(
+	private static Comparator<DataCollectionRun> dataCollectionComparator(
 		OperatorReportQuery query
 	) {
-		Comparator<OperatorDataCollectionFailuresView.DataCollectionRunRow> comparator = switch (query.sort()) {
-			case "source" -> Comparator.comparing(OperatorDataCollectionFailuresView.DataCollectionRunRow::sourceLabel);
-			case "status" -> Comparator.comparing(OperatorDataCollectionFailuresView.DataCollectionRunRow::statusLabel);
-			case "collectedCount" -> Comparator.comparingInt(
-				OperatorDataCollectionFailuresView.DataCollectionRunRow::collectedCount
-			);
-			default -> Comparator.comparing(OperatorDataCollectionFailuresView.DataCollectionRunRow::startedAtLabel);
+		Comparator<DataCollectionRun> comparator = switch (query.sort()) {
+			case "source" -> Comparator.comparing(run -> sourceLabel(run.source()));
+			case "status" -> Comparator.comparing(run -> statusLabel(run.status()));
+			case "collectedCount" -> Comparator.comparingInt(DataCollectionRun::collectedCount);
+			default -> Comparator.comparing(DataCollectionRun::startedAt);
 		};
 		return query.sort().isBlank() || "desc".equals(query.direction()) ? comparator.reversed() : comparator;
 	}
@@ -162,7 +161,7 @@ class OperatorDataCollectionFailuresAssembler {
 	}
 
 	private static String timeLabel(LocalDateTime value) {
-		return value == null ? "—" : value.toString();
+		return value == null ? "—" : BusinessTime.fromUtcLocal(value).toString();
 	}
 
 	private static String failureLabel(String value) {

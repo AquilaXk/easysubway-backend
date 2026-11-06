@@ -32,4 +32,20 @@ class OperatorReportQueryTest {
 		assertThat(query.includesDateLabel("2026-06-18 10:00")).isTrue();
 		assertThat(query.includesDateLabel("2026-06-17 23:59")).isFalse();
 	}
+
+	@Test
+	@DisplayName("기간 필터는 LocalDate 값을 직접 포함 범위로 판정한다")
+	void dateRangeIncludesLocalDate() {
+		OperatorReportQuery query = new OperatorReportQuery(
+			"",
+			LocalDate.parse("2026-06-18"),
+			LocalDate.parse("2026-06-19"),
+			"startedAt",
+			"desc"
+		);
+
+		assertThat(query.includesDate(LocalDate.of(2026, 6, 18))).isTrue();
+		assertThat(query.includesDate(LocalDate.of(2026, 6, 17))).isFalse();
+		assertThat(query.includesDate(null)).isFalse();
+	}
 }

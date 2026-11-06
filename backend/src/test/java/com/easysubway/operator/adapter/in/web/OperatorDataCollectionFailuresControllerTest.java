@@ -1,5 +1,6 @@
 package com.easysubway.operator.adapter.in.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,6 +12,7 @@ import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
@@ -41,6 +43,9 @@ class OperatorDataCollectionFailuresControllerTest {
 
 	@Autowired
 	private SaveDataCollectionRunPort saveDataCollectionRunPort;
+
+	@Autowired
+	private OperatorDataCollectionFailuresAssembler dataCollectionFailuresAssembler;
 
 	@TestConfiguration
 	static class FixedClockConfiguration {
@@ -86,15 +91,15 @@ class OperatorDataCollectionFailuresControllerTest {
 			.andExpect(jsonPath("$.data.totalRunCount").value(2))
 			.andExpect(jsonPath("$.data.failedRunCount").value(1))
 			.andExpect(jsonPath("$.data.retryableRunCount").value(1))
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T09:01"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T18:01"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("점검 필요"))
 			.andExpect(jsonPath("$.data.freshnessAlertDescription")
 				.value("도시철도 마스터 수집 완료 기록이 24시간 이상 갱신되지 않았습니다."))
 			.andExpect(jsonPath("$.data.freshnessAlertClass").value("stale"))
 			.andExpect(jsonPath("$.data.rows[0].sourceLabel").value("도시철도 마스터"))
 			.andExpect(jsonPath("$.data.rows[0].statusLabel").value("실패"))
-			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T10:00"))
-			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T10:00:30"))
+			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T19:00"))
+			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T19:00:30"))
 			.andExpect(jsonPath("$.data.rows[0].collectedCount").value(0))
 			.andExpect(jsonPath("$.data.rows[0].failureMessage").value("공공데이터 응답 지연"))
 			.andExpect(jsonPath("$.data.rows[0].retryable").value(true))
@@ -127,7 +132,7 @@ class OperatorDataCollectionFailuresControllerTest {
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T10:01"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T19:01"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("정상"))
 			.andExpect(jsonPath("$.data.freshnessAlertDescription")
 				.value("최근 24시간 이내 데이터 수집 완료 기록이 있습니다."))
@@ -168,7 +173,7 @@ class OperatorDataCollectionFailuresControllerTest {
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.totalRunCount").value(20))
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T09:01"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-18T18:01"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("정상"))
 			.andExpect(jsonPath("$.data.freshnessAlertClass").value("ok"))
 			.andExpect(jsonPath("$.data.rows[0].statusLabel").value("실패"))
@@ -194,9 +199,65 @@ class OperatorDataCollectionFailuresControllerTest {
 		mockMvc.perform(get("/operator/api/data-collection-failures")
 				.with(httpBasic("operator-user", "operator-test-password")))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T12:00"))
+			.andExpect(jsonPath("$.data.latestCompletedAtLabel").value("2026-06-17T21:00"))
 			.andExpect(jsonPath("$.data.freshnessAlertLabel").value("점검 필요"))
 			.andExpect(jsonPath("$.data.freshnessAlertClass").value("stale"));
+	}
+
+	@Test
+	@DisplayName("UTC 자정을 넘기는 수집 시각은 한국 표준시 날짜와 시각으로 표시한다")
+	void displaysUtcMidnightCrossingRunInKoreanStandardTime() throws Exception {
+		saveRun(new DataCollectionRun(
+			"collection-kst-running",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.RUNNING,
+			"admin-user",
+			LocalDateTime.parse("2026-06-17T15:30:00"),
+			null,
+			5,
+			null,
+			false,
+			"수집 실행 중입니다."
+		));
+		saveRun(new DataCollectionRun(
+			"collection-kst-midnight",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.FAILED,
+			"admin-user",
+			LocalDateTime.parse("2026-06-17T16:30:00"),
+			LocalDateTime.parse("2026-06-17T16:31:00"),
+			0,
+			"공공데이터 응답 지연",
+			true,
+			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
+		));
+
+		mockMvc.perform(get("/operator/api/data-collection-failures")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.rows[0].startedAtLabel").value("2026-06-18T01:30"))
+			.andExpect(jsonPath("$.data.rows[0].completedAtLabel").value("2026-06-18T01:31"))
+			.andExpect(jsonPath("$.data.rows[1].startedAtLabel").value("2026-06-18T00:30"))
+			.andExpect(jsonPath("$.data.rows[1].completedAtLabel").value("—"));
+
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-17"), LocalDate.parse("2026-06-17"), null, null)
+		).rows()).isEmpty();
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "startedAt", "asc")
+		).rows()).extracting(OperatorDataCollectionFailuresView.DataCollectionRunRow::startedAtLabel)
+			.containsExactly("2026-06-18T00:30", "2026-06-18T01:30");
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "source", "asc")
+		).rows()).hasSize(2);
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "status", "asc")
+		).rows()).extracting(OperatorDataCollectionFailuresView.DataCollectionRunRow::statusLabel)
+			.containsExactly("실패", "실행 중");
+		assertThat(dataCollectionFailuresAssembler.assemble(
+			OperatorReportQuery.of(null, LocalDate.parse("2026-06-18"), LocalDate.parse("2026-06-18"), "collectedCount", "asc")
+		).rows()).extracting(OperatorDataCollectionFailuresView.DataCollectionRunRow::collectedCount)
+			.containsExactly(0, 5);
 	}
 
 	@Test
