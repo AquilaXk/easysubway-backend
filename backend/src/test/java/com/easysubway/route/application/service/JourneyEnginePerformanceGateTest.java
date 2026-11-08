@@ -604,10 +604,10 @@ class JourneyEnginePerformanceGateTest {
 		}
 		double baselineCalibration = baseline.path("calibrationNanos").asDouble();
 		double measuredCalibration = measured.path("calibrationNanos").asDouble();
-		String cpuModel = measured.path("method").path("cpuModel").isTextual()
-			? measured.path("method").path("cpuModel").asText()
-			: JourneyEngineRunnerNotice.cpuModel();
-		JsonNode cpuWorkloads = baseline.path("cpuBaselines").path(cpuModel).path("workloads");
+		String cpuModel = measured.path("method").path("cpuModel").asText("");
+		JsonNode cpuWorkloads = cpuModel.isBlank()
+			? JSON.missingNode()
+			: baseline.path("cpuBaselines").path(cpuModel).path("workloads");
 		for (String id : names(baseline.path("workloads"), measured.path("workloads"))) {
 			JsonNode before = baseline.path("workloads").path(id);
 			JsonNode after = measured.path("workloads").path(id);
