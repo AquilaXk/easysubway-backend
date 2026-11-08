@@ -48,18 +48,17 @@ class JourneyGoldenRegressionTest {
 	private JourneyGoldenSuite.Run actual;
 
 	@BeforeAll
-	void runCorpus() {
+	void runCorpus() throws IOException {
 		corpus = JourneyGoldenCorpus.load();
 		actual = JourneyGoldenSuite.run(corpus.queries(), JourneyGoldenFixtures::load);
+		if (Boolean.getBoolean(UPDATE_PROPERTY)) {
+			updateGolden();
+		}
 	}
 
 	@Test
 	@DisplayName("대표 질의의 응답 요약이 golden과 같다")
 	void summaryMatchesGolden() throws IOException {
-		if (Boolean.getBoolean(UPDATE_PROPERTY)) {
-			updateGolden();
-			return;
-		}
 		String difference = JourneyGoldenReport.diff(readGolden(), actual.report());
 		if (!difference.isEmpty()) {
 			Files.createDirectories(DIFF_REPORT.getParent());
@@ -167,13 +166,22 @@ class JourneyGoldenRegressionTest {
 
 	private void updateGolden() throws IOException {
 		requireNotCi(System.getenv());
-		JourneyGoldenReport previous = Files.exists(GOLDEN) ? readGolden() : new JourneyGoldenReport(List.of(), List.of());
+		JourneyGoldenReport previous = readPreviousGoldenOrEmpty();
 		Files.writeString(GOLDEN, actual.report().render(), StandardCharsets.UTF_8);
 		String difference = JourneyGoldenReport.diff(previous, actual.report());
 		String evidence = difference.isEmpty() ? "이전 golden과 같다.\n" : difference;
 		Files.createDirectories(UPDATE_DIFF_REPORT.getParent());
 		Files.writeString(UPDATE_DIFF_REPORT, evidence, StandardCharsets.UTF_8);
 		System.out.println("golden을 다시 만들었다: " + GOLDEN + " (차이: " + UPDATE_DIFF_REPORT + ")\n" + evidence);
+	}
+
+	private static JourneyGoldenReport readPreviousGoldenOrEmpty() throws IOException {
+		if (!Files.exists(GOLDEN)) return new JourneyGoldenReport(List.of(), List.of());
+		try {
+			return readGolden();
+		} catch (IllegalArgumentException exception) {
+			return new JourneyGoldenReport(List.of(), List.of());
+		}
 	}
 
 	/** CI에서 갱신 모드가 켜지면 불일치가 통과로 바뀌므로 거절한다. */

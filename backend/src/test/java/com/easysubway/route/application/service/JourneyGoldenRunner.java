@@ -8,11 +8,14 @@ import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionDisposition;
 import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyRaptorPort.PlanResult;
+import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,8 +44,11 @@ final class JourneyGoldenRunner {
 
 	private static final String REQUEST_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 	private static final String ROUTE_BUNDLE_SHA256 = "a".repeat(64);
+	private static final String REALTIME_IDENTITY = "golden-realtime-snapshot";
 	private static final int MAX_TRANSFERS = 3;
 	private static final int ALTERNATIVE_COUNT = 3;
+	/** 실시간 질의 시 활성 열차 업데이트를 생성할 탐색 창(3시간). */
+	private static final int REALTIME_WINDOW_SECONDS = 10_800;
 	/** 운영의 허용 나이를 넘는 시설 상태. 운영 상수에서 유도해 한도가 바뀌어도 낡은 상태로 남게 한다. */
 	private static final Duration STALE_FACILITY_AGE = JourneyFacilityBlockOverlay.MAX_AGE.plusMinutes(1);
 	private static final String ACCESS_REASON_PREFIX = "ACCESSIBILITY_";
@@ -58,16 +64,24 @@ final class JourneyGoldenRunner {
 	}
 
 	List<JourneyGoldenRow> run(JourneyGoldenCorpus.Query query) {
+		Instant ready = readyAt(query);
+		RealtimeObservation realtimeObservation = realtimeObservation(query, ready);
 		List<JourneyGoldenRow> rows = new ArrayList<>();
-		for (JourneyGoldenPreset preset : JourneyGoldenPreset.values()) rows.add(run(query, preset));
+		for (JourneyGoldenPreset preset : JourneyGoldenPreset.values()) {
+			rows.add(run(query, preset, ready, realtimeObservation));
+		}
 		return rows;
 	}
 
-	private JourneyGoldenRow run(JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset) {
-		Instant ready = readyAt(query);
+	private JourneyGoldenRow run(
+		JourneyGoldenCorpus.Query query,
+		JourneyGoldenPreset preset,
+		Instant ready,
+		RealtimeObservation realtimeObservation
+	) {
 		PlanResult result;
 		try {
-			result = plan(query, preset, ready);
+			result = plan(query, preset, ready, realtimeObservation);
 		} catch (FacilityStatusUnavailableException exception) {
 			return failure(query, preset, JourneyGoldenRow.Status.ERROR, JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE);
 		}
@@ -77,12 +91,80 @@ final class JourneyGoldenRunner {
 		return found(query, preset, result);
 	}
 
-	private PlanResult plan(JourneyGoldenCorpus.Query query, JourneyGoldenPreset preset, Instant ready) {
+	private PlanResult plan(
+		JourneyGoldenCorpus.Query query,
+		JourneyGoldenPreset preset,
+		Instant ready,
+		RealtimeObservation realtimeObservation
+	) {
+		var timePolicy = query.realtime() == null
+			? JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
+			: JourneyRequest.TimePolicy.REALTIME_REQUIRED;
 		var request = new JourneyRequest(REQUEST_ID, query.origin(), query.destination(),
-			new JourneyRequest.Departure.Scheduled(ready), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			new JourneyRequest.Departure.Scheduled(ready), timePolicy,
 			JourneyRequest.WalkingPace.STANDARD, preset.profile(), preset.constraint(), MAX_TRANSFERS, ALTERNATIVE_COUNT, () -> false);
 		var adapter = new JourneyRaptorAdapter(facilityPort(query, ready), true, Clock.fixed(ready, ServiceDayResolver.ZONE));
-		return adapter.plan(request, snapshot(ready), ready, null, new JourneyRequestMeasurement(REQUEST_ID));
+		return adapter.plan(request, snapshot(ready), ready, realtimeObservation, new JourneyRequestMeasurement(REQUEST_ID));
+	}
+
+	private RealtimeObservation realtimeObservation(JourneyGoldenCorpus.Query query, Instant ready) {
+		var realtime = query.realtime();
+		if (realtime == null) return null;
+		Set<String> targetLines = Set.copyOf(realtime.lineIds());
+		int readySeconds = Math.toIntExact(Duration.between(serviceDayStart, ready).getSeconds());
+		int windowEndSeconds = readySeconds + REALTIME_WINDOW_SECONDS;
+		var compiledTimetable = runtime.compiledTimetable();
+		var planner = new RouteTimetableRaptorPlanner();
+		List<JourneyTimetableRealtimeResolver.Update> updates = new ArrayList<>();
+		for (int index = 0; index < compiledTimetable.scheduledTripCount(); index += 1) {
+			RouteTimetableRaptorPlanner.ScheduledTrip trip = compiledTimetable.scheduledTrip(index);
+			List<TransitStopTime> stopTimes = trip.stopTimes();
+			if (stopTimes.size() < 2) continue;
+			TransitStopTime firstStop = stopTimes.getFirst();
+			boolean targeted = targetLines.contains(firstStop.lineId());
+			int delta = targeted ? realtime.delaySeconds() : 0;
+			int firstDeparture = trip.departureSeconds(0);
+			int lastDeparture = trip.departureSeconds(stopTimes.size() - 1);
+			if (lastDeparture + Math.max(0, delta) < readySeconds || firstDeparture > windowEndSeconds) {
+				continue;
+			}
+			var departure = new JourneyTimetableRealtimeResolver.Departure(
+				firstStop.stationId(),
+				firstStop.lineId(),
+				trip.trip().id(),
+				trip.trip().trainNo(),
+				trip.trip().servicePattern(),
+				fixture.serviceDate(),
+				firstStop.stopSequence(),
+				serviceDayStart.plusSeconds(trip.arrivalSeconds(0)),
+				serviceDayStart.plusSeconds(firstDeparture)
+			);
+			if (!planner.matchesActiveJourneyRealtimeDeparture(compiledTimetable, departure)) {
+				continue;
+			}
+			boolean cancelled = targeted && realtime.cancelled();
+			if (!cancelled && (firstDeparture + delta < 0
+				|| lastDeparture + delta >= LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE)) {
+				delta = 0;
+			}
+			updates.add(new JourneyTimetableRealtimeResolver.Update(
+				departure,
+				delta,
+				delta,
+				cancelled,
+				REALTIME_IDENTITY,
+				ready
+			));
+		}
+		var resolved = new JourneyTimetableRealtimeResolver.Updates(REALTIME_IDENTITY, true, updates, null);
+		var realtimeView = RaptorRealtimeRuntimeView.compile(REALTIME_IDENTITY, runtime, resolved);
+		return new RealtimeObservation(
+			REALTIME_IDENTITY,
+			ROUTE_BUNDLE_SHA256,
+			realtimeView,
+			ready.plus(Duration.ofMinutes(5)),
+			true
+		);
 	}
 
 	private ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant ready) {
@@ -130,7 +212,7 @@ final class JourneyGoldenRunner {
 		var stairFree = result.stairFreeAlternative();
 		String detail = "stairFree=" + stairFree.status() + " facility=" + stairFree.facilityStatus();
 		return new JourneyGoldenRow(query.id(), preset, JourneyGoldenRow.Status.FOUND, detail,
-			result.candidates().stream().map(candidate -> alternative(candidate)).toList());
+			result.candidates().stream().map(this::alternative).toList());
 	}
 
 	/** 운영이 이 실패 사유에 매기는 공개 오류 코드를 상세로 기록한다. */
@@ -148,12 +230,22 @@ final class JourneyGoldenRunner {
 			.filter(JourneyCandidate.Ride.class::isInstance)
 			.map(leg -> ((JourneyCandidate.Ride) leg).lineId())
 			.toList();
+		List<String> via = candidate.legs().stream()
+			.filter(JourneyCandidate.Transfer.class::isInstance)
+			.map(leg -> ((JourneyCandidate.Transfer) leg).fromStationId())
+			.toList();
 		String access = candidate.accessibility().reasonCodes().stream()
 			.map(reason -> reason.startsWith(ACCESS_REASON_PREFIX) ? reason.substring(ACCESS_REASON_PREFIX.length()) : reason)
 			.collect(Collectors.joining(","));
-		return new JourneyGoldenRow.Alternative(serviceDayTime(candidate.plannedDepartureTime()),
-			serviceDayTime(candidate.plannedArrivalTime()),
-			candidate.durationSeconds(), candidate.transferCount(), candidate.walkingDistanceMeters(), lines, access);
+		List<String> roles = candidate.alternativeCategories().stream()
+			.map(Enum::name)
+			.toList();
+		Instant departure = candidate.hasRealtime() ? candidate.realtimeDepartureTime() : candidate.plannedDepartureTime();
+		Instant arrival = candidate.hasRealtime() ? candidate.realtimeArrivalTime() : candidate.plannedArrivalTime();
+		long durationSeconds = Duration.between(departure, arrival).toSeconds();
+		return new JourneyGoldenRow.Alternative(serviceDayTime(departure),
+			serviceDayTime(arrival),
+			durationSeconds, candidate.transferCount(), candidate.walkingDistanceMeters(), lines, via, access, roles);
 	}
 
 	/** 서비스일 0시부터 흐른 시각(HH:MM:SS). 자정을 넘으면 24시 이후로 쓴다(GTFS 관례). 날짜와 무관해 서비스일을 바꿔도 같다. */

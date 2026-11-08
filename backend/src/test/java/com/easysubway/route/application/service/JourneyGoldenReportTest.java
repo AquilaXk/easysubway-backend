@@ -41,19 +41,25 @@ class JourneyGoldenReportTest {
 	}
 
 	@Test
-	@DisplayName("소요시간 변화는 증감 초와 함께, 상태 변화와 노선 변화는 앞뒤 값과 함께 보인다")
+	@DisplayName("소요시간 변화는 증감 초와 함께, 상태 변화와 노선·환승역·역할 변화는 앞뒤 값과 함께 보인다")
 	void reportsFieldLevelChanges() {
 		var golden = new JourneyGoldenReport(List.of(FIXTURE), List.of(
-			found("q1", JourneyGoldenPreset.STANDARD, alternative(600, "line-a", "VERIFIED")),
+			found("q1", JourneyGoldenPreset.STANDARD,
+				new Alternative("08:00:00", "08:10:00", 600, 1, 42, List.of("line-a", "line-b"), List.of("s1"),
+					"VERIFIED", List.of("FASTEST", "FEWEST_TRANSFERS"))),
 			found("q1", JourneyGoldenPreset.NO_STAIRS, alternative(700, "line-a>line-b", "VERIFIED"))));
 		var actual = new JourneyGoldenReport(List.of(FIXTURE), List.of(
-			found("q1", JourneyGoldenPreset.STANDARD, alternative(690, "line-a", "VERIFIED")),
+			found("q1", JourneyGoldenPreset.STANDARD,
+				new Alternative("08:00:00", "08:11:30", 690, 1, 42, List.of("line-a", "line-b"), List.of("s2"),
+					"VERIFIED", List.of("FASTEST"))),
 			failure("q1", JourneyGoldenPreset.NO_STAIRS, Status.NO_ROUTE, "ROUTE_NOT_FOUND")));
 
 		String difference = JourneyGoldenReport.diff(golden, actual);
 
 		assertThat(difference).contains("변경 2행, 추가 0행, 삭제 0행")
 			.contains("[변경] q1 STANDARD").contains("소요시간: 600s -> 690s (+90s)")
+			.contains("환승역: s1 -> s2")
+			.contains("대안 역할: FASTEST,FEWEST_TRANSFERS -> FASTEST")
 			.contains("[변경] q1 NO_STAIRS").contains("상태: FOUND -> NO_ROUTE").contains("대안 #1 삭제: ");
 	}
 
@@ -126,7 +132,13 @@ class JourneyGoldenReportTest {
 	}
 
 	private static Alternative alternative(long durationSeconds, String lines, String access) {
-		return new Alternative("08:00:00", "08:10:00", durationSeconds, lines.split(">").length - 1,
-			42, List.of(lines.split(">")), access);
+		String[] splitLines = lines.split(">");
+		int transfers = splitLines.length - 1;
+		List<String> via = transfers == 0 ? List.of() : List.of("s1");
+		List<String> roles = "VERIFIED".equals(access)
+			? List.of("FASTEST", "FEWEST_TRANSFERS", "STAIR_FREE")
+			: List.of("FASTEST", "FEWEST_TRANSFERS");
+		return new Alternative("08:00:00", "08:10:00", durationSeconds, transfers,
+			42, List.of(splitLines), via, access, roles);
 	}
 }

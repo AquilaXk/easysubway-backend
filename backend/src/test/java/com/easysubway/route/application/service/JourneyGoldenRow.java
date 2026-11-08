@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  *
  * <pre>
  * capital-example STANDARD FOUND stairFree=NOT_FOUND facility=UNOBSERVED
- *   #1 08:03:00&gt;08:41:30 2310s transfers=1 walk=87m lines=line-2&gt;line-1 access=UNDETERMINED
+ *   #1 08:03:00&gt;08:41:30 2310s transfers=1 walk=87m lines=line-2&gt;line-1 via=station-a access=UNDETERMINED roles=FASTEST,FEWEST_TRANSFERS
  * </pre>
  */
 record JourneyGoldenRow(
@@ -44,22 +44,40 @@ record JourneyGoldenRow(
 		int transfers,
 		long walkingMeters,
 		List<String> lines,
-		String access
+		List<String> via,
+		String access,
+		List<String> roles
 	) {
+		private static final String NO_TRANSFERS = "none";
+		private static final String NO_ROLES = "NONE";
+
 		Alternative {
 			lines = List.copyOf(lines);
+			via = List.copyOf(via);
+			roles = List.copyOf(roles);
 		}
 
 		String render() {
-			return String.format(Locale.ROOT, "%s>%s %ds transfers=%d walk=%dm lines=%s access=%s",
-				departure, arrival, durationSeconds, transfers, walkingMeters, String.join(">", lines), access);
+			String renderedVia = via.isEmpty() ? NO_TRANSFERS : String.join(">", via);
+			String renderedRoles = roles.isEmpty() ? NO_ROLES : String.join(",", roles);
+			return String.format(Locale.ROOT, "%s>%s %ds transfers=%d walk=%dm lines=%s via=%s access=%s roles=%s",
+				departure, arrival, durationSeconds, transfers, walkingMeters, String.join(">", lines),
+				renderedVia, access, renderedRoles);
+		}
+
+		private static List<String> parseVia(String token) {
+			return NO_TRANSFERS.equals(token) ? List.of() : List.of(token.split(">"));
+		}
+
+		private static List<String> parseRoles(String token) {
+			return NO_ROLES.equals(token) ? List.of() : List.of(token.split(","));
 		}
 	}
 
 	private static final String ALTERNATIVE_INDENT = "  #";
 	private static final Pattern HEADER = Pattern.compile("^(\\S+) (\\S+) (\\S+)(?: (.*))?$");
 	private static final Pattern ALTERNATIVE = Pattern.compile(
-		"^ {2}#\\d+ (\\S+)>(\\S+) (\\d+)s transfers=(\\d+) walk=(\\d+)m lines=(\\S+) access=(\\S+)$");
+		"^ {2}#\\d+ (\\S+)>(\\S+) (\\d+)s transfers=(\\d+) walk=(\\d+)m lines=(\\S+) via=(\\S+) access=(\\S+) roles=(\\S+)$");
 
 	JourneyGoldenRow {
 		Objects.requireNonNull(queryId, "queryId");
@@ -97,7 +115,9 @@ record JourneyGoldenRow(
 			if (!alternative.matches()) throw new IllegalArgumentException("golden alternative is malformed: " + line);
 			alternatives.add(new Alternative(alternative.group(1), alternative.group(2),
 				Long.parseLong(alternative.group(3)), Integer.parseInt(alternative.group(4)),
-				Long.parseLong(alternative.group(5)), List.of(alternative.group(6).split(">")), alternative.group(7)));
+				Long.parseLong(alternative.group(5)), List.of(alternative.group(6).split(">")),
+				Alternative.parseVia(alternative.group(7)), alternative.group(8),
+				Alternative.parseRoles(alternative.group(9))));
 		}
 		return new JourneyGoldenRow(header.group(1), JourneyGoldenPreset.valueOf(header.group(2)),
 			Status.valueOf(header.group(3)), header.group(4) == null ? "" : header.group(4), alternatives);

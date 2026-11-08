@@ -173,7 +173,11 @@ record JourneyGoldenReport(List<FixtureHeader> fixtures, List<JourneyGoldenRow> 
 		compare(changes, "환승 수", before, after, JourneyGoldenRow.Alternative::transfers);
 		compare(changes, "보행 거리(m)", before, after, JourneyGoldenRow.Alternative::walkingMeters);
 		compare(changes, "탑승 노선", before, after, alternative -> String.join(">", alternative.lines()));
+		compare(changes, "환승역", before, after,
+			alternative -> alternative.via().isEmpty() ? "none" : String.join(">", alternative.via()));
 		compare(changes, "접근성", before, after, JourneyGoldenRow.Alternative::access);
+		compare(changes, "대안 역할", before, after,
+			alternative -> alternative.roles().isEmpty() ? "NONE" : String.join(",", alternative.roles()));
 		return changes;
 	}
 

@@ -40,6 +40,8 @@ record JourneyGoldenCorpus(int schemaVersion, List<Query> queries) {
 		FACILITY_STATUS_ERROR,
 		/** 표준 프리셋을 포함해 어떤 프리셋으로도 경로가 없다. */
 		NO_ROUTE_ANY_PRESET,
+		/** 실시간 열차 지연·운행 변경이 적용되어 시간표 기준 짝 질의와 다른 도착 시각 또는 경로가 나온다. */
+		REALTIME_DELAY,
 		/** 기존 대표 질의(수도권 대표 프로필 질의, 운영 범위 벤치마크 코퍼스)의 출발·도착 쌍을 재사용한다. */
 		EXISTING_REPRESENTATIVE
 	}
@@ -59,6 +61,17 @@ record JourneyGoldenCorpus(int schemaVersion, List<Query> queries) {
 		}
 	}
 
+	/** 실시간 열차 지연·운행 시나리오. 없으면 시간표 기준(TIMETABLE_REQUIRED)으로 탐색한다. */
+	record Realtime(List<String> lineIds, int delaySeconds, boolean cancelled) {
+		Realtime {
+			lineIds = lineIds == null ? List.of() : List.copyOf(lineIds);
+			if (lineIds.isEmpty()) throw new IllegalArgumentException("realtime lineIds must not be empty");
+			if (!cancelled && delaySeconds == 0) {
+				throw new IllegalArgumentException("realtime scenario must delay or cancel trips");
+			}
+		}
+	}
+
 	record Query(
 		String id,
 		String fixture,
@@ -66,7 +79,8 @@ record JourneyGoldenCorpus(int schemaVersion, List<Query> queries) {
 		String destination,
 		String departureLocalTime,
 		List<Tag> tags,
-		Facility facility
+		Facility facility,
+		Realtime realtime
 	) {
 		Query {
 			Objects.requireNonNull(id, "id");
@@ -77,7 +91,7 @@ record JourneyGoldenCorpus(int schemaVersion, List<Query> queries) {
 			tags = List.copyOf(tags);
 		}
 
-		/** 출발·도착 쌍의 식별. 시설 시나리오만 다른 질의는 같은 쌍이다. */
+		/** 출발·도착 쌍의 식별. 시설·실시간 시나리오만 다른 질의는 같은 쌍이다. */
 		String pair() {
 			return fixture + " " + origin + " " + destination;
 		}
