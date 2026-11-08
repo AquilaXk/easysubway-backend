@@ -112,8 +112,6 @@ class HealthCheckControllerTest {
 			.extracting(endpoint -> endpoint.getEndpointId().toString())
 			.contains("prometheus");
 
-		// MockMvc 기본 remoteAddr(127.0.0.1 loopback)은 허용 RFC1918 대역이 아니므로 공개/미상 출처와
-		// 동일하게 거부된다 — /actuator/prometheus는 사설망 내부 scrape에만 열린다.
 		mockMvc.perform(get("/actuator/prometheus"))
 			.andExpect(status().isForbidden());
 	}
@@ -121,7 +119,7 @@ class HealthCheckControllerTest {
 	@Test
 	@DisplayName("사설망(RFC1918) 출처의 Prometheus scrape는 앱 지표와 함께 200을 반환한다")
 	void actuatorPrometheusIsScrapableFromInternalNetwork() throws Exception {
-		// docker network 내부 Prometheus(backend_app_metrics job, #2376)가 접근하는 사설망 출처를 모사한다.
+		// docker network 내부 Prometheus(backend_app_metrics job, #2376)와 동일한 RFC1918 출처를 모사한다.
 		mockMvc.perform(get("/actuator/prometheus")
 				.with(request -> {
 					request.setRemoteAddr("172.18.0.5");
@@ -292,6 +290,7 @@ class HealthCheckControllerTest {
 		}
 	)
 	@AutoConfigureObservability
+	@Import(HealthCheckControllerTest.TimetableSnapshotGaugeStubConfig.class)
 	@DisplayName("전용 관리 포트 분리")
 	class DedicatedManagementPortTest {
 
@@ -336,17 +335,31 @@ class HealthCheckControllerTest {
 			);
 			assertThat(prometheusLoopbackOnManagement.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 
-			ResponseEntity<String> readinessOnServer = managementRestTemplate.getForEntity(
-				"http://127.0.0.1:" + serverPort + "/actuator/health/readiness",
-				String.class
-			);
-			assertThat(readinessOnServer.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+			for (String blockedManagementPath : List.of("/actuator", "/actuator/info", "/actuator/env", "/actuator/health/other")) {
+				ResponseEntity<String> blockedOnManagement = managementRestTemplate.getForEntity(
+					"http://127.0.0.1:" + managementPort + blockedManagementPath,
+					String.class
+				);
+				assertThat(blockedOnManagement.getStatusCode())
+					.as("관리 포트의 비허용 경로 %s", blockedManagementPath)
+					.isEqualTo(HttpStatus.FORBIDDEN);
+			}
 
-			ResponseEntity<String> prometheusOnServer = managementRestTemplate.getForEntity(
-				"http://127.0.0.1:" + serverPort + "/actuator/prometheus",
-				String.class
-			);
-			assertThat(prometheusOnServer.getStatusCode()).isIn(HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND);
+			for (String actuatorPath : List.of(
+				"/actuator/health",
+				"/actuator/health/liveness",
+				"/actuator/health/readiness",
+				"/actuator/prometheus",
+				"/actuator/info"
+			)) {
+				ResponseEntity<String> actuatorOnServer = managementRestTemplate.getForEntity(
+					"http://127.0.0.1:" + serverPort + actuatorPath,
+					String.class
+				);
+				assertThat(actuatorOnServer.getStatusCode())
+					.as("메인 서버 포트의 액추에이터 경로 %s", actuatorPath)
+					.isIn(HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND);
+			}
 
 			ResponseEntity<String> apiHealthOnServer = managementRestTemplate.getForEntity(
 				"http://127.0.0.1:" + serverPort + "/api/health",

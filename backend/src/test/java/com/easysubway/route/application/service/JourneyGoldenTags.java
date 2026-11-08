@@ -40,10 +40,10 @@ final class JourneyGoldenTags {
 			return rowsByQuery.get(query.id());
 		}
 
-		/** 같은 출발·도착·시각이고 시설 시나리오가 없는 짝 질의의 결과. */
+		/** 같은 출발·도착·시각이고 시설·실시간 시나리오가 없는 짝 질의의 결과. */
 		Optional<List<JourneyGoldenRow>> baselineRows(Query query) {
 			return queries.stream()
-				.filter(other -> other.facility() == null && other.pair().equals(query.pair())
+				.filter(other -> other.facility() == null && other.realtime() == null && other.pair().equals(query.pair())
 					&& other.departureLocalTime().equals(query.departureLocalTime()))
 				.findFirst().map(this::rows);
 		}
@@ -69,6 +69,12 @@ final class JourneyGoldenTags {
 			case FACILITY_STATUS_ERROR -> facilityMode(query, Facility.Mode.STALE_REQUIRED)
 				&& strictRows(rows).allMatch(row -> row.status() == Status.ERROR);
 			case NO_ROUTE_ANY_PRESET -> rows.stream().allMatch(row -> row.status() == Status.NO_ROUTE);
+			case REALTIME_DELAY -> query.realtime() != null
+				&& row(rows, JourneyGoldenPreset.STANDARD).status() == Status.FOUND
+				&& results.baselineRows(query)
+					.map(baseline -> !outcome(row(rows, JourneyGoldenPreset.STANDARD))
+						.equals(outcome(row(baseline, JourneyGoldenPreset.STANDARD))))
+					.orElse(false);
 			case EXISTING_REPRESENTATIVE -> EXISTING_PAIRS.contains(query.origin() + " " + query.destination());
 		};
 	}

@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '965c924ed8dfdcc961c3ac8a19f4d53b78520cc7c54270dfd6d08d11ae6aae55'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '8ed73aec414a8f2cf7197554c312449b1c89211a7644876657e9c835ec0315ed');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'cbad81dcad9d7f32badd7604f5b5243a12ba5f4540c037c98af12859e693a8ec');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity, rebinding }) => rebinding?.foundationIdentity ?? identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -115,7 +115,7 @@ test('tracked enforced policy preserves prior children and projects the current 
     assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/107');
     assert.equal(finding.ownerIssueTitle, '[Build][Backend][P1] report domain SpotBugs remediation');
     assert.equal(finding.ownerIssueState, 'OPEN');
-    assert.equal(finding.expiresAt, '2026-11-07');
+    assert.equal(finding.expiresAt, '2027-02-05');
   }
   const fixedReason = 'Backend #107 removed this exact report-domain finding with a focused source-level remediation.';
   const fixedRemoval = 'Reopen Backend #107 if this exact finding or a source-equivalent replacement reappears.';
@@ -195,7 +195,7 @@ test('Backend #180 realtime residual projection is exact', () => {
   for (const finding of realtime) {
     assert.deepEqual(
       [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
-      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/180', '[Build][Backend][P1] realtime residual SpotBugs remediation', 'OPEN', 'Backend #180 removed this exact realtime finding with a focused source-level remediation.', 'Reopen Backend #180 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, realtime contract, analyzer, or Backend #180 evidence changes.', '2026-11-10', null],
+      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/180', '[Build][Backend][P1] realtime residual SpotBugs remediation', 'OPEN', 'Backend #180 removed this exact realtime finding with a focused source-level remediation.', 'Reopen Backend #180 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, realtime contract, analyzer, or Backend #180 evidence changes.', '2027-02-08', null],
     );
   }
 });
@@ -217,7 +217,7 @@ test('Backend #196 internal route result projection is exact', () => {
   for (const finding of internalRouteResult) {
     assert.deepEqual(
       [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
-      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/196', '[Build][Backend][P1] InternalRouteResult SpotBugs remediation', 'OPEN', 'Backend #196 removed this exact internal route result finding with a focused source-level remediation.', 'Reopen Backend #196 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, internal route result contract, analyzer, or Backend #196 evidence changes.', '2026-11-12', null],
+      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/196', '[Build][Backend][P1] InternalRouteResult SpotBugs remediation', 'OPEN', 'Backend #196 removed this exact internal route result finding with a focused source-level remediation.', 'Reopen Backend #196 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, internal route result contract, analyzer, or Backend #196 evidence changes.', '2027-02-10', null],
     );
   }
 });
@@ -239,7 +239,7 @@ test('Backend #198 route search result projection is exact', () => {
   for (const finding of routeSearchResult) {
     assert.deepEqual(
       [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
-      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/198', '[Build][Backend][P1] RouteSearchResult SpotBugs remediation', 'OPEN', 'Backend #198 removed this exact route search result finding with a focused defensive-copy remediation.', 'Reopen Backend #198 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, route search result contract, analyzer, or Backend #198 evidence changes.', '2026-11-12', null],
+      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/198', '[Build][Backend][P1] RouteSearchResult SpotBugs remediation', 'OPEN', 'Backend #198 removed this exact route search result finding with a focused defensive-copy remediation.', 'Reopen Backend #198 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, route search result contract, analyzer, or Backend #198 evidence changes.', '2027-02-10', null],
     );
   }
 });
@@ -259,7 +259,7 @@ test('Backend #201 Play Integrity verdict projection is exact', () => {
   for (const finding of playIntegrityVerdict) {
     assert.deepEqual(
       [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
-      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/201', '[Build][Backend][P1] PlayIntegrityVerdict SpotBugs remediation', 'OPEN', 'Backend #201 removed this exact Play Integrity verdict finding with a focused defensive-copy remediation.', 'Reopen Backend #201 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, Play Integrity verdict contract, analyzer, or Backend #201 evidence changes.', '2026-11-12', null],
+      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/201', '[Build][Backend][P1] PlayIntegrityVerdict SpotBugs remediation', 'OPEN', 'Backend #201 removed this exact Play Integrity verdict finding with a focused defensive-copy remediation.', 'Reopen Backend #201 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, Play Integrity verdict contract, analyzer, or Backend #201 evidence changes.', '2027-02-10', null],
     );
   }
 });
@@ -281,7 +281,7 @@ test('Backend #204 route feedback dashboard view projection is exact', () => {
   for (const finding of routeFeedbackDashboardView) {
     assert.deepEqual(
       [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
-      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/204', '[Build][Backend][P1] RouteFeedbackDashboardView SpotBugs remediation', 'OPEN', 'Backend #204 removed this exact route feedback dashboard view finding with a focused defensive-copy remediation.', 'Reopen Backend #204 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, route feedback dashboard view contract, analyzer, or Backend #204 evidence changes.', '2026-11-12', null],
+      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/204', '[Build][Backend][P1] RouteFeedbackDashboardView SpotBugs remediation', 'OPEN', 'Backend #204 removed this exact route feedback dashboard view finding with a focused defensive-copy remediation.', 'Reopen Backend #204 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, route feedback dashboard view contract, analyzer, or Backend #204 evidence changes.', '2027-02-10', null],
     );
   }
 });
@@ -311,7 +311,7 @@ test('Backend #208 route search dashboard view projection is exact', () => {
   for (const finding of routeSearchDashboardView) {
     assert.deepEqual(
       [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
-      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/208', '[Build][Backend][P1] RouteSearchDashboardView SpotBugs 14건 terminal disposition', 'OPEN', 'Backend #208 removed this exact route search dashboard view finding with a focused defensive-copy remediation.', 'Reopen Backend #208 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, route search dashboard view contract, analyzer, or Backend #208 evidence changes.', '2026-11-12', null],
+      ['FIXED', 'https://github.com/AquilaXk/easysubway-backend/issues/208', '[Build][Backend][P1] RouteSearchDashboardView SpotBugs 14건 terminal disposition', 'OPEN', 'Backend #208 removed this exact route search dashboard view finding with a focused defensive-copy remediation.', 'Reopen Backend #208 if this exact finding or a source-equivalent replacement reappears.', 'Review this terminal decision when the exact source, route search dashboard view contract, analyzer, or Backend #208 evidence changes.', '2027-02-10', null],
     );
   }
 });
@@ -331,7 +331,7 @@ test('Backend #216 RouteV2Metrics injected registry disposition is exact', () =>
       'Backend #332 removed this exact Route V2 metrics finding by decommissioning legacy Route V2 classes.',
       'Reopen Backend #332 if this exact finding or a source-equivalent replacement reappears.',
       'Review this terminal decision when the exact source, Route V2 decommissioning scope, analyzer, or Backend #332 evidence changes.',
-      '2026-11-13',
+      '2027-02-11',
       null,
     ],
   );
@@ -356,7 +356,7 @@ test('Backend #218 realtime cancelled train list remediation is exact', () => {
       'Backend #218 removed this exact realtime cancelled-train list finding with an explicit immutable snapshot after preserving normalization.',
       'Reopen Backend #218 if this exact finding or a source-equivalent replacement reappears.',
       'Review this terminal decision when the exact source, cancelled-train normalization contract, analyzer, or Backend #218 evidence changes.',
-      '2026-11-13',
+      '2027-02-11',
       null,
     ],
   );
@@ -378,7 +378,7 @@ test('Backend #220 route controller final-type remediation is exact', () => {
       'Backend #220 removed this exact route controller constructor finding by closing the package-private controller type to inheritance.',
       'Reopen Backend #220 if this exact finding or a source-equivalent replacement reappears.',
       'Review this terminal decision when the exact source, Spring controller construction contract, analyzer, or Backend #220 evidence changes.',
-      '2026-11-13',
+      '2027-02-11',
       null,
     ],
   );
@@ -406,7 +406,7 @@ test('Backend #224 session controller final-type remediation is exact', () => {
       'Backend #224 removed this exact session controller constructor finding by closing the package-private controller type to inheritance.',
       'Reopen Backend #224 if this exact finding or a source-equivalent replacement reappears.',
       'Review this terminal decision when the exact source, authenticated session controller construction contract, analyzer, or Backend #224 evidence changes.',
-      '2026-11-13',
+      '2027-02-11',
       null,
     ],
   );
@@ -438,7 +438,7 @@ test('Backend #226 route v2 access store constructor dispositions are exact', ()
         'Backend #332 removed this exact Route V2 access store finding by decommissioning legacy Route V2 classes.',
         'Reopen Backend #332 if this exact finding or a source-equivalent replacement reappears.',
         'Review this terminal decision when the exact source, Route V2 decommissioning scope, analyzer, or Backend #332 evidence changes.',
-        '2026-11-13',
+        '2027-02-11',
         null,
       ],
     );
@@ -474,7 +474,7 @@ test('Backend #230 route v2 planner dispositions are exact', () => {
         'Backend #332 removed this exact Route V2 planner finding by decommissioning legacy Route V2 classes.',
         'Reopen Backend #332 if this exact finding or a source-equivalent replacement reappears.',
         'Review this terminal decision when the exact source, Route V2 decommissioning scope, analyzer, or Backend #332 evidence changes.',
-        '2026-11-13',
+        '2027-02-11',
         null,
       ],
     );
@@ -520,7 +520,7 @@ test('Backend #234 route search service constructor dispositions are exact', () 
         'Backend #234 reviewed the exact convenience constructor as intentional fail-fast feedback-port capability validation; no partially initialized route service escapes.',
         'Remove this suppression if construction no longer performs the reviewed feedback-port capability validation or the exact finding disappears.',
         'Review this decision on source/member identity, feedback-port compatibility/failure timing, analyzer, or Backend #234 owner-state change.',
-        '2026-11-13',
+        '2027-02-11',
         {
           kind: 'EXCLUDE_FILTER_EXACT_METHOD',
           bugPattern: 'CT_CONSTRUCTOR_THROW',
@@ -582,7 +582,7 @@ test('Backend #237 JDBC route search repository remediation is source-complete',
         'Backend #237 reviewed the exact repository constructor as intentional fail-fast dependency and database-dialect initialization; no partially initialized repository escapes.',
         'Remove this suppression if construction no longer performs the reviewed fail-fast initialization or the exact finding disappears.',
         'Review this decision on source/member identity, Spring repository proxy/exception-translation semantics, analyzer, or Backend #237 owner-state change.',
-        '2026-11-13',
+        '2027-02-11',
         {
           kind: 'EXCLUDE_FILTER_EXACT_METHOD',
           bugPattern: 'CT_CONSTRUCTOR_THROW',
@@ -606,7 +606,7 @@ test('Backend #237 JDBC route search repository remediation is source-complete',
       'Backend #237 reviewed this exact aggregate query as guaranteed to return one row whose current mapper always returns a non-null summary.',
       'Remove this suppression if the aggregate SQL or mapper no longer guarantees one non-null summary row, or the exact finding disappears.',
       'Review this decision when the aggregate SQL, row mapper, JdbcTemplate contract, analyzer, or Backend #237 owner-state changes.',
-      '2026-11-13',
+      '2027-02-11',
       {
         kind: 'EXCLUDE_FILTER_EXACT_METHOD',
         bugPattern: 'NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE',
@@ -682,7 +682,7 @@ test('Backend #110 datapack projection is exact', () => {
     assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/110');
     assert.equal(finding.ownerIssueTitle, '[Build][Backend][P1] datapack domain SpotBugs remediation');
     assert.equal(finding.ownerIssueState, 'OPEN');
-    assert.equal(finding.expiresAt, '2026-11-07');
+    assert.equal(finding.expiresAt, '2027-02-05');
   }
   for (const finding of fixed) {
     assert.equal(finding.reason, 'Backend #110 removed this exact datapack-domain finding with a focused source-level remediation.');
@@ -728,7 +728,7 @@ test('Backend #113 admin operator quality projection is exact', () => {
     assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/113');
     assert.equal(finding.ownerIssueTitle, '[Build][Backend][P1] admin·operator·quality SpotBugs remediation');
     assert.equal(finding.ownerIssueState, 'OPEN');
-    assert.equal(finding.expiresAt, '2026-11-08');
+    assert.equal(finding.expiresAt, '2027-02-06');
   }
   for (const finding of fixed) {
     assert.equal(finding.reason, 'Backend #113 removed this exact admin/operator/quality finding with a focused source-level remediation.');
@@ -804,7 +804,7 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
     assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/116');
     assert.equal(finding.ownerIssueTitle, '[Build][Backend][P1] remaining non-realtime domain SpotBugs remediation');
     assert.equal(finding.ownerIssueState, 'OPEN');
-    assert.equal(finding.expiresAt, '2026-11-08');
+    assert.equal(finding.expiresAt, '2027-02-06');
   }
   const fixed = backend116.filter(({ disposition }) => disposition === 'FIXED');
   for (const finding of fixed) {
@@ -886,7 +886,7 @@ test('Backend #4 final enforcement is atomic and fail closed', () => {
   finding.ownerIssueTitle = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
   finding.removalCondition = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
   finding.reviewTrigger = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
-  finding.expiresAt = '2026-11-07';
+  finding.expiresAt = '2027-02-05';
   assert.throws(() => validatePolicy(reopened, { today: '2026-08-13' }), /zero FIX_REQUIRED/);
 
   const unknown = { ...tracked.findings[0], identity: 'f'.repeat(64) };
@@ -913,7 +913,7 @@ test('remediation policy admits a synthetic fixed terminal absence', () => {
       finding.reason = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
       finding.removalCondition = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
       finding.reviewTrigger = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
-      finding.expiresAt = '2026-11-07';
+      finding.expiresAt = '2027-02-05';
       finding.suppression = null;
     }
   }
@@ -999,7 +999,7 @@ test('Phase 2 member binding is exact, once per class, and fails closed', () => 
 });
 
 test('closed phase-one policy has empty findings and rejects reviewed or expired states', () => {
-  assert.equal(validatePolicy(policy(), { today: '2026-11-07' }), true);
+  assert.equal(validatePolicy(policy(), { today: '2027-02-05' }), true);
   assert.throws(() => validatePolicy(policy(), { today: '2026-02-30' }), /clock|invalid/);
   const invalid = policy(); invalid.transition.phase = 'FOUNDATION_REVIEWED_FINDINGS';
   assert.throws(() => validatePolicy(invalid), /phase/);
