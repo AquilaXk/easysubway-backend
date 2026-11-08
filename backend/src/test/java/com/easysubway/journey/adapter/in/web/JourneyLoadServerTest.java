@@ -88,6 +88,37 @@ class JourneyLoadServerTest {
 		}
 
 		@Test
+		@DisplayName("세션 검증 목은 stubOnly로 만들어 고부하 가상 스레드 호출에서 Mockito 호출 이력 락 경합을 일으키지 않는다")
+		void authorizedSessionsUsesStubOnlyMock() {
+			var sessions = JourneyEndpointTestWiring.authorizedSessions(Instant.EPOCH);
+
+			assertThat(org.mockito.Mockito.mockingDetails(sessions).getMockCreationSettings().isStubOnly()).isTrue();
+		}
+
+		@Test
+		@DisplayName("팩을 b로 바꿨다가 a로 되돌리면 세대 번호는 올라가되 컴파일된 시간표와 하한 캐시는 그대로 재사용한다")
+		void replacingAndRestoringTheBundleAdvancesGenerationWhileReusingCompiledTimetable() throws Exception {
+			var beforeA = server.activeSnapshot();
+			control(server, "bundle/b");
+			var duringB = server.activeSnapshot();
+			control(server, "bundle/a");
+			var afterA = server.activeSnapshot();
+			control(server, "bundle/b");
+			var afterB = server.activeSnapshot();
+
+			assertThat(afterA.generation()).isEqualTo(beforeA.generation() + 2);
+			assertThat(afterB.generation()).isEqualTo(duringB.generation() + 2);
+			assertThat(CapitalEndpointFixture.compiledTimetableIdentity(
+				(com.easysubway.route.application.service.RaptorRouteBundleRuntimeView) afterA.runtimeView()))
+				.isSameAs(CapitalEndpointFixture.compiledTimetableIdentity(
+					(com.easysubway.route.application.service.RaptorRouteBundleRuntimeView) beforeA.runtimeView()));
+			assertThat(CapitalEndpointFixture.compiledTimetableIdentity(
+				(com.easysubway.route.application.service.RaptorRouteBundleRuntimeView) afterB.runtimeView()))
+				.isSameAs(CapitalEndpointFixture.compiledTimetableIdentity(
+					(com.easysubway.route.application.service.RaptorRouteBundleRuntimeView) duringB.runtimeView()));
+		}
+
+		@Test
 		@DisplayName("시설 상태 원천이 멈추면 계단 없는 필수 요청은 FACILITY_STATUS_UNAVAILABLE 503으로 드러나고, 복구되면 멈추기 전과 같은 응답이 돌아온다")
 		void facilityOutageSurfacesAsAnExplicitFailureAndRecoveryRestoresTheAnswer() throws Exception {
 			String body = request(pair.origin(), pair.destination(), "REQUIRE_STEP_FREE");

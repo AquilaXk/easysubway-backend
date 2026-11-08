@@ -13,10 +13,10 @@
     "java" : "Eclipse Adoptium 21.0.11",
     "arch" : "amd64",
     "processors" : 4,
-    "baselineSource" : "geometric mean of 5 Backend CI job medians (run 39069638670 attempts 1-5)",
+    "baselineSource" : "geometric mean of 17 Backend CI job medians across 6 runner CPU models (per-CPU baselines in cpuBaselines)",
     "calibrationRangeNanos" : {
       "min" : 70000000,
-      "max" : 98000000
+      "max" : 140000000
     }
   },
   "calibrationNanos" : 97813815,
@@ -35,15 +35,15 @@
         "sha256" : "f769c2a2ca17d48057d30d12c3b7b668b49f06813861c5d2e9ef519c860efeb3"
       },
       "compile" : {
-        "nanos" : 44985000,
+        "nanos" : 44721095,
         "allocatedBytes" : 26981864,
         "retainedBytes" : 3256096
       },
       "modes" : {
         "DEPART_AT" : {
           "queries" : 160,
-          "p50Nanos" : 126300,
-          "p99Nanos" : 923427,
+          "p50Nanos" : 123251,
+          "p99Nanos" : 802321,
           "samplesPerRound" : 160,
           "allocatedBytesPerQuery" : 8286,
           "work" : {
@@ -133,15 +133,15 @@
         "sha256" : "8cf1d4028a6c5594db0ffd4e3ae5ea2b772cd6ddd59d5ff77201f8de0363f37a"
       },
       "compile" : {
-        "nanos" : 6207030,
+        "nanos" : 6216489,
         "allocatedBytes" : 4510744,
         "retainedBytes" : 553104
       },
       "modes" : {
         "DEPART_AT" : {
           "queries" : 100,
-          "p50Nanos" : 35596,
-          "p99Nanos" : 121101,
+          "p50Nanos" : 34616,
+          "p99Nanos" : 112694,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 6693,
           "work" : {
@@ -153,8 +153,8 @@
         },
         "ARRIVE_BY" : {
           "queries" : 12,
-          "p50Nanos" : 153495,
-          "p99Nanos" : 905515,
+          "p50Nanos" : 156799,
+          "p99Nanos" : 837138,
           "samplesPerRound" : 12,
           "allocatedBytesPerQuery" : 258404,
           "work" : {
@@ -177,8 +177,8 @@
         },
         "DEPART_BETWEEN" : {
           "queries" : 12,
-          "p50Nanos" : 174497,
-          "p99Nanos" : 585313,
+          "p50Nanos" : 172331,
+          "p99Nanos" : 542429,
           "samplesPerRound" : 12,
           "allocatedBytesPerQuery" : 266068,
           "work" : {
@@ -201,8 +201,8 @@
         },
         "LAST_CONNECTION" : {
           "queries" : 6,
-          "p50Nanos" : 119192,
-          "p99Nanos" : 181352,
+          "p50Nanos" : 117229,
+          "p99Nanos" : 172592,
           "samplesPerRound" : 6,
           "allocatedBytesPerQuery" : 127837,
           "work" : {
@@ -304,15 +304,15 @@
         "sha256" : "5232afcee0d88293e8a4d0e1a899677dfd5ddd9bf9b7aeb8c0e70f9364cc813d"
       },
       "compile" : {
-        "nanos" : 147332,
+        "nanos" : 139161,
         "allocatedBytes" : 117040,
         "retainedBytes" : 31400
       },
       "modes" : {
         "DEPART_AT" : {
           "queries" : 100,
-          "p50Nanos" : 10855,
-          "p99Nanos" : 32129,
+          "p50Nanos" : 10544,
+          "p99Nanos" : 33114,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 6292,
           "work" : {
@@ -324,8 +324,8 @@
         },
         "ARRIVE_BY" : {
           "queries" : 100,
-          "p50Nanos" : 23100,
-          "p99Nanos" : 50138,
+          "p50Nanos" : 22586,
+          "p99Nanos" : 50174,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 34291,
           "work" : {
@@ -348,8 +348,8 @@
         },
         "DEPART_BETWEEN" : {
           "queries" : 100,
-          "p50Nanos" : 34912,
-          "p99Nanos" : 87701,
+          "p50Nanos" : 34579,
+          "p99Nanos" : 82592,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 93930,
           "work" : {
@@ -371,8 +371,8 @@
         },
         "LAST_CONNECTION" : {
           "queries" : 100,
-          "p50Nanos" : 21909,
-          "p99Nanos" : 48459,
+          "p50Nanos" : 21263,
+          "p99Nanos" : 50662,
           "samplesPerRound" : 100,
           "allocatedBytesPerQuery" : 35562,
           "work" : {
@@ -460,12 +460,386 @@
       }
     }
   },
+  "cpuBaselines" : {
+    "AMD EPYC 7763 64-Core Processor" : {
+      "jobCount" : 3,
+      "workloads" : {
+        "metro-grid-v1" : {
+          "compile" : {
+            "nanos" : 52631119
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 163882,
+              "p99Nanos" : 875574
+            }
+          }
+        },
+        "district-grid-v1" : {
+          "compile" : {
+            "nanos" : 7285019
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 44101,
+              "p99Nanos" : 128845
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 186383,
+              "p99Nanos" : 910339
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 206386,
+              "p99Nanos" : 587771
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 145740,
+              "p99Nanos" : 195153
+            }
+          }
+        },
+        "line4-corridor-slice" : {
+          "compile" : {
+            "nanos" : 186805
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 13516,
+              "p99Nanos" : 44620
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 27296,
+              "p99Nanos" : 63937
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 42407,
+              "p99Nanos" : 94318
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 25435,
+              "p99Nanos" : 65451
+            }
+          }
+        }
+      }
+    },
+    "AMD EPYC 9V45 96-Core Processor" : {
+      "jobCount" : 2,
+      "workloads" : {
+        "metro-grid-v1" : {
+          "compile" : {
+            "nanos" : 38638591
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 96977,
+              "p99Nanos" : 921583
+            }
+          }
+        },
+        "district-grid-v1" : {
+          "compile" : {
+            "nanos" : 5158298
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 28672,
+              "p99Nanos" : 114241
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 142766,
+              "p99Nanos" : 909446
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 156910,
+              "p99Nanos" : 583930
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 97747,
+              "p99Nanos" : 169175
+            }
+          }
+        },
+        "line4-corridor-slice" : {
+          "compile" : {
+            "nanos" : 112457
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 8595,
+              "p99Nanos" : 28162
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 19225,
+              "p99Nanos" : 43813
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 28041,
+              "p99Nanos" : 75702
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 18196,
+              "p99Nanos" : 40551
+            }
+          }
+        }
+      }
+    },
+    "AMD EPYC 9V74 80-Core Processor" : {
+      "jobCount" : 3,
+      "workloads" : {
+        "metro-grid-v1" : {
+          "compile" : {
+            "nanos" : 47411182
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 127536,
+              "p99Nanos" : 854129
+            }
+          }
+        },
+        "district-grid-v1" : {
+          "compile" : {
+            "nanos" : 6434656
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 35309,
+              "p99Nanos" : 115384
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 164827,
+              "p99Nanos" : 856854
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 178284,
+              "p99Nanos" : 533604
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 120666,
+              "p99Nanos" : 171116
+            }
+          }
+        },
+        "line4-corridor-slice" : {
+          "compile" : {
+            "nanos" : 132412
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 10812,
+              "p99Nanos" : 34120
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 23437,
+              "p99Nanos" : 50421
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 34767,
+              "p99Nanos" : 81279
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 21985,
+              "p99Nanos" : 47547
+            }
+          }
+        }
+      }
+    },
+    "INTEL(R) XEON(R) PLATINUM 8573C" : {
+      "jobCount" : 1,
+      "workloads" : {
+        "metro-grid-v1" : {
+          "compile" : {
+            "nanos" : 35356377
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 94066,
+              "p99Nanos" : 581326
+            }
+          }
+        },
+        "district-grid-v1" : {
+          "compile" : {
+            "nanos" : 5203035
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 27217,
+              "p99Nanos" : 86609
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 122307,
+              "p99Nanos" : 681967
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 133306,
+              "p99Nanos" : 432998
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 93087,
+              "p99Nanos" : 146471
+            }
+          }
+        },
+        "line4-corridor-slice" : {
+          "compile" : {
+            "nanos" : 96813
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 7877,
+              "p99Nanos" : 27863
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 18500,
+              "p99Nanos" : 39760
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 30385,
+              "p99Nanos" : 72462
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 17102,
+              "p99Nanos" : 51875
+            }
+          }
+        }
+      }
+    },
+    "Intel(R) Xeon(R) 6973P-C" : {
+      "jobCount" : 1,
+      "workloads" : {
+        "metro-grid-v1" : {
+          "compile" : {
+            "nanos" : 38270605
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 100859,
+              "p99Nanos" : 525499
+            }
+          }
+        },
+        "district-grid-v1" : {
+          "compile" : {
+            "nanos" : 5690647
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 29236,
+              "p99Nanos" : 83314
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 131071,
+              "p99Nanos" : 579581
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 141650,
+              "p99Nanos" : 425971
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 94113,
+              "p99Nanos" : 147225
+            }
+          }
+        },
+        "line4-corridor-slice" : {
+          "compile" : {
+            "nanos" : 99978
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 9445,
+              "p99Nanos" : 27481
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 19505,
+              "p99Nanos" : 43962
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 32488,
+              "p99Nanos" : 69979
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 17972,
+              "p99Nanos" : 51213
+            }
+          }
+        }
+      }
+    },
+    "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz" : {
+      "jobCount" : 2,
+      "workloads" : {
+        "metro-grid-v1" : {
+          "compile" : {
+            "nanos" : 44495226
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 115537,
+              "p99Nanos" : 569766
+            }
+          }
+        },
+        "district-grid-v1" : {
+          "compile" : {
+            "nanos" : 6430946
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 32282,
+              "p99Nanos" : 97275
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 161034,
+              "p99Nanos" : 718054
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 166823,
+              "p99Nanos" : 478089
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 116696,
+              "p99Nanos" : 154052
+            }
+          }
+        },
+        "line4-corridor-slice" : {
+          "compile" : {
+            "nanos" : 146314
+          },
+          "modes" : {
+            "DEPART_AT" : {
+              "p50Nanos" : 9761,
+              "p99Nanos" : 30712
+            },
+            "ARRIVE_BY" : {
+              "p50Nanos" : 21234,
+              "p99Nanos" : 47672
+            },
+            "DEPART_BETWEEN" : {
+              "p50Nanos" : 33466,
+              "p99Nanos" : 75503
+            },
+            "LAST_CONNECTION" : {
+              "p50Nanos" : 20329,
+              "p99Nanos" : 52072
+            }
+          }
+        }
+      }
+    }
+  },
   "tolerances" : {
     "workCounterRelative" : 0.02,
     "allocatedBytesRegression" : 0.3,
     "retainedBytesRegression" : 0.3,
     "normalizedLatencyFactor" : 2.5,
     "normalizedCompileFactor" : 2.5,
-    "stablePointP50Factor" : 2.0
+    "stablePointP50Factor" : 2
   }
 }

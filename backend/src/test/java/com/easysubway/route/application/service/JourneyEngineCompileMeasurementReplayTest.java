@@ -174,7 +174,9 @@ class JourneyEngineCompileMeasurementReplayTest {
 	void committedCompileBaselineKeepsMarginAndCatchesRegressionOverSyncJitMeasurements() throws IOException {
 		double factor = JourneyEnginePerformanceGateTest.Tolerances.DEFAULT.normalizedCompileFactor();
 		JsonNode raw = JSON.readTree(Files.readString(JourneyEngineBaselineDerivation.MEASUREMENTS, StandardCharsets.UTF_8));
-		List<JsonNode> jvms = list(raw.get("jobs")).stream().flatMap(job -> list(job.get("jvms")).stream()).toList();
+		List<JobJvm> jvms = list(raw.get("jobs")).stream()
+			.flatMap(job -> list(job.get("jvms")).stream().map(jvm -> new JobJvm(job.path("cpuModel").asText(null), jvm)))
+			.toList();
 		List<String> workloads = new ArrayList<>();
 		committedBaseline.get("workloads").fieldNames().forEachRemaining(workloads::add);
 		for (String workload : workloads) {
@@ -186,9 +188,17 @@ class JourneyEngineCompileMeasurementReplayTest {
 		assertThat(caught).as("컴파일이 모두 %d배 느려졌을 때 잡히는 JVM 수", REGRESSION_FACTOR).isEqualTo(jvms.size());
 	}
 
-	private static double syncRatio(JsonNode jvm, String workload) {
-		double baselineRatio = committedBaseline.at("/workloads/" + workload + "/compile/nanos").asDouble()
-			/ committedBaseline.get("calibrationNanos").asDouble();
-		return jvm.at("/workloads/" + workload + "/compile/nanos").asDouble() / jvm.get("calibrationNanos").asDouble() / baselineRatio;
+	private record JobJvm(String cpuModel, JsonNode jvm) {
+	}
+
+	private static double syncRatio(JobJvm entry, String workload) {
+		JsonNode cpuBaseline = entry.cpuModel() == null ? null : committedBaseline.path("cpuBaselines").get(entry.cpuModel());
+		JsonNode activeBaseline = cpuBaseline != null && !cpuBaseline.isNull() ? cpuBaseline : committedBaseline;
+		double baselineCalibration = activeBaseline.path("calibrationNanos")
+			.asDouble(committedBaseline.get("calibrationNanos").asDouble());
+		double baselineRatio = activeBaseline.at("/workloads/" + workload + "/compile/nanos").asDouble()
+			/ baselineCalibration;
+		return entry.jvm().at("/workloads/" + workload + "/compile/nanos").asDouble()
+			/ entry.jvm().get("calibrationNanos").asDouble() / baselineRatio;
 	}
 }

@@ -233,6 +233,19 @@ class JourneyEnginePerformanceGateTest {
 		Map<String, Object> missingWorkload = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
 		missingWorkload.put("workloads", Map.of());
 		assertThat(regressions(baseline, tree(missingWorkload))).singleElement().asString().contains("workload");
+		// 등록된 CPU 모델은 cpuBaselines 전용 기준선으로 판정해 빠른 CPU의 2.1배 회귀도 놓치지 않고, 미등록 CPU는 전체 기하평균 기준선을 쓴다.
+		Map<String, Object> withCpuBaseline = sample(1_000, 2_000_000, 1_000_000, 100_000_000, "bundle");
+		withCpuBaseline.put("cpuBaselines", Map.of("AMD EPYC 9V45 96-Core Processor", Map.of("jobCount", 2,
+			"workloads", Map.of("sample-grid", Map.of(
+				"compile", Map.of("nanos", 35_000_000L),
+				"modes", Map.of("DEPART_AT", Map.of("p50Nanos", 1_400_000L, "p99Nanos", 2_800_000L)))))));
+		Map<String, Object> fastCpuSlowed = sample(1_000, 2_940_000, 1_000_000, 100_000_000, "bundle");
+		fastCpuSlowed.put("method", Map.of("cpuModel", "AMD EPYC 9V45 96-Core Processor"));
+		assertThat(regressions(tree(withCpuBaseline), tree(fastCpuSlowed)))
+			.singleElement().asString().contains("DEPART_AT.p50Nanos", "x2.0");
+		Map<String, Object> unknownCpu = sample(1_000, 2_940_000, 1_000_000, 100_000_000, "bundle");
+		unknownCpu.put("method", Map.of("cpuModel", "Unknown Local CPU"));
+		assertThat(regressions(tree(withCpuBaseline), tree(unknownCpu))).isEmpty();
 	}
 
 	@Test
@@ -298,6 +311,7 @@ class JourneyEnginePerformanceGateTest {
 		method.put("java", System.getProperty("java.vendor") + " " + System.getProperty("java.version"));
 		method.put("arch", System.getProperty("os.arch"));
 		method.put("processors", Runtime.getRuntime().availableProcessors());
+		method.put("cpuModel", JourneyEngineRunnerNotice.cpuModel());
 		result.put("method", method);
 		result.put("calibrationNanos", calibration);
 		result.put("workloads", workloads);
@@ -590,6 +604,10 @@ class JourneyEnginePerformanceGateTest {
 		}
 		double baselineCalibration = baseline.path("calibrationNanos").asDouble();
 		double measuredCalibration = measured.path("calibrationNanos").asDouble();
+		String cpuModel = measured.path("method").path("cpuModel").asText("");
+		JsonNode cpuWorkloads = cpuModel.isBlank()
+			? JSON.missingNode()
+			: baseline.path("cpuBaselines").path(cpuModel).path("workloads");
 		for (String id : names(baseline.path("workloads"), measured.path("workloads"))) {
 			JsonNode before = baseline.path("workloads").path(id);
 			JsonNode after = measured.path("workloads").path(id);
@@ -605,7 +623,10 @@ class JourneyEnginePerformanceGateTest {
 				}
 			}
 			if (identityChanged) continue;
-			compareFactor(problems, metricSubject(id, COMPILE_SUBJECT, "nanos"), before.path("compile").path("nanos").asDouble() / baselineCalibration,
+			JsonNode cpuBefore = cpuWorkloads.path(id);
+			JsonNode wallClockCompile = cpuBefore.path("compile").path("nanos").isNumber()
+				? cpuBefore.path("compile") : before.path("compile");
+			compareFactor(problems, metricSubject(id, COMPILE_SUBJECT, "nanos"), wallClockCompile.path("nanos").asDouble() / baselineCalibration,
 				after.path("compile").path("nanos").asDouble() / measuredCalibration, tolerances.normalizedCompileFactor());
 			compareRegression(problems, metricSubject(id, COMPILE_SUBJECT, "retainedBytes"), before.path("compile").path("retainedBytes").asDouble(),
 				after.path("compile").path("retainedBytes").asDouble(), tolerances.retainedBytesRegression());
@@ -616,10 +637,12 @@ class JourneyEnginePerformanceGateTest {
 					problems.add(new Regression(id + " " + mode, id + " mode " + mode + " is missing on one side; regenerate the baseline"));
 					continue;
 				}
+				JsonNode cpuMode = cpuBefore.path("modes").path(mode);
 				for (String latency : List.of("p50Nanos", "p99Nanos")) {
 					double factor = mode.equals(Mode.DEPART_AT.name()) && latency.equals("p50Nanos")
 						? tolerances.stablePointP50Factor() : tolerances.normalizedLatencyFactor();
-					compareFactor(problems, metricSubject(id, mode, latency), expected.path(latency).asDouble() / baselineCalibration,
+					JsonNode expectedLatency = cpuMode.path(latency).isNumber() ? cpuMode.path(latency) : expected.path(latency);
+					compareFactor(problems, metricSubject(id, mode, latency), expectedLatency.asDouble() / baselineCalibration,
 						actual.path(latency).asDouble() / measuredCalibration, factor);
 				}
 				compareRegression(problems, metricSubject(id, mode, "allocatedBytesPerQuery"),

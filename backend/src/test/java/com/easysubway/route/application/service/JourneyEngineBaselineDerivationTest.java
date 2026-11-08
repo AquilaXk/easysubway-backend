@@ -39,16 +39,23 @@ class JourneyEngineBaselineDerivationTest {
 	}
 
 	@Test
-	@DisplayName("손으로 고친 기준선 값은 원자료로 다시 계산한 값과 달라 잡힌다")
+	@DisplayName("손으로 고친 기준선 값(전체 및 CPU별 기준선)은 원자료로 다시 계산한 값과 달라 잡힌다")
 	void aHandEditedBaselineValueDiffersFromTheDerivation() throws IOException {
 		ObjectNode edited = baseline.deepCopy();
 		long original = edited.at(FIRST_WORKLOAD).asLong();
 		((ObjectNode) edited.at(FIRST_WORKLOAD.substring(0, FIRST_WORKLOAD.lastIndexOf('/')))).put("p50Nanos", Math.round(original * HAND_EDIT_FACTOR));
 		assertThat(JourneyEngineBaselineDerivation.derive(edited, raw)).isNotEqualTo(edited);
+
+		ObjectNode cpuEdited = baseline.deepCopy();
+		String cpuWorkloadPath = "/cpuBaselines/AMD EPYC 9V45 96-Core Processor" + FIRST_WORKLOAD;
+		long cpuOriginal = cpuEdited.at(cpuWorkloadPath).asLong();
+		((ObjectNode) cpuEdited.at(cpuWorkloadPath.substring(0, cpuWorkloadPath.lastIndexOf('/'))))
+			.put("p50Nanos", Math.round(cpuOriginal * HAND_EDIT_FACTOR));
+		assertThat(JourneyEngineBaselineDerivation.derive(cpuEdited, raw)).isNotEqualTo(cpuEdited);
 	}
 
 	@Test
-	@DisplayName("원자료는 같은 측정 방법·보정 시간 기준이고 러너 유형이 섞일 만큼 job이 있다")
+	@DisplayName("원자료는 같은 측정 방법·보정 시간 기준이고 호스티드 6개 러너 CPU 유형별 기준선을 모두 포함한다")
 	void rawMeasurementsMatchTheBaselineMethod() {
 		assertThat(raw.path("method").path("aggregation")).isEqualTo(baseline.path("method").path("aggregation"));
 		assertThat(raw.path("method").path("warmupRounds").asInt()).isEqualTo(JourneyEnginePerformanceGateTest.WARMUP_ROUNDS);
@@ -56,13 +63,31 @@ class JourneyEngineBaselineDerivationTest {
 		List<JsonNode> jobs = StreamSupport.stream(raw.path("jobs").spliterator(), false).toList();
 		assertThat(jobs).hasSizeGreaterThanOrEqualTo(MIN_JOBS);
 		assertThat(jobs).allSatisfy(job -> assertThat(job.path("jvms").size() % 2).as("job당 JVM 수는 홀수").isEqualTo(1));
+		List<String> cpuModels = jobs.stream()
+			.map(job -> job.path("cpuModel").asText(""))
+			.filter(model -> !model.isBlank())
+			.distinct()
+			.sorted()
+			.toList();
+		assertThat(cpuModels).containsExactly(
+			"AMD EPYC 7763 64-Core Processor",
+			"AMD EPYC 9V45 96-Core Processor",
+			"AMD EPYC 9V74 80-Core Processor",
+			"INTEL(R) XEON(R) PLATINUM 8573C",
+			"Intel(R) Xeon(R) 6973P-C",
+			"Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz");
+		List<String> baselineCpuModels = new java.util.ArrayList<>();
+		baseline.path("cpuBaselines").fieldNames().forEachRemaining(baselineCpuModels::add);
+		assertThat(baselineCpuModels).containsExactlyElementsOf(cpuModels);
 	}
 
 	@Test
-	@DisplayName("기준선의 보정 시간 범위는 원자료의 모든 보정 시간을 덮는다")
+	@DisplayName("기준선의 보정 시간 범위(70~140ms)는 원자료의 모든 보정 시간을 덮는다")
 	void calibrationRangeCoversEveryRawMeasurement() {
 		long min = baseline.at("/method/calibrationRangeNanos/min").asLong();
 		long max = baseline.at("/method/calibrationRangeNanos/max").asLong();
+		assertThat(min).isEqualTo(70_000_000L);
+		assertThat(max).isEqualTo(140_000_000L);
 		List<Long> calibrations = StreamSupport.stream(raw.path("jobs").spliterator(), false)
 			.flatMap(job -> StreamSupport.stream(job.path("jvms").spliterator(), false)).map(jvm -> jvm.path("calibrationNanos").asLong()).toList();
 		assertThat(calibrations).allSatisfy(nanos -> assertThat(nanos).isBetween(min, max));

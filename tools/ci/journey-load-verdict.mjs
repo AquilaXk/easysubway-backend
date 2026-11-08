@@ -12,23 +12,23 @@ const TITLE = '경로 검색 부하·장애 시나리오';
 const CLEAN_PHASES = ['steady', 'recovered'];
 /**
  * 지연 한도 초과는 공유 러너 잡음일 수 있어 경고만 한다. 한도는 steady·recovered 단계의 p95다.
- * 호스티드 러너 첫 실측(backend journey-load run 39024609532, 200 rps)의 최대 p95(steady 27.4ms)의 약 1.5배다. 측정이 1회뿐이라 경고로만 쓴다.
- * 재조정 조건은 hub 에픽 AquilaXk/easysubway#3036 체크리스트에 있다.
+ * 호스티드 10회 실측(runs 40971783153..42421758181, 200 rps, 정합성 위반 0건)에서 정상 완주한 실행들의
+ * steady·recovered p95 최대값(50.1ms)의 약 1.2배(1.5배 이내)인 60ms로 고정한다(#3036 5-1).
  */
-export const CLEAN_PHASE_P95_LIMIT_MS = 40;
+export const CLEAN_PHASE_P95_LIMIT_MS = 60;
 /**
  * 부하 유지의 허용 비율(%)이다. 단계마다 도착한 요청이 계획의 이 비율 이상이고 버려진 반복(k6 dropped_iterations, 단계별)이 나머지 이하면
  * 측정이 성립한 것으로 본다. k6 constant-arrival-rate는 VU가 부족하거나 스케줄러가 밀리면 반복을 버린다.
- * 호스티드 첫 실측의 단계별 부족은 최대 0.28%였고 정확성 위반은 없었다. 버려진 반복은 요청이 되지 않아 판정 대상이 아니며 그 수는
- * verdict와 summary에 적는다. 도착한 요청의 위반 검사는 그대로 적용된다.
+ * 호스티드 10회 실측(runs 40971783153..42421758181)에서 정상 완주 구간의 단계별 부족은 최대 0.50%(dropped_iterations ≤ 10)였고
+ * 계약 위반은 10회 모두 0건이었다. 버려진 반복은 요청이 되지 않아 판정 대상이 아니며 그 수는 verdict와 summary에 적는다.
  */
 export const LOAD_SUSTAIN_MIN_PERCENT = 99;
 /**
  * swap 엄격 창(팩이 정해진 구간)마다 도착해야 하는 최소 요청의 비율(%)이다. 창이 비면 그 구간의 오래된 팩 응답(WRONG_BUNDLE)을 볼 수 없다.
- * 창 경계는 반복이 밀리면 요청이 이웃 창으로 넘어가 창당 수가 흔들리므로 단계 허용(99%)보다 넓게 90%로 둔다. 호스티드 창별 실측이 없어
- * 임시값이며 재조정 조건은 에픽 #3036 체크리스트에 있다.
+ * 호스티드 10회 실측(runs 40971783153..42421758181)에서 정상 완주 실행의 엄격 창별 도착 요청은 149~150/150건(99.3~100%)이었고,
+ * 창 경계 스케줄러 지터 여백을 두어 95%(최소 143/150건)로 고정한다(#3036 5-1).
  */
-export const SWAP_WINDOW_MIN_PERCENT = 90;
+export const SWAP_WINDOW_MIN_PERCENT = 95;
 const CONTROL_CALLS_OUTSIDE_SWAP = 2;
 
 const fail = (message) => { throw new Error(`journey load: ${message}`); };
