@@ -41,8 +41,9 @@ if (typeof outputDirectory !== 'string' || !outputDirectory.startsWith('/')) thr
 
 const BUNDLE_LABELS = [FIRST_BUNDLE, SECOND_BUNDLE];
 const SEARCH_PATH = '/api/v3/journeys/search';
-const PRE_ALLOCATED_VUS = 20;
-const MAX_VUS = 100;
+const PRE_ALLOCATED_VUS = 64;
+const MAX_VUS = 128;
+const SETUP_WARMUP_PASSES = 3;
 const SETUP_TIMEOUT = '120s';
 const MILLIS_PER_SECOND = 1000;
 const REQUESTS_PER_PHASE_ID_BLOCK = 1_000_000;
@@ -95,18 +96,20 @@ function search(entry, sequence) {
   return { response, summary: summarizeResponse(response.status, response.body) };
 }
 
-/** 두 팩과 정상 시설 상태에서 질의 목록 전체를 한 번씩 보내 "단독 응답"의 기준을 만든다. 서버가 건강하지 않으면 시작하지 않는다. */
+/** 두 팩과 정상 시설 상태에서 질의 목록 전체를 보내 "단독 응답" 기준을 만들고 C2 JIT·하한 캐시를 예열한다. 서버가 건강하지 않으면 시작하지 않는다. */
 export function setup() {
   const fixtureResponse = http.get(`${baseUrl}/__load/fixture`);
   if (fixtureResponse.status !== 200) throw new Error(`fixture request failed: ${fixtureResponse.status}`);
   const fixture = fixtureResponse.json();
   const corpus = buildCorpus(fixture, LOAD_PLAN);
   const expected = corpus.map(() => ({}));
+  let setupSequence = SETUP_ID_BASE;
   requireOk(post('/__load/facility/up'), 'facility up');
-  BUNDLE_LABELS.forEach((label, labelIndex) => {
+  BUNDLE_LABELS.forEach((label) => {
     requireOk(post(`/__load/bundle/${label}`), `activate bundle ${label}`);
     corpus.forEach((entry, index) => {
-      const { summary } = search(entry, SETUP_ID_BASE + labelIndex * corpus.length + index);
+      const { summary } = search(entry, setupSequence);
+      setupSequence += 1;
       if (summary.status === 0 || summary.status >= 500) throw new Error(`baseline request failed with ${summary.status} ${summary.code} on bundle ${label}`);
       expected[index][label] = summary;
     });
@@ -114,6 +117,13 @@ export function setup() {
   const answersDiffer = expected.some(({ a, b }) => a.status === 200 && b.status === 200 && a.fingerprint !== b.fingerprint);
   if (!answersDiffer) throw new Error('the two bundles answer identically, so a replacement could not be told apart');
   requireOk(post(`/__load/bundle/${FIRST_BUNDLE}`), 'activate the first bundle');
+  for (let pass = 0; pass < SETUP_WARMUP_PASSES; pass += 1) {
+    corpus.forEach((entry) => {
+      const { summary } = search(entry, setupSequence);
+      setupSequence += 1;
+      if (summary.status === 0 || summary.status >= 500) throw new Error(`warmup request failed with ${summary.status} ${summary.code}`);
+    });
+  }
   return { corpus, expected, bundles: fixture.bundles };
 }
 

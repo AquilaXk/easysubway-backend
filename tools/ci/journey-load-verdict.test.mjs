@@ -126,11 +126,11 @@ test('a shortfall concentrated in the strict swap windows fails even when the ph
   assert.match(judgeRun(run, LOAD_PLAN).failures[0].message, /창 5/);
 });
 
-test('each strict swap window needs 90% of its 150 planned requests: 135 passes and 134 fails', () => {
-  assert.equal(SWAP_WINDOW_MIN_PERCENT, 90);
+test('each strict swap window needs 95% of its 150 planned requests: 143 passes and 142 fails', () => {
+  assert.equal(SWAP_WINDOW_MIN_PERCENT, 95);
   const windows = (value) => HEALTHY_WINDOW_REQUESTS.map((count, index) => (index === 3 ? value : count));
-  assert.deepEqual(failureCodes(withPhase('swap', { windowRequests: windows(135) })), []);
-  assert.deepEqual(failureCodes(withPhase('swap', { windowRequests: windows(134) })), ['SWAP_WINDOW_STARVED']);
+  assert.deepEqual(failureCodes(withPhase('swap', { windowRequests: windows(143) })), []);
+  assert.deepEqual(failureCodes(withPhase('swap', { windowRequests: windows(142) })), ['SWAP_WINDOW_STARVED']);
 });
 
 test('a tolerated shortfall never excuses a violation in the iterations that did arrive', () => {
@@ -153,7 +153,8 @@ test('an outage run that never produced the explicit failure or the disclosed an
   assert.deepEqual(failureCodes(withPhase('outage', { disclosedUnobserved: 0 })), ['OUTAGE_NOT_OBSERVED']);
 });
 
-test('a clean phase over the p95 limit only warns; the swap and outage phases are informational', () => {
+test('a clean phase over the p95 limit (60ms) only warns; the swap and outage phases are informational', () => {
+  assert.equal(CLEAN_PHASE_P95_LIMIT_MS, 60);
   const slow = { ...LATENCY, p95: CLEAN_PHASE_P95_LIMIT_MS + 1 };
   for (const name of ['steady', 'recovered']) {
     const verdict = judgeRun(withPhase(name, { latencyMs: slow }), LOAD_PLAN);

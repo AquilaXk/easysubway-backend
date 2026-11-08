@@ -43,9 +43,16 @@ class JourneyEngineStablePointReplayTest {
 	private static final double WITHIN_TOLERANCE = 1.2;
 	private static final double NO_SLOWDOWN = 1.0;
 
+	private static final double FAST_CPU_REGRESSION = 2.1;
+	private static final List<String> FASTEST_CPU_MODELS = List.of(
+		"AMD EPYC 9V45 96-Core Processor",
+		"INTEL(R) XEON(R) PLATINUM 8573C");
+
 	private static JsonNode replay;
 	private static JsonNode committedBaseline;
 	private static List<JsonNode> steadyJvms;
+	private static List<JsonNode> fastestCpuJobs;
+	private static List<JsonNode> fastestCpuJvms;
 	private static Set<String> stablePointSubjects;
 
 	@BeforeAll
@@ -54,19 +61,34 @@ class JourneyEngineStablePointReplayTest {
 		committedBaseline = JSON.readTree(Files.readString(JourneyEnginePerformanceGateTest.BASELINE, StandardCharsets.UTF_8));
 		JsonNode raw = JSON.readTree(Files.readString(JourneyEngineBaselineDerivation.MEASUREMENTS, StandardCharsets.UTF_8));
 		steadyJvms = StreamSupport.stream(raw.path("jobs").spliterator(), false)
-			.flatMap(job -> StreamSupport.stream(job.path("jvms").spliterator(), false)).map(JourneyEngineStablePointReplayTest::stablePoint).toList();
+			.flatMap(job -> StreamSupport.stream(job.path("jvms").spliterator(), false)
+				.map(jvm -> stablePoint(job.path("cpuModel").asText(null), jvm)))
+			.toList();
+		fastestCpuJobs = StreamSupport.stream(raw.path("jobs").spliterator(), false)
+			.filter(job -> FASTEST_CPU_MODELS.contains(job.path("cpuModel").asText()))
+			.map(job -> stablePoint(
+				job.path("cpuModel").asText(),
+				JourneyEngineMeasurementConfirmation.medianOf(
+					StreamSupport.stream(job.path("jvms").spliterator(), false).toList())))
+			.toList();
+		fastestCpuJvms = steadyJvms.stream()
+			.filter(jvm -> FASTEST_CPU_MODELS.contains(jvm.path("cpuModel").asText()))
+			.toList();
 		List<String> workloads = new ArrayList<>();
 		committedBaseline.path("workloads").fieldNames().forEachRemaining(workloads::add);
 		stablePointSubjects = workloads.stream()
 			.map(workload -> JourneyEnginePerformanceGateTest.metricSubject(workload, STABLE_POINT, P50)).collect(Collectors.toSet());
 	}
 
-	/** 원자료의 JVM 하나에서 보정 시간과 번들별 출발 시각 고정 p50만 뽑는다. */
-	private static JsonNode stablePoint(JsonNode jvm) {
+	/** 원자료의 JVM 하나에서 CPU 모델, 보정 시간, 번들별 출발 시각 고정 p50을 뽑는다. */
+	private static JsonNode stablePoint(String cpuModel, JsonNode jvm) {
 		ObjectNode p50ByWorkload = JSON.createObjectNode();
 		jvm.path("workloads").fields().forEachRemaining(entry -> p50ByWorkload.set(entry.getKey(),
 			entry.getValue().path("modes").path(STABLE_POINT).path(P50)));
-		return JSON.createObjectNode().put("calibrationNanos", jvm.path("calibrationNanos").asLong()).set("p50Nanos", p50ByWorkload);
+		ObjectNode node = JSON.createObjectNode().put("calibrationNanos", jvm.path("calibrationNanos").asLong());
+		if (cpuModel != null && !cpuModel.isBlank()) node.put("cpuModel", cpuModel);
+		node.set("p50Nanos", p50ByWorkload);
+		return node;
 	}
 
 	private static List<JsonNode> legacyJvms() {
@@ -74,22 +96,27 @@ class JourneyEngineStablePointReplayTest {
 	}
 
 	/** {@code template}에서 보정 시간과 번들별 출발 시각 고정 p50만 {@code scale}배로 바꾼 측정 JSON. */
-	private static JsonNode measurement(JsonNode template, long calibration, JsonNode p50ByWorkload, double scale) {
+	private static JsonNode measurement(JsonNode template, long calibration, JsonNode p50ByWorkload, double scale, String cpuModel) {
 		ObjectNode measured = template.deepCopy();
 		measured.put("calibrationNanos", calibration);
+		if (cpuModel != null && !cpuModel.isBlank()) {
+			((ObjectNode) measured.path("method")).put("cpuModel", cpuModel);
+		}
 		p50ByWorkload.fields().forEachRemaining(entry -> ((ObjectNode) measured.at("/workloads/" + entry.getKey() + "/modes/" + STABLE_POINT))
 			.put(P50, Math.round(entry.getValue().asLong() * scale)));
 		return measured;
 	}
 
 	private static JsonNode measurement(JsonNode template, JsonNode jvm, double scale) {
-		return measurement(template, jvm.path("calibrationNanos").asLong(), jvm.path(P50), scale);
+		return measurement(template, jvm.path("calibrationNanos").asLong(), jvm.path(P50), scale, jvm.path("cpuModel").asText(null));
 	}
 
-	/** 예열 2회 시절 기준선: 커밋 전 기준선의 보정 시간과 p50. */
+	/** 예열 2회 시절 기준선: 커밋 전 기준선의 보정 시간과 p50(CPU별 기준선 없음). */
 	private static JsonNode legacyBaseline() {
 		JsonNode legacy = replay.path("legacyBaseline");
-		return measurement(committedBaseline, legacy.path("calibrationNanos").asLong(), legacy.path(P50), NO_SLOWDOWN);
+		ObjectNode node = (ObjectNode) measurement(committedBaseline, legacy.path("calibrationNanos").asLong(), legacy.path(P50), NO_SLOWDOWN, null);
+		node.remove("cpuBaselines");
+		return node;
 	}
 
 	/** 둔화 {@code scale}배를 주입한 JVM 측정에서 출발 시각 고정 p50 한도를 넘은 (JVM, 번들) 쌍의 수. */
@@ -136,5 +163,17 @@ class JourneyEngineStablePointReplayTest {
 		assertThat(flaggedPairs(committedBaseline, steadyJvms, REAL_REGRESSION)).isEqualTo(pairsOf(steadyJvms));
 		// 같은 회귀를 예열 2회 시절 JVM에 주입하면 옛 기준선은 한도가 정상 상태의 5~9배에 있어 일부를 놓친다.
 		assertThat(flaggedPairs(legacyBaseline(), legacyJvms(), REAL_REGRESSION)).isLessThan(pairsOf(legacyJvms()));
+	}
+
+	@Test
+	@DisplayName("가장 빠른 호스티드 CPU 유형(EPYC 9V45, Xeon 8573C)에서 2.1배 둔화는 CPU별 기준선이 모두 잡고 단일 통합 기준선은 놓친다")
+	void perCpuBaselinesCatchTwoPointOneTimesRegressionOnFastestHostedCpuModels() {
+		assertThat(fastestCpuJobs).hasSize(3);
+		assertThat(fastestCpuJvms).hasSize(9);
+		assertThat(flaggedPairs(committedBaseline, fastestCpuJobs, FAST_CPU_REGRESSION)).isEqualTo(pairsOf(fastestCpuJobs));
+		ObjectNode withoutCpuBaselines = committedBaseline.deepCopy();
+		withoutCpuBaselines.remove("cpuBaselines");
+		assertThat(flaggedPairs(withoutCpuBaselines, fastestCpuJobs, FAST_CPU_REGRESSION)).isZero();
+		assertThat(flaggedPairs(withoutCpuBaselines, fastestCpuJvms, FAST_CPU_REGRESSION)).isZero();
 	}
 }

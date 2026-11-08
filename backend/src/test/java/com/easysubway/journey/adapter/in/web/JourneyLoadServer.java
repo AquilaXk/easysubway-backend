@@ -97,6 +97,10 @@ public final class JourneyLoadServer implements AutoCloseable {
 		return port;
 	}
 
+	com.easysubway.journey.bundle.ActiveRouteBundleSnapshot activeSnapshot() {
+		return context.getBean(BundleReplacement.class).registry().activeSnapshot();
+	}
+
 	@Override
 	public void close() {
 		context.close();
@@ -145,15 +149,17 @@ public final class JourneyLoadServer implements AutoCloseable {
 		}
 	}
 
-	/** 한 번에 하나씩 팩을 바꾼다. 컴파일은 요청 경로 밖(이 호출 스레드)에서 하고 activate만 원자적으로 바뀐다. */
+	/** 한 번에 하나씩 팩을 바꾼다. 두 팩의 시간표는 시작할 때 한 번만 컴파일해 하한 캐시를 유지하고, 교체할 때는 세대만 올린 뷰를 원자적으로 stage·activate한다. */
 	private static final class BundleReplacement {
 		private final RouteBundleActivationRegistry registry = new RouteBundleActivationRegistry(CLOCK);
-		private final Map<String, RouteTimetable> timetables;
+		private final Map<String, RaptorRouteBundleRuntimeView> compiledViews;
 		private String activeLabel;
 
 		BundleReplacement() {
 			RouteTimetable first = CapitalEndpointFixture.timetable();
-			this.timetables = Map.of("a", first, "b", replacementTimetable(first));
+			this.compiledViews = Map.of(
+				"a", RaptorRouteBundleRuntimeView.compile(LoadScenarioBundles.manifestSha256("a"), 1L, first),
+				"b", RaptorRouteBundleRuntimeView.compile(LoadScenarioBundles.manifestSha256("b"), 1L, replacementTimetable(first)));
 			activate(FIRST_BUNDLE);
 		}
 
@@ -163,7 +169,7 @@ public final class JourneyLoadServer implements AutoCloseable {
 			long expectedGeneration = currentGeneration();
 			long generation = expectedGeneration + 1;
 			String manifestSha256 = LoadScenarioBundles.manifestSha256(label);
-			var runtime = RaptorRouteBundleRuntimeView.compile(manifestSha256, generation, timetables.get(label));
+			var runtime = CapitalEndpointFixture.rebindGeneration(compiledViews.get(label), generation);
 			registry.stage(LoadScenarioBundles.candidate(label, runtime, NOW), expectedGeneration);
 			registry.activate(manifestSha256, expectedGeneration);
 			activeLabel = label;
@@ -178,7 +184,7 @@ public final class JourneyLoadServer implements AutoCloseable {
 		}
 
 		boolean knows(String label) {
-			return timetables.containsKey(label);
+			return compiledViews.containsKey(label);
 		}
 
 		RouteBundleActivationRegistry registry() {

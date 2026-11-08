@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import com.easysubway.journey.analytics.InMemoryJourneySearchRecordStore;
 import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
@@ -43,9 +44,9 @@ final class JourneyEndpointTestWiring {
 			Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofSeconds(8), 1, 2, 3, 4, 10);
 	}
 
-	/** 세션 검증(Play Integrity)만 고정 응답으로 대신한다. */
+	/** 세션 검증(Play Integrity)만 고정 응답으로 대신한다. 고부하 가상 스레드에서 호출 이력 락 경합이 없도록 stubOnly로 만든다. */
 	static JourneySessionService authorizedSessions(Instant now) {
-		var sessions = mock(JourneySessionService.class);
+		var sessions = mock(JourneySessionService.class, withSettings().stubOnly());
 		when(sessions.authorize(anyString(), anyInt())).thenReturn(
 			new JourneySessionService.AuthorizedSession("journey:v3", now.plus(SESSION_LIFETIME)));
 		return sessions;

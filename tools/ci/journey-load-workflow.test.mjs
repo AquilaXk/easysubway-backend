@@ -93,4 +93,6 @@ test('Backend #520 runs both server configurations in one nightly run and keeps 
   assert.match(runner, /Math\.max\(\.\.\.codes\)/);
   assert.match(runner, /serverCommand\(runtime, portFile, facilityMode\)/, 'each server is started with the configuration it is run for');
   assert.match(runner, /JOURNEY_LOAD_FACILITY_MODE: facilityMode/, 'k6 judges with the same configuration the server runs');
+  assert.match(k6Script, /const PRE_ALLOCATED_VUS = 64;/);
+  assert.match(k6Script, /const MAX_VUS = 128;/);
 });

@@ -560,20 +560,34 @@
  * 높은 상태에서도 한도까지 1.5배 여유"는 새 조건에서 세 번들 모두 성립하고(1.78~1.97배), 컴파일이 모두 3배 느려지면 15 JVM이 모두 걸린다.
  * 6.3절의 재생 자료는 백그라운드 JIT 시절의 기록이므로 자체 기준값(같은 파일의 {@code perJvmCompileEstimates.baseline})으로 계속 판정하고,
  * 동기 JIT 기준값은 기준선 원자료로 새로 판정한다({@code JourneyEngineCompileMeasurementReplayTest}).</p>
- * <p>기준선 재현(F2): 기준선의 지연·할당·컴파일 값은 원자료 {@code engine-baseline-measurements.json}(job 5개, JVM 15개, run id와 시도 포함)
- * 에서 {@code JourneyEngineBaselineDerivation}이 계산한다. 보정 시간으로 나눈 값의 job별 중앙값을 내고 job들의 기하평균에 기준선 보정 시간을 곱한다.
+ * <p>기준선 재현(F2): 기준선의 지연·할당·컴파일 값은 원자료 {@code engine-baseline-measurements.json}(job 17개, JVM 51개, run id와 시도·CPU 모델 포함)
+ * 에서 {@code JourneyEngineBaselineDerivation}이 계산한다. 보정 시간으로 나눈 값의 job별 중앙값을 내고, 전체 기하평균 기준선과 {@code cpuBaselines}(CPU 모델별 기하평균 기준선)에 기준선 보정 시간을 곱한다.
  * {@code JourneyEngineBaselineDerivationTest}가 커밋된 기준선이 원자료의 재계산과 같은지 확인하므로 손으로 고친 값은 실패한다. CI artifact가
- * 만료돼도 기준선을 다시 만들 수 있다. 같은 도구가 기준선의 {@code method.calibrationRangeNanos}(원자료 보정 시간 70~98 ms)도 정한다.</p>
+ * 만료돼도 기준선을 다시 만들 수 있다. 같은 도구가 기준선의 {@code method.calibrationRangeNanos}(원자료 보정 시간 70~140 ms)도 정한다.</p>
  * <p>감시와 재산정 트리거(F3): 게이트가 실패하면 메시지에 러너 CPU 모델, 측정별 보정 시간, 기준선 산출 범위가 남고 범위 밖이면 경고가 붙는다
  * ({@code JourneyEngineRunnerNotice}). 상시 추세 관찰은 summary에 보정 시간과 러너 CPU를 적고, 보정 시간이 같은 범위 밖이면 {@code ::warning}을
  * 낸다. 같은 범위 밖 경고(게이트 실패 메시지 또는 추세 경고)가 3번 반복되면 새 러너 CPU 유형이 풀에 들어온 것으로 보고 위 절차로 기준선을 다시
  * 산출한다. 반복 횟수는 {@code JourneyEngineRunnerNotice.RECALIBRATION_REPEATS}와 추세의 {@code RECALIBRATION_REPEATS}가 같다.</p>
+ * <p>호스티드 20회 실측 재교정 및 CPU 유형별 기준선 분리(#3036 2-3): 최근 20회 {@code journey-benchmark-trend.yml} 실행(run 41557301108~42523170654) 중
+ * 15회에서 기존 보정 범위(70~98 ms) 밖 경고가 발생해 재산정 트리거가 발동했다. 20회 실행에서 관측된 호스티드 러너 CPU 유형 6종은
+ * {@code AMD EPYC 7763 64-Core Processor}(11회, 보정 102.02~110.40 ms, metro DepartAt p50 164.5~194.0 µs, 정규화 1.599~1.792×10^-3),
+ * {@code AMD EPYC 9V74 80-Core Processor}(3회, 보정 89.72~91.45 ms, metro p50 116.1~120.0 µs, 정규화 1.269~1.334×10^-3),
+ * {@code AMD EPYC 9V45 96-Core Processor}(2회, 보정 76.51~84.97 ms, metro p50 77.0~83.1 µs, 정규화 0.978~1.006×10^-3),
+ * {@code Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz}(2회, 보정 123.33~123.51 ms, metro p50 144.8~148.0 µs, 정규화 1.174~1.198×10^-3),
+ * {@code INTEL(R) XEON(R) PLATINUM 8573C}(1회, 보정 134.60 ms, metro p50 127.8 µs, 정규화 0.950×10^-3),
+ * {@code Intel(R) Xeon(R) 6973P-C}(1회, 보정 109.37 ms, metro p50 112.8 µs, 정규화 1.031×10^-3)이다.
+ * 동일 CPU 모델 내에서는 정규화 지연 편차가 5~10% 안으로 일정하지만, 서로 다른 CPU 아키텍처 사이에는 보정 루프(정수 혼합 연산)와 RAPTOR 탐색(메모리 캐시 계층 접근)의 비율이 달라
+ * 정규화 지연이 최대 1.89배(0.950×10^-3 대비 1.792×10^-3) 차이 난다. 단일 통합 기준선만 쓰면 가장 빠른 CPU 유형({@code EPYC 9V45}, {@code Xeon 8573C})에서
+ * 실제 2.1배 둔화가 발생해도 통합 기준선 대비 2.0배를 넘지 않아 놓친다. 이에 따라 측정 리포트의 {@code method.cpuModel}에 정규화된 CPU 모델명을 기록하고,
+ * 원자료 {@code engine-baseline-measurements.json}에 6종 CPU 모델의 대표 측정(12개 job, 36개 JVM)을 추가해 {@code calibrationRangeNanos}를 70~140 ms(70,000,000~140,000,000 ns)로 넓혔으며,
+ * {@code engine-performance-baseline.json}에 미등록/로컬 CPU용 전체 기하평균 기준선과 함께 {@code cpuBaselines}(CPU 모델별 기하평균 기준선)를 함께 저장해
+ * 등록된 CPU 모델에서는 해당 CPU 기준선 대비 2.0배 한도를 엄격히 적용한다({@code JourneyEngineStablePointReplayTest}가 빠른 CPU 2.1배 둔화 검출을 단언).</p>
  * <p>실패 메시지: 게이트가 실패하면 판정에 쓴 값과 함께 실제로 잰 측정 전부를 메시지에 넣는다. 위 CI 9~15 JVM의 값은 모두 이 메시지에서 얻었다.</p>
  * <p>검증: {@code JourneyEngineStablePointReplayTest}가 {@code stable-point-measurement-replay.json}(예열 2회 시절)과 기준선 원자료(새 방법)의
  * CI 측정을 실제 게이트 판정({@code findRegressions}의 구조화된 결과)으로 재생한다. 예열 2회 시절 CI JVM 28개 가운데 2개(line4)가 옛 기준선의
- * 한도를 넘고(flake 재현), backend #532의 실패 판정도 재생된다. 새 방법의 JVM 15개는 건강하면 한 번도 걸리지 않고(1.2배 둔화까지 통과), 3배 둔화를 주입하면 45쌍(JVM × 번들)이 모두
- * 걸린다. 같은 3배 주입이 변경 전 기준선과 예열 2회 시절 JVM에서는 84쌍 중 73쌍만 걸린다. 변경 전 기준선에 새 방법의 JVM을 대면 3배 둔화가
- * 45쌍 중 0쌍 걸려 RED였다(컴파일은 6.3절 기준값에서 3배 회귀가 15 JVM 중 8개만 걸려 RED). 운영 코드 변이(출발 시각 고정 탐색이 자기 시간의 {@code k}배를 더 기다리는 변이, 할당·카운터 불변)는 로컬에서
+ * 한도를 넘고(flake 재현), backend #532의 실패 판정도 재생된다. 새 방법의 JVM 51개는 건강하면 한 번도 걸리지 않고(1.2배 둔화까지 통과), 3배 둔화를 주입하면 153쌍(JVM × 번들)이 모두
+ * 걸리며, 가장 빠른 호스티드 CPU 유형({@code EPYC 9V45}, {@code Xeon 8573C})에서 2.1배 둔화를 주입하면 {@code cpuBaselines}가 모든 번들에서 회귀로 탐지한다. 같은 3배 주입이 변경 전 기준선과 예열 2회 시절 JVM에서는 84쌍 중 73쌍만 걸린다. 변경 전 기준선에 새 방법의 JVM을 대면 3배 둔화가
+ * 걸리지 않아 RED였다(컴파일은 6.3절 기준값에서 3배 회귀가 15 JVM 중 8개만 걸려 RED). 운영 코드 변이(출발 시각 고정 탐색이 자기 시간의 {@code k}배를 더 기다리는 변이, 할당·카운터 불변)는 로컬에서
  * 만든 기준선으로 1.0·1.5·1.8배(k=0·0.5·0.8)가 통과하고, 2.2배와 3배는 세 번들 모두 p50 한도에서 실패했다(2.0배는 경계라 확인 재측정 뒤 통과). 컴파일을 3번 하는 변이는 세 번들의 컴파일 시간이 모두
  * 한도(2.5배)를 넘어 실패했고, 2번 하는 변이(2배)는 설계상 통과한다.</p>
  *
@@ -584,7 +598,8 @@
  *   2.6배까지 흔들리는 것을 확인했기 때문이다. 결정적 작업량
  *   카운터(확장 노선·열차·환승, 소비 작업량, 라벨 최대치, 가지치기 규칙별 횟수, 결과·거절 수, 운영 정책 재현 결과)는
  *   양방향 2%, 질의당 할당과 보유 힙은 +30%가 허용폭이다. 카운터가 2% 넘게 좋아져도 기준선이 낡았다는 뜻이라
- *   실패한다. 벽시계 값은 고정 보정 작업 시간으로 나눈 값으로 비교한다. 출발 시각 고정 p50(번들 3개)은 2.0배,
+ *   실패한다. 벽시계 값은 고정 보정 작업 시간으로 나눈 값으로 비교하며, 측정 리포트의 {@code method.cpuModel}이 기준선의 {@code cpuBaselines}에 있으면
+ *   해당 CPU 모델 기준선을, 없으면 전체 기하평균 기준선을 쓴다(6.4절). 출발 시각 고정 p50(번들 3개)은 2.0배,
  *   p99·프로필 모드·컴파일 시간은 2.5배가 허용폭이다. p50과 p99는 측정 5회 각각의 최근순위 백분위의 중앙값이다. 질의는 측정 전에
  *   30회 예열하고(회차 하나는 번들의 모든 질의), 측정 JVM은 {@code -XX:-BackgroundCompilation}으로 띄워 컴파일이 끝난 코드를 잰다(6.4절).
  *   컴파일 시간은 앞 30번의 컴파일을 JIT 예열로 버리고 뒤 9번의 중앙값이다(6.3절).
@@ -600,8 +615,8 @@
  *   통과시킨다. 2.0배의 근거: #460의 CI 4회에서는 출발 시각 고정 p50의 정규화 값이 중앙값 대비 0.7~1.16배였지만,
  *   #461의 CI 3회(같은 커밋, 출발 시각 고정 코드 변경 없음)에서는 0.67~1.52배(원값 district 99~177 µs, 최대/최소 약
  *   1.8배)까지 흔들렸다. 1.5배로는 무관한 PR이 간헐 실패하므로 실측 편차를 덮는 2.0배로 올렸다(#461). 그 편차의 상당 부분은
- *   JIT 컴파일 상태 분기였고 6.4절에서 없앴다. 지금 남은 편차는 러너 CPU 유형 사이의 약 1.6배이고 한 job 안에서는 약 10%다.
- *   기준선은 CI 측정으로 정해 편차가 한쪽으로 쏠리지 않게 한다. p99와 프로필 모드는 꼬리 지연과
+ *   JIT 컴파일 상태 분기였고 6.4절에서 없앴다. 지금 남은 편차는 러너 CPU 유형 사이의 최대 1.89배이고 동일 CPU 유형 안에서는 5~10%다.
+ *   등록된 CPU 유형은 {@code cpuBaselines}로 직접 비교하고 미등록 CPU 유형은 전체 기하평균 기준선으로 비교해 편차가 한쪽으로 쏠리지 않게 한다. p99와 프로필 모드는 꼬리 지연과
  *   적은 질의 수 때문에 편차가 커서 2.5배로 둔다.</li>
  *   <li>갱신이 필요한 경우: 엔진 동작을 의도적으로 바꿨을 때, 번들·질의 집합·한도를 바꿨을 때, 게이트가 "stale",
  *   "identity changed", "measurement method changed"로 실패할 때. 의도하지 않은 회귀는 기준선을 고치지 말고 코드를 고친다.</li>
@@ -611,11 +626,11 @@
  *   그대로 통과한다.</li>
  *   <li>절차: (1) 엔진·번들·질의를 바꾼 커밋을 PR에 올린다. 게이트가 실패하면 실패 메시지에, 통과하면 shard 산출물
  *   JUnit XML의 system-out에 "#460 engine performance measured" 다음으로 측정 JSON이 찍힌다. 같은 커밋에서 게이트가
- *   든 shard job을 다섯 번 돌려(실패한 job은 {@code gh run rerun --failed}) job별 측정 JSON을 모은다. 러너 CPU 유형이
- *   섞이므로 job이 최소 세 유형을 포함해야 하고, 보정 시간으로 유형을 구분한다(6.4절). (2) 결정적 카운터·재현 결과는
- *   모든 JSON이 같은지 확인한다. 지연·할당·컴파일 값은 job별 JVM 측정(보정 시간, 컴파일, 모드별 p50·p99·질의당 할당)을
+ *   든 shard job이나 {@code journey-benchmark-trend.yml}을 돌려 job별 측정 JSON을 모은다. 러너 CPU 유형이
+ *   섞이므로 {@code method.cpuModel}과 보정 시간으로 유형을 구분한다(6.4절). (2) 결정적 카운터·재현 결과는
+ *   모든 JSON이 같은지 확인한다. 지연·할당·컴파일 값은 job별 JVM 측정(보정 시간, 컴파일, 모드별 p50·p99·질의당 할당)과 {@code cpuModel}을
  *   {@code engine-baseline-measurements.json}에 run id와 함께 넣고 {@code JourneyEngineBaselineDerivation}으로 기준선을 다시 쓴다.
- *   이 도구는 측정마다 보정 시간으로 나눈 값의 job별 중앙값을 낸 뒤 job들의 기하평균에 기준선 보정 시간을 곱한다. 중앙값 하나는 한
+ *   이 도구는 측정마다 보정 시간으로 나눈 값의 job별 중앙값을 낸 뒤 전체 기하평균과 {@code cpuBaselines}(CPU 모델별 기하평균)에 기준선 보정 시간을 곱한다. 중앙값 하나는 한
  *   러너 유형을 고르므로 쓰지 않는다. 기준선의 {@code tolerances} 블록과 결정적 값은 기존 기준선 것을 그대로 둔다. 한 번의 측정을 기준선으로 쓰면 그 실행이 빠르거나 느린 만큼
  *   허용폭이 한쪽으로 줄어든다. 로컬에서
  *   {@code EASYSUBWAY_PERF_BASELINE_WRITE=true ./gradlew test --rerun --tests

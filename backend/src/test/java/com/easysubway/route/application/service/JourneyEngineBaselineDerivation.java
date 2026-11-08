@@ -28,7 +28,7 @@ final class JourneyEngineBaselineDerivation {
 
 	static final Path MEASUREMENTS = Path.of("src/test/resources/journey-benchmark/engine-baseline-measurements.json");
 	private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
-	private static final double NANOS_PER_MILLI = 1_000_000.0;
+	private static final double CALIBRATION_STEP_NANOS = 10_000_000.0;
 
 	private JourneyEngineBaselineDerivation() {
 	}
@@ -39,14 +39,23 @@ final class JourneyEngineBaselineDerivation {
 		if (baselineCalibration != template.path("calibrationNanos").asLong()) {
 			throw new IllegalArgumentException("raw baselineCalibrationNanos must equal the baseline calibrationNanos");
 		}
-		List<List<JsonNode>> jobs = StreamSupport.stream(raw.path("jobs").spliterator(), false)
-			.map(job -> StreamSupport.stream(job.path("jvms").spliterator(), false).toList()).toList();
-		for (List<JsonNode> job : jobs) {
-			if (job.size() % 2 == 0) throw new IllegalArgumentException("each job needs an odd number of JVM measurements");
+		List<JsonNode> jobNodes = StreamSupport.stream(raw.path("jobs").spliterator(), false).toList();
+		List<List<JsonNode>> jobs = new ArrayList<>();
+		java.util.Map<String, List<List<JsonNode>>> jobsByCpu = new java.util.TreeMap<>();
+		for (JsonNode jobNode : jobNodes) {
+			List<JsonNode> jvms = StreamSupport.stream(jobNode.path("jvms").spliterator(), false).toList();
+			if (jvms.size() % 2 == 0) throw new IllegalArgumentException("each job needs an odd number of JVM measurements");
+			jobs.add(jvms);
+			String cpuModel = jobNode.path("cpuModel").asText("");
+			if (!cpuModel.isBlank()) {
+				jobsByCpu.computeIfAbsent(cpuModel, ignored -> new ArrayList<>()).add(jvms);
+			}
 		}
+		if (jobsByCpu.isEmpty()) throw new IllegalArgumentException("at least one job needs a non-blank cpuModel");
 		List<JsonNode> all = jobs.stream().flatMap(List::stream).toList();
 		ObjectNode derived = template.deepCopy();
-		for (String id : names(derived.path("workloads"))) {
+		List<String> workloadIds = names(derived.path("workloads"));
+		for (String id : workloadIds) {
 			ObjectNode workload = (ObjectNode) derived.path("workloads").path(id);
 			ObjectNode compile = (ObjectNode) workload.path("compile");
 			compile.put("nanos", wallClock(jobs, "/workloads/" + id + "/compile/nanos", baselineCalibration));
@@ -61,15 +70,41 @@ final class JourneyEngineBaselineDerivation {
 				value.put("allocatedBytesPerQuery", medianOf(all, path + "allocatedBytesPerQuery"));
 			}
 		}
+		ObjectNode cpuBaselines = JSON.createObjectNode();
+		for (var entry : jobsByCpu.entrySet()) {
+			List<List<JsonNode>> cpuJobs = entry.getValue();
+			ObjectNode cpuNode = JSON.createObjectNode().put("jobCount", cpuJobs.size());
+			ObjectNode cpuWorkloads = JSON.createObjectNode();
+			for (String id : workloadIds) {
+				ObjectNode workload = (ObjectNode) derived.path("workloads").path(id);
+				ObjectNode cpuWorkload = JSON.createObjectNode();
+				cpuWorkload.set("compile", JSON.createObjectNode()
+					.put("nanos", wallClock(cpuJobs, "/workloads/" + id + "/compile/nanos", baselineCalibration)));
+				ObjectNode cpuModes = JSON.createObjectNode();
+				for (String mode : names(workload.path("modes"))) {
+					String path = "/workloads/" + id + "/modes/" + mode + "/";
+					cpuModes.set(mode, JSON.createObjectNode()
+						.put("p50Nanos", wallClock(cpuJobs, path + "p50Nanos", baselineCalibration))
+						.put("p99Nanos", wallClock(cpuJobs, path + "p99Nanos", baselineCalibration)));
+				}
+				cpuWorkload.set("modes", cpuModes);
+				cpuWorkloads.set(id, cpuWorkload);
+			}
+			cpuNode.set("workloads", cpuWorkloads);
+			cpuBaselines.set(entry.getKey(), cpuNode);
+		}
+		JsonNode tolerances = derived.remove("tolerances");
+		derived.set("cpuBaselines", cpuBaselines);
+		if (tolerances != null) derived.set("tolerances", tolerances);
 		ObjectNode method = (ObjectNode) derived.path("method");
 		method.put("warmupRounds", raw.path("method").path("warmupRounds").asInt());
 		method.put("aggregation", raw.path("method").path("aggregation").asText());
-		method.put("baselineSource", "geometric mean of " + jobs.size() + " Backend CI job medians (run "
-			+ raw.path("jobs").path(0).path("run").asLong() + " attempts 1-" + jobs.size() + ")");
+		method.put("baselineSource", "geometric mean of " + jobs.size() + " Backend CI job medians across "
+			+ jobsByCpu.size() + " runner CPU models (per-CPU baselines in cpuBaselines)");
 		long[] calibrations = all.stream().mapToLong(jvm -> jvm.path("calibrationNanos").asLong()).sorted().toArray();
 		method.set("calibrationRangeNanos", JSON.createObjectNode()
-			.put("min", (long) (Math.floor(calibrations[0] / NANOS_PER_MILLI) * NANOS_PER_MILLI))
-			.put("max", (long) (Math.ceil(calibrations[calibrations.length - 1] / NANOS_PER_MILLI) * NANOS_PER_MILLI)));
+			.put("min", (long) (Math.floor(calibrations[0] / CALIBRATION_STEP_NANOS) * CALIBRATION_STEP_NANOS))
+			.put("max", (long) (Math.ceil(calibrations[calibrations.length - 1] / CALIBRATION_STEP_NANOS) * CALIBRATION_STEP_NANOS)));
 		// 직렬화해 다시 읽어 파일에서 읽은 기준선과 같은 노드 타입으로 맞춘다.
 		return JSON.readTree(JSON.writeValueAsString(derived));
 	}

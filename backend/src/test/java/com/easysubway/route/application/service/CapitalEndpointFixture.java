@@ -33,10 +33,38 @@ public final class CapitalEndpointFixture {
 		return CapitalRealDerivedFixture.SERVICE_DATE;
 	}
 
+	private static final java.lang.reflect.Constructor<RaptorRouteBundleRuntimeView> RUNTIME_VIEW_CONSTRUCTOR;
+
+	static {
+		try {
+			RUNTIME_VIEW_CONSTRUCTOR = RaptorRouteBundleRuntimeView.class.getDeclaredConstructor(
+				String.class, long.class, RouteTimetableRaptorPlanner.CompiledTimetable.class,
+				List.class, java.util.Map.class, java.util.Set.class);
+			RUNTIME_VIEW_CONSTRUCTOR.setAccessible(true);
+		} catch (ReflectiveOperationException exception) {
+			throw new ExceptionInInitializerError(exception);
+		}
+	}
+
 	public static List<RepresentativeCase> representativeProfileCases() {
 		return CapitalRepresentativeCases.cases().stream()
 			.map(testCase -> new RepresentativeCase(testCase.mode(), testCase.origin(), testCase.destination(),
 				testCase.localTime(), testCase.profile(), testCase.constraint()))
 			.toList();
+	}
+
+	public static RaptorRouteBundleRuntimeView rebindGeneration(RaptorRouteBundleRuntimeView compiled, long generation) {
+		if (compiled.generation() == generation) return compiled;
+		try {
+			return RUNTIME_VIEW_CONSTRUCTOR.newInstance(
+				compiled.routeBundleSha256(), generation, compiled.compiledTimetable(),
+				compiled.smrtElevatorFacilities(), compiled.officialFareQuotes(), compiled.canonicalStationLines());
+		} catch (ReflectiveOperationException exception) {
+			throw new IllegalStateException("failed to rebind runtime view generation", exception);
+		}
+	}
+
+	public static Object compiledTimetableIdentity(RaptorRouteBundleRuntimeView view) {
+		return view.compiledTimetable();
 	}
 }
