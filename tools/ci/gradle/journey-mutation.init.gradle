@@ -6,9 +6,11 @@
 //   일반 test·check 태스크 그래프에도 들어가지 않는다.
 //   보고서는 PIT 기본 위치(build/reports/pitest)에 쓰이고, 같은 디렉터리에 실행 설명(journey-mutation-run.json)을 더한다.
 //
-// -PmutationTargetClasses=<클래스 패턴,...>  기본 범위(MUTATION_TARGET_CLASSES)를 덮어쓴다. 로컬에서 1~2개로 좁힐 때 쓴다.
-// -PmutationThreads=<수>                    변이 실행 스레드 수. 기본 MUTATION_DEFAULT_THREADS.
+// -PmutationTargetClasses=<클래스 패턴,...>    기본 범위(MUTATION_TARGET_CLASSES)를 덮어쓴다. 로컬에서 1~2개로 좁힐 때 쓴다.
+// -PmutationExcludedMethods=<메서드 패턴,...>  기본 제외 메서드(MUTATION_EXCLUDED_METHODS)를 덮어쓴다.
+// -PmutationThreads=<수>                      변이 실행 스레드 수. 기본 MUTATION_DEFAULT_THREADS.
 //
+// 도구 버전 점검 기준일: 2026-11-09 (gradle-pitest-plugin 1.19.0, pitest 1.30.2, pitest-junit5-plugin 1.2.3).
 // 도구 jar 검증(fail-closed): 이 init script가 해석하는 플러그인 classpath와 pitest 설정의 jar는 gradle.lockfile·OSV·Dependabot 밖에 있다.
 // 그래서 해석된 jar마다 sha256을 journey-mutation/checksums.json과 대조하고, 하나라도 다르거나 목록에 없거나 빠지면 빌드가 실패한다
 // (플러그인 classpath는 플러그인을 적용하기 전에, pitest 설정은 pitest 태스크 실행 전에 검사한다).
@@ -33,7 +35,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-def PITEST_VERSION = '1.30.0'
+def PITEST_VERSION = '1.30.2'
 def JUNIT5_PLUGIN_VERSION = '1.2.3'
 def RUN_DESCRIPTION_FILE = 'journey-mutation-run.json'
 def TOOLCHAIN_DIRECTORY = new File(initscript.sourceFile.parentFile, 'journey-mutation')
@@ -41,25 +43,104 @@ def TOOLCHAIN_CHECKSUMS_FILE = 'checksums.json'
 def TOOLCHAIN_LOCKFILE = 'gradle.lockfile'
 def TOOLCHAIN_SCHEMA_VERSION = 1
 
-// 접근성 제약 라우팅의 판정 클래스. 범위가 크면 실행 시간이 폭증하므로 작은 클래스부터 시작한다.
-// 끝의 *는 중첩 record·enum까지 포함한다. RouteTimetableRaptorPlanner(6천 줄)는 계단 판정만 따로 뽑을 수 없어 제외했다.
+// 접근성 제약 라우팅의 판정·어댑터·서비스 클래스. 끝의 *는 중첩 record·enum까지 포함한다.
+// RouteTimetableRaptorPlanner·RouteSearchService의 무거운 탐색·컴파일 루프는 MUTATION_EXCLUDED_METHODS로 분리해 계단·접근성 판정 변이에 집중한다.
 def MUTATION_TARGET_CLASSES = [
 	'com.easysubway.route.application.service.JourneyFacilityBlockOverlay*',
 	'com.easysubway.journey.application.JourneyExecutionDisposition*',
 	'com.easysubway.journey.application.JourneyAlternatives*',
 	'com.easysubway.journey.application.JourneyFrontierPolicyV1*',
 	'com.easysubway.journey.application.JourneyProfileSegmentPolicyV1*',
+	'com.easysubway.route.application.service.RouteTimetableRaptorPlanner*',
+	'com.easysubway.route.application.service.RouteSearchService*',
+	'com.easysubway.route.application.service.JourneyRaptorAdapter*',
+]
+// 무거운 RAPTOR 라운드 탐색·시간표 컴파일·다중 환승 그래프 탐색 루프는 변이마다 돌리면 실행 시간이 폭증하므로 제외하고,
+// 계단/무단차 판정(hasUnconfirmedStairFreeTransfer, unconfirmedStairFreeTransfer, hasStairWarning, stairAccess 등)과 결과 조립에 집중한다.
+def MUTATION_EXCLUDED_METHODS = [
+	'compile*',
+	'scan*',
+	'departure*',
+	'profileDatedTripOccurrences',
+	'profileLowerBounds',
+	'profileMask',
+	'compute*',
+	'propagate*',
+	'forwardRemainingBoardings',
+	'relax*',
+	'prepare*',
+	'update*',
+	'enforce*',
+	'allocate',
+	'ensureCapacity',
+	'initArrays',
+	'admit',
+	'sift*',
+	'finishRound',
+	'improveOrigin',
+	'clear*',
+	'mark*',
+	'pruneSlot',
+	'recordTouchedSlot',
+	'slot',
+	'isDominatedByTarget',
+	'isTargetDominatingDeparture',
+	'remainingAfterBoarding',
+	'firstDepartingAtOrAfter',
+	'materialize',
+	'outsideWindow',
+	'overBudget',
+	'reserveBreakpoints',
+	'traceKey',
+	'sameVector',
+	'invertPatterns',
+	'canShareScanPattern',
+	'collect*',
+	'evaluate*',
+	'canPruneRemainingFootpaths',
+	'isFootpathCandidateDominated',
+	'boardPattern',
+	'boardingsByStation',
+	'scheduledTrips',
+	'shiftedStopTimes',
+	'journeyItineraries',
+	'toJourneyItinerary',
+	'destination*',
+	'paretoFront',
+	'dominates',
+	'earliestBoardableTrip',
+	'bestReadyBoarding',
+	'classifyPersonas',
+	'assignPersonas',
+	'compare*',
+	'realtimeMinimumHops',
+	'realtimeQueries',
+	'reverse*',
+	'routesById',
+	'stopTimesByTrip',
+	'frequenciesByTrip',
+	'runsOn',
+	'indexOf',
+	'findMultiTransferRoutes',
+	'findOneTransferRoutes',
+	'findDirectLine',
+	'findRoutePlans',
+	'findInternalRoutePath',
+	'lambda$*',
 ]
 // 변이를 죽이는 테스트 후보. 대상 클래스를 실제로 실행하는 테스트만 PIT가 골라 돌린다.
 def MUTATION_TARGET_TESTS = [
 	'com.easysubway.journey.*',
 	'com.easysubway.route.*',
 ]
-// 성능·부하 측정 테스트는 변이마다 돌리면 시간이 폭증하고 정확성 판정도 아니다.
+// 성능·부하·대규모 코퍼스·차분 퍼징 테스트는 변이마다 돌리면 시간이 폭증하므로 제외한다.
 def MUTATION_EXCLUDED_TEST_CLASSES = [
 	'*PerfTest',
 	'*PerformanceGateTest',
 	'*LoadServerTest',
+	'*Golden*Test',
+	'*DifferentialTest',
+	'*FullCorpusRunnerTest',
 ]
 // 변이 연산자 묶음. PIT 기본 묶음을 명시해 측정 설정 해시에 들어가게 한다.
 def MUTATION_MUTATORS = ['DEFAULTS']
@@ -119,10 +200,13 @@ gradle.allprojects { project ->
 		project.apply plugin: info.solidsoft.gradle.pitest.PitestPlugin
 		def properties = gradle.startParameter.projectProperties
 		def scopedClasses = properties['mutationTargetClasses']?.split(',')?.collect { it.trim() }?.findAll { !it.isEmpty() } ?: MUTATION_TARGET_CLASSES
+		def scopedExcludedMethods = properties['mutationExcludedMethods'] != null
+			? properties['mutationExcludedMethods'].split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+			: MUTATION_EXCLUDED_METHODS
 		def threadCount = Integer.parseInt(properties['mutationThreads'] ?: "${MUTATION_DEFAULT_THREADS}")
 		// 점수와 mutant 집합에 영향을 주는 설정을 한 해시로 묶어 실행 설명에 남긴다. 요약 도구는 해시가 다른 직전 run을 기준에서 뺀다.
 		def configHash = MessageDigest.getInstance('SHA-256').digest(JsonOutput.toJson([
-			targetClasses: scopedClasses, targetTests: MUTATION_TARGET_TESTS, excludedTestClasses: MUTATION_EXCLUDED_TEST_CLASSES,
+			targetClasses: scopedClasses, excludedMethods: scopedExcludedMethods, targetTests: MUTATION_TARGET_TESTS, excludedTestClasses: MUTATION_EXCLUDED_TEST_CLASSES,
 			mutators: MUTATION_MUTATORS, threads: threadCount, timeoutFactor: MUTATION_TIMEOUT_FACTOR, jvmArgs: [MUTATION_CHILD_JVM_HEAP],
 		]).getBytes('UTF-8')).encodeHex().toString()
 		project.pitest {
@@ -131,6 +215,7 @@ gradle.allprojects { project ->
 			// build.gradle이 junit-platform-launcher를 BOM 버전(잠금 파일 기준)으로 이미 선언한다. 플러그인이 다른 버전을 더하면 잠금이 깨진다.
 			addJUnitPlatformLauncher = false
 			targetClasses = scopedClasses
+			excludedMethods = scopedExcludedMethods
 			targetTests = MUTATION_TARGET_TESTS
 			excludedTestClasses = MUTATION_EXCLUDED_TEST_CLASSES
 			mutators = MUTATION_MUTATORS
@@ -155,7 +240,7 @@ gradle.allprojects { project ->
 			task.doFirst { task.extensions.extraProperties.set('startedNanos', System.nanoTime()) }
 			task.doLast {
 				def elapsedSeconds = (System.nanoTime() - task.extensions.extraProperties.get('startedNanos')).intdiv(NANOS_PER_SECOND)
-				def description = [pitestVersion: PITEST_VERSION, junit5PluginVersion: JUNIT5_PLUGIN_VERSION, targetClasses: scopedClasses, threads: threadCount, configHash: configHash, elapsedSeconds: elapsedSeconds]
+				def description = [pitestVersion: PITEST_VERSION, junit5PluginVersion: JUNIT5_PLUGIN_VERSION, targetClasses: scopedClasses, excludedMethods: scopedExcludedMethods, threads: threadCount, configHash: configHash, elapsedSeconds: elapsedSeconds]
 				new File(task.reportDir.get().asFile, RUN_DESCRIPTION_FILE).setText(JsonOutput.toJson(description) + '\n', 'UTF-8')
 			}
 		}

@@ -10,6 +10,7 @@ export const RUN = {
   pitestVersion: '1.30.0',
   junit5PluginVersion: '1.2.3',
   targetClasses: [`${OVERLAY}*`, `${DISPOSITION}*`],
+  excludedMethods: ['compile*', 'scan*'],
   threads: 2,
   configHash: 'c'.repeat(64),
   elapsedSeconds: 254,
