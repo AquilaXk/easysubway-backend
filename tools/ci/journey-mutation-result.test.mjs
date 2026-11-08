@@ -71,11 +71,15 @@ test('nested classes roll up into their outer class and the survivor list is com
 
 test('the run description from the Gradle task is validated field by field', () => {
   assert.deepEqual(validateRun(RUN), RUN);
+  const { excludedMethods: _, ...withoutExcludedMethods } = RUN;
+  assert.deepEqual(validateRun(withoutExcludedMethods), withoutExcludedMethods);
   const broken = {
     'pitest version': { pitestVersion: '1.30' },
     'plugin version': { junit5PluginVersion: 'latest' },
     'empty scope': { targetClasses: [] },
     'markdown in scope': { targetClasses: ['a.B`*'] },
+    'excluded methods not list': { excludedMethods: 'compile*' },
+    'markdown in excluded methods': { excludedMethods: ['compile`*'] },
     'thread count': { threads: 0 },
     'config hash': { configHash: 'abc' },
     'missing config hash': { configHash: undefined },

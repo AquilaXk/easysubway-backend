@@ -39,8 +39,8 @@ class JourneyGoldenRegressionTest {
 	private static final String CI_ENVIRONMENT_VARIABLE = "CI";
 	private static final int FAILURE_MESSAGE_LINES = 120;
 	static final String UPDATE_PROPERTY = "easysubway.updateGolden";
-	/** 첫 슬라이스의 최소 규모. 목표는 수백 쌍이다. */
-	private static final int MINIMUM_PAIRS = 100;
+	/** 대표 경로 질의 코퍼스 최소 규모(수백 쌍). */
+	private static final int MINIMUM_PAIRS = 200;
 	/** 태그마다 최소 이 수의 질의가 있어야 그 유형이 대표로 살아 있다. */
 	private static final int MINIMUM_QUERIES_PER_TAG = 3;
 

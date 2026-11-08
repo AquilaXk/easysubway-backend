@@ -102,23 +102,59 @@ test('Backend #523 summarizes the report directory the Gradle task writes, then 
 test('Backend #523 init script pins the PIT tools, writes the run description the summarizer reads, and leaves the report where the workflow looks', () => {
   assert.match(initScript, /gradlePluginPortal\(\)/);
   assert.doesNotMatch(withoutComments(initScript.replaceAll('//', '#')), /mavenLocal|jcenter|http:/);
-  assert.match(initScript, /classpath 'info\.solidsoft\.gradle\.pitest:gradle-pitest-plugin:\d+\.\d+\.\d+'/);
-  assert.match(constant('PITEST_VERSION'), /^'\d+\.\d+\.\d+'$/);
-  assert.match(constant('JUNIT5_PLUGIN_VERSION'), /^'\d+\.\d+\.\d+'$/);
+  assert.match(initScript, /도구 버전 점검 기준일: 2026-11-09 \(gradle-pitest-plugin 1\.19\.0, pitest 1\.30\.2, pitest-junit5-plugin 1\.2\.3\)\./);
+  assert.match(initScript, /classpath 'info\.solidsoft\.gradle\.pitest:gradle-pitest-plugin:1\.19\.0'/);
+  assert.equal(constant('PITEST_VERSION'), "'1.30.2'");
+  assert.equal(constant('JUNIT5_PLUGIN_VERSION'), "'1.2.3'");
   assert.match(initScript, /addJUnitPlatformLauncher = false/, 'the locked junit-platform-launcher must stay untouched');
   assert.equal(constant('RUN_DESCRIPTION_FILE'), `'${RUN_FILE_NAME}'`);
-  for (const field of ['pitestVersion', 'junit5PluginVersion', 'targetClasses', 'threads', 'configHash', 'elapsedSeconds']) assert.match(initScript, new RegExp(`${field}:`), `run description field ${field}`);
+  for (const field of ['pitestVersion', 'junit5PluginVersion', 'targetClasses', 'excludedMethods', 'threads', 'configHash', 'elapsedSeconds']) assert.match(initScript, new RegExp(`${field}:`), `run description field ${field}`);
+  assert.match(initScript, /excludedMethods\s*=\s*scopedExcludedMethods/);
+  assert.match(initScript, /properties\['mutationExcludedMethods'\]/);
   assert.doesNotMatch(initScript, /reportDir\s*=/, `the default report directory must stay ${REPORT_DIRECTORY}`);
   assert.equal(REPORT_FILE_NAME, 'mutations.xml');
 });
 
 test('Backend #523 every default target class pattern still names a production class, so a rename cannot drop a class silently', () => {
   const patterns = quotedList('MUTATION_TARGET_CLASSES');
-  assert.ok(patterns.length >= 3 && patterns.length <= 5, 'start with a few small classes');
+  assert.ok(patterns.length >= 8 && patterns.length <= 12, 'covers core policy, raptor planner, adapter, and route search service classes');
+  for (const required of [
+    'com.easysubway.route.application.service.RouteTimetableRaptorPlanner*',
+    'com.easysubway.route.application.service.RouteSearchService*',
+    'com.easysubway.route.application.service.JourneyRaptorAdapter*',
+  ]) {
+    assert.ok(patterns.includes(required), `missing required target pattern ${required}`);
+  }
   for (const pattern of patterns) {
     assert.match(pattern, /^[a-z][a-z0-9.]*\.[A-Z][A-Za-z0-9]*\*$/, pattern);
     const source = `../../backend/src/main/java/${pattern.slice(0, -1).replaceAll('.', '/')}.java`;
     assert.ok(existsSync(new URL(source, import.meta.url)), `${pattern} -> ${source}`);
+  }
+});
+
+test('Backend #523 excludes heavy search loops via MUTATION_EXCLUDED_METHODS while keeping stair judgment methods in scope', () => {
+  const excludedMethods = quotedList('MUTATION_EXCLUDED_METHODS');
+  assert.ok(excludedMethods.length >= 5, 'excludes heavy search and compilation loops');
+  for (const pattern of excludedMethods) {
+    assert.match(pattern, /^[A-Za-z0-9_$<>*]{1,100}$/, pattern);
+  }
+  for (const requiredExcluded of ['compile*', 'scan*', 'departure*', 'findMultiTransferRoutes']) {
+    assert.ok(excludedMethods.includes(requiredExcluded), `expected ${requiredExcluded} in MUTATION_EXCLUDED_METHODS`);
+  }
+  const matchesExcluded = (methodName) => excludedMethods.some((pattern) => {
+    const regex = new RegExp(`^${pattern.replaceAll('*', '.*')}$`);
+    return regex.test(methodName);
+  });
+  for (const stairMethod of [
+    'hasUnconfirmedStairFreeTransfer',
+    'unconfirmedStairFreeTransfer',
+    'hasUnconfirmedStairFreeAlternative',
+    'unconfirmedStairFreeCandidate',
+    'hasStairWarning',
+    'stairAccess',
+    'prefersStepFree',
+  ]) {
+    assert.equal(matchesExcluded(stairMethod), false, `stair judgment method ${stairMethod} must not be excluded`);
   }
 });
 

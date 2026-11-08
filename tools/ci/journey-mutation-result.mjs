@@ -24,6 +24,7 @@ const XML_ENTITIES = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
 const CLASS_NAME = /^[A-Za-z_][A-Za-z0-9_$.]{0,199}$/;
 const CLASS_PATTERN = /^[A-Za-z_][A-Za-z0-9_$.*]{0,199}$/;
 const METHOD_NAME = /^[A-Za-z0-9_$<>]{1,100}$/;
+const METHOD_PATTERN = /^[A-Za-z0-9_$<>*]{1,100}$/;
 // PIT mutator 클래스의 마지막 이름. RemoveConditionalMutator만 `_<EQUAL|ORDER>_<IF|ELSE>` 꼬리가 붙는다(PIT 1.30.0 RemoveConditionalMutator.getGloballyUniqueId). summary 렌더러가 escapeMarkdown으로 한 번 막고, 이 형식 검사는 그 앞의 이중 방어층이라 형식 밖은 거부한다.
 const MUTATOR_NAME = /^[A-Za-z0-9]{1,80}(?:_(?:EQUAL|ORDER)_(?:IF|ELSE))?$/;
 const VERSION = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/;
@@ -113,6 +114,10 @@ export function validateRun(run) {
   matches(run.junit5PluginVersion, VERSION, 'run.junit5PluginVersion');
   if (!Array.isArray(run.targetClasses) || run.targetClasses.length === 0) fail('run.targetClasses must not be empty');
   run.targetClasses.forEach((pattern) => matches(pattern, CLASS_PATTERN, 'run.targetClasses entry'));
+  if (run.excludedMethods !== undefined) {
+    if (!Array.isArray(run.excludedMethods)) fail('run.excludedMethods must be a list');
+    run.excludedMethods.forEach((pattern) => matches(pattern, METHOD_PATTERN, 'run.excludedMethods entry'));
+  }
   positiveInteger(run.threads, 'run.threads');
   matches(run.configHash, SHA256, 'run.configHash');
   count(run.elapsedSeconds, 'run.elapsedSeconds');
