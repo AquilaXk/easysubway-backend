@@ -1610,6 +1610,53 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void linksFastTransferCarDoorsOnJourneyCandidateForDirectAndViaStationSearches() {
+		var base = waypointTimetable();
+		var withHints = new RouteTimetable(
+			base.serviceCalendars(),
+			base.serviceCalendarDates(),
+			base.transitRoutes(),
+			base.transitTrips(),
+			base.transitStopTimes(),
+			base.transitFrequencies(),
+			List.of(),
+			null,
+			new LoadRouteTimetablePort.RouteAccessData(
+				base.routeAccessData().pathwayNodes(),
+				base.routeAccessData().pathwayEdges(),
+				base.routeAccessData().transferRules(),
+				base.routeAccessData().routeEdgeEvidence(),
+				List.of(
+					new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "TRANSFER", 4, 2),
+					new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "ELEVATOR", 1, 1),
+					new LoadRouteTimetablePort.CarDoorHint("station-b", "line-b", "DOWN", "ELEVATOR", 2, 3),
+					new LoadRouteTimetablePort.CarDoorHint("station-b", "line-b", "DOWN", "STAIR", 7, 1)
+				)
+			)
+		);
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, withHints);
+
+		var viaRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 2, 1, () -> false);
+		var viaCandidate = new JourneyRaptorAdapter().plan(
+			viaRequest, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+
+		var firstRide = (JourneyCandidate.Ride) viaCandidate.legs().get(0);
+		var secondRide = (JourneyCandidate.Ride) viaCandidate.legs().get(2);
+		assertThat(viaCandidate.fastTransferCarDoors(0))
+			.containsExactly(new JourneyCandidate.AlightingCarDoor(4, 2, "TRANSFER"))
+			.isEqualTo(firstRide.alightingCarDoors());
+		assertThat(secondRide.alightingCarDoors())
+			.containsExactly(new JourneyCandidate.AlightingCarDoor(2, 3, "ELEVATOR"));
+		assertThatThrownBy(() -> viaCandidate.fastTransferCarDoors(-1))
+			.isInstanceOf(IndexOutOfBoundsException.class);
+		assertThatThrownBy(() -> viaCandidate.fastTransferCarDoors(1))
+			.isInstanceOf(IndexOutOfBoundsException.class);
+	}
+
+	@Test
 	void plansChainedWaypointCandidateWithRealtimeRequiredPolicy() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable());
 		var departure1 = new JourneyTimetableRealtimeResolver.Departure(

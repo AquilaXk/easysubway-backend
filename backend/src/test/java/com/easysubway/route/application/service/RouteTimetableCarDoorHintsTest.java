@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
@@ -276,19 +277,201 @@ class RouteTimetableCarDoorHintsTest {
 		assertThat(compiled.tripDirection("non-existent-trip-id")).isNull();
 	}
 
+	@Test
+	@DisplayName("(10) 환승 구간(JourneyAccessProjection)은 직전 승차의 TRANSFER 칸-문과 결정론적 환승 여유 위험도를 일관되게 연결한다")
+	void linksFastTransferCarDoorsAndConnectionRiskInForwardAndReversePlanners() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var reversePlanner = new ReverseTimetableRaptorPlanner();
+		var compiled = planner.compile(createTimetableWithHeadwayAndCarDoorHints());
+
+		// 10-1. 정방향 탐색: 후속 배차(trip-2-follow, +300초)가 있는 첫 환승과 막차 환승 비교
+		var earlyQuery = JourneyRaptorQuery.from(
+			createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.STANDARD,
+				JourneyRequest.ConstraintMode.NONE, DEPARTURE_INSTANT),
+			DEPARTURE_INSTANT);
+		var earlyPlan = planner.journeyItineraries(
+			earlyQuery, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-10-1"), "req-10-1", "bundle-sha", 1L);
+
+		var earlyItinerary = earlyPlan.itineraries().getFirst();
+		var earlyRide1 = (RouteTimetableRaptorPlanner.JourneyRideProjection) earlyItinerary.legs().get(0);
+		var earlyTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) earlyItinerary.legs().get(1);
+
+		assertThat(earlyTransfer.fastTransferCarDoors())
+			.isNotEmpty()
+			.isEqualTo(earlyRide1.alightingCarDoors());
+		assertThat(earlyTransfer.fastTransferCarDoors())
+			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
+			.containsOnly("TRANSFER");
+		assertThat(earlyTransfer.connectionRisk()).isNotNull();
+		assertThat(earlyTransfer.connectionRisk().verifiedTransferSeconds()).isEqualTo(earlyTransfer.durationSeconds());
+		assertThat(earlyTransfer.connectionRisk().nextHeadwaySeconds()).isEqualTo(300);
+		assertThat(earlyTransfer.connectionRisk().isLastTrainConnection()).isFalse();
+		assertThat(earlyItinerary.transferConnectionRisks()).containsExactly(earlyTransfer.connectionRisk());
+		assertThat(earlyItinerary.highestTransferConnectionRisk()).isEqualTo(earlyTransfer.connectionRisk());
+
+		// 10-2. 막차 시각 환승: 후속 열차가 없으므로 CRITICAL_LAST_TRAIN으로 판정
+		Instant lastDeparture = Instant.parse("2026-07-06T00:25:00Z");
+		var lastQuery = JourneyRaptorQuery.from(
+			createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.STANDARD,
+				JourneyRequest.ConstraintMode.NONE, lastDeparture),
+			lastDeparture);
+		var lastPlan = planner.journeyItineraries(
+			lastQuery, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-10-2"), "req-10-2", "bundle-sha", 1L);
+		var lastTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) lastPlan.itineraries().getFirst().legs().get(1);
+		assertThat(lastTransfer.connectionRisk().isLastTrainConnection()).isTrue();
+		assertThat(lastTransfer.connectionRisk().level())
+			.isEqualTo(com.easysubway.route.domain.TransferConnectionRisk.Level.CRITICAL_LAST_TRAIN);
+
+		// 10-2b. 후속 열차(trip-2-follow)가 실시간 운행 취소(cancelled)된 경우 배차 간격에서 제외되어 막차 연결로 판정
+		var cancelledFollowUpOverlay = planner.compileRealtimeOverlay(
+			compiled,
+			new RouteSearchUseCase.TimetableRealtimeUpdates(
+				"rt-cancel-follow",
+				true,
+				List.of(new RouteSearchUseCase.TimetableRealtimeUpdate(
+					"trip-2-follow", 0, 0, true, "snap-cancel", DEPARTURE_INSTANT
+				)),
+				null
+			)
+		);
+		var cancelledFollowUpPlan = planner.journeyItineraries(
+			earlyQuery, compiled, cancelledFollowUpOverlay,
+			new JourneyRequestMeasurement("req-10-2b"), "req-10-2b", "bundle-sha", 1L);
+		var cancelledFollowUpTransfer =
+			(RouteTimetableRaptorPlanner.JourneyAccessProjection) cancelledFollowUpPlan.itineraries().getFirst().legs().get(1);
+		assertThat(cancelledFollowUpTransfer.connectionRisk().isLastTrainConnection()).isTrue();
+		assertThat(cancelledFollowUpTransfer.connectionRisk().level())
+			.isEqualTo(com.easysubway.route.domain.TransferConnectionRisk.Level.CRITICAL_LAST_TRAIN);
+
+		// 10-3. 역방향(ARRIVE_BY / LAST_CONNECTION) 탐색에서도 fastTransferCarDoors·connectionRisk·무단차 최종 하차 ELEVATOR 필터가 동일하게 동작한다
+		var stepFreeStandardQuery = JourneyRaptorQuery.from(
+			createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.STANDARD,
+				JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, DEPARTURE_INSTANT),
+			DEPARTURE_INSTANT);
+		var reverseQuery = planner.reverseArriveByQuery(stepFreeStandardQuery, SERVICE_DATE, 33000, 36000);
+		var reversePlan = reversePlanner.arriveBy(
+			reverseQuery,
+			compiled,
+			compiled.activeServiceDay(SERVICE_DATE),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new com.easysubway.journey.application.JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32)
+		);
+		assertThat(reversePlan.itineraries()).isNotEmpty();
+		var reverseItinerary = reversePlan.itineraries().getFirst();
+		var reverseRide1 = (RouteTimetableRaptorPlanner.JourneyRideProjection) reverseItinerary.legs().get(0);
+		var reverseTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) reverseItinerary.legs().get(1);
+		var reverseRide2 = (RouteTimetableRaptorPlanner.JourneyRideProjection) reverseItinerary.legs().get(2);
+
+		assertThat(reverseTransfer.fastTransferCarDoors()).isEqualTo(reverseRide1.alightingCarDoors());
+		assertThat(reverseTransfer.connectionRisk()).isNotNull();
+		assertThat(reverseRide2.alightingCarDoors())
+			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
+			.containsOnly("ELEVATOR");
+	}
+
+	@Test
+	@DisplayName("(11) 보행 프로필(STANDARD·SLOW·STEP_FREE)에 따라 환승 소요 시간과 환승 여유 위험도가 결정론적으로 반영된다")
+	void reflectsWalkingProfileInVerifiedTransferSecondsAndConnectionRisk() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(createTimetableWithHeadwayAndCarDoorHints());
+
+		var standardPlan = planner.journeyItineraries(
+			JourneyRaptorQuery.from(
+				createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.STANDARD,
+					JourneyRequest.ConstraintMode.NONE, DEPARTURE_INSTANT),
+				DEPARTURE_INSTANT),
+			compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-11-std"), "req-11-std", "bundle-sha", 1L);
+		var slowPlan = planner.journeyItineraries(
+			JourneyRaptorQuery.from(
+				createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.SLOW,
+					JourneyRequest.ConstraintMode.NONE, DEPARTURE_INSTANT),
+				DEPARTURE_INSTANT),
+			compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-11-slow"), "req-11-slow", "bundle-sha", 1L);
+		var stepFreePlan = planner.journeyItineraries(
+			JourneyRaptorQuery.from(
+				createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.STEP_FREE,
+					JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, DEPARTURE_INSTANT),
+				DEPARTURE_INSTANT),
+			compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-11-sf"), "req-11-sf", "bundle-sha", 1L);
+
+		var stdTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) standardPlan.itineraries().getFirst().legs().get(1);
+		var slowTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) slowPlan.itineraries().getFirst().legs().get(1);
+		var sfTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) stepFreePlan.itineraries().getFirst().legs().get(1);
+
+		assertThat(stdTransfer.durationSeconds()).isLessThan(slowTransfer.durationSeconds());
+		assertThat(slowTransfer.durationSeconds()).isLessThan(sfTransfer.durationSeconds());
+		assertThat(stdTransfer.connectionRisk().slackSeconds()).isGreaterThan(slowTransfer.connectionRisk().slackSeconds());
+		assertThat(slowTransfer.connectionRisk().slackSeconds()).isGreaterThan(sfTransfer.connectionRisk().slackSeconds());
+		assertThat(stdTransfer.connectionRisk().riskScore()).isLessThanOrEqualTo(slowTransfer.connectionRisk().riskScore());
+		assertThat(slowTransfer.connectionRisk().riskScore()).isLessThanOrEqualTo(sfTransfer.connectionRisk().riskScore());
+		assertThat(sfTransfer.fastTransferCarDoors())
+			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
+			.containsOnly("TRANSFER");
+
+		// JourneyAccessProjection 생성자가 TRANSFER 외 시설 힌트를 fastTransferCarDoors에 넣는 것을 거부하는지 검증
+		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+			RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
+			"station-b", "station-b", 120, 60, false, true, "VERIFIED",
+			null, null, null, false,
+			stdTransfer.connectionRisk(),
+			List.of(new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 1, "ELEVATOR"))
+		)).isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("TRANSFER");
+	}
+
 	private static JourneyRequest createRequest(String origin, String destination, JourneyRequest.ConstraintMode constraintMode) {
+		return createProfileRequest(origin, destination, JourneyRequest.MobilityProfile.STANDARD, constraintMode, DEPARTURE_INSTANT);
+	}
+
+	private static JourneyRequest createProfileRequest(
+		String origin,
+		String destination,
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.ConstraintMode constraintMode,
+		Instant departureInstant
+	) {
 		return new JourneyRequest(
 			"01HZY3Q4J5K6M7N8P9Q0R1S2T3",
 			origin,
 			destination,
-			new JourneyRequest.Departure.Scheduled(DEPARTURE_INSTANT),
+			new JourneyRequest.Departure.Scheduled(departureInstant),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.WalkingPace.STANDARD,
-			JourneyRequest.MobilityProfile.STANDARD,
+			mobilityProfile == JourneyRequest.MobilityProfile.SLOW
+				? JourneyRequest.WalkingPace.SLOW
+				: JourneyRequest.WalkingPace.STANDARD,
+			mobilityProfile,
 			constraintMode,
 			1,
 			1,
 			() -> false
+		);
+	}
+
+	private static RouteTimetable createTimetableWithHeadwayAndCarDoorHints() {
+		var base = createTimetableWithCarDoorHints();
+		var extraTrips = new java.util.ArrayList<>(base.transitTrips());
+		extraTrips.add(new TransitTrip("trip-1-late", "r1", "daily", "trip-1-late", "up", "LOCAL", 0));
+		extraTrips.add(new TransitTrip("trip-2-follow", "r2", "daily", "trip-2-follow", "down", "LOCAL", 0));
+		var extraStopTimes = new java.util.ArrayList<>(base.transitStopTimes());
+		extraStopTimes.add(new TransitStopTime("trip-1-late", 1, "station-a", "line-1", 34200, 34200, 0, 0));
+		extraStopTimes.add(new TransitStopTime("trip-1-late", 2, "station-b", "line-1", 34800, 34800, 0, 0));
+		extraStopTimes.add(new TransitStopTime("trip-2-follow", 1, "station-b", "line-2", 35100, 35100, 0, 0));
+		extraStopTimes.add(new TransitStopTime("trip-2-follow", 2, "station-c", "line-2", 35700, 35700, 0, 0));
+		return new RouteTimetable(
+			base.serviceCalendars(),
+			base.serviceCalendarDates(),
+			base.transitRoutes(),
+			List.copyOf(extraTrips),
+			List.copyOf(extraStopTimes),
+			base.transitFrequencies(),
+			List.of(),
+			null,
+			base.routeAccessData()
 		);
 	}
 
