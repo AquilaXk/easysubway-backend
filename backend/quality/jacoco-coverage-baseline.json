@@ -21,11 +21,11 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "841243d6edc127bff1046763bda191062754d2be10ceaca6c66e70c4930e7dc9"
+    "sourceInventorySha256": "2dc1f037db5a3f093f7019bee3cb93d4c109d06d7b0c795673be23db366b5002"
   },
   "scope": {
-    "criticalSourceCount": 492,
-    "reportedSourceCount": 492,
+    "criticalSourceCount": 493,
+    "reportedSourceCount": 493,
     "missingSourceCount": 0,
     "excludedSourceCount": 1
   },
@@ -433,6 +433,7 @@
     {"path":"backend/src/main/java/com/easysubway/route/domain/RouteStep.java","sha256":"6aea465ca7aa7b28a8427b6afc3b7964b6892f1180fc450bcffb676a6a15c09b","packageName":"com.easysubway.route.domain","sourceFileName":"RouteStep.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":22,"total":23,"basisPoints":9565},"branch":{"missed":12,"covered":12,"total":24,"basisPoints":5000}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/RouteWarning.java","sha256":"772fd44078133e289b87f04ad3a547afd7e85845006f1232dc99e7717f26cced","packageName":"com.easysubway.route.domain","sourceFileName":"RouteWarning.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/route/domain/RouteWarningCode.java","sha256":"9e6c7721c8e94792876f6e5f3e390eea20aa9a4dc9d7ba0836d54ff85ccf53fa","packageName":"com.easysubway.route.domain","sourceFileName":"RouteWarningCode.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":4,"total":4,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
+    {"path":"backend/src/main/java/com/easysubway/route/domain/TransferConnectionRisk.java","sha256":"ff6e54c7a55f780c28a589dcda4eb77f0891406ea392145ce71bdd49931136a2","packageName":"com.easysubway.route.domain","sourceFileName":"TransferConnectionRisk.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":49,"total":49,"basisPoints":10000},"branch":{"missed":0,"covered":28,"total":28,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/in/web/FacilityOperationalStatusAdminPageController.java","sha256":"6a4e3a9347a31a2cd9ef77692422610bba7270355e532fe688e7b3f1b1d2e25b","packageName":"com.easysubway.transit.adapter.in.web","sourceFileName":"FacilityOperationalStatusAdminPageController.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":53,"total":53,"basisPoints":10000},"branch":{"missed":0,"covered":4,"total":4,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/in/web/FacilityStatusRow.java","sha256":"cbf7da9ee136af4569d2f6f69f25c1810836f260320d4186bd08e25ae12c01c3","packageName":"com.easysubway.transit.adapter.in.web","sourceFileName":"FacilityStatusRow.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":27,"total":27,"basisPoints":10000},"branch":{"missed":0,"covered":11,"total":11,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitFacilityAdminApiController.java","sha256":"df4aea486ac7dd131ac4c3c5d954a8c42245825fa98536df63b42184289c3075","packageName":"com.easysubway.transit.adapter.in.web","sourceFileName":"TransitFacilityAdminApiController.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":4,"total":4,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
@@ -535,20 +536,20 @@
   "boundaries": [
     {
       "id": "JOURNEY_ROUTE",
-      "sourceCount": 277,
-      "reportedSourceCount": 277,
+      "sourceCount": 278,
+      "reportedSourceCount": 278,
       "missingSourceCount": 0,
       "line": {
         "missed": 1089,
-        "covered": 15392,
-        "total": 16481,
-        "basisPoints": 9339
+        "covered": 15441,
+        "total": 16530,
+        "basisPoints": 9341
       },
       "branch": {
         "missed": 1654,
-        "covered": 6538,
-        "total": 8192,
-        "basisPoints": 7980
+        "covered": 6566,
+        "total": 8220,
+        "basisPoints": 7987
       }
     },
     {

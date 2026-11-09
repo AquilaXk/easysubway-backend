@@ -78,6 +78,15 @@ public record JourneyCandidate(
 		return realtimeDepartureTime != null;
 	}
 
+	/**
+	 * #457: {@code transferIndex}번째 환승 구간({@link Transfer})으로 이어지는 직전 승차 구간({@link Ride})의
+	 * 빠른 환승 칸·문({@code TRANSFER}) 목록을 반환한다.
+	 */
+	public List<AlightingCarDoor> fastTransferCarDoors(int transferIndex) {
+		Objects.checkIndex(transferIndex, transferCount);
+		return ((Ride) legs.get(transferIndex * 2)).alightingCarDoors();
+	}
+
 	public enum Status {
 		FOUND
 	}

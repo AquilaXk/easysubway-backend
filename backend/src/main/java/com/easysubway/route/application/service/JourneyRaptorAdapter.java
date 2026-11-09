@@ -242,7 +242,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 						leg2,
 						lastRide1,
 						firstRide2,
-						facilityOverlay
+						realtimeOverlay2
 					);
 					if (chained != null) {
 						chainedItineraries.add(chained);
@@ -310,7 +310,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RouteTimetableRaptorPlanner.JourneyItinerary leg2,
 		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1,
 		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2,
-		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
 	) {
 		String via = request.viaStationId();
 		int station = timetable.stationIndex(via);
@@ -334,7 +334,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		if (fromLine != toLine) {
 			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
 			// #453: 같은 환승 쌍에 비검증 후보가 앞서도 검증 후보를 먼저 고른다. 검증 후보가 없으면 역 밖 보행을 보고, 그래도 없으면 버린다.
-			int transition = resolveJunctionTransition(timetable, station, fromLine, toLine, profileBit, facilityOverlay);
+			int transition = resolveJunctionTransition(timetable, station, fromLine, toLine, profileBit, realtimeOverlay);
 
 			if (transition < 0) {
 				return null;
@@ -354,7 +354,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			if (includesStairs) {
 				// #469 F1: 경유역 접속 환승의 계단 상태가 미확정이거나 근거 없는 계단 없는 동선이 있으면 확정할 수 없다.
 				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.unconfirmedStairFreeTransfer(
-					timetable, transition, profileBit, facilityOverlay);
+					timetable, transition, profileBit, realtimeOverlay);
 			}
 
 			if (timetable.isOutOfStationTransition(transition)) {
@@ -377,22 +377,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			return null;
 		}
 
-		RouteTimetableRaptorPlanner.JourneyAccessProjection junctionTransfer =
-			new RouteTimetableRaptorPlanner.JourneyAccessProjection(
-				RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
-				via,
-				via,
-				duration,
-				distance,
-				includesStairs,
-				verified,
-				status,
-				transferType,
-				farePenaltyApplies,
-				transferLimitMinutes,
-				junctionStairAccessUnconfirmed
-			);
-
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();
 		// #454: 각 구간 여정은 승차로 시작해 승차로 끝난다. 앞 구간의 마지막 승차는 환승 안내를 붙여 다시 만든다.
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
@@ -407,6 +391,42 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			true,
 			stepFree
 		);
+		java.time.LocalDate ride2Date = leg2Departure.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate();
+		int ride2DepartureSeconds = (int) Duration.between(
+			ride2Date.atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
+			leg2Departure
+		).getSeconds();
+		Integer nextHeadwaySeconds = timetable.nextHeadwaySeconds(
+			ride2Date,
+			firstRide2.fromStationId(),
+			firstRide2.toStationId(),
+			firstRide2.lineId(),
+			ride2DepartureSeconds,
+			realtimeOverlay
+		);
+		com.easysubway.route.domain.TransferConnectionRisk connectionRisk =
+			com.easysubway.route.domain.TransferConnectionRisk.evaluate(
+				availableSlack - duration,
+				duration,
+				nextHeadwaySeconds
+			);
+		RouteTimetableRaptorPlanner.JourneyAccessProjection junctionTransfer =
+			new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+				RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
+				via,
+				via,
+				duration,
+				distance,
+				includesStairs,
+				verified,
+				status,
+				transferType,
+				farePenaltyApplies,
+				transferLimitMinutes,
+				junctionStairAccessUnconfirmed,
+				connectionRisk,
+				transferHints
+			);
 		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
 			lastRide1.lineId(),
 			lastRide1.tripId(),

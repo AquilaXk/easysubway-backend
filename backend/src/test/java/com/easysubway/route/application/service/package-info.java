@@ -2,7 +2,7 @@
  * Journey V3 서버 공인 경로 엔진(RAPTOR 계열) 설계 문서와 그 검증 체계.
  *
  * <p>이 문서는 경로 엔진의 설계 문서다(#460, 프로필 탐색 개편 #461, 저수준 최적화 #462, 도착역별 하한 캐시 #492, 접근성 다기준 경로 대안 #469,
- * 에픽 #457). 엔진 코드는 같은 패키지의 main 소스에 있고, 이 문서는
+ * 경유역 교통약자·환승 정합성 #554~#557, 결정론적 환승 여유 위험도·빠른 환승 칸·문 안내 연결 및 에픽 마무리 #457). 엔진 코드는 같은 패키지의 main 소스에 있고, 이 문서는
  * 엔진을 검증하는 차분 검증·성능 회귀 게이트와 함께 테스트 소스에 둔다(main에 두면 문서만 있는 소스가 커버리지
  * 인벤토리에 들어간다). 알고리즘, 자료구조, 복잡도, 정확성 검증 방식, 측정 결과,
  * 성능 회귀 게이트의 기준선 갱신 절차를 적는다. 수치는 이 문서를 쓴 시점의 커밋된 기준선
@@ -116,6 +116,20 @@
  *   ({@code forwardRemainingBoardings}, {@code ridesBeforeBoarding}), 승차 예산을 넘는 부분 여정을 버린다. 실시간 차단은
  *   선택지를 줄이기만 하므로 완화에서 빼도 된다.</li>
  *   <li>한도(작업량, 상태당 라벨, 도착 라벨, 시점 수)를 넘으면 잘린 결과를 성공으로 돌려주지 않고 거절한다.</li>
+ *   <li>결정론적 환승 여유 위험도({@code TransferConnectionRisk}, #457 하위 5): 과거 지연 이력이나 확률 추정 없이, 보행 프로필
+ *   가중치가 반영된 검증 환승 소요 시간({@code verifiedTransferSeconds})을 뺀 실제 환승 여유 시간({@code slackSeconds}, 안전 포화
+ *   상한 600초 = 10분)과 다음 탑승 노선의 공식 후속 배차 간격({@code CompiledTimetable#nextHeadwaySeconds}, 포화 상한 1,800초 =
+ *   30분; 후속 열차가 없으면 {@code null} = 막차 연결)만으로 위험도 점수(0~100)와 등급({@code LOW}, {@code MODERATE},
+ *   {@code HIGH}, {@code CRITICAL_LAST_TRAIN})을 결정론적으로 계산해 {@code JourneyAccessProjection#connectionRisk} 및
+ *   {@code JourneyItinerary#transferConnectionRisks}·{@code highestTransferConnectionRisk}에 싣는다.</li>
+ *   <li>빠른 환승·하차 칸·문 안내 및 경유역 일관 연결({@code AlightingCarDoor} / {@code fastTransferCarDoors}, #432, #554~#557,
+ *   #457 하위 6): {@code CompiledTimetable#selectAlightingCarDoors}는 공식 상·하행({@code UP}/{@code DOWN}/{@code BOTH})이 확인된
+ *   열차에 한해 다음 구간이 환승이면 {@code TRANSFER} 칸·문만, 최종 하차면 엄격 무단차({@code REQUIRE_STEP_FREE}) 또는 무단차
+ *   프로필({@code STEP_FREE})일 때 {@code ELEVATOR}만, 일반 요청일 때 {@code ELEVATOR}·{@code ESCALATOR}·{@code STAIR}를
+ *   오름차순으로 선택한다. 정방향·역방향({@code ARRIVE_BY}/{@code LAST_CONNECTION})·경유역({@code viaStationId},
+ *   {@code JourneyRaptorAdapter#chainLegs}) 모두 직전 승차의 {@code TRANSFER} 칸·문을 환승 구간
+ *   ({@code JourneyAccessProjection#fastTransferCarDoors} 및 {@code JourneyCandidate#fastTransferCarDoors(int)})과 일관되게
+ *   잇고, 경유역 접속 환승도 보행 프로필별 환승 시간·최소 180초 여유·시설 차단 overlay·계단 미확정 판정을 동일하게 적용한다.</li>
  * </ul>
  *
  * <h2>3. 자료구조</h2>
@@ -672,8 +686,9 @@
  *   <li>프로필 탐색 세 모드는 (역, 출발 노선, 도착 노선)마다 동선 하나만 본다. 표준·느린 걸음 프로필 질의의
  *   BEST_ACCESSIBILITY 대표는 그 동선 안에서만 계단이 적은 여정을 고른다. 무단차 프로필은 계단 없는 동선을 먼저 고르므로
  *   해당하지 않는다. 다중 동선은 라벨 수를 늘려 운영 자원 정책(platform#218)을 다시 재야 해서 #469 범위에서 뺐다.</li>
- *   <li>계단 경고는 동선의 정적 사실이다. 시설 가동 정보가 신선하지 않으면 엄격 무단차 요청만 명시적 오류이고 그 밖의
- *   요청은 차단 0건으로 탐색한다(응답 {@code facilityStatus=UNOBSERVED}). 실시간 고장 반영은 에픽 #457 하위 3에서 다룬다.</li>
+ *   <li>계단 경고는 동선의 정적 사실이다. 시설 가동 정보가 신선하면 실시간 고장 오버레이(#403·#483)가 차단 시설을 동선에서
+ *   제외하며, 신선하지 않으면 엄격 무단차 요청만 명시적 오류이고 그 밖의 요청은 차단 0건으로 탐색한다(응답
+ *   {@code facilityStatus=UNOBSERVED}).</li>
  *   <li>운영 데이터 영향 이력(#469 리뷰 F1, 2026-10-04 실측): 전국 번들 seq126의 환승 동선 309개는 모두 계단 상태가 UNKNOWN이었다
  *   (계단 플래그 0). 무작위 OD 1,000건(평일 06~21시, 대안 3·환승 3)에서 경로를 찾은 490건 중 표준·무단차 선호 모두
  *   INCLUDED 50건(환승 없는 직행), UNDETERMINED 440건이었고, 엄격 무단차는 직행 50건만 경로를 찾았다(바꾸기 전 490건, 모든

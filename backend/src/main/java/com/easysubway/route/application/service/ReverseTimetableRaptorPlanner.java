@@ -1310,25 +1310,42 @@ final class ReverseTimetableRaptorPlanner {
 		for (int index = 0; index < legs.size(); index += 1) {
 			TraceLeg leg = legs.get(index);
 			if (leg instanceof TraceAccess access) {
+				TraceRide previous = (TraceRide) legs.get(index - 1);
+				TraceRide next = (TraceRide) legs.get(index + 1);
+				int alightSeconds = arrivalSeconds(query, previous.trip(), previous.alightIndex());
+				int boardSeconds = departureSeconds(query, next.trip(), next.boardIndex());
+				int elapsed = boardSeconds - alightSeconds;
+				int verifiedTransferSeconds = transferSeconds(query, timetable, access.transition());
 				String transferType = null;
 				Boolean farePenaltyApplies = null;
 				Integer transferLimitMinutes = null;
 				if (timetable.isOutOfStationTransition(access.transition())) {
 					transferType = "OUT_OF_STATION";
-					TraceRide previous = (TraceRide) legs.get(index - 1);
-					TraceRide next = (TraceRide) legs.get(index + 1);
-					int alightSeconds = arrivalSeconds(query, previous.trip(), previous.alightIndex());
-					int boardSeconds = departureSeconds(query, next.trip(), next.boardIndex());
-					int elapsed = boardSeconds - alightSeconds;
 					int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
 					boolean timeout = elapsed > limit;
 					farePenaltyApplies = timeout;
 					transferLimitMinutes = limit / 60;
 				}
+				Integer nextHeadwaySeconds = timetable.nextHeadwaySeconds(
+					next.trip().serviceDate(),
+					next.trip().stopTimes().get(next.boardIndex()).stationId(),
+					next.trip().stopTimes().get(next.alightIndex()).stationId(),
+					next.trip().scheduledTrip().route().lineId(),
+					next.trip().realtimeOverlay().departureSeconds(next.trip().scheduledTrip(), next.boardIndex()),
+					next.trip().realtimeOverlay()
+				);
+				com.easysubway.route.domain.TransferConnectionRisk connectionRisk =
+					com.easysubway.route.domain.TransferConnectionRisk.evaluate(
+						(long) elapsed - verifiedTransferSeconds,
+						verifiedTransferSeconds,
+						nextHeadwaySeconds
+					);
+				List<RouteTimetableRaptorPlanner.AlightingCarDoor> fastTransferCarDoors =
+					((RouteTimetableRaptorPlanner.JourneyRideProjection) projected.getLast()).alightingCarDoors();
 				projected.add(new RouteTimetableRaptorPlanner.JourneyAccessProjection(
 					RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
 					access.fromStationId(), access.toStationId(),
-					transferSeconds(query, timetable, access.transition()),
+					verifiedTransferSeconds,
 					timetable.transitionDistanceMeters(access.transition()),
 					timetable.transitionIncludesStairs(access.transition()),
 					timetable.transitionVerified(access.transition()),
@@ -1337,14 +1354,17 @@ final class ReverseTimetableRaptorPlanner {
 					farePenaltyApplies,
 					transferLimitMinutes,
 					timetable.transitionStairAccess(access.transition())
-						== RouteTimetableRaptorPlanner.STAIR_ACCESS_UNCONFIRMED
+						== RouteTimetableRaptorPlanner.STAIR_ACCESS_UNCONFIRMED,
+					connectionRisk,
+					fastTransferCarDoors
 				));
 			} else {
 				TraceRide ride = (TraceRide) leg;
 				RouteTimetableRaptorPlanner.RealtimeOverlay rideOverlay = ride.trip().realtimeOverlay();
 				boolean hasRealtimeEvidence = rideOverlay.evidence(ride.trip().scheduledTrip()) != null;
 				boolean nextIsTransfer = index + 1 < legs.size();
-				boolean stepFree = (query.mobilityPreset() == com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset.STEP_FREE);
+				boolean stepFree = RouteTimetableRaptorPlanner.stepFreeAlightingCarDoors(
+					query.mobilityPreset(), query.accessProfileBit());
 				List<RouteTimetableRaptorPlanner.AlightingCarDoor> alightingCarDoors = timetable.selectAlightingCarDoors(
 					ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
 					ride.trip().scheduledTrip().route().lineId(),

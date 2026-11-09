@@ -27,6 +27,7 @@ import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
+import com.easysubway.route.domain.TransferConnectionRisk;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -62,6 +63,7 @@ public final class RouteTimetableRaptorPlanner {
 	private static final ZoneId SERVICE_ZONE = ServiceDayResolver.ZONE;
 	private static final int PARETO_LIMIT = 4;
 	private static final int TRANSFER_DURATION_SECONDS = 360;
+	private static final String TARGET_FACILITY_TRANSFER = "TRANSFER";
 	private static final int TRANSFER_DISTANCE_METERS = 260;
 	/**
 	 * #454: 경로는 출발역 승강장(역-노선)에서 시작해 도착역 승강장에서 끝난다(QA 2026-10-02).
@@ -195,6 +197,9 @@ public final class RouteTimetableRaptorPlanner {
 			if (index > 0) {
 				RideLeg previous = path.get(index - 1);
 				int transferTransition = label.accessTransitions()[index];
+				int verifiedTransferSeconds = journeyTransferSeconds(input,
+					timetable.transitionDurationSeconds(transferTransition),
+					timetable.transitionDistanceMeters(transferTransition));
 				boolean isOutOfStation = timetable.isOutOfStationTransition(transferTransition);
 				String transferType = isOutOfStation ? "OUT_OF_STATION" : null;
 				Boolean farePenaltyApplies = null;
@@ -206,13 +211,30 @@ public final class RouteTimetableRaptorPlanner {
 					farePenaltyApplies = timeout;
 					transferLimitMinutes = limit / 60;
 				}
+				long elapsedSeconds = Duration.between(
+					previous.realtimeArrivalTime(input.serviceDay()),
+					ride.realtimeDepartureTime(input.serviceDay())
+				).getSeconds();
+				Integer nextHeadwaySeconds = timetable.nextHeadwaySeconds(
+					ride.serviceDay(input.serviceDay()).date(),
+					ride.from().stationId(),
+					ride.to().stationId(),
+					ride.lineId(),
+					ride.departureSeconds(),
+					ride.realtimeOverlay()
+				);
+				TransferConnectionRisk connectionRisk = TransferConnectionRisk.evaluate(
+					elapsedSeconds - verifiedTransferSeconds,
+					verifiedTransferSeconds,
+					nextHeadwaySeconds
+				);
+				List<AlightingCarDoor> fastTransferCarDoors =
+					((JourneyRideProjection) legs.getLast()).alightingCarDoors();
 				legs.add(new JourneyAccessProjection(
 					JourneyAccessKind.TRANSFER,
 					previous.to().stationId(),
 					ride.from().stationId(),
-					journeyTransferSeconds(input,
-						timetable.transitionDurationSeconds(transferTransition),
-						timetable.transitionDistanceMeters(transferTransition)),
+					verifiedTransferSeconds,
 					timetable.transitionDistanceMeters(transferTransition),
 					timetable.transitionIncludesStairs(transferTransition),
 					timetable.transitionVerified(transferTransition),
@@ -220,7 +242,9 @@ public final class RouteTimetableRaptorPlanner {
 					transferType,
 					farePenaltyApplies,
 					transferLimitMinutes,
-					timetable.transitionStairAccess(transferTransition) == STAIR_ACCESS_UNCONFIRMED
+					timetable.transitionStairAccess(transferTransition) == STAIR_ACCESS_UNCONFIRMED,
+					connectionRisk,
+					fastTransferCarDoors
 				));
 			}
 			RealtimeEvidence evidence = ride.realtimeOverlay().evidence(ride.scheduledTrip());
@@ -1916,6 +1940,11 @@ public final class RouteTimetableRaptorPlanner {
 			|| mobilityPreset == MobilityPreset.STEP_FREE;
 	}
 
+	static boolean stepFreeAlightingCarDoors(MobilityPreset mobilityPreset, int accessProfileBit) {
+		return (accessProfileBit & STRICT_PROFILE_MASK) != 0
+			|| mobilityPreset == MobilityPreset.STEP_FREE;
+	}
+
 	private static MobilityPreset mobilityPreset(
 		com.easysubway.journey.application.JourneyRequest.MobilityProfile mobilityProfile
 	) {
@@ -3058,7 +3087,7 @@ public final class RouteTimetableRaptorPlanner {
 					&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
 				.filter(h -> {
 					if (nextIsTransfer) {
-						return "TRANSFER".equals(h.targetFacilityType());
+						return TARGET_FACILITY_TRANSFER.equals(h.targetFacilityType());
 					} else {
 						if (stepFree) {
 							return "ELEVATOR".equals(h.targetFacilityType());
@@ -3095,6 +3124,40 @@ public final class RouteTimetableRaptorPlanner {
 			Integer idx = tripIndex.get(tripId);
 			if (idx == null) return null;
 			return source.transitTrips().get(idx).directionId();
+		}
+
+		/**
+		 * #457: {@code serviceDate} 운행일에 {@code fromStationId -> toStationId} 구간을 같은 노선({@code lineId})으로
+		 * 운행하는 후속 열차까지의 공식 배차 간격(초)을 반환한다. 후속 열차가 없으면 {@code null}(막차 연결)이다.
+		 */
+		Integer nextHeadwaySeconds(
+			LocalDate serviceDate,
+			String fromStationId,
+			String toStationId,
+			String lineId,
+			int boardedDepartureSeconds,
+			RealtimeOverlay realtimeOverlay
+		) {
+			int fromStation = stationIndex(fromStationId);
+			int toStation = stationIndex(toStationId);
+			int lineIdx = lineIndex(lineId);
+			ActiveServiceDay activeDay = activeServiceDay(serviceDate);
+			int minHeadway = Integer.MAX_VALUE;
+			for (int pattern : patternsByStop(fromStation)) {
+				int[] stops = stopsByPattern(pattern);
+				int fromPos = indexOf(stops, fromStation);
+				int toPos = indexOf(stops, toStation);
+				if (fromPos >= toPos || patternLine(pattern, fromPos) != lineIdx) {
+					continue;
+				}
+				for (ScheduledTrip candidate : activeDay.tripsByPattern(pattern)) {
+					int dep = realtimeOverlay.departureSeconds(candidate, fromPos);
+					if (!realtimeOverlay.cancelled(candidate) && dep > boardedDepartureSeconds) {
+						minHeadway = Math.min(minHeadway, dep - boardedDepartureSeconds);
+					}
+				}
+			}
+			return minHeadway == Integer.MAX_VALUE ? null : minHeadway;
 		}
 
 		Set<String> coveredStationIds() {
@@ -3707,7 +3770,7 @@ public final class RouteTimetableRaptorPlanner {
 			String edgeId
 		) {
 			List<RouteEdgeEvidence> evidence = evidenceByIdentity.getOrDefault(
-				new EvidenceKey(rule.toStationId(), rule.toLineId(), edgeId, "TRANSFER"),
+				new EvidenceKey(rule.toStationId(), rule.toLineId(), edgeId, TARGET_FACILITY_TRANSFER),
 				List.of()
 			);
 			return evidence.size() == 1 ? evidence.getFirst() : null;
@@ -5788,6 +5851,23 @@ public final class RouteTimetableRaptorPlanner {
 		boolean stairFree() {
 			return legs.stream().noneMatch(leg -> leg instanceof JourneyAccessProjection access && access.includesStairs());
 		}
+
+		/** #457: 여정 내 모든 환승 구간의 결정론적 환승 여유 위험도 목록(승차 순서). */
+		List<TransferConnectionRisk> transferConnectionRisks() {
+			return legs.stream()
+				.filter(JourneyAccessProjection.class::isInstance)
+				.map(JourneyAccessProjection.class::cast)
+				.map(JourneyAccessProjection::connectionRisk)
+				.filter(Objects::nonNull)
+				.toList();
+		}
+
+		/** #457: 여정 내 환승 구간 중 가장 위험도가 높은 환승 위험도(환승이 없으면 {@code null}). */
+		TransferConnectionRisk highestTransferConnectionRisk() {
+			return transferConnectionRisks().stream()
+				.min(TransferConnectionRisk.RISK_DESCENDING)
+				.orElse(null);
+		}
 	}
 
 	sealed interface JourneyLegProjection permits JourneyAccessProjection, JourneyRideProjection {
@@ -5810,12 +5890,39 @@ public final class RouteTimetableRaptorPlanner {
 		String transferType,
 		Boolean farePenaltyApplies,
 		Integer transferLimitMinutes,
-		boolean stairAccessUnconfirmed
+		boolean stairAccessUnconfirmed,
+		TransferConnectionRisk connectionRisk,
+		List<AlightingCarDoor> fastTransferCarDoors
 	) implements JourneyLegProjection {
 		JourneyAccessProjection {
 			if (stairAccessUnconfirmed && !includesStairs) {
 				throw new IllegalArgumentException("unconfirmed stair access must be reported as includesStairs");
 			}
+			fastTransferCarDoors = List.copyOf(Objects.requireNonNullElse(fastTransferCarDoors, List.of()));
+			for (AlightingCarDoor door : fastTransferCarDoors) {
+				if (!TARGET_FACILITY_TRANSFER.equals(door.targetFacilityType())) {
+					throw new IllegalArgumentException("fastTransferCarDoors must only contain TRANSFER hints");
+				}
+			}
+		}
+
+		JourneyAccessProjection(
+			JourneyAccessKind kind,
+			String fromStationId,
+			String toStationId,
+			int durationSeconds,
+			int distanceMeters,
+			boolean includesStairs,
+			boolean verified,
+			String verificationStatus,
+			String transferType,
+			Boolean farePenaltyApplies,
+			Integer transferLimitMinutes,
+			boolean stairAccessUnconfirmed
+		) {
+			this(kind, fromStationId, toStationId, durationSeconds, distanceMeters, includesStairs, verified,
+				verificationStatus, transferType, farePenaltyApplies, transferLimitMinutes, stairAccessUnconfirmed,
+				null, List.of());
 		}
 
 		/** 계단 접근 상태를 확정으로 다루는 생성자(계단 없음 확정 또는 계단 확정). 미확정 동선은 마지막 인자로 명시한다. */
