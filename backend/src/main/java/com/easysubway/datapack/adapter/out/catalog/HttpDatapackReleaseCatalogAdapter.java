@@ -18,18 +18,27 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
+import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.StreamSupport;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
-public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalogPort {
+public final class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalogPort {
+	static final int MAX_TRUSTED_SIGNING_KEYS = 8;
+
+	public record TrustedSigningKey(String keyId, String publicKeyPem) {}
+
 	// 정준 문자열은 리터럴의 정확한 십진 값에 결속된다. 계약 테스트가 같은 파서
 	// 설정으로 fixture 리터럴을 읽어야 하므로 package-private으로 노출한다.
 	static final ObjectMapper JSON = JsonMapper.builder()
@@ -43,16 +52,25 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 
 	private final HttpClient httpClient;
 	private final String baseUrl;
-	private final String publicKeyPem;
-	private final String keyId;
+	private final Map<String, PublicKey> trustedKeysById;
 	private final Duration timeout;
 
 	@org.springframework.beans.factory.annotation.Autowired
 	public HttpDatapackReleaseCatalogAdapter(
 		@Value("${easysubway.datapack.catalog-base-url:}") String baseUrl,
 		@Value("${easysubway.datapack.signing-public-key-pem:}") String publicKeyPem,
-		@Value("${easysubway.datapack.signing-key-id:production-v1}") String keyId) {
-		this(HttpClient.newBuilder().connectTimeout(TIMEOUT).build(), baseUrl, publicKeyPem, keyId, TIMEOUT);
+		@Value("${easysubway.datapack.signing-key-id:production-v1}") String keyId,
+		@Value("${easysubway.datapack.next-signing-public-key-pem:}") String nextPublicKeyPem,
+		@Value("${easysubway.datapack.next-signing-key-id:}") String nextKeyId) {
+		this(
+			HttpClient.newBuilder().connectTimeout(TIMEOUT).build(),
+			baseUrl,
+			configuredTrustedKeys(publicKeyPem, keyId, nextPublicKeyPem, nextKeyId),
+			TIMEOUT);
+	}
+
+	public HttpDatapackReleaseCatalogAdapter(String baseUrl, String publicKeyPem, String keyId) {
+		this(baseUrl, publicKeyPem, keyId, "", "");
 	}
 
 	HttpDatapackReleaseCatalogAdapter(HttpClient httpClient, String baseUrl, String publicKeyPem, String keyId) {
@@ -65,11 +83,66 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 		String publicKeyPem,
 		String keyId,
 		Duration timeout) {
+		this(
+			httpClient,
+			baseUrl,
+			configuredTrustedKeys(publicKeyPem, keyId, "", ""),
+			timeout);
+	}
+
+	HttpDatapackReleaseCatalogAdapter(
+		HttpClient httpClient,
+		String baseUrl,
+		List<TrustedSigningKey> trustedKeys,
+		Duration timeout) {
 		this.httpClient = httpClient;
 		this.baseUrl = baseUrl == null ? "" : baseUrl.replaceFirst("/+$", "");
-		this.publicKeyPem = publicKeyPem == null ? "" : publicKeyPem.trim();
-		this.keyId = keyId;
+		this.trustedKeysById = buildTrustedKeysById(trustedKeys);
 		this.timeout = timeout == null ? TIMEOUT : timeout;
+	}
+
+	private static List<TrustedSigningKey> configuredTrustedKeys(
+		String publicKeyPem,
+		String keyId,
+		String nextPublicKeyPem,
+		String nextKeyId) {
+		boolean nextPemBlank = isBlank(nextPublicKeyPem);
+		boolean nextIdBlank = isBlank(nextKeyId);
+		if (nextPemBlank != nextIdBlank) {
+			return List.of();
+		}
+		var primary = new TrustedSigningKey(keyId, publicKeyPem);
+		return nextPemBlank
+			? List.of(primary)
+			: List.of(primary, new TrustedSigningKey(nextKeyId, nextPublicKeyPem));
+	}
+
+	private static Map<String, PublicKey> buildTrustedKeysById(List<TrustedSigningKey> trustedKeys) {
+		if (trustedKeys == null
+			|| trustedKeys.isEmpty()
+			|| trustedKeys.size() > MAX_TRUSTED_SIGNING_KEYS) {
+			return Map.of();
+		}
+		var keys = new LinkedHashMap<String, PublicKey>(trustedKeys.size());
+		for (TrustedSigningKey candidate : trustedKeys) {
+			if (candidate == null) {
+				return Map.of();
+			}
+			String id = candidate.keyId();
+			String pem = candidate.publicKeyPem();
+			if (isBlank(id) || !id.equals(id.trim()) || isBlank(pem)) {
+				return Map.of();
+			}
+			PublicKey parsed = parsePublicKey(pem.trim());
+			if (parsed == null || keys.putIfAbsent(id, parsed) != null) {
+				return Map.of();
+			}
+		}
+		return Collections.unmodifiableMap(keys);
+	}
+
+	private static boolean isBlank(String value) {
+		return value == null || value.isBlank();
 	}
 
 	@Override
@@ -89,12 +162,13 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 				+ sha256(releaseRequestId.getBytes(StandardCharsets.UTF_8)) + ".json");
 			JsonNode binding = JSON.readTree(bytes);
 			String signatureValue = binding.path("signature").path("value").asText("");
+			PublicKey verifyingKey = trustedKeysById.get(binding.path("keyId").asText(""));
 			boolean signatureValid = "rsa-sha256-release-request-v1".equals(
 				binding.path("signature").path("algorithm").asText())
 				&& binding.path("schemaVersion").asInt(-1) == 1
 				&& "datapack-release-request-binding".equals(binding.path("artifactKind").asText())
-				&& keyId.equals(binding.path("keyId").asText())
-				&& verify(binding, signatureValue);
+				&& verifyingKey != null
+				&& verify(binding, verifyingKey, signatureValue);
 			long sequence = binding.path("releaseSequence").asLong(-1);
 			String boundChannel = binding.path("channel").asText("");
 				String boundRequestId = binding.path("releaseRequestId").asText("");
@@ -126,11 +200,12 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 			byte[] bytes = fetchBytes(path);
 			JsonNode manifest = JSON.readTree(bytes);
 			String signatureValue = manifest.path("signature").path("value").asText("");
+			PublicKey verifyingKey = trustedKeysById.get(manifest.path("keyId").asText(""));
 			boolean signatureValid = "rsa-sha256-manifest-v2".equals(
 				manifest.path("signature").path("algorithm").asText())
 				&& manifest.path("manifestVersion").asInt(-1) == 2
-				&& keyId.equals(manifest.path("keyId").asText())
-				&& verify(manifest, signatureValue);
+				&& verifyingKey != null
+				&& verify(manifest, verifyingKey, signatureValue);
 			if (!signatureValid) throw new Unavailable();
 			long actualSequence = manifest.path("releaseSequence").asLong(-1);
 			String actualChannel = manifest.path("channel").asText("");
@@ -145,7 +220,7 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 	}
 
 	private byte[] fetchBytes(String path) {
-		if (baseUrl.isBlank() || publicKeyPem.isBlank()) throw new Unavailable();
+		if (baseUrl.isBlank() || trustedKeysById.isEmpty()) throw new Unavailable();
 		try {
 			var request = HttpRequest.newBuilder(URI.create(baseUrl + path))
 				.timeout(timeout).GET().build();
@@ -164,11 +239,19 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 		}
 	}
 
-	private boolean verify(JsonNode manifest, String signatureValue) {
+	private static PublicKey parsePublicKey(String pem) {
+		try {
+			return KeyFactory.getInstance("RSA").generatePublic(
+				new X509EncodedKeySpec(pemBytes(pem)));
+		} catch (java.security.GeneralSecurityException | IllegalArgumentException exception) {
+			return null;
+		}
+	}
+
+	private static boolean verify(JsonNode manifest, PublicKey publicKey, String signatureValue) {
 		try {
 			var verifier = Signature.getInstance("SHA256withRSA");
-			verifier.initVerify(KeyFactory.getInstance("RSA").generatePublic(
-				new X509EncodedKeySpec(pemBytes(publicKeyPem))));
+			verifier.initVerify(publicKey);
 			var unsigned = (ObjectNode) manifest.deepCopy();
 			unsigned.remove("signature");
 			verifier.update(canonical(unsigned));

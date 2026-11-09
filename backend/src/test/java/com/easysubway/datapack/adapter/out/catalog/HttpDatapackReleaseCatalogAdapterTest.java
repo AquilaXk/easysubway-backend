@@ -335,11 +335,16 @@ class HttpDatapackReleaseCatalogAdapterTest {
 
 	private static byte[] signedManifest(java.security.KeyPair keyPair, long sequence,
 		int manifestVersion, String padding) throws Exception {
+		return signedManifest(keyPair, "production-v1", sequence, manifestVersion, padding);
+	}
+
+	private static byte[] signedManifest(java.security.KeyPair keyPair, String keyId,
+		long sequence, int manifestVersion, String padding) throws Exception {
 		var manifest = JSON.createObjectNode();
 		manifest.put("manifestVersion", manifestVersion);
 		manifest.put("channel", "production");
 		manifest.put("releaseSequence", sequence);
-		manifest.put("keyId", "production-v1");
+		manifest.put("keyId", keyId);
 		manifest.put("ttlSeconds", 3600);
 		manifest.putArray("packs");
 		if (!padding.isEmpty()) manifest.put("padding", padding);
@@ -366,6 +371,11 @@ class HttpDatapackReleaseCatalogAdapterTest {
 
 	private static byte[] signedBinding(java.security.KeyPair keyPair, long sequence,
 		String requestId, String manifestSha256, String releaseOutcome) throws Exception {
+		return signedBinding(keyPair, "production-v1", sequence, requestId, manifestSha256, releaseOutcome);
+	}
+
+	private static byte[] signedBinding(java.security.KeyPair keyPair, String keyId, long sequence,
+		String requestId, String manifestSha256, String releaseOutcome) throws Exception {
 		var binding = JSON.createObjectNode();
 		binding.put("schemaVersion", 1);
 		binding.put("artifactKind", "datapack-release-request-binding");
@@ -373,7 +383,7 @@ class HttpDatapackReleaseCatalogAdapterTest {
 		binding.put("releaseSequence", sequence);
 		binding.put("channel", "production");
 		binding.put("manifestSha256", manifestSha256);
-		binding.put("keyId", "production-v1");
+		binding.put("keyId", keyId);
 		binding.put("releaseOutcome", releaseOutcome);
 		var signer = Signature.getInstance("SHA256withRSA");
 		signer.initSign(keyPair.getPrivate());
@@ -391,6 +401,80 @@ class HttpDatapackReleaseCatalogAdapterTest {
 
 	private static String sha256(byte[] value) throws Exception {
 		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+	}
+
+	@Test
+	void verifiesCatalogAndRequestBindingAcrossPrimaryAndNextRotatedSigningKeys() throws Exception {
+		var primaryKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var nextKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] primaryManifest = signedManifest(primaryKey, "production-v1", 42, 2, "");
+		byte[] nextManifest = signedManifest(nextKey, "production-v2", 43, 2, "");
+		byte[] nextBinding = signedBinding(
+			nextKey, "production-v2", 43, "request-next", sha256(nextManifest), "PUBLISHED_AND_VERIFIED");
+		byte[] unknownManifest = signedManifest(nextKey, "production-v3", 44, 2, "");
+
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/releases/42.json", exchange -> respond(exchange, primaryManifest));
+		server.createContext("/catalog/releases/43.json", exchange -> respond(exchange, nextManifest));
+		server.createContext("/catalog/releases/44.json", exchange -> respond(exchange, unknownManifest));
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, nextManifest));
+		server.createContext("/catalog/release-requests/"
+			+ sha256("request-next".getBytes(StandardCharsets.UTF_8)) + ".json",
+			exchange -> respond(exchange, nextBinding));
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				baseUrl,
+				publicKey(primaryKey),
+				"production-v1",
+				publicKey(nextKey),
+				"production-v2");
+
+			assertThat(adapter.fetch("production", 42).releaseSequence()).isEqualTo(42L);
+			assertThat(adapter.fetchCurrent("production").releaseSequence()).isEqualTo(43L);
+			assertThat(adapter.findByRequest("production", "request-next"))
+				.get()
+				.extracting(DatapackReleaseCatalogPort.CatalogIdentity::releaseSequence)
+				.isEqualTo(43L);
+			assertThatThrownBy(() -> adapter.fetch("production", 44))
+				.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void failsClosedWhenSigningKeyRingConfigurationIsPartialDuplicateMalformedOrTooLarge() throws Exception {
+		var primaryKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var nextKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] primaryManifest = signedManifest(primaryKey, "production-v1", 42, 2, "");
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, primaryManifest));
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			var client = HttpClient.newHttpClient();
+			var nineKeys = java.util.stream.IntStream.rangeClosed(1, 9)
+				.mapToObj(index -> new HttpDatapackReleaseCatalogAdapter.TrustedSigningKey(
+					"production-v" + index, publicKey(primaryKey)))
+				.toList();
+			var invalidAdapters = java.util.List.of(
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", publicKey(nextKey), ""),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", "", "production-v2"),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", publicKey(nextKey), "production-v1"),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", "not-a-pem", "production-v2"),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), " production-v1", "", ""),
+				new HttpDatapackReleaseCatalogAdapter(client, baseUrl, java.util.List.of(), Duration.ofSeconds(1)),
+				new HttpDatapackReleaseCatalogAdapter(client, baseUrl, nineKeys, Duration.ofSeconds(1)));
+
+			for (var invalid : invalidAdapters) {
+				assertThatThrownBy(() -> invalid.fetchCurrent("production"))
+					.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+			}
+		} finally {
+			server.stop(0);
+		}
 	}
 
 	@Test

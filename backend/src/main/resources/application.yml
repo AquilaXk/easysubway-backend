@@ -55,9 +55,12 @@ easysubway:
     automation-status-token: ${EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN:}
     # 워크플로→backend 콜백 payload HMAC 서명 키. 미설정이면 빈 키로 초기화해 모든 콜백이 거부된다(안전 기본값).
     callback-hmac-key: ${EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY:}
+    next-callback-hmac-key: ${EASYSUBWAY_DATAPACK_NEXT_CALLBACK_HMAC_KEY:}
     catalog-base-url: ${EASYSUBWAY_DATAPACK_CATALOG_BASE_URL:}
     signing-public-key-pem: ${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:}
     signing-key-id: ${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID:production-v1}
+    next-signing-public-key-pem: ${EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM:}
+    next-signing-key-id: ${EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID:}
   # dev 프로파일 실사용 인상 평가·검수 스크린샷 전용 opt-in 합성 데이터(https://github.com/AquilaXk/easysubway/issues/2327 PR⑤). 미설정(기본
   # false)이면 DevFixtureSeeder 빈이 등록되지 않는다(prod 계열 프로파일에서는 @Profile로 이중 차단).
   # CI는 이 값을 켜지 않으므로 기존 seed 전제·QA 하네스 계약에 영향이 없다.

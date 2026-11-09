@@ -16,8 +16,9 @@ public class DatapackCallbackConfiguration {
     @Bean
     @ConditionalOnMissingBean
     CallbackSignature callbackSignature(
-        @Value("${easysubway.datapack.callback-hmac-key:}") String hmacKey
+        @Value("${easysubway.datapack.callback-hmac-key:}") String hmacKey,
+        @Value("${easysubway.datapack.next-callback-hmac-key:}") String nextHmacKey
     ) {
-        return new CallbackSignature(hmacKey);
+        return new CallbackSignature(hmacKey, nextHmacKey);
     }
 }

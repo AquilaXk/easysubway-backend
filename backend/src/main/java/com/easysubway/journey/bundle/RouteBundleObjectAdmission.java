@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiFunction;
 import org.apache.commons.codec.digest.DigestUtils;
 
 /** Binds delivered publication bytes to one verified v1 handoff or v2 descriptor. */
@@ -21,6 +22,32 @@ public final class RouteBundleObjectAdmission {
 		String activationRequestIdentity,
 		Map<String, byte[]> rawObjects,
 		RouteBundleCurrentKeyVerifier.CurrentKey currentKey) {
+		return admitHandoff(
+			handoffBytes,
+			activationRequestIdentity,
+			rawObjects,
+			(stableHandoffBytes, signingInputBytes) -> RouteBundleCurrentKeyVerifier.verify(
+				stableHandoffBytes, activationRequestIdentity, signingInputBytes, currentKey));
+	}
+
+	public static VerifiedObjectAdmission admit(
+		byte[] handoffBytes,
+		String activationRequestIdentity,
+		Map<String, byte[]> rawObjects,
+		List<RouteBundleCurrentKeyVerifier.CurrentKey> trustedKeys) {
+		return admitHandoff(
+			handoffBytes,
+			activationRequestIdentity,
+			rawObjects,
+			(stableHandoffBytes, signingInputBytes) -> RouteBundleCurrentKeyVerifier.verify(
+				stableHandoffBytes, activationRequestIdentity, signingInputBytes, trustedKeys));
+	}
+
+	private static VerifiedObjectAdmission admitHandoff(
+		byte[] handoffBytes,
+		String activationRequestIdentity,
+		Map<String, byte[]> rawObjects,
+		BiFunction<byte[], byte[], RouteBundleCurrentKeyVerifier.VerifiedSignature> verifier) {
 		byte[] stableHandoffBytes = handoffBytes == null ? null : handoffBytes.clone();
 		RouteBundleConsumerHandoff handoff = RouteBundleConsumerHandoffParser.parse(
 			stableHandoffBytes, activationRequestIdentity);
@@ -50,11 +77,7 @@ public final class RouteBundleObjectAdmission {
 		}
 
 		RouteBundleCurrentKeyVerifier.VerifiedSignature verifiedSignature =
-			RouteBundleCurrentKeyVerifier.verify(
-				stableHandoffBytes,
-				activationRequestIdentity,
-				admittedObjects.get(SIGNING_INPUT_PATH),
-				currentKey);
+			verifier.apply(stableHandoffBytes, admittedObjects.get(SIGNING_INPUT_PATH));
 		return new VerifiedObjectAdmission(verifiedSignature, admittedObjects);
 	}
 
@@ -63,6 +86,32 @@ public final class RouteBundleObjectAdmission {
 		String activationRequestIdentity,
 		RouteBundlePublicationObjectFetcher.FetchedPublicationObjects fetched,
 		RouteBundleCurrentKeyVerifier.CurrentKey currentKey) {
+		return admitDescriptor(
+			descriptorBytes,
+			activationRequestIdentity,
+			fetched,
+			(stableDescriptorBytes, signingInputBytes) -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				stableDescriptorBytes, activationRequestIdentity, signingInputBytes, currentKey));
+	}
+
+	public static VerifiedPublicationObjectAdmission admitPublicationDescriptor(
+		byte[] descriptorBytes,
+		String activationRequestIdentity,
+		RouteBundlePublicationObjectFetcher.FetchedPublicationObjects fetched,
+		List<RouteBundleCurrentKeyVerifier.CurrentKey> trustedKeys) {
+		return admitDescriptor(
+			descriptorBytes,
+			activationRequestIdentity,
+			fetched,
+			(stableDescriptorBytes, signingInputBytes) -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				stableDescriptorBytes, activationRequestIdentity, signingInputBytes, trustedKeys));
+	}
+
+	private static VerifiedPublicationObjectAdmission admitDescriptor(
+		byte[] descriptorBytes,
+		String activationRequestIdentity,
+		RouteBundlePublicationObjectFetcher.FetchedPublicationObjects fetched,
+		BiFunction<byte[], byte[], RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature> verifier) {
 		byte[] stableDescriptorBytes = descriptorBytes == null ? null : descriptorBytes.clone();
 		RouteBundlePublicationDescriptor descriptor =
 			RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
@@ -95,11 +144,7 @@ public final class RouteBundleObjectAdmission {
 		}
 
 		RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature signature =
-			RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
-				stableDescriptorBytes,
-				activationRequestIdentity,
-				admittedObjects.get(SIGNING_INPUT_PATH),
-				currentKey);
+			verifier.apply(stableDescriptorBytes, admittedObjects.get(SIGNING_INPUT_PATH));
 		return new VerifiedPublicationObjectAdmission(signature, admittedObjects);
 	}
 

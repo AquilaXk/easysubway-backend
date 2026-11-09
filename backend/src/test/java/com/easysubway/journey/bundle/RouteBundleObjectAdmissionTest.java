@@ -230,12 +230,96 @@ class RouteBundleObjectAdmissionTest {
 		assertEquals(RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID, failure.reason());
 	}
 
+	@Test
+	void admitsHandoffAndPublicationDescriptorAcrossTrustedKeyRingAndFailsClosedOnInvalidRing() throws Exception {
+		KeyPair primaryKeyPair = rsaKeyPair();
+		KeyPair nextKeyPair = rsaKeyPair();
+		var primaryKey = new RouteBundleCurrentKeyVerifier.CurrentKey(
+			"launch-2026", pem(primaryKeyPair.getPublic()));
+		var nextKey = new RouteBundleCurrentKeyVerifier.CurrentKey(
+			"rotation-2027", pem(nextKeyPair.getPublic()));
+		var trustedKeys = List.of(primaryKey, nextKey);
+
+		Fixture primaryFixture = fixture(
+			"https://objectstorage.ap-seoul-1.oraclecloud.com/n/testnamespace/b/easysubway-route-bundles/o",
+			primaryKeyPair,
+			"launch-2026");
+		Fixture nextFixture = fixture(
+			"https://objectstorage.ap-seoul-1.oraclecloud.com/n/testnamespace/b/easysubway-route-bundles/o",
+			nextKeyPair,
+			"rotation-2027");
+		Fixture unknownKeyFixture = fixture(
+			"https://objectstorage.ap-seoul-1.oraclecloud.com/n/testnamespace/b/easysubway-route-bundles/o",
+			nextKeyPair,
+			"unregistered-2028");
+
+		var admittedPrimaryHandoff = RouteBundleObjectAdmission.admit(
+			primaryFixture.handoffBytes(), ACTIVATION_REQUEST, primaryFixture.mutableObjects(), trustedKeys);
+		assertEquals("launch-2026", admittedPrimaryHandoff.verifiedSignature().keyId());
+
+		var admittedNextHandoff = RouteBundleObjectAdmission.admit(
+			nextFixture.handoffBytes(), ACTIVATION_REQUEST, nextFixture.mutableObjects(), trustedKeys);
+		assertEquals("rotation-2027", admittedNextHandoff.verifiedSignature().keyId());
+
+		var admittedNextDescriptor = RouteBundleObjectAdmission.admitPublicationDescriptor(
+			nextFixture.descriptorBytes(), ACTIVATION_REQUEST, nextFixture.fetchedObjects(), trustedKeys);
+		assertEquals("rotation-2027", admittedNextDescriptor.verifiedDescriptorSignature().keyId());
+
+		assertVerificationReason(
+			RouteBundleCurrentKeyVerifier.Reason.CURRENT_KEY_ID_MISMATCH,
+			() -> RouteBundleObjectAdmission.admit(
+				unknownKeyFixture.handoffBytes(),
+				ACTIVATION_REQUEST,
+				unknownKeyFixture.mutableObjects(),
+				trustedKeys));
+		assertVerificationReason(
+			RouteBundleCurrentKeyVerifier.Reason.CURRENT_KEY_ID_MISMATCH,
+			() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+				unknownKeyFixture.descriptorBytes(),
+				ACTIVATION_REQUEST,
+				unknownKeyFixture.fetchedObjects(),
+				trustedKeys));
+
+		var nineKeys = java.util.stream.IntStream.rangeClosed(1, 9)
+			.mapToObj(index -> new RouteBundleCurrentKeyVerifier.CurrentKey(
+				"key-" + index, pem(primaryKeyPair.getPublic())))
+			.toList();
+		for (List<RouteBundleCurrentKeyVerifier.CurrentKey> invalidRing : java.util.Arrays.asList(
+			null,
+			List.<RouteBundleCurrentKeyVerifier.CurrentKey>of(),
+			java.util.Collections.<RouteBundleCurrentKeyVerifier.CurrentKey>singletonList(null),
+			List.of(primaryKey, new RouteBundleCurrentKeyVerifier.CurrentKey(null, pem(nextKeyPair.getPublic()))),
+			List.of(primaryKey, new RouteBundleCurrentKeyVerifier.CurrentKey("", pem(nextKeyPair.getPublic()))),
+			List.of(primaryKey, new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", pem(nextKeyPair.getPublic()))),
+			List.of(primaryKey, new RouteBundleCurrentKeyVerifier.CurrentKey("rotation-2027", "not-a-pem")),
+			List.of(primaryKey, new RouteBundleCurrentKeyVerifier.CurrentKey(" rotation-2027", pem(nextKeyPair.getPublic()))),
+			nineKeys)) {
+			assertVerificationReason(
+				RouteBundleCurrentKeyVerifier.Reason.CURRENT_KEY_CONFIG_INVALID,
+				() -> RouteBundleObjectAdmission.admit(
+					primaryFixture.handoffBytes(),
+					ACTIVATION_REQUEST,
+					primaryFixture.mutableObjects(),
+					invalidRing));
+			assertVerificationReason(
+				RouteBundleCurrentKeyVerifier.Reason.CURRENT_KEY_CONFIG_INVALID,
+				() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+					primaryFixture.descriptorBytes(),
+					ACTIVATION_REQUEST,
+					primaryFixture.fetchedObjects(),
+					invalidRing));
+		}
+	}
+
 	static Fixture fixture() throws Exception {
 		return fixture("https://objectstorage.ap-seoul-1.oraclecloud.com/n/testnamespace/b/easysubway-route-bundles/o");
 	}
 
 	static Fixture fixture(String publicBaseUrl) throws Exception {
-		KeyPair keyPair = rsaKeyPair();
+		return fixture(publicBaseUrl, rsaKeyPair(), "launch-2026");
+	}
+
+	static Fixture fixture(String publicBaseUrl, KeyPair keyPair, String keyId) throws Exception {
 		var payloads = new LinkedHashMap<String, byte[]>();
 		payloads.put("payload/accessibility.sqlite.zst", bytes("accessibility"));
 		payloads.put("payload/fare.sqlite.zst", bytes("fare"));
@@ -268,7 +352,7 @@ class RouteBundleObjectAdmissionTest {
 			"activeFrom", "2099-01-01T09:00:00.000+09:00",
 			"freshUntil", "2099-02-01T09:00:00.000+09:00",
 			"schemaCompatibility", map("backendMin", 3, "backendMax", 3),
-			"keyId", "launch-2026");
+			"keyId", keyId);
 		byte[] signingInputBytes = canonicalBytes(signingInput);
 		Map<String, Object> manifest = new LinkedHashMap<>(signingInput);
 		manifest.put("signature", map(
@@ -352,7 +436,7 @@ class RouteBundleObjectAdmissionTest {
 		descriptor.put("descriptorSha256", sha(canonicalBytes(descriptor)));
 		return new Fixture(
 			canonicalBytes(handoff), canonicalBytes(descriptor), copyObjects(objects), objectPrefix,
-			new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", pem(keyPair.getPublic())),
+			new RouteBundleCurrentKeyVerifier.CurrentKey(keyId, pem(keyPair.getPublic())),
 			handoffSha256, String.valueOf(descriptor.get("descriptorSha256")));
 	}
 

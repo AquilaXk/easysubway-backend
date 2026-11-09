@@ -3,54 +3,77 @@ package com.easysubway.datapack.application.service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 /** release callback payload의 HMAC-SHA256 서명 생성·상수시간 검증. */
 public class CallbackSignature {
 
-    private final byte[] key;
+    private final List<SecretKeySpec> verificationKeys;
 
     public CallbackSignature(String hmacKey) {
-        this.key = hmacKey == null ? new byte[0] : hmacKey.getBytes(StandardCharsets.UTF_8);
+        this(hmacKey, "");
+    }
+
+    public CallbackSignature(String hmacKey, String nextHmacKey) {
+        this.verificationKeys = buildVerificationKeys(hmacKey, nextHmacKey);
+    }
+
+    private static List<SecretKeySpec> buildVerificationKeys(String hmacKey, String nextHmacKey) {
+        if (isBlank(hmacKey)) {
+            return List.of();
+        }
+        SecretKeySpec primary = new SecretKeySpec(hmacKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        if (isBlank(nextHmacKey) || nextHmacKey.equals(hmacKey)) {
+            return List.of(primary);
+        }
+        return List.of(
+            primary,
+            new SecretKeySpec(nextHmacKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     public String sign(CanonicalFields f) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(key, "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal(f.message().getBytes(StandardCharsets.UTF_8)));
-        } catch (java.security.GeneralSecurityException e) {
-            throw new IllegalStateException("HMAC 계산 실패", e);
-        }
+        return signMessage(f.message(), verificationKeys.getFirst());
     }
 
     public boolean verify(CanonicalFields f, String provided) {
-        if (provided == null || key.length == 0) {
-            return false;
-        }
-        byte[] a = sign(f).getBytes(StandardCharsets.UTF_8);
-        byte[] b = provided.getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(a, b);
+        return verifyMessage(f.message(), provided);
     }
 
 	public String sign(LegacyCanonicalFields f) {
+		return signMessage(f.message(), verificationKeys.getFirst());
+	}
+
+	public boolean verify(LegacyCanonicalFields f, String provided) {
+		return verifyMessage(f.message(), provided);
+	}
+
+	private static String signMessage(String message, SecretKeySpec keySpec) {
 		try {
 			Mac mac = Mac.getInstance("HmacSHA256");
-			mac.init(new SecretKeySpec(key, "HmacSHA256"));
-			return HexFormat.of().formatHex(mac.doFinal(f.message().getBytes(StandardCharsets.UTF_8)));
+			mac.init(keySpec);
+			return HexFormat.of().formatHex(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
 		} catch (java.security.GeneralSecurityException e) {
 			throw new IllegalStateException("HMAC 계산 실패", e);
 		}
 	}
 
-	public boolean verify(LegacyCanonicalFields f, String provided) {
-		if (provided == null || key.length == 0) {
+	private boolean verifyMessage(String message, String provided) {
+		if (provided == null || verificationKeys.isEmpty()) {
 			return false;
 		}
-		byte[] a = sign(f).getBytes(StandardCharsets.UTF_8);
-		byte[] b = provided.getBytes(StandardCharsets.UTF_8);
-		return MessageDigest.isEqual(a, b);
+		byte[] providedBytes = provided.getBytes(StandardCharsets.UTF_8);
+		boolean matched = false;
+		for (SecretKeySpec keySpec : verificationKeys) {
+			byte[] expected = signMessage(message, keySpec).getBytes(StandardCharsets.UTF_8);
+			matched |= MessageDigest.isEqual(expected, providedBytes);
+		}
+		return matched;
 	}
 
 	public static String sha256(String value) {

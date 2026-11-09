@@ -9,7 +9,9 @@ import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -17,6 +19,7 @@ import java.util.regex.Pattern;
 /** Verifies one handoff against one configured current key without issuing a candidate. */
 public final class RouteBundleCurrentKeyVerifier {
 
+	static final int MAX_TRUSTED_KEYS = 8;
 	private static final String SIGNING_INPUT_PATH = "manifest.signing-input.json";
 	private static final String SIGNATURE_ALGORITHM = "rsa-sha256-server-route-bundle-v1";
 	private static final String JCA_SIGNATURE_ALGORITHM = "SHA256withRSA";
@@ -54,6 +57,29 @@ public final class RouteBundleCurrentKeyVerifier {
 			result.signingInputSha256());
 	}
 
+	public static VerifiedSignature verify(
+		byte[] handoffBytes,
+		String activationRequestIdentity,
+		byte[] signingInputBytes,
+		List<CurrentKey> trustedKeys) {
+		RouteBundleConsumerHandoff handoff = RouteBundleConsumerHandoffParser.parse(
+			handoffBytes, activationRequestIdentity);
+		VerificationResult result = verifyParsedWithTrustedKeys(
+			handoff.identity(),
+			handoff.objects(),
+			RouteBundleConsumerHandoff.PublishedObject::path,
+			RouteBundleConsumerHandoff.PublishedObject::sha256,
+			signingInputBytes,
+			trustedKeys);
+
+		return new VerifiedSignature(
+			handoff,
+			result.keyId(),
+			result.algorithm(),
+			result.publicKeySha256(),
+			result.signingInputSha256());
+	}
+
 	public static VerifiedPublicationDescriptorSignature verifyPublicationDescriptor(
 		byte[] descriptorBytes,
 		String activationRequestIdentity,
@@ -78,6 +104,30 @@ public final class RouteBundleCurrentKeyVerifier {
 			result.signingInputSha256());
 	}
 
+	public static VerifiedPublicationDescriptorSignature verifyPublicationDescriptor(
+		byte[] descriptorBytes,
+		String activationRequestIdentity,
+		byte[] signingInputBytes,
+		List<CurrentKey> trustedKeys) {
+		RouteBundlePublicationDescriptor descriptor =
+			RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
+				descriptorBytes, activationRequestIdentity);
+		VerificationResult result = verifyParsedWithTrustedKeys(
+			descriptor.identity(),
+			descriptor.objects(),
+			RouteBundlePublicationDescriptor.PublishedObject::path,
+			RouteBundlePublicationDescriptor.PublishedObject::sha256,
+			signingInputBytes,
+			trustedKeys);
+
+		return new VerifiedPublicationDescriptorSignature(
+			descriptor,
+			result.keyId(),
+			result.algorithm(),
+			result.publicKeySha256(),
+			result.signingInputSha256());
+	}
+
 	private static <T> VerificationResult verifyParsed(
 		RouteBundleIdentity identity,
 		List<T> objects,
@@ -85,6 +135,46 @@ public final class RouteBundleCurrentKeyVerifier {
 		Function<T, String> digest,
 		byte[] signingInputBytes,
 		CurrentKey currentKey) {
+		String signingInputSha256 = validateSigningInput(objects, path, digest, signingInputBytes);
+		if (!hasValidKeyId(currentKey) || !currentKey.keyId().equals(identity.keyId())) {
+			throw failure(Reason.CURRENT_KEY_ID_MISMATCH, "configured current key ID does not match manifest keyId");
+		}
+
+		PublicKey publicKey = parsePublicKey(currentKey.publicKeyPem());
+		return verifyWithPublicKey(
+			identity,
+			currentKey.keyId(),
+			publicKey,
+			signingInputBytes,
+			signingInputSha256);
+	}
+
+	private static <T> VerificationResult verifyParsedWithTrustedKeys(
+		RouteBundleIdentity identity,
+		List<T> objects,
+		Function<T, String> path,
+		Function<T, String> digest,
+		byte[] signingInputBytes,
+		List<CurrentKey> trustedKeys) {
+		String signingInputSha256 = validateSigningInput(objects, path, digest, signingInputBytes);
+		Map<String, PublicKey> keysById = indexTrustedKeys(trustedKeys);
+		PublicKey publicKey = keysById.get(identity.keyId());
+		if (publicKey == null) {
+			throw failure(Reason.CURRENT_KEY_ID_MISMATCH, "configured current key ID does not match manifest keyId");
+		}
+		return verifyWithPublicKey(
+			identity,
+			identity.keyId(),
+			publicKey,
+			signingInputBytes,
+			signingInputSha256);
+	}
+
+	private static <T> String validateSigningInput(
+		List<T> objects,
+		Function<T, String> path,
+		Function<T, String> digest,
+		byte[] signingInputBytes) {
 		if (signingInputBytes == null || signingInputBytes.length == 0) {
 			throw failure(Reason.SIGNING_INPUT_INVALID, "manifest signing input bytes are required");
 		}
@@ -108,16 +198,39 @@ public final class RouteBundleCurrentKeyVerifier {
 				Reason.SIGNING_INPUT_IDENTITY_MISMATCH,
 				"manifest signing input digest does not match the handoff object");
 		}
+		return signingInputSha256;
+	}
 
-		if (currentKey == null
-			|| currentKey.keyId() == null
-			|| currentKey.keyId().isEmpty()
-			|| !currentKey.keyId().equals(currentKey.keyId().strip())
-			|| !currentKey.keyId().equals(identity.keyId())) {
-			throw failure(Reason.CURRENT_KEY_ID_MISMATCH, "configured current key ID does not match manifest keyId");
+	private static Map<String, PublicKey> indexTrustedKeys(List<CurrentKey> trustedKeys) {
+		if (trustedKeys == null || trustedKeys.isEmpty() || trustedKeys.size() > MAX_TRUSTED_KEYS) {
+			throw failure(Reason.CURRENT_KEY_CONFIG_INVALID, "trusted current keys must contain 1..8 entries");
 		}
+		var keysById = new LinkedHashMap<String, PublicKey>(trustedKeys.size());
+		for (CurrentKey key : trustedKeys) {
+			if (!hasValidKeyId(key)) {
+				throw failure(Reason.CURRENT_KEY_CONFIG_INVALID, "current key ID is invalid");
+			}
+			PublicKey publicKey = parsePublicKey(key.publicKeyPem());
+			if (keysById.putIfAbsent(key.keyId(), publicKey) != null) {
+				throw failure(Reason.CURRENT_KEY_CONFIG_INVALID, "duplicate current key ID");
+			}
+		}
+		return Map.copyOf(keysById);
+	}
 
-		PublicKey publicKey = parsePublicKey(currentKey.publicKeyPem());
+	private static boolean hasValidKeyId(CurrentKey key) {
+		return key != null
+			&& key.keyId() != null
+			&& !key.keyId().isEmpty()
+			&& key.keyId().equals(key.keyId().strip());
+	}
+
+	private static VerificationResult verifyWithPublicKey(
+		RouteBundleIdentity identity,
+		String keyId,
+		PublicKey publicKey,
+		byte[] signingInputBytes,
+		String signingInputSha256) {
 		String algorithm = identity.signature().algorithm();
 		if (!SIGNATURE_ALGORITHM.equals(algorithm)) {
 			throw failure(Reason.MANIFEST_SIGNATURE_INVALID, "manifest signature algorithm is not current");
@@ -125,7 +238,7 @@ public final class RouteBundleCurrentKeyVerifier {
 		verifySignature(publicKey, signingInputBytes, identity.signature().value());
 
 		return new VerificationResult(
-			currentKey.keyId(),
+			keyId,
 			algorithm,
 			sha256(publicKey.getEncoded()),
 			signingInputSha256);

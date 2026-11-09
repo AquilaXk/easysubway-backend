@@ -82,4 +82,29 @@ class CallbackSignatureTest {
 			assertThat(sig.verify(changed, expected)).isFalse();
 		}
     }
+
+	@Test
+	@DisplayName("primary와 next HMAC 키 로테이션 동안 두 키로 서명된 콜백을 모두 검증한다")
+	void verifiesPrimaryAndNextRotatedHmacKeysForCurrentAndLegacyPayloads() {
+		var f = fields(2, 42);
+		var legacy = new CallbackSignature.LegacyCanonicalFields(
+			1, "datapack-release-callback", "req-001", "https://github.com/example/actions/runs/1",
+			"a".repeat(64), "b".repeat(64), "c".repeat(64), "d".repeat(64), "PASS", "PASS", "PASS");
+		var primaryOnly = new CallbackSignature("primary-hmac-secret");
+		var nextOnly = new CallbackSignature("next-hmac-secret");
+		var rotated = new DatapackCallbackConfiguration()
+			.callbackSignature("primary-hmac-secret", "next-hmac-secret");
+		var dormantWithNextOnly = new CallbackSignature("", "next-hmac-secret");
+
+		assertThat(rotated.sign(f)).isEqualTo(primaryOnly.sign(f));
+		assertThat(rotated.verify(f, primaryOnly.sign(f))).isTrue();
+		assertThat(rotated.verify(f, nextOnly.sign(f))).isTrue();
+		assertThat(rotated.verify(f, "forged")).isFalse();
+		assertThat(rotated.verify(legacy, primaryOnly.sign(legacy))).isTrue();
+		assertThat(rotated.verify(legacy, nextOnly.sign(legacy))).isTrue();
+		assertThat(rotated.verify(legacy, "forged")).isFalse();
+		assertThat(rotated.verify(legacy, null)).isFalse();
+		assertThat(dormantWithNextOnly.verify(f, nextOnly.sign(f))).isFalse();
+		assertThat(dormantWithNextOnly.verify(legacy, nextOnly.sign(legacy))).isFalse();
+	}
 }
