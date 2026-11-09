@@ -2,6 +2,7 @@ package com.easysubway.journey.bundle;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 
 /** Loads one exact publication into the cold process-local candidate slot during startup. */
@@ -40,8 +41,7 @@ public final class RouteBundleStartupCandidateLoader {
 			descriptorBytes.clone(),
 			activationRequestIdentity,
 			fetched,
-			new RouteBundleCurrentKeyVerifier.CurrentKey(
-				properties.currentKeyId(), properties.currentPublicKeyPem()));
+			properties.trustedKeys());
 		Instant verifiedAt = clock.instant();
 		var candidate = assembler.assemble(admitted, COLD_CANDIDATE_GENERATION, verifiedAt);
 		return registry.stage(candidate, EMPTY_REGISTRY_GENERATION);
@@ -53,6 +53,6 @@ public final class RouteBundleStartupCandidateLoader {
 			byte[] descriptorBytes,
 			String activationRequestIdentity,
 			RouteBundlePublicationObjectFetcher.FetchedPublicationObjects fetched,
-			RouteBundleCurrentKeyVerifier.CurrentKey currentKey);
+			List<RouteBundleCurrentKeyVerifier.CurrentKey> trustedKeys);
 	}
 }

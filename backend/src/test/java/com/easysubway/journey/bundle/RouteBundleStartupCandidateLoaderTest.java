@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -36,6 +37,16 @@ class RouteBundleStartupCandidateLoaderTest {
 		hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA
 		FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X
 		sQIDAQAB
+		-----END PUBLIC KEY-----""";
+	private static final String NEXT_PUBLIC_KEY_PEM = """
+		-----BEGIN PUBLIC KEY-----
+		MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0zmSgGBKMdUDlRBxxj+K
+		jX+cDPXbvKEq7ax/WwTHthf4Bf+eF3MC8/wBSFF5bDRYVYx6QnH0pi+zgZGB9qLG
+		YJ1yv9v8q65wXL5MAzHJ47BqdeE/Sl10HNLLVleSKhMpTs4FD9beTF60zwa370sM
+		lGGuxyCALaGzFudlATQgqkKh9lubB6+Sae94rGwW+mRYILuRMZ5QGpsrGLdx94ED
+		tEjDSshXKy7sBbXfwjxQaJunf9+IujRWfMf/KMib4AQ3bQN1XGPaNuG7quc+ikcL
+		kRDg51f/sDHgKYxJeKsKkM6Ip4jwE9AMLeaNrJ50dvjUpPyahBEPJPeIyC/nYSOs
+		NQIDAQAB
 		-----END PUBLIC KEY-----""";
 
 	@Test
@@ -60,15 +71,18 @@ class RouteBundleStartupCandidateLoaderTest {
 		assertSame(snapshot, loader.loadAndStage());
 
 		var descriptor = ArgumentCaptor.forClass(byte[].class);
-		var currentKey = ArgumentCaptor.forClass(RouteBundleCurrentKeyVerifier.CurrentKey.class);
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<RouteBundleCurrentKeyVerifier.CurrentKey>> trustedKeys =
+			ArgumentCaptor.forClass((Class) List.class);
 		verify(admissionFunction).admit(
 			descriptor.capture(),
 			org.mockito.ArgumentMatchers.eq(ACTIVATION_ID),
 			org.mockito.ArgumentMatchers.same(fetched),
-			currentKey.capture());
+			trustedKeys.capture());
 		org.junit.jupiter.api.Assertions.assertArrayEquals(DESCRIPTOR, descriptor.getValue());
-		org.junit.jupiter.api.Assertions.assertEquals("launch-2026", currentKey.getValue().keyId());
-		org.junit.jupiter.api.Assertions.assertEquals(PUBLIC_KEY_PEM, currentKey.getValue().publicKeyPem());
+		org.junit.jupiter.api.Assertions.assertEquals(
+			List.of(new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", PUBLIC_KEY_PEM)),
+			trustedKeys.getValue());
 		verify(registry, never()).activate(anyString(), anyLong());
 
 		var order = inOrder(fetcher, admissionFunction, assembler, registry);
@@ -76,6 +90,49 @@ class RouteBundleStartupCandidateLoaderTest {
 		order.verify(admissionFunction).admit(any(), anyString(), any(), any());
 		order.verify(assembler).assemble(admission, 1, NOW);
 		order.verify(registry).stage(candidate, 0);
+	}
+
+	@Test
+	@DisplayName("차기 서명 키가 설정되면 primary·next trustedKeys 리스트를 admission으로 전달한다")
+	void passesPrimaryAndNextTrustedKeysToPublicationAdmission() {
+		var properties = new RouteBundleStartupProperties(
+			Base64.getEncoder().encodeToString(DESCRIPTOR),
+			ACTIVATION_ID,
+			"https://objects.example.com",
+			"launch-2026",
+			PUBLIC_KEY_PEM,
+			"launch-2027",
+			NEXT_PUBLIC_KEY_PEM);
+		var fetcher = mock(RouteBundlePublicationObjectFetcher.class);
+		var fetched = mock(RouteBundlePublicationObjectFetcher.FetchedPublicationObjects.class);
+		var admissionFunction = mock(RouteBundleStartupCandidateLoader.PublicationAdmission.class);
+		var admission = mock(RouteBundleObjectAdmission.VerifiedPublicationObjectAdmission.class);
+		var assembler = mock(RouteBundleCandidateAssembler.class);
+		var candidate = mock(VerifiedRouteBundleCandidate.class);
+		var registry = mock(RouteBundleActivationRegistry.class);
+		var snapshot = mock(RouteBundleActivationRegistry.CandidateSnapshot.class);
+		when(fetcher.fetch(DESCRIPTOR, ACTIVATION_ID)).thenReturn(fetched);
+		when(admissionFunction.admit(any(), anyString(), any(), any())).thenReturn(admission);
+		when(assembler.assemble(admission, 1, NOW)).thenReturn(candidate);
+		when(registry.stage(candidate, 0)).thenReturn(snapshot);
+		var loader = new RouteBundleStartupCandidateLoader(
+			properties, fetcher, admissionFunction, assembler, registry, Clock.fixed(NOW, ZoneOffset.UTC));
+
+		assertSame(snapshot, loader.loadAndStage());
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<RouteBundleCurrentKeyVerifier.CurrentKey>> trustedKeys =
+			ArgumentCaptor.forClass((Class) List.class);
+		verify(admissionFunction).admit(
+			any(),
+			org.mockito.ArgumentMatchers.eq(ACTIVATION_ID),
+			org.mockito.ArgumentMatchers.same(fetched),
+			trustedKeys.capture());
+		org.junit.jupiter.api.Assertions.assertEquals(
+			List.of(
+				new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", PUBLIC_KEY_PEM),
+				new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2027", NEXT_PUBLIC_KEY_PEM)),
+			trustedKeys.getValue());
 	}
 
 	@Test
