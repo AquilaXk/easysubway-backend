@@ -87,9 +87,12 @@ public record TransferConnectionRisk(
 		int clampedHeadway = Math.min(nextHeadwaySeconds, HEADWAY_RISK_CAP_SECONDS);
 		int headwayRisk = Math.ceilDiv(clampedHeadway * MAX_HEADWAY_RISK_POINTS, HEADWAY_RISK_CAP_SECONDS);
 		int riskScore = slackRisk + headwayRisk;
-		Level level = riskScore >= HIGH_RISK_THRESHOLD
-			? Level.HIGH
-			: riskScore >= MODERATE_RISK_THRESHOLD ? Level.MODERATE : Level.LOW;
+		Level level = Level.LOW;
+		if (riskScore >= HIGH_RISK_THRESHOLD) {
+			level = Level.HIGH;
+		} else if (riskScore >= MODERATE_RISK_THRESHOLD) {
+			level = Level.MODERATE;
+		}
 		return new TransferConnectionRisk(
 			slackSeconds,
 			verifiedTransferSeconds,

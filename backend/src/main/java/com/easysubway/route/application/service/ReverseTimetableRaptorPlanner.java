@@ -1336,7 +1336,7 @@ final class ReverseTimetableRaptorPlanner {
 				);
 				com.easysubway.route.domain.TransferConnectionRisk connectionRisk =
 					com.easysubway.route.domain.TransferConnectionRisk.evaluate(
-						elapsed - verifiedTransferSeconds,
+						(long) elapsed - verifiedTransferSeconds,
 						verifiedTransferSeconds,
 						nextHeadwaySeconds
 					);

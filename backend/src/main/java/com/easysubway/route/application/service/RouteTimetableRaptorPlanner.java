@@ -63,6 +63,7 @@ public final class RouteTimetableRaptorPlanner {
 	private static final ZoneId SERVICE_ZONE = ServiceDayResolver.ZONE;
 	private static final int PARETO_LIMIT = 4;
 	private static final int TRANSFER_DURATION_SECONDS = 360;
+	private static final String TARGET_FACILITY_TRANSFER = "TRANSFER";
 	private static final int TRANSFER_DISTANCE_METERS = 260;
 	/**
 	 * #454: 경로는 출발역 승강장(역-노선)에서 시작해 도착역 승강장에서 끝난다(QA 2026-10-02).
@@ -3086,7 +3087,7 @@ public final class RouteTimetableRaptorPlanner {
 					&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
 				.filter(h -> {
 					if (nextIsTransfer) {
-						return "TRANSFER".equals(h.targetFacilityType());
+						return TARGET_FACILITY_TRANSFER.equals(h.targetFacilityType());
 					} else {
 						if (stepFree) {
 							return "ELEVATOR".equals(h.targetFacilityType());
@@ -3769,7 +3770,7 @@ public final class RouteTimetableRaptorPlanner {
 			String edgeId
 		) {
 			List<RouteEdgeEvidence> evidence = evidenceByIdentity.getOrDefault(
-				new EvidenceKey(rule.toStationId(), rule.toLineId(), edgeId, "TRANSFER"),
+				new EvidenceKey(rule.toStationId(), rule.toLineId(), edgeId, TARGET_FACILITY_TRANSFER),
 				List.of()
 			);
 			return evidence.size() == 1 ? evidence.getFirst() : null;
@@ -5899,7 +5900,7 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			fastTransferCarDoors = List.copyOf(Objects.requireNonNullElse(fastTransferCarDoors, List.of()));
 			for (AlightingCarDoor door : fastTransferCarDoors) {
-				if (!"TRANSFER".equals(door.targetFacilityType())) {
+				if (!TARGET_FACILITY_TRANSFER.equals(door.targetFacilityType())) {
 					throw new IllegalArgumentException("fastTransferCarDoors must only contain TRANSFER hints");
 				}
 			}
