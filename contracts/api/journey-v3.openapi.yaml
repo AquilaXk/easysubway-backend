@@ -1829,7 +1829,7 @@ components:
           maximum: 4
         targetFacilityType:
           type: string
-          enum: [TRANSFER, ELEVATOR, ESCALATOR, STAIR]
+          enum: [TRANSFER, ELEVATOR, ESCALATOR, STAIR, WHEELCHAIR_LIFT]
     JourneyTransferLeg:
       type: object
       additionalProperties: false

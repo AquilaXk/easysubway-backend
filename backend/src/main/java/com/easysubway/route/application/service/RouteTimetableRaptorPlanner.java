@@ -3081,21 +3081,30 @@ public final class RouteTimetableRaptorPlanner {
 			if (allHints.isEmpty()) {
 				return List.of();
 			}
-			return allHints.stream()
-				.filter(h -> stationId.equals(h.stationId())
-					&& lineId.equals(h.lineId())
-					&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
+			List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint> candidates =
+				allHints.stream()
+					.filter(h -> stationId.equals(h.stationId())
+						&& lineId.equals(h.lineId())
+						&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
+					.toList();
+			if (candidates.isEmpty()) {
+				return List.of();
+			}
+			String stepFreeFacilityType = (!nextIsTransfer && stepFree)
+				? (candidates.stream().anyMatch(h -> "ELEVATOR".equals(h.targetFacilityType()))
+					? "ELEVATOR"
+					: "WHEELCHAIR_LIFT")
+				: null;
+			return candidates.stream()
 				.filter(h -> {
 					if (nextIsTransfer) {
 						return TARGET_FACILITY_TRANSFER.equals(h.targetFacilityType());
+					} else if (stepFree) {
+						return stepFreeFacilityType.equals(h.targetFacilityType());
 					} else {
-						if (stepFree) {
-							return "ELEVATOR".equals(h.targetFacilityType());
-						} else {
-							return "ELEVATOR".equals(h.targetFacilityType())
-								|| "ESCALATOR".equals(h.targetFacilityType())
-								|| "STAIR".equals(h.targetFacilityType());
-						}
+						return "ELEVATOR".equals(h.targetFacilityType())
+							|| "ESCALATOR".equals(h.targetFacilityType())
+							|| "STAIR".equals(h.targetFacilityType());
 					}
 				})
 				.map(h -> new AlightingCarDoor(h.carNumber(), h.doorNumber(), h.targetFacilityType()))
