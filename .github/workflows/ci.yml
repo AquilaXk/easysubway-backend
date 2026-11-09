@@ -95,7 +95,7 @@ jobs:
           retention-days: 5
       - name: Upload PR OSV SARIF
         if: ${{ github.event_name == 'pull_request' && !cancelled() }}
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
 
@@ -142,7 +142,7 @@ jobs:
           retention-days: 5
       - name: Upload dispatch OSV SARIF
         if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
 
@@ -583,7 +583,7 @@ jobs:
 
       - name: Analyze with SonarQube Cloud
         if: ${{ needs.scope.outputs.heavy == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
