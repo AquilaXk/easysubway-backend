@@ -3,7 +3,7 @@ version: 2
 # 이 레포가 실제로 소유한 생태계만 등록한다(기준: main 26b0b68e 실측).
 #   npm            → tools/qa/package.json · tools/qa/package-lock.json
 #   docker         → backend/Dockerfile
-#   github-actions → .github/workflows/ 4개(automerge-queue · ci · osv-scheduled · release-artifacts)
+#   github-actions → .github/workflows/ 3개(ci · osv-scheduled · release-artifacts)
 # npm·docker 두 항목은 hub(AquilaXk/easysubway) .github/dependabot.yml 에서 이 레포로 이관한
 # 것이다. hub 쪽 중복 항목 제거는 AquilaXk/easysubway#2690 Task 10 시점이며, 순서는
 # "이 레포 활성화가 먼저, hub 제거가 나중"이다.

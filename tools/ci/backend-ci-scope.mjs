@@ -16,8 +16,6 @@ const fail = (message) => { throw new Error(`backend CI scope: ${message}`); };
 // Node 계약 테스트만으로 검증되는 경로. 여기 없는 경로는 모두 무거운 단계 대상이다.
 export const LIGHT_PATHS = [
   { pattern: /^README(?:\.ko)?\.md$/, reason: 'product README' },
-  { pattern: /^\.github\/(?:ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE)\/[^\0]+$/, reason: 'GitHub templates' },
-  { pattern: /^\.github\/pull_request_template\.md$/, reason: 'GitHub templates' },
   { pattern: /^\.github\/dependabot\.yml$/, reason: 'Dependabot configuration' },
   { pattern: /^\.github\/workflows\/(?!ci\.ya?ml$)[^/]+\.ya?ml$/, reason: 'workflow other than Backend CI (Node workflow contracts)' },
   { pattern: /^tools\/(?:realtime|routes|qa|repo)\/[^\0]+$/, reason: 'Node-only tooling' },

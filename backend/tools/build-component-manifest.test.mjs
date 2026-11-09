@@ -114,8 +114,6 @@ test("backend immutable producer는 no-push preflight와 digest evidence ledger�
   assert.ok(!workflow.includes(String.raw`*/\\1/p`));
 });
 
-// Automerge Queue coordinator 계약은 tools/ci/automerge-queue.test.mjs가 정본이다.
-
 function createFixture() {
   const directory = mkdtempSync(join(tmpdir(), "build-component-manifest-"));
   const evidence = join(directory, "release-metadata.txt");
