@@ -424,6 +424,69 @@ class RouteTimetableCarDoorHintsTest {
 			.hasMessageContaining("TRANSFER");
 	}
 
+	@Test
+	@DisplayName("(12) 무단차 최종 하차는 ELEVATOR가 없을 때만 WHEELCHAIR_LIFT를 반환하고 일반 요청·방향 미상 힌트는 제외한다 (#856)")
+	void selectsWheelchairLiftOnlyWhenElevatorMissingInStepFreeFinalAlightingAndExcludesUnknownDirection() {
+		var planner = new RouteTimetableRaptorPlanner();
+
+		// 12-1. 무단차(stepFree = true) 최종 하차에서 ELEVATOR가 없고 WHEELCHAIR_LIFT만 있을 때 WHEELCHAIR_LIFT 반환
+		// + 방향 미상(direction = "") 힌트는 반환되지 않음
+		var liftOnlyTimetable = createBaseTimetable(List.of(
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 3, 2),
+			new CarDoorHint("station-c", "line-2", "DOWN", "WHEELCHAIR_LIFT", 7, 4),
+			new CarDoorHint("station-c", "line-2", "BOTH", "WHEELCHAIR_LIFT", 1, 2),
+			new CarDoorHint("station-c", "line-2", "", "WHEELCHAIR_LIFT", 5, 1),
+			new CarDoorHint("station-c", "line-2", "", "ELEVATOR", 6, 1),
+			new CarDoorHint("station-c", "line-2", "DOWN", "STAIR", 4, 1)
+		));
+		var liftOnlyCompiled = planner.compile(liftOnlyTimetable);
+
+		var stepFreeQuery = JourneyRaptorQuery.from(
+			createRequest("station-a", "station-c", JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE), DEPARTURE_INSTANT);
+		var stepFreeLiftResult = planner.journeyItineraries(
+			stepFreeQuery, liftOnlyCompiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-12-1"), "req-12-1", "bundle-sha", 1L);
+
+		var finalLiftRide = stepFreeLiftResult.itineraries().getFirst().legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.reduce((first, second) -> second)
+			.orElseThrow();
+		assertThat(finalLiftRide.toStationId()).isEqualTo("station-c");
+		assertThat(finalLiftRide.alightingCarDoors()).containsExactly(
+			new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 2, "WHEELCHAIR_LIFT"),
+			new RouteTimetableRaptorPlanner.AlightingCarDoor(7, 4, "WHEELCHAIR_LIFT")
+		);
+
+		// 12-2. 일반 요청(stepFree = false) 최종 하차에서는 WHEELCHAIR_LIFT 및 방향 미상("")이 제외됨
+		var generalQuery = JourneyRaptorQuery.from(
+			createRequest("station-a", "station-c", JourneyRequest.ConstraintMode.NONE), DEPARTURE_INSTANT);
+		var generalLiftResult = planner.journeyItineraries(
+			generalQuery, liftOnlyCompiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-12-2"), "req-12-2", "bundle-sha", 1L);
+
+		var finalGeneralRide = generalLiftResult.itineraries().getFirst().legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.reduce((first, second) -> second)
+			.orElseThrow();
+		assertThat(finalGeneralRide.alightingCarDoors()).containsExactly(
+			new RouteTimetableRaptorPlanner.AlightingCarDoor(4, 1, "STAIR")
+		);
+
+		// 12-3. 무단차(stepFree = true) 최종 하차에서 ELEVATOR와 WHEELCHAIR_LIFT가 모두 있으면 ELEVATOR만 반환
+		var bothElevatorAndLiftCompiled = planner.compile(createBaseTimetable(List.of(
+			new CarDoorHint("station-c", "line-2", "DOWN", "ELEVATOR", 2, 3),
+			new CarDoorHint("station-c", "line-2", "DOWN", "WHEELCHAIR_LIFT", 7, 4),
+			new CarDoorHint("station-c", "line-2", "BOTH", "WHEELCHAIR_LIFT", 1, 2),
+			new CarDoorHint("station-c", "line-2", "", "ELEVATOR", 9, 1)
+		)));
+		assertThat(bothElevatorAndLiftCompiled.selectAlightingCarDoors("station-c", "line-2", "down", false, true))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(2, 3, "ELEVATOR"));
+		assertThat(bothElevatorAndLiftCompiled.selectAlightingCarDoors("station-c", "line-2", "down", false, false))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(2, 3, "ELEVATOR"));
+	}
+
 	private static JourneyRequest createRequest(String origin, String destination, JourneyRequest.ConstraintMode constraintMode) {
 		return createProfileRequest(origin, destination, JourneyRequest.MobilityProfile.STANDARD, constraintMode, DEPARTURE_INSTANT);
 	}

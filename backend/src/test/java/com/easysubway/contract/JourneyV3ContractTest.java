@@ -427,7 +427,7 @@ class JourneyV3ContractTest {
 			Set.of("carNumber", "doorNumber", "targetFacilityType")
 		);
 		assertEnum(property(document, "JourneyAlightingCarDoor", "targetFacilityType"),
-			"TRANSFER", "ELEVATOR", "ESCALATOR", "STAIR");
+			"TRANSFER", "ELEVATOR", "ESCALATOR", "STAIR", "WHEELCHAIR_LIFT");
 
 		for (String field : List.of("boardingPlatformGaps", "alightingPlatformGaps")) {
 			assertThat(property(document, "JourneyRideLeg", field).get("type")).isEqualTo("array");
