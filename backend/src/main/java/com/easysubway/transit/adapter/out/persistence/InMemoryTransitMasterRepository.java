@@ -126,24 +126,14 @@ public class InMemoryTransitMasterRepository implements
 		// region은 행정구역 기준(가평까지 경기도=수도권, 강촌부터 강원도=강원권)이며 정밀
 		// 좌표가 아니므로 창작이 아니다.
 		//
-		// 위도·경도는 이 datapack 소스에 없어 만들어내지 않고 0,0을 자리표시자로 쓴다.
-		// 이 클래스는 !prod 프로필이지만, prod에서 활성화되는
-		// JdbcTransitMasterOverrideRepository가 loadStations()를 오버라이드하지 않고
-		// UnavailableTransitMasterRepository를 거쳐 이 STATIONS를 그대로 상속하므로,
-		// 이 0,0은 dev 격리에 머물지 않고 prod seed까지 그대로 도달한다(예: 관리자
-		// 역 상세/편집 화면에 0/0으로 노출됨). null을 쓰면 TransitMasterService의
-		// "인근 역 검색"(distanceMeters())이 이 14역에 대해 NullPointerException을
-		// 내므로 그 대안은 아니다. 현재는 capacity 스크립트가 검증하는 Route V2
-		// search 경로(RouteV2Planner)도, 공개 nearby-search 엔드포인트도 이 14역의
-		// 좌표를 소비하지 않아(loadActiveStation()은 존재·active 여부만 확인) 무해하지만,
-		// #2098 real data-pack adapter로 실좌표가 반입되기 전에 nearby-search가 이
-		// 데이터에 배선되면 0,0이 실제 위치로 오응답에 섞여들 수 있는 잠복 리스크가
-		// 있다는 점은 명시해둔다. 실좌표 반입은 #2098 범위다.
+		// 4개 환승역(옥수·왕십리·청량리·상봉)은 canonical datapack 공식 좌표를 그대로 반영하고,
+		// 나머지 10개 역은 해당 원천에 좌표가 없어 임의 좌표를 만들지 않고 null로 둔다.
+		// 인근 역 검색은 좌표가 있는 역만 대상으로 삼아 null 안전·비왜곡을 보장한다.
 		itxCheongchunPilotStation("station-8aa315864466", "용산", "Yongsan"),
-		itxCheongchunPilotStation("station-c0679b9a6cf8", "옥수", "Oksu"),
-		itxCheongchunPilotStation("station-e5cf592cf355", "왕십리", "Wangsimni"),
-		itxCheongchunPilotStation("station-b819702fa7d9", "청량리", "Cheongnyangni"),
-		itxCheongchunPilotStation("station-83bcb1eae340", "상봉", "Sangbong"),
+		itxCheongchunPilotStation("station-c0679b9a6cf8", "옥수", "Oksu", "수도권", new BigDecimal("37.541653"), new BigDecimal("127.017303")),
+		itxCheongchunPilotStation("station-e5cf592cf355", "왕십리", "Wangsimni", "수도권", new BigDecimal("37.561159"), new BigDecimal("127.035505")),
+		itxCheongchunPilotStation("station-b819702fa7d9", "청량리", "Cheongnyangni", "수도권", new BigDecimal("37.580148"), new BigDecimal("127.045063")),
+		itxCheongchunPilotStation("station-83bcb1eae340", "상봉", "Sangbong", "수도권", new BigDecimal("37.595673"), new BigDecimal("127.085708")),
 		itxCheongchunPilotStation("station-b52ac4dfe64e", "퇴계원", "Toegyewon"),
 		itxCheongchunPilotStation("station-2ccf5647f7f7", "사릉", "Sareung"),
 		itxCheongchunPilotStation("station-f3d9c93ba7d6", "평내호평", "Pyeongnae-Hopyeong"),
@@ -156,17 +146,28 @@ public class InMemoryTransitMasterRepository implements
 	);
 
 	private static Station itxCheongchunPilotStation(String id, String nameKo, String nameEn) {
-		return itxCheongchunPilotStation(id, nameKo, nameEn, "수도권");
+		return itxCheongchunPilotStation(id, nameKo, nameEn, "수도권", null, null);
 	}
 
 	private static Station itxCheongchunPilotStation(String id, String nameKo, String nameEn, String region) {
+		return itxCheongchunPilotStation(id, nameKo, nameEn, region, null, null);
+	}
+
+	private static Station itxCheongchunPilotStation(
+		String id,
+		String nameKo,
+		String nameEn,
+		String region,
+		BigDecimal latitude,
+		BigDecimal longitude
+	) {
 		return new Station(
 			id,
 			nameKo,
 			nameEn,
 			region,
-			BigDecimal.ZERO,
-			BigDecimal.ZERO,
+			latitude,
+			longitude,
 			DataQualityLevel.LEVEL_1,
 			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 7, 15),

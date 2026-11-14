@@ -1415,4 +1415,58 @@ class TransitMasterServiceTest {
 
 		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
 	}
+
+	@Test
+	@DisplayName("초기 시드 역에 0,0 가짜 좌표가 없고 인근 역 검색은 null 좌표 역을 안전하게 건너뛴다")
+	void seedStationsHaveNoZeroPlaceholderCoordinatesAndNearbySearchSkipsNullCoordinates() {
+		var repository = new InMemoryTransitMasterRepository();
+		var stations = repository.loadStations();
+
+		assertThat(stations)
+			.noneMatch(station ->
+				station.latitude() != null
+					&& station.longitude() != null
+					&& station.latitude().compareTo(BigDecimal.ZERO) == 0
+					&& station.longitude().compareTo(BigDecimal.ZERO) == 0
+			);
+		assertThat(repository.loadStation("station-c0679b9a6cf8")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.541653");
+			assertThat(station.longitude()).isEqualByComparingTo("127.017303");
+		});
+		assertThat(repository.loadStation("station-e5cf592cf355")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.561159");
+			assertThat(station.longitude()).isEqualByComparingTo("127.035505");
+		});
+		assertThat(repository.loadStation("station-b819702fa7d9")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.580148");
+			assertThat(station.longitude()).isEqualByComparingTo("127.045063");
+		});
+		assertThat(repository.loadStation("station-83bcb1eae340")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.595673");
+			assertThat(station.longitude()).isEqualByComparingTo("127.085708");
+		});
+		assertThat(repository.loadStation("station-8aa315864466")).get().satisfies(station -> {
+			assertThat(station.latitude()).isNull();
+			assertThat(station.longitude()).isNull();
+		});
+
+		var service = new TransitMasterService(repository, repository);
+		var nearOrigin = service.searchNearbyStations(new NearbyStationSearchCommand(
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			5_000,
+			20
+		));
+		assertThat(nearOrigin).isEmpty();
+
+		var nearWangsimni = service.searchNearbyStations(new NearbyStationSearchCommand(
+			new BigDecimal("37.561159"),
+			new BigDecimal("127.035505"),
+			1_000,
+			10
+		));
+		assertThat(nearWangsimni)
+			.extracting(item -> item.stationWithLines().station().id())
+			.contains("station-e5cf592cf355");
+	}
 }

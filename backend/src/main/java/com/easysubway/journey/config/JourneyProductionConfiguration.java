@@ -47,6 +47,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.availability.ApplicationAvailability;
@@ -107,8 +108,16 @@ public class JourneyProductionConfiguration {
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	JourneyCandidateCanaryService journeyCandidateCanaryService(
 		RouteBundleActivationRegistry registry,
-		JourneyRaptorPort raptorPort) {
-		return new JourneyCandidateCanaryService(registry, raptorPort, CLOCK);
+		ScanWorkspacePool workspacePool
+	) {
+		return new JourneyCandidateCanaryService(
+			registry,
+			new JourneyRaptorAdapter(
+				workspacePool,
+				com.easysubway.journey.application.FacilityAvailabilityPort.unavailable(),
+				false,
+				CLOCK),
+			CLOCK);
 	}
 
 	@Bean
@@ -183,7 +192,16 @@ public class JourneyProductionConfiguration {
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	@org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(com.easysubway.journey.application.FacilityAvailabilityPort.class)
-	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort() {
+	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort(
+		ObjectProvider<RouteBundleActivationRegistry> registryProvider,
+		ObjectProvider<com.easysubway.transit.application.port.out.FacilityOperationalStatusStore> statusStoreProvider
+	) {
+		RouteBundleActivationRegistry registry = registryProvider.getIfAvailable();
+		com.easysubway.transit.application.port.out.FacilityOperationalStatusStore statusStore = statusStoreProvider.getIfAvailable();
+		if (registry != null && statusStore != null) {
+			return new com.easysubway.transit.adapter.out.bundle.ActiveRouteBundleFacilityAvailabilityAdapter(
+				registry, statusStore);
+		}
 		return com.easysubway.journey.application.FacilityAvailabilityPort.unavailable();
 	}
 

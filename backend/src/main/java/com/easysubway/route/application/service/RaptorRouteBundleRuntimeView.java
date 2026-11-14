@@ -7,6 +7,9 @@ import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLi
 import com.easysubway.journey.bundle.RouteBundleRuntimeView;
 import com.easysubway.journey.bundle.RouteBundleStationTimetableSource;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -25,6 +28,10 @@ public final class RaptorRouteBundleRuntimeView
 	private final List<Facility> smrtElevatorFacilities;
 	private final Map<String, OfficialFareQuote> officialFareQuotes;
 	private final Set<StationLine> canonicalStationLines;
+	private final Map<String, Set<String>> transitionEdgeIdsByFacility;
+	private final Set<String> canonicalStationIds;
+	private final List<BundleFacility> bundleFacilities;
+	private final List<BundleStationExit> bundleStationExits;
 	private final Object stationTimetableIndexLock = new Object();
 	private StationTimetableIndex stationTimetableIndex;
 
@@ -34,7 +41,39 @@ public final class RaptorRouteBundleRuntimeView
 		RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable,
 		List<Facility> smrtElevatorFacilities,
 		Map<String, OfficialFareQuote> officialFareQuotes,
-		Set<StationLine> canonicalStationLines
+		Set<StationLine> canonicalStationLines,
+		Map<String, Set<String>> candidateFacilityEdgeIds,
+		Set<String> canonicalStationIds,
+		List<BundleFacility> bundleFacilities,
+		List<BundleStationExit> bundleStationExits
+	) {
+		this(
+			routeBundleSha256,
+			generation,
+			compiledTimetable,
+			smrtElevatorFacilities,
+			officialFareQuotes,
+			canonicalStationLines,
+			filterCompiledTransitionEdges(compiledTimetable, candidateFacilityEdgeIds),
+			canonicalStationIds,
+			bundleFacilities,
+			bundleStationExits,
+			true
+		);
+	}
+
+	private RaptorRouteBundleRuntimeView(
+		String routeBundleSha256,
+		long generation,
+		RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable,
+		List<Facility> smrtElevatorFacilities,
+		Map<String, OfficialFareQuote> officialFareQuotes,
+		Set<StationLine> canonicalStationLines,
+		Map<String, Set<String>> transitionEdgeIdsByFacility,
+		Set<String> canonicalStationIds,
+		List<BundleFacility> bundleFacilities,
+		List<BundleStationExit> bundleStationExits,
+		boolean alreadyFiltered
 	) {
 		this.routeBundleSha256 = requireSha256(routeBundleSha256);
 		if (generation < 1) throw new IllegalArgumentException("generation must be positive");
@@ -50,6 +89,13 @@ public final class RaptorRouteBundleRuntimeView
 		}
 		this.officialFareQuotes = Map.copyOf(officialFareQuotes);
 		this.canonicalStationLines = Set.copyOf(Objects.requireNonNull(canonicalStationLines, "canonicalStationLines"));
+		this.transitionEdgeIdsByFacility = alreadyFiltered
+			? transitionEdgeIdsByFacility
+			: filterCompiledTransitionEdges(this.compiledTimetable, transitionEdgeIdsByFacility);
+		this.canonicalStationIds = Collections.unmodifiableSet(
+			new LinkedHashSet<>(Objects.requireNonNull(canonicalStationIds, "canonicalStationIds")));
+		this.bundleFacilities = List.copyOf(Objects.requireNonNull(bundleFacilities, "bundleFacilities"));
+		this.bundleStationExits = List.copyOf(Objects.requireNonNull(bundleStationExits, "bundleStationExits"));
 	}
 
 	/** 시설 목록 없이 경로 탐색 런타임만 만든다. 번들 컴파일러는 아래 시설 목록 판을 쓴다. */
@@ -91,13 +137,65 @@ public final class RaptorRouteBundleRuntimeView
 		Map<String, OfficialFareQuote> officialFareQuotes,
 		Set<StationLine> canonicalStationLines
 	) {
+		return compile(
+			routeBundleSha256,
+			generation,
+			timetable,
+			smrtElevatorFacilities,
+			officialFareQuotes,
+			canonicalStationLines,
+			Map.of()
+		);
+	}
+
+	/** 번들 토폴로지의 facility_id별 간선 중 실제 RAPTOR 전환으로 컴파일된 edgeId만 색인으로 보존한다. */
+	public static RaptorRouteBundleRuntimeView compile(
+		String routeBundleSha256,
+		long generation,
+		RouteTimetable timetable,
+		List<Facility> smrtElevatorFacilities,
+		Map<String, OfficialFareQuote> officialFareQuotes,
+		Set<StationLine> canonicalStationLines,
+		Map<String, Set<String>> candidateFacilityEdgeIds
+	) {
+		return compile(
+			routeBundleSha256,
+			generation,
+			timetable,
+			smrtElevatorFacilities,
+			officialFareQuotes,
+			canonicalStationLines,
+			candidateFacilityEdgeIds,
+			Set.of(),
+			List.of(),
+			List.of()
+		);
+	}
+
+	/** 정본 역 집합·전체 시설·출입구 카탈로그까지 함께 담아 마스터 저장소와 같은 세대로 읽게 한다. */
+	public static RaptorRouteBundleRuntimeView compile(
+		String routeBundleSha256,
+		long generation,
+		RouteTimetable timetable,
+		List<Facility> smrtElevatorFacilities,
+		Map<String, OfficialFareQuote> officialFareQuotes,
+		Set<StationLine> canonicalStationLines,
+		Map<String, Set<String>> candidateFacilityEdgeIds,
+		Set<String> canonicalStationIds,
+		List<BundleFacility> bundleFacilities,
+		List<BundleStationExit> bundleStationExits
+	) {
 		return new RaptorRouteBundleRuntimeView(
 			routeBundleSha256,
 			generation,
 			new RouteTimetableRaptorPlanner().compile(Objects.requireNonNull(timetable, "timetable")),
 			Objects.requireNonNull(smrtElevatorFacilities, "smrtElevatorFacilities"),
 			officialFareQuotes,
-			canonicalStationLines
+			canonicalStationLines,
+			candidateFacilityEdgeIds,
+			canonicalStationIds,
+			bundleFacilities,
+			bundleStationExits
 		);
 	}
 
@@ -115,9 +213,77 @@ public final class RaptorRouteBundleRuntimeView
 		return compiledTimetable;
 	}
 
+	RaptorRouteBundleRuntimeView withGeneration(long targetGeneration) {
+		if (generation == targetGeneration) {
+			return this;
+		}
+		return new RaptorRouteBundleRuntimeView(
+			routeBundleSha256,
+			targetGeneration,
+			compiledTimetable,
+			smrtElevatorFacilities,
+			officialFareQuotes,
+			canonicalStationLines,
+			transitionEdgeIdsByFacility,
+			canonicalStationIds,
+			bundleFacilities,
+			bundleStationExits,
+			true
+		);
+	}
+
 	@Override
 	public List<Facility> smrtElevatorFacilities() {
 		return smrtElevatorFacilities;
+	}
+
+	@Override
+	public Set<String> transitionEdgeIdsForFacility(String facilityId) {
+		if (facilityId == null || facilityId.isBlank()) {
+			return Set.of();
+		}
+		return transitionEdgeIdsByFacility.getOrDefault(facilityId, Set.of());
+	}
+
+	@Override
+	public Set<String> canonicalStationIds() {
+		return canonicalStationIds;
+	}
+
+	@Override
+	public List<BundleFacility> bundleFacilities() {
+		return bundleFacilities;
+	}
+
+	@Override
+	public List<BundleStationExit> bundleStationExits() {
+		return bundleStationExits;
+	}
+
+	private static Map<String, Set<String>> filterCompiledTransitionEdges(
+		RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable,
+		Map<String, Set<String>> candidateFacilityEdgeIds
+	) {
+		if (candidateFacilityEdgeIds == null || candidateFacilityEdgeIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Set<String>> filtered = new LinkedHashMap<>();
+		for (var entry : candidateFacilityEdgeIds.entrySet()) {
+			String facilityId = entry.getKey();
+			if (facilityId == null || facilityId.isBlank() || entry.getValue() == null || entry.getValue().isEmpty()) {
+				continue;
+			}
+			LinkedHashSet<String> transitionEdgeIds = new LinkedHashSet<>();
+			for (String edgeId : entry.getValue()) {
+				if (edgeId != null && !edgeId.isBlank() && compiledTimetable.transitionIdsForEdge(edgeId).length > 0) {
+					transitionEdgeIds.add(edgeId);
+				}
+			}
+			if (!transitionEdgeIds.isEmpty()) {
+				filtered.put(facilityId, Set.copyOf(transitionEdgeIds));
+			}
+		}
+		return filtered.isEmpty() ? Map.of() : Map.copyOf(filtered);
 	}
 
 	public Map<String, OfficialFareQuote> officialFareQuotes() {

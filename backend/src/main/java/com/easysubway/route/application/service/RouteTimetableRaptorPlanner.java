@@ -144,6 +144,114 @@ public final class RouteTimetableRaptorPlanner {
 			requestMeasurement, requestId, routeBundleSha256, generation);
 	}
 
+	JourneyPlan sameTripPassThroughItineraries(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		LocalDate serviceDate,
+		String sameTripId,
+		String sameLineId,
+		Instant leg1Arrival,
+		RealtimeOverlay realtimeOverlay,
+		JourneyRequestMeasurement requestMeasurement,
+		String requestId,
+		String routeBundleSha256,
+		long generation
+	) {
+		Objects.requireNonNull(serviceDate, "serviceDate");
+		Objects.requireNonNull(sameTripId, "sameTripId");
+		Objects.requireNonNull(sameLineId, "sameLineId");
+		Objects.requireNonNull(leg1Arrival, "leg1Arrival");
+		int arrivalSecondsAtVia = (int) Duration.between(
+			serviceDate.atStartOfDay(SERVICE_ZONE).toInstant(),
+			leg1Arrival
+		).getSeconds();
+		ScanInput input = scanInput(query, new ServiceDay(serviceDate, arrivalSecondsAtVia));
+		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDate);
+		ScanWorkspace workspace = workspacePool.acquire();
+		try {
+			workspace.prepare(timetable);
+			int origin = timetable.stationIndex(input.originStationId());
+			int destination = timetable.stationIndex(input.destinationStationId());
+			int sameLineIdx = timetable.lineIndex(sameLineId);
+			if (origin < 0 || destination < 0 || sameLineIdx < 0 || activeServiceDay.trips().isEmpty()) {
+				return new JourneyPlan(
+					List.of(),
+					scanMetrics(workspace),
+					requestMeasurement.observeDirectRaptor(requestId, routeBundleSha256, generation),
+					null
+				);
+			}
+			workspace.setTargetStation(destination, timetable.destinationLowerBounds(destination));
+			for (int pattern : timetable.patternsByStop(origin)) {
+				int[] stops = timetable.stopsByPattern(pattern);
+				for (ScheduledTrip trip : activeServiceDay.tripsByPattern(pattern)) {
+					if (!sameTripId.equals(trip.trip().id()) || realtimeOverlay.cancelled(trip)) {
+						continue;
+					}
+					for (int viaPos = 0; viaPos < stops.length - 1; viaPos += 1) {
+						if (stops[viaPos] != origin || timetable.patternLine(pattern, viaPos) != sameLineIdx) {
+							continue;
+						}
+						int depSeconds = realtimeOverlay.departureSeconds(trip, viaPos);
+						int arrSeconds = realtimeOverlay.arrivalSeconds(trip, viaPos);
+						if (arrSeconds == arrivalSecondsAtVia && depSeconds >= arrivalSecondsAtVia) {
+							for (int pos = viaPos + 1; pos < stops.length; pos += 1) {
+								if (!trip.allowsDropOff(pos)) {
+									continue;
+								}
+								int dropLine = timetable.patternLine(pattern, pos);
+								if (dropLine >= 0) {
+									workspace.relax(
+										stops[pos],
+										1,
+										dropLine,
+										realtimeOverlay.arrivalSeconds(trip, pos),
+										trip.index(),
+										viaPos,
+										pos,
+										-1,
+										0,
+										(byte) 0
+									);
+								}
+							}
+							workspace.expandedTrips += 1;
+						}
+					}
+				}
+			}
+			if (workspace.nextMarkedStopCount > 0) {
+				relaxFootpaths(timetable, workspace, 1);
+				workspace.finishRound();
+				if (input.maxTransfers() >= 1 && workspace.markedStopCount > 0) {
+					scanMarkedRounds(
+						input,
+						timetable,
+						activeServiceDay,
+						workspace,
+						input.boardingSlackSeconds(),
+						input.accessProfileBit(),
+						false,
+						realtimeOverlay,
+						1
+					);
+				}
+			}
+			ScanResult scanResult = destinationScanResult(input, timetable, workspace, destination, realtimeOverlay);
+			List<JourneyItinerary> itineraries = journeyItineraries(input, timetable, realtimeOverlay, scanResult);
+			var measurementObservation = requestMeasurement.observeDirectRaptor(
+				requestId, routeBundleSha256, generation);
+			JourneyAlternatives.StairFreeStatus stairFreeStatus = itineraries.isEmpty() ? null
+				: JourneyAlternatives.stairFreeStatus(
+					itineraries.stream().anyMatch(JourneyItinerary::stairFree),
+					scanResult.selection().stairFreeOmitted(),
+					itineraries.stream().anyMatch(JourneyItinerary::unconfirmedStairFreeTransfer));
+			return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation, stairFreeStatus);
+		} finally {
+			workspacePool.release(workspace);
+		}
+	}
+
 	private JourneyPlan journeyItineraries(
 		ScanInput input,
 		CompiledTimetable timetable,
@@ -228,8 +336,9 @@ public final class RouteTimetableRaptorPlanner {
 					verifiedTransferSeconds,
 					nextHeadwaySeconds
 				);
-				List<AlightingCarDoor> fastTransferCarDoors =
-					((JourneyRideProjection) legs.getLast()).alightingCarDoors();
+				List<AlightingCarDoor> fastTransferCarDoors = fastTransferCarDoorsOnly(
+					((JourneyRideProjection) legs.getLast()).alightingCarDoors()
+				);
 				legs.add(new JourneyAccessProjection(
 					JourneyAccessKind.TRANSFER,
 					previous.to().stationId(),
@@ -709,7 +818,31 @@ public final class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
-		for (int round = 0; round <= input.maxTransfers() && workspace.markedStopCount > 0; round += 1) {
+		scanMarkedRounds(
+			input,
+			timetable,
+			activeServiceDay,
+			workspace,
+			slackSeconds,
+			accessProfileBit,
+			ignoreAccessBlocks,
+			realtimeOverlay,
+			0
+		);
+	}
+
+	private static void scanMarkedRounds(
+		ScanInput input,
+		CompiledTimetable timetable,
+		ActiveServiceDay activeServiceDay,
+		ScanWorkspace workspace,
+		int slackSeconds,
+		int accessProfileBit,
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay,
+		int startRound
+	) {
+		for (int round = startRound; round <= input.maxTransfers() && workspace.markedStopCount > 0; round += 1) {
 			throwIfCancelled(input);
 			collectMarkedPatterns(timetable, workspace);
 			Arrays.sort(workspace.markedPatterns, 0, workspace.markedPatternCount);
@@ -1945,6 +2078,15 @@ public final class RouteTimetableRaptorPlanner {
 			|| mobilityPreset == MobilityPreset.STEP_FREE;
 	}
 
+	static List<AlightingCarDoor> fastTransferCarDoorsOnly(List<AlightingCarDoor> alightingCarDoors) {
+		if (alightingCarDoors == null || alightingCarDoors.isEmpty()) {
+			return List.of();
+		}
+		return alightingCarDoors.stream()
+			.filter(door -> TARGET_FACILITY_TRANSFER.equals(door.targetFacilityType()))
+			.toList();
+	}
+
 	private static MobilityPreset mobilityPreset(
 		com.easysubway.journey.application.JourneyRequest.MobilityProfile mobilityProfile
 	) {
@@ -3090,17 +3232,23 @@ public final class RouteTimetableRaptorPlanner {
 			if (candidates.isEmpty()) {
 				return List.of();
 			}
-			String stepFreeFacilityType = (!nextIsTransfer && stepFree)
-				? (candidates.stream().anyMatch(h -> "ELEVATOR".equals(h.targetFacilityType()))
-					? "ELEVATOR"
-					: "WHEELCHAIR_LIFT")
-				: null;
+			String stepFreeFacilityType = null;
+			if (stepFree) {
+				if (candidates.stream().anyMatch(h -> "ELEVATOR".equals(h.targetFacilityType()))) {
+					stepFreeFacilityType = "ELEVATOR";
+				} else if (candidates.stream().anyMatch(h -> "WHEELCHAIR_LIFT".equals(h.targetFacilityType()))) {
+					stepFreeFacilityType = "WHEELCHAIR_LIFT";
+				}
+			}
+			final String selectedStepFreeFacilityType = stepFreeFacilityType;
 			return candidates.stream()
 				.filter(h -> {
-					if (nextIsTransfer) {
+					if (selectedStepFreeFacilityType != null) {
+						return selectedStepFreeFacilityType.equals(h.targetFacilityType());
+					} else if (nextIsTransfer) {
 						return TARGET_FACILITY_TRANSFER.equals(h.targetFacilityType());
 					} else if (stepFree) {
-						return stepFreeFacilityType.equals(h.targetFacilityType());
+						return false;
 					} else {
 						return "ELEVATOR".equals(h.targetFacilityType())
 							|| "ESCALATOR".equals(h.targetFacilityType())

@@ -121,6 +121,9 @@ class EasySubwayBackendApplicationTests {
 			)).containsExactly("journeySearchController");
 			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
 			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
+			assertThat(environment.getProperty("easysubway.journey.facility-status.required"))
+				.isEqualTo("true");
+			assertProductionFacilityAvailabilityEnforcement(applicationContext);
 
 			mockMvc.perform(get("/actuator/health/readiness"))
 				.andExpect(status().isOk())
@@ -220,6 +223,9 @@ class EasySubwayBackendApplicationTests {
 			)).containsExactly("journeySearchController");
 			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
 			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
+			assertThat(environment.getProperty("easysubway.journey.facility-status.required"))
+				.isEqualTo("true");
+			assertProductionFacilityAvailabilityEnforcement(applicationContext);
 
 			mockMvc.perform(get("/actuator/health/readiness"))
 				.andExpect(status().isOk())
@@ -227,5 +233,31 @@ class EasySubwayBackendApplicationTests {
 				.andExpect(jsonPath("$.components.productionReadiness.status").value("UP"));
 		}
 
+	}
+
+	private static void assertProductionFacilityAvailabilityEnforcement(ApplicationContext applicationContext) {
+		assertThat(applicationContext.getBean(com.easysubway.journey.application.FacilityAvailabilityPort.class))
+			.isInstanceOf(com.easysubway.transit.adapter.out.bundle.ActiveRouteBundleFacilityAvailabilityAdapter.class);
+
+		var raptorPort = applicationContext.getBean(com.easysubway.journey.application.JourneyRaptorPort.class);
+		var emptyRuntime = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
+			TEST_SHA_A, 1L, com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable.empty());
+		var activeSnapshot = new com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot-prod", "bundle-prod", TEST_SHA_A, "timetable-prod", "accessibility-prod", 1L,
+			emptyRuntime, java.time.Instant.now().plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
+		var stepFreeRequest = new com.easysubway.journey.application.JourneyRequest(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-b",
+			new com.easysubway.journey.application.JourneyRequest.Departure.Now(),
+			com.easysubway.journey.application.JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			com.easysubway.journey.application.JourneyRequest.WalkingPace.STANDARD,
+			com.easysubway.journey.application.JourneyRequest.MobilityProfile.STEP_FREE,
+			com.easysubway.journey.application.JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			2, 1, () -> false);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> raptorPort.plan(
+			stepFreeRequest, activeSnapshot, java.time.Instant.now(), null,
+			new com.easysubway.journey.application.JourneyRequestMeasurement(stepFreeRequest.requestId())))
+			.isInstanceOf(com.easysubway.journey.application.FacilityStatusUnavailableException.class);
 	}
 }

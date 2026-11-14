@@ -281,4 +281,20 @@ class TransitReadOnlyAdminPageModelTest {
 		assertThat(redirectAttributes.getFlashAttributes().get("masterDataError"))
 			.isEqualTo("운영 마스터 데이터가 읽기 전용입니다.");
 	}
+
+	@Test
+	@DisplayName("좌표가 null인 역의 상세 모델은 'null' 문자열 대신 빈 문자열을 노출한다")
+	void stationDetailFormatsMissingCoordinatesAsBlank() {
+		var yongsanDetail = TransitStationAdminPageController.StationDetail.from(
+			transitMasterService.getStation("station-8aa315864466")
+		);
+		var oksuDetail = TransitStationAdminPageController.StationDetail.from(
+			transitMasterService.getStation("station-c0679b9a6cf8")
+		);
+
+		assertThat(yongsanDetail.latitude()).isEmpty();
+		assertThat(yongsanDetail.longitude()).isEmpty();
+		assertThat(oksuDetail.latitude()).isEqualTo("37.541653");
+		assertThat(oksuDetail.longitude()).isEqualTo("127.017303");
+	}
 }

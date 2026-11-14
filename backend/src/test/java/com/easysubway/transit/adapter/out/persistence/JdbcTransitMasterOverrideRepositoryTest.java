@@ -6,11 +6,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.easysubway.common.error.TransitDataAccessException;
+import com.easysubway.journey.bundle.LoadScenarioBundles;
+import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
+import com.easysubway.journey.bundle.RouteBundleFacilityCatalog;
+import com.easysubway.journey.bundle.RouteBundleRuntimeView;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeType;
@@ -21,16 +26,26 @@ import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
@@ -482,5 +497,272 @@ class JdbcTransitMasterOverrideRepositoryTest {
 
 	private ObjectMapper objectMapper() {
 		return new ObjectMapper().findAndRegisterModules();
+	}
+
+	@Test
+	@DisplayName("활성 경로 번들이 있으면 전국 역·출구·시설과 PostgreSQL override를 병합하고 상태 갱신을 허용한다")
+	void activeBundleExposesNationwideMasterAndSupportsOverrides() {
+		Instant t0 = Instant.parse("2026-08-12T00:00:00Z");
+		var clock = new MutableClock(t0);
+		var registry = new RouteBundleActivationRegistry(clock);
+		var catalog = new BundleCatalogRuntime(
+			new LinkedHashSet<>(List.of("station-sangnoksu", "station-busan-seomyeon")),
+			List.of(
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-busan-lift-1",
+					"station-busan-seomyeon",
+					"exit-busan-seomyeon-1",
+					"WHEELCHAIR_LIFT",
+					"서면역 휠체어 리프트",
+					"B2",
+					"B1",
+					"환승 통로 리프트",
+					"NORMAL",
+					"OPERATIONAL",
+					"OFFICIAL_SOURCE",
+					1781568000L,
+					95
+				),
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-busan-ramp-1",
+					"station-busan-seomyeon",
+					null,
+					"RAMP",
+					"서면역 경사로",
+					"",
+					"",
+					"",
+					"UNDER_CONSTRUCTION",
+					"UNKNOWN",
+					"OPERATOR_CONFIRMED",
+					0L,
+					70
+				),
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-busan-toilet-1",
+					"station-busan-seomyeon",
+					null,
+					"ACCESSIBLE_TOILET",
+					"서면역 장애인 화장실",
+					"",
+					"",
+					"",
+					"CLOSED",
+					"CLOSED",
+					"FIELD_VERIFIED",
+					0L,
+					30
+				),
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-busan-center-1",
+					"station-busan-seomyeon",
+					null,
+					"CUSTOMER_CENTER",
+					"서면역 고객센터",
+					"",
+					"",
+					"",
+					"UNKNOWN",
+					"UNKNOWN",
+					"OFFICIAL_API",
+					0L,
+					0
+				)
+			),
+			List.of(
+				new RouteBundleFacilityCatalog.BundleStationExit(
+					"exit-busan-seomyeon-1",
+					"station-busan-seomyeon",
+					"1",
+					"",
+					35.157800d,
+					129.059100d,
+					true,
+					"OFFICIAL_API"
+				),
+				new RouteBundleFacilityCatalog.BundleStationExit(
+					"exit-busan-seomyeon-2",
+					"station-busan-seomyeon",
+					"2",
+					"2번 출구 방면",
+					null,
+					null,
+					false,
+					"OFFICIAL_FILE"
+				)
+			)
+		);
+		String manifestSha = LoadScenarioBundles.manifestSha256("a");
+		registry.stage(LoadScenarioBundles.candidate("a", catalog, t0), 0);
+		registry.activate(manifestSha, 0);
+
+		DataSource dataSource = overrideDataSource();
+		var beanFactory = new StaticListableBeanFactory();
+		beanFactory.addBean("meterRegistry", new SimpleMeterRegistry());
+		beanFactory.addBean("routeBundleActivationRegistry", registry);
+		var repository = new JdbcTransitMasterOverrideRepository(
+			dataSource,
+			objectMapper(),
+			beanFactory.getBeanProvider(MeterRegistry.class),
+			beanFactory.getBeanProvider(RouteBundleActivationRegistry.class)
+		);
+		repository.afterPropertiesSet();
+
+		var capability = repository.masterDataCapability();
+		assertThat(capability.status()).isEqualTo(MasterDataCapabilityStatus.UP);
+		assertThat(capability.writable()).isTrue();
+		assertThat(capability.artifactVersion()).isEqualTo("load-bundle-a");
+		assertThat(capability.sha256()).isEqualTo(manifestSha);
+		assertThat(capability.loadedAt()).isEqualTo(t0);
+
+		var unreadyCapability = new JdbcTransitMasterOverrideRepository(
+			emptyDataSource(),
+			objectMapper(),
+			new SimpleMeterRegistry(),
+			() -> registry
+		).masterDataCapability();
+		assertThat(unreadyCapability.status()).isEqualTo(MasterDataCapabilityStatus.READ_ONLY);
+		assertThat(unreadyCapability.artifactVersion()).isEqualTo("load-bundle-a");
+
+		assertThat(repository.loadStation("station-busan-seomyeon")).get().satisfies(station -> {
+			assertThat(station.region()).isEqualTo("전국");
+			assertThat(station.latitude()).isNull();
+			assertThat(station.longitude()).isNull();
+			assertThat(station.dataQualityLevel()).isEqualTo(DataQualityLevel.LEVEL_2);
+			assertThat(station.lastVerifiedAt()).isEqualTo(LocalDate.of(2026, 8, 12));
+		});
+		assertThat(repository.loadStation("station-sangnoksu")).get().satisfies(station ->
+			assertThat(station.nameKo()).isEqualTo("상록수"));
+
+		assertThat(repository.loadStationExits())
+			.filteredOn(exit -> exit.stationId().equals("station-busan-seomyeon"))
+			.satisfiesExactly(
+				exit1 -> {
+					assertThat(exit1.name()).isEqualTo("1번 출구");
+					assertThat(exit1.latitude()).isEqualByComparingTo("35.1578");
+					assertThat(exit1.hasElevatorConnection()).isTrue();
+					assertThat(exit1.dataSourceType()).isEqualTo(DataSourceType.OFFICIAL_API);
+				},
+				exit2 -> {
+					assertThat(exit2.name()).isEqualTo("2번 출구 방면");
+					assertThat(exit2.latitude()).isNull();
+					assertThat(exit2.dataSourceType()).isEqualTo(DataSourceType.OFFICIAL_FILE);
+				}
+			);
+
+		assertThat(repository.loadAccessibilityFacility("facility-busan-lift-1")).get().satisfies(facility -> {
+			assertThat(facility.type()).isEqualTo(AccessibilityFacilityType.WHEELCHAIR_LIFT);
+			assertThat(facility.status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
+			assertThat(facility.dataConfidence()).isEqualTo(DataConfidenceLevel.HIGH);
+			assertThat(facility.dataSourceType()).isEqualTo(DataSourceType.OFFICIAL_FILE);
+			assertThat(facility.floorFrom()).isEqualTo("B2");
+			assertThat(facility.floorTo()).isEqualTo("B1");
+		});
+		assertThat(repository.loadAccessibilityFacility("facility-busan-ramp-1")).get().satisfies(facility -> {
+			assertThat(facility.type()).isEqualTo(AccessibilityFacilityType.RAMP);
+			assertThat(facility.status()).isEqualTo(AccessibilityFacilityStatus.UNDER_CONSTRUCTION);
+			assertThat(facility.dataConfidence()).isEqualTo(DataConfidenceLevel.MEDIUM);
+			assertThat(facility.dataSourceType()).isEqualTo(DataSourceType.OPERATOR_PAGE);
+			assertThat(facility.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 8, 12));
+		});
+		assertThat(repository.loadAccessibilityFacility("facility-busan-toilet-1")).get().satisfies(facility -> {
+			assertThat(facility.type()).isEqualTo(AccessibilityFacilityType.ACCESSIBLE_TOILET);
+			assertThat(facility.status()).isEqualTo(AccessibilityFacilityStatus.CLOSED);
+			assertThat(facility.dataConfidence()).isEqualTo(DataConfidenceLevel.LOW);
+			assertThat(facility.dataSourceType()).isEqualTo(DataSourceType.ADMIN_VERIFIED);
+		});
+		assertThat(repository.loadAccessibilityFacility("facility-busan-center-1")).get().satisfies(facility -> {
+			assertThat(facility.type()).isEqualTo(AccessibilityFacilityType.CUSTOMER_CENTER);
+			assertThat(facility.status()).isEqualTo(AccessibilityFacilityStatus.UNKNOWN);
+			assertThat(facility.dataConfidence()).isEqualTo(DataConfidenceLevel.NEEDS_VERIFICATION);
+			assertThat(facility.dataSourceType()).isEqualTo(DataSourceType.OFFICIAL_API);
+		});
+
+		repository.saveFacilityStatus(
+			"facility-busan-lift-1",
+			AccessibilityFacilityStatus.BROKEN,
+			LocalDate.of(2026, 8, 13),
+			"operator-1"
+		);
+		assertThat(repository.loadAccessibilityFacility("facility-busan-lift-1")).get().satisfies(facility -> {
+			assertThat(facility.status()).isEqualTo(AccessibilityFacilityStatus.BROKEN);
+			assertThat(facility.dataSourceType()).isEqualTo(DataSourceType.ADMIN_VERIFIED);
+			assertThat(facility.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 8, 13));
+		});
+	}
+
+	@Test
+	@DisplayName("미적재 번들은 시드로 폴백하고 만료된 번들은 Fail-Closed로 TransitDataAccessException을 던진다")
+	void unreadyBundleFallsBackToSeedAndStaleBundleFailsClosed() {
+		Instant t0 = Instant.parse("2026-08-12T00:00:00Z");
+		var clock = new MutableClock(t0);
+		var registry = new RouteBundleActivationRegistry(clock);
+		var repository = new JdbcTransitMasterOverrideRepository(
+			overrideDataSource(),
+			objectMapper(),
+			new SimpleMeterRegistry(),
+			() -> registry
+		);
+
+		assertThat(repository.masterDataCapability().artifactVersion()).isEqualTo("static-seed+overrides");
+		assertThat(repository.loadStations()).isNotEmpty();
+		assertThat(repository.loadStationExits()).isNotEmpty();
+		assertThat(repository.loadAccessibilityFacilities()).isNotEmpty();
+
+		String manifestSha = LoadScenarioBundles.manifestSha256("b");
+		registry.stage(
+			LoadScenarioBundles.candidate(
+				"b",
+				new BundleCatalogRuntime(Set.of("station-sangnoksu"), List.of(), List.of()),
+				t0
+			),
+			0
+		);
+		registry.activate(manifestSha, 0);
+		clock.set(t0.plus(Duration.ofDays(30)));
+
+		assertThatThrownBy(repository::masterDataCapability).isInstanceOf(TransitDataAccessException.class);
+		assertThatThrownBy(repository::loadStations).isInstanceOf(TransitDataAccessException.class);
+		assertThatThrownBy(repository::loadStationExits).isInstanceOf(TransitDataAccessException.class);
+		assertThatThrownBy(repository::loadAccessibilityFacilities).isInstanceOf(TransitDataAccessException.class);
+	}
+
+	private record BundleCatalogRuntime(
+		Set<String> canonicalStationIds,
+		List<BundleFacility> bundleFacilities,
+		List<BundleStationExit> bundleStationExits
+	) implements RouteBundleRuntimeView, RouteBundleFacilityCatalog {
+
+		@Override
+		public List<Facility> smrtElevatorFacilities() {
+			return List.of();
+		}
+	}
+
+	private static final class MutableClock extends Clock {
+		private Instant instant;
+
+		private MutableClock(Instant instant) {
+			this.instant = instant;
+		}
+
+		void set(Instant instant) {
+			this.instant = instant;
+		}
+
+		@Override
+		public ZoneOffset getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(java.time.ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			return instant;
+		}
 	}
 }

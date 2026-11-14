@@ -38,6 +38,8 @@ spring:
 
 easysubway:
   journey:
+    facility-status:
+      required: ${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:true}
     profile:
       resource-policy-path: ${EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_PATH}
       resource-policy-sha256: ${EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256}

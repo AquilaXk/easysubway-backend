@@ -1341,7 +1341,9 @@ final class ReverseTimetableRaptorPlanner {
 						nextHeadwaySeconds
 					);
 				List<RouteTimetableRaptorPlanner.AlightingCarDoor> fastTransferCarDoors =
-					((RouteTimetableRaptorPlanner.JourneyRideProjection) projected.getLast()).alightingCarDoors();
+					RouteTimetableRaptorPlanner.fastTransferCarDoorsOnly(
+						((RouteTimetableRaptorPlanner.JourneyRideProjection) projected.getLast()).alightingCarDoors()
+					);
 				projected.add(new RouteTimetableRaptorPlanner.JourneyAccessProjection(
 					RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
 					access.fromStationId(), access.toStationId(),

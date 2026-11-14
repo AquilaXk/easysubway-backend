@@ -364,7 +364,10 @@ class RouteTimetableCarDoorHintsTest {
 		var reverseTransfer = (RouteTimetableRaptorPlanner.JourneyAccessProjection) reverseItinerary.legs().get(1);
 		var reverseRide2 = (RouteTimetableRaptorPlanner.JourneyRideProjection) reverseItinerary.legs().get(2);
 
-		assertThat(reverseTransfer.fastTransferCarDoors()).isEqualTo(reverseRide1.alightingCarDoors());
+		assertThat(reverseRide1.alightingCarDoors())
+			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
+			.containsOnly("ELEVATOR");
+		assertThat(reverseTransfer.fastTransferCarDoors()).isEmpty();
 		assertThat(reverseTransfer.connectionRisk()).isNotNull();
 		assertThat(reverseRide2.alightingCarDoors())
 			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
@@ -409,9 +412,17 @@ class RouteTimetableCarDoorHintsTest {
 		assertThat(slowTransfer.connectionRisk().slackSeconds()).isGreaterThan(sfTransfer.connectionRisk().slackSeconds());
 		assertThat(stdTransfer.connectionRisk().riskScore()).isLessThanOrEqualTo(slowTransfer.connectionRisk().riskScore());
 		assertThat(slowTransfer.connectionRisk().riskScore()).isLessThanOrEqualTo(sfTransfer.connectionRisk().riskScore());
-		assertThat(sfTransfer.fastTransferCarDoors())
+		var sfRide1 = (RouteTimetableRaptorPlanner.JourneyRideProjection) stepFreePlan.itineraries().getFirst().legs().get(0);
+		assertThat(stdTransfer.fastTransferCarDoors())
 			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
 			.containsOnly("TRANSFER");
+		assertThat(slowTransfer.fastTransferCarDoors())
+			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
+			.containsOnly("TRANSFER");
+		assertThat(sfRide1.alightingCarDoors())
+			.extracting(RouteTimetableRaptorPlanner.AlightingCarDoor::targetFacilityType)
+			.containsOnly("ELEVATOR");
+		assertThat(sfTransfer.fastTransferCarDoors()).isEmpty();
 
 		// JourneyAccessProjection 생성자가 TRANSFER 외 시설 힌트를 fastTransferCarDoors에 넣는 것을 거부하는지 검증
 		assertThatThrownBy(() -> new RouteTimetableRaptorPlanner.JourneyAccessProjection(
@@ -626,5 +637,76 @@ class RouteTimetableCarDoorHintsTest {
 			null,
 			new RouteAccessData(nodes, edges, transferRules, evidence, hints)
 		);
+	}
+
+	@Test
+	@DisplayName("(13) 무단차 환승 시 TRANSFER 계단 힌트보다 ELEVATOR·WHEELCHAIR_LIFT 칸-문 힌트를 우선 선택한다")
+	void selectsStepFreeElevatorOrWheelchairLiftBeforeRegularTransferHintOnStepFreeTransfers() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var reversePlanner = new ReverseTimetableRaptorPlanner();
+
+		var transferWithElevatorTimetable = createBaseTimetable(List.of(
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 3, 2),
+			new CarDoorHint("station-b", "line-1", "UP", "WHEELCHAIR_LIFT", 2, 1),
+			new CarDoorHint("station-b", "line-1", "UP", "ELEVATOR", 1, 4),
+			new CarDoorHint("station-c", "line-2", "DOWN", "ELEVATOR", 2, 3)
+		));
+		var compiledWithElevator = planner.compile(transferWithElevatorTimetable);
+
+		// PD-27 우선순위: ELEVATOR > WHEELCHAIR_LIFT > (일반 환승 시에만 TRANSFER)
+		assertThat(compiledWithElevator.selectAlightingCarDoors("station-b", "line-1", "up", true, true))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 4, "ELEVATOR"));
+		assertThat(compiledWithElevator.selectAlightingCarDoors("station-b", "line-1", "up", true, false))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 2, "TRANSFER"));
+
+		var transferWithLiftOnlyTimetable = createBaseTimetable(List.of(
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 3, 2),
+			new CarDoorHint("station-b", "line-1", "UP", "WHEELCHAIR_LIFT", 2, 1)
+		));
+		var compiledWithLiftOnly = planner.compile(transferWithLiftOnlyTimetable);
+		assertThat(compiledWithLiftOnly.selectAlightingCarDoors("station-b", "line-1", "up", true, true))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(2, 1, "WHEELCHAIR_LIFT"));
+		assertThat(compiledWithLiftOnly.selectAlightingCarDoors("station-b", "line-1", "up", true, false))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 2, "TRANSFER"));
+
+		// 정방향/역방향 전체 탐색에서 JourneyAccessProjection 생성이 예외 없이 동작하고 첫 승차 하차 힌트에 ELEVATOR가 실린다
+		var stepFreeQuery = JourneyRaptorQuery.from(
+			createRequest("station-a", "station-c", JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE),
+			DEPARTURE_INSTANT
+		);
+		var forwardPlan = planner.journeyItineraries(
+			stepFreeQuery,
+			compiledWithElevator,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-13-fwd"),
+			"req-13-fwd",
+			"bundle-sha",
+			1L
+		);
+		assertThat(forwardPlan.itineraries()).isNotEmpty();
+		var fwdRide1 = (RouteTimetableRaptorPlanner.JourneyRideProjection) forwardPlan.itineraries().getFirst().legs().get(0);
+		assertThat(fwdRide1.alightingCarDoors())
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 4, "ELEVATOR"));
+
+		var reverseQuery = planner.reverseArriveByQuery(
+			JourneyRaptorQuery.from(
+				createProfileRequest("station-a", "station-c", JourneyRequest.MobilityProfile.STEP_FREE,
+					JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, DEPARTURE_INSTANT),
+				DEPARTURE_INSTANT),
+			SERVICE_DATE,
+			33000,
+			36000
+		);
+		var reversePlan = reversePlanner.arriveBy(
+			reverseQuery,
+			compiledWithElevator,
+			compiledWithElevator.activeServiceDay(SERVICE_DATE),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new com.easysubway.journey.application.JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32)
+		);
+		assertThat(reversePlan.itineraries()).isNotEmpty();
+		var revRide1 = (RouteTimetableRaptorPlanner.JourneyRideProjection) reversePlan.itineraries().getFirst().legs().get(0);
+		assertThat(revRide1.alightingCarDoors())
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 4, "ELEVATOR"));
 	}
 }

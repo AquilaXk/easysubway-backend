@@ -189,13 +189,64 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		for (RouteTimetableRaptorPlanner.JourneyItinerary leg1 : selectedLeg1) {
 			RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1 = findLastRide(leg1);
 			int leg1RideCount = countRides(leg1);
+			int fromLine = timetable.lineIndex(lastRide1.lineId());
+			Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
+			int maxTransfers2PassThrough = requiredRequest.maxTransfers() - (leg1RideCount - 1);
+			if (maxTransfers2PassThrough >= 0) {
+				JourneyRequest passThroughRequest = new JourneyRequest(
+					requiredRequest.requestId(),
+					viaStationId,
+					requiredRequest.destinationStationId(),
+					null,
+					new JourneyRequest.Departure.Scheduled(leg1Arrival),
+					requiredRequest.timePolicy(),
+					requiredRequest.walkingPace(),
+					requiredRequest.mobilityProfile(),
+					requiredRequest.constraintMode(),
+					maxTransfers2PassThrough,
+					requiredRequest.alternativeCount(),
+					requiredRequest.cancellationSignal()
+				);
+				JourneyRaptorQuery passThroughQuery = JourneyRaptorQuery.from(passThroughRequest, leg1Arrival);
+				RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlayPassThrough = requireRealtimeOverlay(
+					passThroughRequest, requiredSnapshot, routeRuntime, realtimeOrNull, leg1.serviceDate(), facilityOverlay);
+				RouteTimetableRaptorPlanner.JourneyPlan passThroughPlan = planner.sameTripPassThroughItineraries(
+					passThroughQuery,
+					timetable,
+					leg1.serviceDate(),
+					lastRide1.tripId(),
+					lastRide1.lineId(),
+					leg1Arrival,
+					realtimeOverlayPassThrough,
+					requiredMeasurement,
+					requiredRequest.requestId(),
+					requiredSnapshot.routeBundleSha256(),
+					requiredSnapshot.generation()
+				);
+				totalRoutes += passThroughPlan.scanMetrics().expandedRoutes();
+				totalTrips += passThroughPlan.scanMetrics().expandedTrips();
+				totalTransfers += passThroughPlan.scanMetrics().expandedTransfers();
+				for (RouteTimetableRaptorPlanner.JourneyItinerary leg2 : passThroughPlan.itineraries()) {
+					RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2 = findFirstRide(leg2);
+					RouteTimetableRaptorPlanner.JourneyItinerary chained = chainLegs(
+						requiredRequest,
+						timetable,
+						leg1,
+						leg2,
+						lastRide1,
+						firstRide2,
+						realtimeOverlayPassThrough
+					);
+					if (chained != null) {
+						chainedItineraries.add(chained);
+					}
+				}
+			}
+
 			int maxTransfers2 = requiredRequest.maxTransfers() - leg1RideCount;
 			if (maxTransfers2 < 0) {
 				continue;
 			}
-
-			int fromLine = timetable.lineIndex(lastRide1.lineId());
-			Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
 			for (int readySlackSeconds : leg2ReadySlacks(
 				requiredRequest, timetable, viaStation, fromLine, facilityOverlay
 			)) {
@@ -303,7 +354,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			new JourneyAlternatives.StairFreeAlternative(stairFreeStatus, facilityCapture.status()));
 	}
 
-	private static RouteTimetableRaptorPlanner.JourneyItinerary chainLegs(
+	static RouteTimetableRaptorPlanner.JourneyItinerary chainLegs(
 		JourneyRequest request,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.JourneyItinerary leg1,
@@ -317,6 +368,14 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
 		Instant leg2Departure = RouteTimetableRaptorPlanner.effectiveDeparture(firstRide2);
 		long availableSlack = Duration.between(leg1Arrival, leg2Departure).getSeconds();
+
+		if (leg1.serviceDate().equals(leg2.serviceDate())
+			&& lastRide1.tripId().equals(firstRide2.tripId())
+			&& lastRide1.lineId().equals(firstRide2.lineId())
+			&& availableSlack >= 0
+			&& !firstRide2.plannedDepartureTime().isBefore(lastRide1.plannedArrivalTime())) {
+			return chainSameTripPassThrough(request, via, leg1, leg2, lastRide1, firstRide2);
+		}
 
 		int duration = 0;
 		int distance = 0;
@@ -359,12 +418,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 			if (timetable.isOutOfStationTransition(transition)) {
 				transferType = "OUT_OF_STATION";
-				int alightSeconds = (int) Duration.between(
-					leg1Arrival.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
-					leg1Arrival).getSeconds();
-				int boardSeconds = (int) Duration.between(
-					leg2Departure.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
-					leg2Departure).getSeconds();
+				int alightSeconds = ServiceDayResolver.resolve(leg1Arrival).secondsFromServiceDayStart();
+				int boardSeconds = ServiceDayResolver.resolve(leg2Departure).secondsFromServiceDayStart();
 				int elapsed = (int) availableSlack;
 				int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
 				boolean timeout = elapsed > limit;
@@ -391,17 +446,13 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			true,
 			stepFree
 		);
-		java.time.LocalDate ride2Date = leg2Departure.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate();
-		int ride2DepartureSeconds = (int) Duration.between(
-			ride2Date.atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
-			leg2Departure
-		).getSeconds();
+		var resolvedRide2 = ServiceDayResolver.resolve(leg2Departure);
 		Integer nextHeadwaySeconds = timetable.nextHeadwaySeconds(
-			ride2Date,
+			resolvedRide2.serviceDate(),
 			firstRide2.fromStationId(),
 			firstRide2.toStationId(),
 			firstRide2.lineId(),
-			ride2DepartureSeconds,
+			resolvedRide2.secondsFromServiceDayStart(),
 			realtimeOverlay
 		);
 		com.easysubway.route.domain.TransferConnectionRisk connectionRisk =
@@ -425,7 +476,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				transferLimitMinutes,
 				junctionStairAccessUnconfirmed,
 				connectionRisk,
-				transferHints
+				RouteTimetableRaptorPlanner.fastTransferCarDoorsOnly(transferHints)
 			);
 		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
 			lastRide1.lineId(),
@@ -461,6 +512,79 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			null,
 			null,
 			leg1.unconfirmedStairFreeTransfer() || leg2.unconfirmedStairFreeTransfer() || junctionUnconfirmedStairFree
+		);
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyItinerary chainSameTripPassThrough(
+		JourneyRequest request,
+		String viaStationId,
+		RouteTimetableRaptorPlanner.JourneyItinerary leg1,
+		RouteTimetableRaptorPlanner.JourneyItinerary leg2,
+		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1,
+		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2
+	) {
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs2 = leg2.legs();
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs =
+			new ArrayList<>(legs1.size() + legs2.size() - 1);
+		for (int i = 0; i < legs1.size() - 1; i += 1) {
+			combinedLegs.add(legs1.get(i));
+		}
+
+		List<RouteTimetableRaptorPlanner.JourneyStopProjection> stops1 = lastRide1.stops();
+		List<RouteTimetableRaptorPlanner.JourneyStopProjection> stops2 = firstRide2.stops();
+		List<RouteTimetableRaptorPlanner.JourneyStopProjection> mergedStops =
+			new ArrayList<>(stops1.size() + stops2.size() - 1);
+		for (int i = 0; i < stops1.size() - 1; i += 1) {
+			mergedStops.add(stops1.get(i));
+		}
+		RouteTimetableRaptorPlanner.JourneyStopProjection viaEnd = stops1.getLast();
+		RouteTimetableRaptorPlanner.JourneyStopProjection viaStart = stops2.getFirst();
+		mergedStops.add(new RouteTimetableRaptorPlanner.JourneyStopProjection(
+			viaStationId,
+			viaEnd.plannedArrivalTime(),
+			viaStart.plannedDepartureTime(),
+			viaEnd.realtimeArrivalTime(),
+			viaStart.realtimeDepartureTime()
+		));
+		for (int i = 1; i < stops2.size(); i += 1) {
+			mergedStops.add(stops2.get(i));
+		}
+
+		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			firstRide2.lineId(),
+			firstRide2.tripId(),
+			firstRide2.directionStationId(),
+			lastRide1.fromStationId(),
+			firstRide2.toStationId(),
+			lastRide1.servicePattern(),
+			lastRide1.plannedDepartureTime(),
+			firstRide2.plannedArrivalTime(),
+			lastRide1.realtimeDepartureTime(),
+			firstRide2.realtimeArrivalTime(),
+			List.copyOf(mergedStops),
+			firstRide2.alightingCarDoors(),
+			lastRide1.boardingPlatformGaps(),
+			firstRide2.alightingPlatformGaps()
+		));
+		for (int i = 1; i < legs2.size(); i += 1) {
+			combinedLegs.add(legs2.get(i));
+		}
+
+		JourneyProfileRaptorPort.ItineraryMetrics metrics =
+			RouteTimetableRaptorPlanner.itineraryMetrics(combinedLegs, 0);
+		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
+		return new RouteTimetableRaptorPlanner.JourneyItinerary(
+			leg1.serviceDate(),
+			leg1.plannedDepartureTime(),
+			leg2.plannedArrivalTime(),
+			realtime ? leg1.realtimeDepartureTime() : null,
+			realtime ? leg2.realtimeArrivalTime() : null,
+			metrics,
+			combinedLegs,
+			null,
+			null,
+			leg1.unconfirmedStairFreeTransfer() || leg2.unconfirmedStairFreeTransfer()
 		);
 	}
 
@@ -633,6 +757,17 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		JourneyRaptorQuery query,
 		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
+		return requireRealtimeOverlay(request, snapshot, routeRuntime, realtimeOrNull, serviceDate(query), facilityOverlay);
+	}
+
+	private static RouteTimetableRaptorPlanner.RealtimeOverlay requireRealtimeOverlay(
+		JourneyRequest request,
+		ActiveJourneySnapshot snapshot,
+		RaptorRouteBundleRuntimeView routeRuntime,
+		RealtimeObservation realtimeOrNull,
+		java.time.LocalDate serviceDate,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
 		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
 			if (realtimeOrNull != null) {
 				throw new IllegalArgumentException("timetable Journey request must not receive realtime");
@@ -647,7 +782,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			|| snapshot.generation() != realtimeRuntime.generation()) {
 			throw new IllegalArgumentException("realtime runtime view does not match captured Journey generation");
 		}
-		RouteTimetableRaptorPlanner.RealtimeOverlay trainOverlay = realtimeRuntime.realtimeOverlay(serviceDate(query));
+		RouteTimetableRaptorPlanner.RealtimeOverlay trainOverlay = realtimeRuntime.realtimeOverlay(serviceDate);
 		return RouteTimetableRaptorPlanner.RealtimeOverlay.combine(trainOverlay, facilityOverlay);
 	}
 
@@ -845,7 +980,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	) {
 		StringBuilder canonical = new StringBuilder();
 		appendCanonical(canonical,
-			plannedDeparture.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().toString());
+			ServiceDayResolver.resolve(plannedDeparture).serviceDate().toString());
 		appendCanonical(canonical, request.originStationId());
 		appendCanonical(canonical, request.destinationStationId());
 		appendCanonical(canonical, plannedDeparture.toString());

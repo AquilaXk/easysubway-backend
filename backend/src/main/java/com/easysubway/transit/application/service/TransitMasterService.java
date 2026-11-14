@@ -240,6 +240,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
+			.filter(station -> station.latitude() != null && station.longitude() != null)
 			.map(station -> new NearbyStation(
 				withLines(station, linesById, stationLinesByStationId),
 				distanceMeters(command, station)

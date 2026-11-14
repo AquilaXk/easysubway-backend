@@ -919,6 +919,122 @@ class JourneyProductionConfigurationTest {
 		}
 	}
 
+	@Test
+	@DisplayName("FacilityOperationalStatusStore 빈이 있으면 실어댑터를 배선하고 canary는 활성 번들 없이도 통과한다")
+	void wiresRealFacilityAvailabilityAdapterWhenOperationalStoreIsPresentAndKeepsCanaryIndependentOfActiveBundle() {
+		validProductionContext()
+			.withUserConfiguration(OperationalStatusStoreConfiguration.class)
+			.withPropertyValues("easysubway.journey.facility-status.required=true")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context).hasSingleBean(JourneyRaptorPort.class);
+				assertThat(context).hasSingleBean(com.easysubway.journey.application.FacilityAvailabilityPort.class);
+				assertThat(context.getBean(com.easysubway.journey.application.FacilityAvailabilityPort.class))
+					.isInstanceOf(com.easysubway.transit.adapter.out.bundle.ActiveRouteBundleFacilityAvailabilityAdapter.class);
+
+				var registry = context.getBean(RouteBundleActivationRegistry.class);
+				var emptyRegistry = new RouteBundleActivationRegistry(Clock.fixed(VERIFIED_AT, ZoneOffset.UTC));
+				when(registry.activeSnapshot()).thenAnswer(ignored -> emptyRegistry.activeSnapshot());
+
+				var runtime = canaryRuntimeView();
+				var stagedCandidate = com.easysubway.journey.bundle.LoadScenarioBundles.candidate("a", runtime, Instant.now());
+				var stagedExecution = new RouteBundleActivationRegistry.CandidateExecutionSnapshot(
+					1L, stagedCandidate.identity(), stagedCandidate.admissionEvidence(), runtime,
+					stagedCandidate.verifiedAt(), Instant.now());
+				var stagedSummary = new RouteBundleActivationRegistry.CandidateSnapshot(
+					1L, stagedCandidate.identity(), stagedCandidate.admissionEvidence(),
+					stagedCandidate.verifiedAt(), stagedExecution.stagedAt());
+				when(registry.candidateExecutionSnapshot()).thenReturn(stagedExecution);
+				when(registry.candidateSnapshot()).thenReturn(stagedSummary);
+
+				var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+					.apply(springSecurity())
+					.build();
+				String manifest = com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a");
+				mockMvc.perform(post(CANARY_PATH)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+						.content(canaryCommand().formatted(manifest)))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.passed").value(true));
+			});
+	}
+
+	@Test
+	@DisplayName("운영 설정 파일은 facility-status.required=true를 기본으로 켜고 기본 설정은 false를 유지한다")
+	void applicationProdYamlEnablesFacilityStatusRequiredWhileBaseYamlKeepsFalse() {
+		var baseYaml = new org.springframework.beans.factory.config.YamlPropertiesFactoryBean();
+		baseYaml.setResources(new org.springframework.core.io.ClassPathResource("application.yml"));
+		var baseProps = baseYaml.getObject();
+		assertThat(baseProps).isNotNull();
+		assertThat(baseProps.getProperty("easysubway.journey.facility-status.required"))
+			.isEqualTo("${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:false}");
+
+		var prodYaml = new org.springframework.beans.factory.config.YamlPropertiesFactoryBean();
+		prodYaml.setResources(new org.springframework.core.io.ClassPathResource("application-prod.yml"));
+		var prodProps = prodYaml.getObject();
+		assertThat(prodProps).isNotNull();
+		assertThat(prodProps.getProperty("easysubway.journey.facility-status.required"))
+			.isEqualTo("${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:true}");
+	}
+
+	private static com.easysubway.route.application.service.RaptorRouteBundleRuntimeView canaryRuntimeView() {
+		var calendar = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			java.time.LocalDate.of(2020, 1, 1), java.time.LocalDate.of(2099, 12, 31), "Asia/Seoul");
+		var route = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute(
+			"route-1", "line-1", "1", "Line 1", "station-destination", "Asia/Seoul");
+		var trip = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip(
+			"trip-1", "route-1", "daily", "station-destination", "down", "SUBWAY", "LOCAL", "1001", 0);
+		var stopTimes = java.util.List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime(
+				"trip-1", 1, "station-origin", "line-1", 10_800, 10_800, 0, 0),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime(
+				"trip-1", 2, "station-destination", "line-1", 11_400, 11_400, 0, 0));
+		var frequencies = java.util.List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency(
+				"trip-1", 10_800, 97_500, 300, true));
+		var access = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData(
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode(
+					"entrance-origin", "station-origin", null, "ENTRANCE"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode(
+					"platform-origin", "station-origin", "line-1", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode(
+					"platform-destination", "station-destination", "line-1", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode(
+					"exit-destination", "station-destination", null, "EXIT")),
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+					"entry-origin", "entrance-origin", "platform-origin", 60, 50, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+					"exit-destination", "platform-destination", "exit-destination", 60, 50, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")),
+			java.util.List.of(),
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-entry", "station-origin", "line-1", "entry-origin", "ENTRY",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-exit", "station-destination", "line-1", "exit-destination", "EXIT",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+		var timetable = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable(
+			java.util.List.of(calendar), java.util.List.of(), java.util.List.of(route),
+			java.util.List.of(trip), stopTimes, frequencies, java.util.List.of(), null, access);
+		return com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
+			com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a"), 1L, timetable);
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class OperationalStatusStoreConfiguration {
+
+		@Bean
+		com.easysubway.transit.application.port.out.FacilityOperationalStatusStore facilityOperationalStatusStore() {
+			return mock(com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.class);
+		}
+	}
+
 	@RestController
 	static class JourneyEndpointProbeController {
 

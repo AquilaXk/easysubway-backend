@@ -44,11 +44,13 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -93,7 +95,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		CompiledPayloads compiled = read(input);
 		return RaptorRouteBundleRuntimeView.compile(
 			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities(),
-			compiled.fareQuotes(), compiled.canonicalStationLines());
+			compiled.fareQuotes(), compiled.canonicalStationLines(), compiled.facilityEdgeIds(),
+			compiled.canonicalStationIds(), compiled.bundleFacilities(), compiled.bundleStationExits());
 	}
 
 	RouteTimetable readTimetable(Input input) {
@@ -136,10 +139,14 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var carDoorHints = loadCarDoorHints(accessibilityConn);
 			var platformGaps = loadPlatformGaps(accessibilityConn);
 			Map<String, OfficialFareQuote> fareQuotes = loadFare(byPath.get(FARE_PATH).connection());
-			var smrtElevatorFacilities = loadSmrtElevatorFacilities(accessibilityConn);
+			var references = components.getFirst().references();
+			var loadedFacilities = loadFacilities(accessibilityConn);
+			var bundleStationExits = loadStationExits(accessibilityConn);
 			return new CompiledPayloads(loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
-				smrtElevatorFacilities, fareQuotes, canonicalStationLines(components.getFirst().references()));
+				loadedFacilities.smrtElevatorFacilities(), fareQuotes, canonicalStationLines(references),
+				indexFacilityEdgeIds(topology), canonicalStationIds(references),
+				loadedFacilities.bundleFacilities(), bundleStationExits);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -231,6 +238,11 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 	}
 
+	// 정본 역 집합은 네 구성요소 일치 검증을 통과한 stations 표의 id 바이트 순서를 그대로 보존한다.
+	private static Set<String> canonicalStationIds(References references) {
+		return Collections.unmodifiableSet(new LinkedHashSet<>(references.stations()));
+	}
+
 	// #476: 네 구성요소가 같다고 확인한 station_lines가 역 시간표의 정본 역·노선이다.
 	private static Set<StationLine> canonicalStationLines(References references) {
 		var stationLines = new HashSet<StationLine>();
@@ -252,7 +264,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
 			SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters, edge_type,
 			 service_pattern, service_class, includes_stairs, accessibility_status, reliability_score,
-			 provenance_kind, verification_status, stair_access_state
+			 provenance_kind, verification_status, stair_access_state, facility_id
 			FROM network_edges ORDER BY id COLLATE BINARY
 			""")) {
 			while (rows.next()) {
@@ -265,7 +277,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 					rows.getBoolean(9), requireText(rows.getString(10), "network edge accessibility status"),
 					rows.getInt(11), requireText(rows.getString(12), "network edge provenance"),
 					requireText(rows.getString(13), "network edge verification"),
-					requireText(rows.getString(14), "network edge stair access state"));
+					requireText(rows.getString(14), "network edge stair access state"),
+					normalizeOptionalFacilityId(rows.getString(15)));
 				if (edge.durationSeconds() < 0 || edge.distanceMeters() < 0
 					|| edge.reliabilityScore() < 0 || edge.reliabilityScore() > 100
 					|| edges.put(edge.id(), edge) != null) {
@@ -340,22 +353,110 @@ public final class RouteBundleSqliteRuntimeCompiler {
 
 	// #419: 관리자 확인 기록이 고를 서울교통공사 엘리베이터 시설 목록. accessibility 구성요소가 소유한 facilities 표(data 계약)에서
 	// smrt-elev: 행만 읽는다. 표가 없거나 이름이 비면 번들 계약 위반이라 컴파일을 실패시킨다.
-	private static List<RouteBundleFacilityCatalog.Facility> loadSmrtElevatorFacilities(Connection connection)
-		throws SQLException {
-		var facilities = new ArrayList<RouteBundleFacilityCatalog.Facility>();
-		try (var statement = connection.prepareStatement(
-			"SELECT id, name FROM facilities WHERE substr(id, 1, ?) = ? ORDER BY id COLLATE BINARY")) {
-			statement.setInt(1, RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX.length());
-			statement.setString(2, RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX);
-			try (var rows = statement.executeQuery()) {
-				while (rows.next()) {
-					facilities.add(new RouteBundleFacilityCatalog.Facility(
-						requireText(rows.getString(1), "bundle facility id"),
-						requireText(rows.getString(2), "bundle facility name")));
+	// facilities 표 전체를 단일 패스로 읽어 일반 카탈로그와 smrt-elev: 부분 목록을 함께 만든다.
+	private static LoadedFacilities loadFacilities(Connection connection) throws SQLException {
+		if (!hasTable(connection, "facilities")) {
+			throw new SQLException("no such table: facilities");
+		}
+		Set<String> columns = requireRequiredColumns(connection, "facilities",
+			List.of("id", "station_id", "type", "name"));
+		boolean hasExitId = columns.contains("exit_id");
+		boolean hasFloorFrom = columns.contains("floor_from");
+		boolean hasFloorTo = columns.contains("floor_to");
+		boolean hasDescription = columns.contains("description");
+		boolean hasStatus = columns.contains("status");
+		boolean hasOperationalStatus = columns.contains("operational_status");
+		boolean hasProvenanceKind = columns.contains("provenance_kind");
+		boolean hasVerifiedAt = columns.contains("verified_at");
+		boolean hasConfidence = columns.contains("confidence");
+		var bundleFacilities = new ArrayList<RouteBundleFacilityCatalog.BundleFacility>();
+		var smrtElevatorFacilities = new ArrayList<RouteBundleFacilityCatalog.Facility>();
+		try (var statement = connection.prepareStatement("SELECT * FROM facilities ORDER BY id COLLATE BINARY");
+			var rows = statement.executeQuery()) {
+			while (rows.next()) {
+				String id = requireText(rows.getString("id"), "bundle facility id");
+				String stationId = requireText(rows.getString("station_id"), "bundle facility station");
+				String exitId = hasExitId ? rows.getString("exit_id") : null;
+				String type = requireText(rows.getString("type"), "bundle facility type");
+				String name = requireText(rows.getString("name"), "bundle facility name");
+				var facility = new RouteBundleFacilityCatalog.BundleFacility(
+					id,
+					stationId,
+					exitId,
+					type,
+					name,
+					hasFloorFrom ? rows.getString("floor_from") : "",
+					hasFloorTo ? rows.getString("floor_to") : "",
+					hasDescription ? rows.getString("description") : "",
+					hasStatus ? rows.getString("status") : "UNKNOWN",
+					hasOperationalStatus ? rows.getString("operational_status") : "UNKNOWN",
+					hasProvenanceKind ? rows.getString("provenance_kind") : "UNKNOWN",
+					hasVerifiedAt ? rows.getLong("verified_at") : 0L,
+					hasConfidence ? rows.getInt("confidence") : 0
+				);
+				bundleFacilities.add(facility);
+				if (id.startsWith(RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX)) {
+					smrtElevatorFacilities.add(new RouteBundleFacilityCatalog.Facility(id, name));
 				}
 			}
 		}
-		return List.copyOf(facilities);
+		return new LoadedFacilities(List.copyOf(bundleFacilities), List.copyOf(smrtElevatorFacilities));
+	}
+
+	private static List<RouteBundleFacilityCatalog.BundleStationExit> loadStationExits(Connection connection)
+		throws SQLException {
+		if (!hasTable(connection, "station_exits")) {
+			return List.of();
+		}
+		Set<String> columns = requireRequiredColumns(connection, "station_exits",
+			List.of("id", "station_id", "exit_number"));
+		boolean hasDescription = columns.contains("description");
+		boolean hasLatitude = columns.contains("latitude");
+		boolean hasLongitude = columns.contains("longitude");
+		boolean hasElevatorConnection = columns.contains("has_elevator_connection");
+		boolean hasDataSourceType = columns.contains("data_source_type");
+		var exits = new ArrayList<RouteBundleFacilityCatalog.BundleStationExit>();
+		try (var statement = connection.prepareStatement("SELECT * FROM station_exits ORDER BY id COLLATE BINARY");
+			var rows = statement.executeQuery()) {
+			while (rows.next()) {
+				exits.add(new RouteBundleFacilityCatalog.BundleStationExit(
+					requireText(rows.getString("id"), "bundle station_exit id"),
+					requireText(rows.getString("station_id"), "bundle station_exit station"),
+					requireText(rows.getString("exit_number"), "bundle station_exit number"),
+					hasDescription ? rows.getString("description") : "",
+					hasLatitude ? optionalFiniteDouble(rows, "latitude") : null,
+					hasLongitude ? optionalFiniteDouble(rows, "longitude") : null,
+					hasElevatorConnection && rows.getInt("has_elevator_connection") != 0,
+					hasDataSourceType ? rows.getString("data_source_type") : "OFFICIAL_FILE"
+				));
+			}
+		}
+		return List.copyOf(exits);
+	}
+
+	private static boolean hasTable(Connection connection, String table) throws SQLException {
+		try (var statement = connection.prepareStatement(
+			"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+			statement.setString(1, table);
+			try (var rows = statement.executeQuery()) {
+				return rows.next();
+			}
+		}
+	}
+
+	private static Double optionalFiniteDouble(ResultSet rows, String column) throws SQLException {
+		Object value = rows.getObject(column);
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number number) {
+			double parsed = number.doubleValue();
+			if (!Double.isFinite(parsed)) {
+				throw new IllegalArgumentException("bundle station_exit " + column + " must be finite");
+			}
+			return parsed;
+		}
+		throw new IllegalArgumentException("bundle station_exit " + column + " must be numeric");
 	}
 
 	private static Map<String, OfficialFareQuote> loadFare(Connection connection) throws SQLException {
@@ -571,11 +672,13 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			requireEndpointShape(edge.type(), from, to);
 			nodes.putIfAbsent(edge.fromNodeId(), new PathwayNode(edge.fromNodeId(), from.stationId(), from.lineId(), "ROUTE_ENDPOINT"));
 			nodes.putIfAbsent(edge.toNodeId(), new PathwayNode(edge.toNodeId(), to.stationId(), to.lineId(), "ROUTE_ENDPOINT"));
-			String accessibilityStatus = pass ? "AVAILABLE" : "UNAVAILABLE";
-			String provenanceKind = "UNKNOWN".equals(edge.provenanceKind())
-				? "OFFICIAL_SOURCE" : edge.provenanceKind();
-			String verificationStatus = "UNKNOWN".equals(edge.verificationStatus())
-				? "VERIFIED" : edge.verificationStatus();
+			String accessibilityStatus = switch (evaluation.state()) {
+				case "PASS" -> "AVAILABLE";
+				case "NOT_APPLICABLE" -> "NOT_APPLICABLE";
+				default -> "UNAVAILABLE";
+			};
+			String provenanceKind = edge.provenanceKind();
+			String verificationStatus = edge.verificationStatus();
 			edges.add(new PathwayEdge(
 				edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(), edge.distanceMeters(), false,
 				edge.includesStairs(), edge.reliabilityScore(), accessibilityStatus, provenanceKind,
@@ -650,6 +753,18 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	private static void requireColumns(Connection connection, String table, List<String> expected) throws SQLException {
+		var columns = readTableColumns(connection, table);
+		if (!columns.equals(expected)) throw new IllegalArgumentException("SQLite table schema mismatch: " + table);
+	}
+
+	private static Set<String> requireRequiredColumns(Connection connection, String table, List<String> required)
+		throws SQLException {
+		var columns = new LinkedHashSet<>(readTableColumns(connection, table));
+		if (!columns.containsAll(required)) throw new IllegalArgumentException("SQLite table schema mismatch: " + table);
+		return columns;
+	}
+
+	private static List<String> readTableColumns(Connection connection, String table) throws SQLException {
 		var columns = new ArrayList<String>();
 		try (var statement = connection.prepareStatement("SELECT name FROM pragma_table_info(?) ORDER BY cid")) {
 			statement.setString(1, table);
@@ -657,7 +772,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				while (rows.next()) columns.add(rows.getString("name"));
 			}
 		}
-		if (!columns.equals(expected)) throw new IllegalArgumentException("SQLite table schema mismatch: " + table);
+		return columns;
 	}
 
 	private static List<String> queryStrings(Connection connection, String sql, int columns) throws SQLException {
@@ -853,6 +968,22 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	private record Evaluation(String state, String reason) {
 	}
 
+	private static String normalizeOptionalFacilityId(String value) {
+		return value == null || value.isBlank() ? null : value;
+	}
+
+	private static Map<String, Set<String>> indexFacilityEdgeIds(Map<String, TopologyEdge> topology) {
+		Map<String, Set<String>> grouped = new LinkedHashMap<>();
+		for (TopologyEdge edge : topology.values()) {
+			if (edge.facilityId() == null) continue;
+			grouped.computeIfAbsent(edge.facilityId(), ignored -> new LinkedHashSet<>()).add(edge.id());
+		}
+		if (grouped.isEmpty()) return Map.of();
+		Map<String, Set<String>> immutable = new LinkedHashMap<>(grouped.size());
+		grouped.forEach((facilityId, edgeIds) -> immutable.put(facilityId, Set.copyOf(edgeIds)));
+		return Map.copyOf(immutable);
+	}
+
 	private record TopologyEdge(
 		String id,
 		String fromNodeId,
@@ -867,7 +998,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		int reliabilityScore,
 		String provenanceKind,
 		String verificationStatus,
-		String stairAccessState) {
+		String stairAccessState,
+		String facilityId) {
 
 		private String rawSha256() {
 			ObjectNode raw = JSON.createObjectNode();
@@ -887,10 +1019,19 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 	}
 
+	private record LoadedFacilities(
+		List<RouteBundleFacilityCatalog.BundleFacility> bundleFacilities,
+		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities) {
+	}
+
 	private record CompiledPayloads(
 		RouteTimetable timetable,
 		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities,
 		Map<String, OfficialFareQuote> fareQuotes,
-		Set<StationLine> canonicalStationLines) {
+		Set<StationLine> canonicalStationLines,
+		Map<String, Set<String>> facilityEdgeIds,
+		Set<String> canonicalStationIds,
+		List<RouteBundleFacilityCatalog.BundleFacility> bundleFacilities,
+		List<RouteBundleFacilityCatalog.BundleStationExit> bundleStationExits) {
 	}
 }
