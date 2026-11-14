@@ -24,11 +24,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class JdbcJourneySessionStore implements JourneySessionStore {
 
 	static final Duration DEFAULT_CLEANUP_INTERVAL = Duration.ofSeconds(5);
+	private static final int CLEANUP_BATCH_SIZE = 1000;
 
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactions;
 	private final long cleanupIntervalMillis;
 	private long lastCleanupAtEpochMillis = Long.MIN_VALUE;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcJourneySessionStore(DataSource dataSource, PlatformTransactionManager transactionManager) {
@@ -64,13 +66,32 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 	) {
 		Boolean claimed = transactions.execute(status -> {
 			if (shouldRunExpiredCleanup(now.toEpochMilli())) {
+				Timestamp cutoff = Timestamp.from(now);
 				jdbcTemplate.update(
-					"DELETE FROM journey_v3_nonce_claims WHERE expires_at <= ?",
-					Timestamp.from(now)
+					"""
+						DELETE FROM journey_v3_nonce_claims
+						WHERE nonce_sha256 IN (
+							SELECT nonce_sha256
+							FROM journey_v3_nonce_claims
+							WHERE expires_at <= ?
+							LIMIT ?
+						)
+						""",
+					cutoff,
+					CLEANUP_BATCH_SIZE
 				);
 				jdbcTemplate.update(
-					"DELETE FROM journey_v3_sessions WHERE expires_at <= ?",
-					Timestamp.from(now)
+					"""
+						DELETE FROM journey_v3_sessions
+						WHERE token_sha256 IN (
+							SELECT token_sha256
+							FROM journey_v3_sessions
+							WHERE expires_at <= ?
+							LIMIT ?
+						)
+						""",
+					cutoff,
+					CLEANUP_BATCH_SIZE
 				);
 			}
 			if (!claimNonce(nonceSha256, nonceExpiresAt, now)) {
@@ -89,6 +110,18 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 	}
 
 	private boolean claimNonce(String nonceSha256, Instant nonceExpiresAt, Instant now) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			return jdbcTemplate.update(
+				"""
+					INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at)
+					VALUES (?, ?, ?)
+					ON CONFLICT (nonce_sha256) DO NOTHING
+					""",
+				nonceSha256,
+				Timestamp.from(now),
+				Timestamp.from(nonceExpiresAt)
+			) == 1;
+		}
 		return Boolean.TRUE.equals(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection -> {
 			Savepoint savepoint = connection.setSavepoint();
 			try (PreparedStatement statement = connection.prepareStatement(
@@ -109,6 +142,25 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 				return false;
 			}
 		}));
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 
 	private synchronized boolean shouldRunExpiredCleanup(long nowEpochMillis) {

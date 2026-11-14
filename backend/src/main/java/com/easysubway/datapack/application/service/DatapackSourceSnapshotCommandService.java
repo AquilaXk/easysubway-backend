@@ -11,7 +11,6 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -76,12 +75,11 @@ public class DatapackSourceSnapshotCommandService {
 		}
 		validateLineage(snapshot);
 		String snapshotId = snapshotRepository.saveSnapshot(snapshot).snapshotId();
-		try {
-			insertEvent(command, snapshotId);
-		} catch (DuplicateKeyException exception) {
+		if (!insertEvent(command, snapshotId)) {
 			SourceSnapshotEventRow replayedEvent = snapshotRepository
 				.findEventByIdempotencyKey(command.sourceId(), command.idempotencyKey())
-				.orElseThrow(() -> exception);
+				.orElseThrow(() -> new IllegalStateException(
+					"idempotent snapshot event conflict without stored event: " + command.idempotencyKey()));
 			ensureSameIdempotentRequest(command, replayedEvent);
 			return replayedEvent.snapshotId();
 		}
@@ -147,8 +145,8 @@ public class DatapackSourceSnapshotCommandService {
 			&& node.path(field).intValue() == expected;
 	}
 
-	private void insertEvent(SourceSnapshotCommand command, String snapshotId) {
-		eventInsertTransaction.executeWithoutResult(status -> snapshotRepository.insertEvent(
+	private boolean insertEvent(SourceSnapshotCommand command, String snapshotId) {
+		Boolean inserted = eventInsertTransaction.execute(status -> snapshotRepository.insertEventIfAbsent(
 			"source-snapshot-event-" + UUID.randomUUID(),
 			command.sourceId(),
 			snapshotId,
@@ -159,6 +157,7 @@ public class DatapackSourceSnapshotCommandService {
 			command.idempotencyKey(),
 			LocalDateTime.now(clock)
 		));
+		return Boolean.TRUE.equals(inserted);
 	}
 
 	private static DataSourceSnapshot snapshotFrom(

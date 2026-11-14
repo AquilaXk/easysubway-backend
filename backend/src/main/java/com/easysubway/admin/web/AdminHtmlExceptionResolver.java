@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -71,6 +72,12 @@ class AdminHtmlExceptionResolver implements HandlerExceptionResolver, Ordered {
 					"대상을 찾을 수 없습니다",
 					error.getMessage(),
 					"목록으로 돌아가 최신 상태를 다시 확인해 주세요."
+				);
+				case AccessDeniedException error -> new AdminHtmlError(
+					HttpStatus.FORBIDDEN.value(),
+					"권한이 없습니다",
+					error.getMessage(),
+					"화면을 새로고침한 뒤 다시 시도해 주세요."
 				);
 				case ConflictException error -> new AdminHtmlError(
 					HttpStatus.CONFLICT.value(),

@@ -6,6 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -236,6 +237,7 @@ class AdminE2EFlowTest {
 		String reportId = createReport("중복 제출 E2E 신고");
 		MockHttpSession reportSession = new MockHttpSession();
 		String token = commandTokenFrom(getAdminHtml("/admin/reports/%s/page".formatted(reportId), reportSession, admin));
+		String token2 = commandTokenFrom(getAdminHtml("/admin/reports/%s/page".formatted(reportId), reportSession, admin));
 		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
 				.session(reportSession)
 				.with(admin)
@@ -244,12 +246,24 @@ class AdminE2EFlowTest {
 				.param("commandToken", token)
 				.param("decision", "ACCEPT"))
 			.andExpect(status().is3xxRedirection());
-		String conflictHtml = mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+		String replayedHtml = mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
 				.session(reportSession)
 				.with(admin)
 				.with(csrf())
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("commandToken", token)
+				.param("decision", "REJECT"))
+			.andExpect(status().isForbidden())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertAdminErrorShell(replayedHtml, "권한이 없습니다", "상태 코드 403");
+		String conflictHtml = mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+				.session(reportSession)
+				.with(admin)
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token2)
 				.param("decision", "REJECT"))
 			.andExpect(status().isConflict())
 			.andReturn()
@@ -274,6 +288,52 @@ class AdminE2EFlowTest {
 			.contains("role=\"alert\"")
 			.contains("입력값을 확인해 주세요")
 			.contains("시설 상태를 선택해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("세션 인증 JSON 상태변경 요청도 X-Command-Token 없으면 403, 유효 토큰이면 통과, 재사용은 403이다")
+	void sessionAuthenticatedJsonMutationsRequireSingleUseCommandToken() throws Exception {
+		MvcResult loginResult = mockMvc.perform(formLogin("/admin/login")
+				.user("admin-user")
+				.password("admin-test-password"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/dashboard/page"))
+			.andReturn();
+		MockHttpSession session = sessionFrom(loginResult);
+
+		String facilitiesHtml = mockMvc.perform(get("/admin/facilities/page")
+				.session(session))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		String commandToken = commandTokenFrom(facilitiesHtml);
+
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.session(session)
+				.with(csrf())
+				.accept(MediaType.APPLICATION_JSON)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"BROKEN\"}"))
+			.andExpect(status().isForbidden());
+
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.session(session)
+				.with(csrf())
+				.header("X-Command-Token", commandToken)
+				.accept(MediaType.APPLICATION_JSON)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"BROKEN\"}"))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.session(session)
+				.with(csrf())
+				.header("X-Command-Token", commandToken)
+				.accept(MediaType.APPLICATION_JSON)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"status\":\"AVAILABLE\"}"))
+			.andExpect(status().isForbidden());
 	}
 
 	private String createReport(String description) throws Exception {

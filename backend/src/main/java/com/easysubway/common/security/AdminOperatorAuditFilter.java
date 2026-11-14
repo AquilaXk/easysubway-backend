@@ -5,6 +5,7 @@ import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.error.CorrelationId;
+import com.easysubway.common.web.TrustedClientIpResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,14 +30,24 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 	private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 	private final AdminAuditEventRepository auditEventRepository;
 	private final Clock clock;
+	private final TrustedClientIpResolver clientIpResolver;
 
 	AdminOperatorAuditFilter(AdminAuditEventRepository auditEventRepository) {
-		this(auditEventRepository, Clock.systemUTC());
+		this(auditEventRepository, Clock.systemUTC(), TrustedClientIpResolver.directOnly());
 	}
 
 	AdminOperatorAuditFilter(AdminAuditEventRepository auditEventRepository, Clock clock) {
+		this(auditEventRepository, clock, TrustedClientIpResolver.directOnly());
+	}
+
+	AdminOperatorAuditFilter(
+		AdminAuditEventRepository auditEventRepository,
+		Clock clock,
+		TrustedClientIpResolver clientIpResolver
+	) {
 		this.auditEventRepository = auditEventRepository;
 		this.clock = clock;
+		this.clientIpResolver = clientIpResolver == null ? TrustedClientIpResolver.directOnly() : clientIpResolver;
 	}
 
 	@Override
@@ -156,20 +167,12 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 		return trimmed;
 	}
 
-	private static String clientIp(HttpServletRequest request) {
-		String forwardedFor = request.getHeader("X-Forwarded-For");
-		if (forwardedFor != null && !forwardedFor.isBlank()) {
-			return forwardedFor.split(",", 2)[0].trim();
-		}
-		return request.getRemoteAddr();
+	private String clientIp(HttpServletRequest request) {
+		return clientIpResolver.resolve(request);
 	}
 
 	private static String userAgent(HttpServletRequest request) {
-		String value = request.getHeader("User-Agent");
-		if (value == null || value.isBlank()) {
-			return "missing";
-		}
-		return value.length() > 300 ? value.substring(0, 300) : value;
+		return TrustedClientIpResolver.sanitizeUserAgent(request.getHeader("User-Agent"));
 	}
 
 	private static AdminAuditOutcome auditOutcome(HttpServletResponse response, Exception failure) {

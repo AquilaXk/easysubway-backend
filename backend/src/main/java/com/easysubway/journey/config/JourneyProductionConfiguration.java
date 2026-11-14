@@ -108,14 +108,31 @@ public class JourneyProductionConfiguration {
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	JourneyCandidateCanaryService journeyCandidateCanaryService(
 		RouteBundleActivationRegistry registry,
-		ScanWorkspacePool workspacePool
+		ScanWorkspacePool workspacePool,
+		ObjectProvider<com.easysubway.transit.application.port.out.FacilityOperationalStatusStore> statusStoreProvider,
+		ObjectProvider<com.easysubway.journey.application.FacilityAvailabilityPort> facilityAvailabilityPortProvider,
+		@Value("${easysubway.journey.facility-status.required:false}") boolean facilityStatusRequired
 	) {
+		com.easysubway.transit.application.port.out.FacilityOperationalStatusStore statusStore =
+			statusStoreProvider.getIfAvailable();
+		com.easysubway.journey.application.FacilityAvailabilityPort configuredPort =
+			facilityAvailabilityPortProvider.getIfAvailable();
+		com.easysubway.journey.application.FacilityAvailabilityPort canaryFacilityAvailabilityPort;
+		if (statusStore != null && (configuredPort == null
+			|| configuredPort instanceof com.easysubway.transit.adapter.out.bundle.ActiveRouteBundleFacilityAvailabilityAdapter)) {
+			canaryFacilityAvailabilityPort = com.easysubway.transit.adapter.out.bundle
+				.ActiveRouteBundleFacilityAvailabilityAdapter.forCandidate(registry, statusStore);
+		} else if (configuredPort != null) {
+			canaryFacilityAvailabilityPort = configuredPort;
+		} else {
+			canaryFacilityAvailabilityPort = com.easysubway.journey.application.FacilityAvailabilityPort.unavailable();
+		}
 		return new JourneyCandidateCanaryService(
 			registry,
 			new JourneyRaptorAdapter(
 				workspacePool,
-				com.easysubway.journey.application.FacilityAvailabilityPort.unavailable(),
-				false,
+				canaryFacilityAvailabilityPort,
+				facilityStatusRequired,
 				CLOCK),
 			CLOCK);
 	}

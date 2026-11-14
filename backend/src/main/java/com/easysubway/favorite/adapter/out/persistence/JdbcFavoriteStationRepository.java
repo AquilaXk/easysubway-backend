@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ public class JdbcFavoriteStationRepository implements
 	DeleteUserFavoriteStationPort {
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcFavoriteStationRepository(DataSource dataSource) {
@@ -93,6 +95,10 @@ public class JdbcFavoriteStationRepository implements
 	@Override
 	@Transactional
 	public FavoriteStation saveFavoriteStation(FavoriteStation favoriteStation) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			upsertFavoriteStationWithPostgresql(favoriteStation);
+			return favoriteStation;
+		}
 		if (updateFavoriteStation(favoriteStation) == 0) {
 			try {
 				insertFavoriteStation(favoriteStation);
@@ -102,6 +108,24 @@ public class JdbcFavoriteStationRepository implements
 			}
 		}
 		return favoriteStation;
+	}
+
+	private void upsertFavoriteStationWithPostgresql(FavoriteStation favoriteStation) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO favorite_stations (
+					user_id,
+					station_id,
+					added_at
+				)
+				VALUES (?, ?, ?)
+				ON CONFLICT (user_id, station_id) DO UPDATE SET
+					added_at = EXCLUDED.added_at
+				""",
+			favoriteStation.userId(),
+			favoriteStation.stationId(),
+			favoriteStation.addedAt()
+		);
 	}
 
 	@Override
@@ -162,5 +186,24 @@ public class JdbcFavoriteStationRepository implements
 			resultSet.getString("station_id"),
 			resultSet.getObject("added_at", LocalDateTime.class)
 		);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

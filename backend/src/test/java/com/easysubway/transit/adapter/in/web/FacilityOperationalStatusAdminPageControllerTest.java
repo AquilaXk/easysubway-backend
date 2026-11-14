@@ -173,15 +173,15 @@ class FacilityOperationalStatusAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("CSRF는 있고 command token은 없는 POST는 409이고 상태 행 변화 없음")
-	void missingCommandTokenWithValidCsrfIsRejectedWithConflict() throws Exception {
+	@DisplayName("CSRF는 있고 command token은 없는 POST는 403이고 상태 행 변화 없음")
+	void missingCommandTokenWithValidCsrfIsRejectedWithForbidden() throws Exception {
 		mockMvc.perform(post(VERIFY)
 				.with(httpBasic("admin-test", "admin-test-password"))
 				.with(csrf())
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("facilityId", EXIT_1)
 				.param("state", "OUT_OF_SERVICE"))
-			.andExpect(status().isConflict());
+			.andExpect(status().isForbidden());
 
 		assertThat(store.loadStatuses()).isEmpty();
 	}

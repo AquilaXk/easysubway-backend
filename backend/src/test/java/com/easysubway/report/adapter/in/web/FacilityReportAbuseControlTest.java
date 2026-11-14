@@ -223,9 +223,9 @@ class FacilityReportAbuseControlTest {
 	@Test
 	@DisplayName("CIDR parser는 slash가 여러 개인 trusted proxy 값을 거부한다")
 	void cidrParserRejectsMultipleSlashSyntax() {
-		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/8/extra"))
+		assertThatThrownBy(() -> new FacilityReportClientIdentityResolver("10.0.0.0/8/extra"))
 			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("invalid IPv4 CIDR");
+			.hasMessageContaining("invalid IP CIDR");
 	}
 
 	@Test
@@ -378,56 +378,20 @@ class FacilityReportAbuseControlTest {
 	}
 
 	@Test
-	@DisplayName("CIDR 및 IP 파서의 에러 및 엣지 케이스가 규약대로 동작한다")
+	@DisplayName("IP 파서의 에러 및 엣지 케이스가 규약대로 동작한다")
 	void cidrAndIpParserEdgeCases() {
-		// IpCidr.parse edge cases
-		assertThatThrownBy(() -> IpCidr.parse(""))
+		assertThatThrownBy(() -> com.easysubway.common.web.TrustedClientIpResolver.fromCidrs("/24"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> IpCidr.parse("/24"))
+		assertThatThrownBy(() -> com.easysubway.common.web.TrustedClientIpResolver.fromCidrs("invalid-ip/24"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> IpCidr.parse("invalid-ip/24"))
+		assertThatThrownBy(() -> com.easysubway.common.web.TrustedClientIpResolver.fromCidrs("10.0.0.0/abc"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/abc"))
+		assertThatThrownBy(() -> com.easysubway.common.web.TrustedClientIpResolver.fromCidrs("10.0.0.0/-1"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/-1"))
+		assertThatThrownBy(() -> com.easysubway.common.web.TrustedClientIpResolver.fromCidrs("10.0.0.0/33"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/33"))
+		assertThatThrownBy(() -> com.easysubway.common.web.TrustedClientIpResolver.fromCidrs("2001:db8::/129"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> IpCidr.parse("2001:db8::/129"))
-			.isInstanceOf(IllegalArgumentException.class);
-
-		// IpCidr.parse without prefix defaults
-		IpCidr ipv4Default = IpCidr.parse("192.168.1.1");
-		assertThat(ipv4Default.prefixLength()).isEqualTo(32);
-		IpCidr ipv6Default = IpCidr.parse("2001:db8::1");
-		assertThat(ipv6Default.prefixLength()).isEqualTo(128);
-
-		// IpCidr.contains edge cases
-		IpCidr unaligned = IpCidr.parse("192.168.1.16/28");
-		assertThat(unaligned.contains("192.168.1.20")).isTrue();
-		assertThat(unaligned.contains("192.168.1.35")).isFalse();
-		assertThat(unaligned.contains(null)).isFalse();
-		assertThat(unaligned.contains("unknown")).isFalse();
-		assertThat(unaligned.contains("2001:db8::1")).isFalse();
-		assertThat(unaligned.contains("invalid-address")).isFalse();
-
-		// IpCidr.isValidIp
-		assertThat(IpCidr.isValidIp("192.168.1.1")).isTrue();
-		assertThat(IpCidr.isValidIp("2001:db8::1")).isTrue();
-		assertThat(IpCidr.isValidIp("invalid-ip")).isFalse();
-
-		// IpCidr equals, hashCode, toString, address
-		IpCidr cidrA = IpCidr.parse("192.168.1.0/24");
-		IpCidr cidrB = IpCidr.parse("192.168.1.0/24");
-		IpCidr cidrC = IpCidr.parse("192.168.2.0/24");
-		assertThat(cidrA).isEqualTo(cidrA);
-		assertThat(cidrA).isEqualTo(cidrB);
-		assertThat(cidrA.hashCode()).isEqualTo(cidrB.hashCode());
-		assertThat(cidrA).isNotEqualTo(cidrC);
-		assertThat(cidrA).isNotEqualTo(null);
-		assertThat(cidrA).isNotEqualTo("other-type");
-		assertThat(cidrA.toString()).contains("prefixLength=24");
-		assertThat(cidrA.address()).isEqualTo(cidrB.address());
 
 		// normalizeAddress edge cases
 		assertThat(FacilityReportClientIdentityResolver.normalizeAddress(null)).isEqualTo("unknown");
@@ -455,6 +419,45 @@ class FacilityReportAbuseControlTest {
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1.2..4"))
 			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	@DisplayName("limiter는 엔드포인트 그룹별 O(1) LRU 상한과 주기적 만료 정리를 독립 적용한다")
+	void limiterIsolatesPerGroupLruUpToMaxKeysPerGroup() {
+		var cappedPolicy = new FacilityReportAbuseControlPolicy(
+			60,
+			FacilityReportAbuseControlLimiter.MAX_KEYS_PER_GROUP + 500,
+			"local",
+			completeLimits(1)
+		);
+		var cappedLimiter = new FacilityReportAbuseControlLimiter(
+			cappedPolicy,
+			Clock.fixed(Instant.parse("2026-06-22T00:00:00Z"), ZoneOffset.UTC)
+		);
+		assertThat(cappedLimiter.maxKeysPerGroup()).isEqualTo(FacilityReportAbuseControlLimiter.MAX_KEYS_PER_GROUP);
+
+		AtomicLong epoch = new AtomicLong(1000);
+		Clock mutableClock = new Clock() {
+			@Override public ZoneId getZone() { return ZoneOffset.UTC; }
+			@Override public Clock withZone(ZoneId zone) { return this; }
+			@Override public Instant instant() { return Instant.ofEpochSecond(epoch.get()); }
+		};
+		var groupLimiter = new FacilityReportAbuseControlLimiter(
+			new FacilityReportAbuseControlPolicy(60, 2, "local", completeLimits(10)),
+			mutableClock
+		);
+		assertThat(groupLimiter.acquire(ReportAbuseGroup.STATUS, "c1").allowed()).isTrue();
+		assertThat(groupLimiter.acquire(ReportAbuseGroup.STATUS, "c2").allowed()).isTrue();
+		assertThat(groupLimiter.acquire(ReportAbuseGroup.STATUS, "c3").allowed()).isFalse();
+		assertThat(groupLimiter.acquire(ReportAbuseGroup.CONFIRM, "c3").allowed()).isTrue();
+		assertThat(groupLimiter.groupSize(ReportAbuseGroup.STATUS)).isEqualTo(2);
+		assertThat(groupLimiter.groupSize(ReportAbuseGroup.CONFIRM)).isEqualTo(1);
+
+		epoch.addAndGet(65);
+		for (int i = 0; i < 70; i++) {
+			groupLimiter.acquire(ReportAbuseGroup.STATUS, "c2");
+		}
+		assertThat(groupLimiter.groupSize(ReportAbuseGroup.STATUS)).isEqualTo(1);
 	}
 
 	@Test

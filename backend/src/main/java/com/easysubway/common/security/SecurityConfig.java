@@ -12,12 +12,17 @@ import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
 import com.easysubway.common.time.BusinessTime;
+import com.easysubway.common.web.TrustedClientIpResolver;
 import jakarta.servlet.DispatcherType;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -607,14 +612,12 @@ public class SecurityConfig {
 	RememberMeServices adminRememberMeServices(
 		UserDetailsService userDetailsService,
 		@Value("${easysubway.admin.remember-me.key:}") String key,
+		@Value("${easysubway.admin.password:}") String adminPassword,
 		Environment environment
 	) {
 		boolean production = Arrays.asList(environment.getActiveProfiles()).contains("prod");
-		if (production && (key.isBlank() || key.length() < 32)) {
-			throw new IllegalStateException("운영 관리자 로그인 유지 서명 키는 32자 이상이어야 합니다.");
-		}
 		var services = new TokenBasedRememberMeServices(
-			key.isBlank() ? UUID.randomUUID().toString() : key,
+			resolveRememberMeKey(key, adminPassword, production),
 			userDetailsService
 		);
 		services.setCookieName("admin-remember-me");
@@ -626,9 +629,47 @@ public class SecurityConfig {
 		return services;
 	}
 
+	static String resolveRememberMeKey(String configuredKey, String fallbackSecret, boolean production) {
+		if (production) {
+			if (configuredKey == null || configuredKey.isBlank() || configuredKey.length() < 32) {
+				throw new IllegalStateException("운영 관리자 로그인 유지 서명 키는 32자 이상이어야 합니다.");
+			}
+			return configuredKey;
+		}
+		if (configuredKey != null && !configuredKey.isBlank()) {
+			return configuredKey;
+		}
+		String secret = (fallbackSecret == null || fallbackSecret.isBlank())
+			? UUID.randomUUID().toString()
+			: fallbackSecret;
+		return deriveRememberMeKey(secret);
+	}
+
+	static String deriveRememberMeKey(String secret) {
+		try {
+			MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+			byte[] digest = sha256.digest(
+				("easysubway-admin-remember-me:" + secret).getBytes(StandardCharsets.UTF_8)
+			);
+			return HexFormat.of().formatHex(digest);
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 unavailable", exception);
+		}
+	}
+
 	@Bean
-	AdminOperatorAuditFilter adminOperatorAuditFilter(AdminAuditEventRepository auditEventRepository) {
-		return new AdminOperatorAuditFilter(auditEventRepository);
+	TrustedClientIpResolver trustedClientIpResolver(Environment environment) {
+		return TrustedClientIpResolver.fromCidrs(
+			environment.getProperty("easysubway.auth.client-ip.trusted-proxies", "")
+		);
+	}
+
+	@Bean
+	AdminOperatorAuditFilter adminOperatorAuditFilter(
+		AdminAuditEventRepository auditEventRepository,
+		TrustedClientIpResolver trustedClientIpResolver
+	) {
+		return new AdminOperatorAuditFilter(auditEventRepository, Clock.systemUTC(), trustedClientIpResolver);
 	}
 
 	private void configureBasicAuth(HttpSecurity http, boolean basicAuthEnabled) throws Exception {

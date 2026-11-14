@@ -21,7 +21,12 @@ import org.springframework.util.Assert;
 
 public class AdminOperatorLockoutAuthenticationProvider implements AuthenticationProvider {
 
+	private static final String FALLBACK_DUMMY_BCRYPT =
+		"{bcrypt}$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG";
+
 	private final DaoAuthenticationProvider delegate = new DaoAuthenticationProvider();
+	private final PasswordEncoder passwordEncoder;
+	private final String dummyEncodedPassword;
 	private final AdminIdentityRepository adminIdentityRepository;
 	private final int maxFailures;
 	private final Duration lockoutDuration;
@@ -37,6 +42,8 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 	) {
 		Assert.isTrue(maxFailures > 0, "maxFailures must be positive");
 		Assert.isTrue(!lockoutDuration.isNegative() && !lockoutDuration.isZero(), "lockoutDuration must be positive");
+		this.passwordEncoder = passwordEncoder;
+		this.dummyEncodedPassword = initializeDummyEncodedPassword(passwordEncoder);
 		this.delegate.setUserDetailsService(userDetailsService);
 		this.delegate.setPasswordEncoder(passwordEncoder);
 		this.adminIdentityRepository = adminIdentityRepository;
@@ -54,7 +61,7 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 		}
 
 		try {
-			rejectIfLocked(identity.get());
+			rejectIfLocked(identity.get(), authentication);
 			Authentication result = delegate.authenticate(authentication);
 			recordSuccess(identity.get());
 			return result;
@@ -72,10 +79,21 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 		return delegate.supports(authentication);
 	}
 
-	private void rejectIfLocked(AdminIdentity identity) {
+	private void rejectIfLocked(AdminIdentity identity, Authentication authentication) {
 		if (identity.lockedAt(LocalDateTime.now(clock))) {
+			Object credentials = authentication.getCredentials();
+			String presentedPassword = credentials == null ? "" : credentials.toString();
+			passwordEncoder.matches(presentedPassword, dummyEncodedPassword);
 			throw new LockedException("관리자 인증 실패 횟수가 초과되었습니다.");
 		}
+	}
+
+	private static String initializeDummyEncodedPassword(PasswordEncoder passwordEncoder) {
+		String encoded = passwordEncoder.encode("easysubway-lockout-timing-guard");
+		if (encoded == null || encoded.isBlank()) {
+			return FALLBACK_DUMMY_BCRYPT;
+		}
+		return encoded;
 	}
 
 	private void recordFailure(AdminIdentity identity) {

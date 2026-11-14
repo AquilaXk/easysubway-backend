@@ -357,7 +357,7 @@ final class ReverseTimetableRaptorPlanner {
 		/** 패턴·하차 위치마다 그 앞 승차 위치들의 최소 선행 승차 수(출발역 승차는 0). */
 		private final int[][] ridesBeforeAlight;
 		private final PriorityQueue<QueueEntry> queue = new PriorityQueue<>(QUEUE_ORDER);
-		private final Map<ReverseStateKey, List<ReverseLabel>> labelsByState = new HashMap<>();
+		private final PrimitiveLongObjectMap<List<ReverseLabel>> labelsByState = new PrimitiveLongObjectMap<>(256);
 		private final List<Candidate> candidates = new ArrayList<>();
 		private long sequence;
 		private long latestReadyAt = Long.MIN_VALUE;
@@ -627,11 +627,12 @@ final class ReverseTimetableRaptorPlanner {
 		) {
 			int departure = patternTrips.departureSeconds(index, board);
 			int station = stops[board];
-			TraceRide ride = new TraceRide(patternTrips.trip(index), board, alight);
+			DatedScheduledTrip datedTrip = patternTrips.trip(index);
 			if (station == origin) {
 				// #454: 출발역 승강장에서 바로 탄다. 준비 시각 = 출발 - 승차 여유(진입 간선·시간 없음).
 				int readyAt = departure - query.boardingSlackSeconds();
 				if (readyAt < query.earliestReadyAtSeconds()) return;
+				TraceRide ride = new TraceRide(datedTrip, board, alight);
 				List<TraceLeg> legs = new ArrayList<>();
 				legs.add(ride);
 				if (access != null) legs.add(access);
@@ -655,26 +656,56 @@ final class ReverseTimetableRaptorPlanner {
 				return;
 			}
 			if (transfersUsed >= query.maxTransfers()) return;
-			int line = timetable.lineIndex(patternTrips.trip(index).lineId(board));
+			int line = timetable.lineIndex(datedTrip.lineId(board));
 			if (line < 0) return;
 			if ((long) transfersUsed + ridesBefore(station, line) > query.maxTransfers()) {
 				limits.count(JourneyRaptorPruningInventoryV1.PROFILE_TRANSFER_BUDGET);
 				return;
 			}
-			ReverseLabel label = new ReverseLabel(new ReverseStateKey(transfersUsed, station, line,
-				trips.blockedGroup(patternTrips.trip(index).realtimeOverlay())), departure, arrivalAtDestination,
-				accessSeconds, accessMeters, stairs, slack, potential, ride, access, parent);
-			if (admit(label)) queue.add(new QueueEntry(potential, sequence++, null, label));
+			long stateKey = packReverseStateKey(
+				transfersUsed, station, line, trips.blockedGroup(datedTrip.realtimeOverlay()));
+			admitAndEnqueue(stateKey, datedTrip, board, alight, departure, arrivalAtDestination,
+				accessSeconds, accessMeters, stairs, slack, potential, access, parent);
 		}
 
-		private boolean admit(ReverseLabel candidate) {
+		@SuppressWarnings("java:S107")
+		private void admitAndEnqueue(
+			long stateKey,
+			DatedScheduledTrip datedTrip,
+			int board,
+			int alight,
+			int departure,
+			int arrivalAtDestination,
+			long accessSeconds,
+			long accessMeters,
+			long stairs,
+			long slack,
+			long potential,
+			TraceAccess access,
+			ReverseLabel parent
+		) {
 			limits.consumeWork();
-			List<ReverseLabel> labels = labelsByState.computeIfAbsent(candidate.stateKey(), ignored -> new ArrayList<>(4));
-			// 한 번 훑으며 (1) 창 시작이 올라 창 밖이 된 라벨을 비우고(창 안 라벨을 지배할 수 없음: 출발이 더 이름)
-			// (2) 후보를 지배하는 라벨이 있으면 거절하고 (3) 후보가 지배하는 라벨을 뺀다. 파레토 집합 안에서는 후보를
-			// 지배하는 라벨과 후보가 지배하는 라벨이 함께 있을 수 없으므로(추이성) 거절될 후보는 아무것도 빼지 않는다.
+			List<ReverseLabel> labels = labelsByState.get(stateKey);
+			if (labels == null) {
+				TraceRide ride = new TraceRide(datedTrip, board, alight);
+				ReverseLabel label = new ReverseLabel(stateKey, departure, arrivalAtDestination,
+					accessSeconds, accessMeters, stairs, slack, potential, ride, access, parent, null);
+				labels = new ArrayList<>(4);
+				labels.add(label);
+				labelsByState.put(stateKey, labels);
+				limits.observeStateLabels(1);
+				if (1 > limits.maxLabelsPerState()) {
+					limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
+					throw new ReversePlanningLimitException(PlanningLimit.MAX_LABELS_PER_STATE,
+						1, limits.maxLabelsPerState());
+				}
+				queue.add(new QueueEntry(potential, sequence++, null, label));
+				return;
+			}
+			// 지배 판정을 먼저 수행해 지배되는 후보의 TraceRide·ReverseLabel·ArrayList 할당을 생략한다.
 			int kept = 0;
 			boolean rejected = false;
+			String candidateTraceKey = null;
 			for (int read = 0; read < labels.size(); read += 1) {
 				ReverseLabel existing = labels.get(read);
 				if (existing.potential() < windowStart) {
@@ -682,33 +713,50 @@ final class ReverseTimetableRaptorPlanner {
 					continue;
 				}
 				if (!rejected) {
-					if (dominates(existing, candidate)) {
+					if (dominatesValues(
+						existing.departure(), existing.arrivalAtDestination(),
+						existing.accessSeconds(), existing.accessMeters(), existing.stairs(), existing.slack(),
+						departure, arrivalAtDestination, accessSeconds, accessMeters, stairs, slack)) {
 						limits.count("REVERSE_STATE_DOMINANCE_V1");
 						rejected = true;
-					} else if (sameVector(existing, candidate)) {
+					} else if (sameVectorValues(
+						existing.departure(), existing.arrivalAtDestination(),
+						existing.accessSeconds(), existing.accessMeters(), existing.stairs(), existing.slack(),
+						departure, arrivalAtDestination, accessSeconds, accessMeters, stairs, slack)) {
 						limits.count("REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
-						if (existing.traceKey().compareTo(candidate.traceKey()) <= 0) {
+						if (candidateTraceKey == null) {
+							candidateTraceKey = buildTraceKey(datedTrip, board, alight, access, parent);
+						}
+						if (existing.traceKey().compareTo(candidateTraceKey) <= 0) {
 							rejected = true;
 						} else {
 							continue;
 						}
-					} else if (dominates(candidate, existing)) {
+					} else if (dominatesValues(
+						departure, arrivalAtDestination, accessSeconds, accessMeters, stairs, slack,
+						existing.departure(), existing.arrivalAtDestination(),
+						existing.accessSeconds(), existing.accessMeters(), existing.stairs(), existing.slack())) {
 						limits.count("REVERSE_STATE_DOMINANCE_V1");
 						continue;
 					}
 				}
 				labels.set(kept++, existing);
 			}
-			labels.subList(kept, labels.size()).clear();
-			if (rejected) return false;
-			labels.add(candidate);
+			if (kept < labels.size()) {
+				labels.subList(kept, labels.size()).clear();
+			}
+			if (rejected) return;
+			TraceRide ride = new TraceRide(datedTrip, board, alight);
+			ReverseLabel label = new ReverseLabel(stateKey, departure, arrivalAtDestination,
+				accessSeconds, accessMeters, stairs, slack, potential, ride, access, parent, candidateTraceKey);
+			labels.add(label);
 			limits.observeStateLabels(labels.size());
 			if (labels.size() > limits.maxLabelsPerState()) {
 				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 				throw new ReversePlanningLimitException(PlanningLimit.MAX_LABELS_PER_STATE,
 					labels.size(), limits.maxLabelsPerState());
 			}
-			return true;
+			queue.add(new QueueEntry(potential, sequence++, null, label));
 		}
 
 		private boolean isCurrent(ReverseLabel label) {
@@ -720,28 +768,66 @@ final class ReverseTimetableRaptorPlanner {
 			return false;
 		}
 
-		private static boolean dominates(ReverseLabel left, ReverseLabel right) {
-			return left.departure() >= right.departure()
-				&& left.arrivalAtDestination() <= right.arrivalAtDestination()
-				&& left.accessSeconds() <= right.accessSeconds()
-				&& left.accessMeters() <= right.accessMeters()
-				&& left.stairs() <= right.stairs()
-				&& left.slack() >= right.slack()
-				&& (left.departure() > right.departure()
-					|| left.arrivalAtDestination() < right.arrivalAtDestination()
-					|| left.accessSeconds() < right.accessSeconds()
-					|| left.accessMeters() < right.accessMeters()
-					|| left.stairs() < right.stairs()
-					|| left.slack() > right.slack());
+		private static long packReverseStateKey(int transfersUsed, int station, int line, int blockedGroup) {
+			if ((transfersUsed & ~0x3F) != 0
+				|| blockedGroup < 0 || blockedGroup >= (1 << 12)
+				|| station < 0 || station >= (1 << 23)
+				|| line < 0 || line >= (1 << 22)) {
+				throw new IllegalArgumentException(
+					"Reverse state key out of packed range: transfersUsed=" + transfersUsed
+						+ ", station=" + station + ", line=" + line + ", blockedGroup=" + blockedGroup);
+			}
+			return ((long) transfersUsed << 57)
+				| ((long) blockedGroup << 45)
+				| ((long) station << 22)
+				| line;
 		}
 
-		private static boolean sameVector(ReverseLabel left, ReverseLabel right) {
-			return left.departure() == right.departure()
-				&& left.arrivalAtDestination() == right.arrivalAtDestination()
-				&& left.accessSeconds() == right.accessSeconds()
-				&& left.accessMeters() == right.accessMeters()
-				&& left.stairs() == right.stairs()
-				&& left.slack() == right.slack();
+		private static String buildTraceKey(
+			DatedScheduledTrip trip, int board, int alight, TraceAccess access, ReverseLabel parent
+		) {
+			StringBuilder key = new StringBuilder();
+			key.append("/r:").append(trip.serviceDate()).append(':').append(trip.index())
+				.append(':').append(board).append(':').append(alight);
+			if (access != null) {
+				key.append("/a:").append(access.transition());
+			}
+			if (parent != null) {
+				key.append(parent.traceKey());
+			}
+			return key.toString();
+		}
+
+		@SuppressWarnings("java:S107")
+		private static boolean dominatesValues(
+			int leftDep, int leftArr, long leftAccessSec, long leftAccessMeters, long leftStairs, long leftSlack,
+			int rightDep, int rightArr, long rightAccessSec, long rightAccessMeters, long rightStairs, long rightSlack
+		) {
+			return leftDep >= rightDep
+				&& leftArr <= rightArr
+				&& leftAccessSec <= rightAccessSec
+				&& leftAccessMeters <= rightAccessMeters
+				&& leftStairs <= rightStairs
+				&& leftSlack >= rightSlack
+				&& (leftDep > rightDep
+					|| leftArr < rightArr
+					|| leftAccessSec < rightAccessSec
+					|| leftAccessMeters < rightAccessMeters
+					|| leftStairs < rightStairs
+					|| leftSlack > rightSlack);
+		}
+
+		@SuppressWarnings("java:S107")
+		private static boolean sameVectorValues(
+			int leftDep, int leftArr, long leftAccessSec, long leftAccessMeters, long leftStairs, long leftSlack,
+			int rightDep, int rightArr, long rightAccessSec, long rightAccessMeters, long rightStairs, long rightSlack
+		) {
+			return leftDep == rightDep
+				&& leftArr == rightArr
+				&& leftAccessSec == rightAccessSec
+				&& leftAccessMeters == rightAccessMeters
+				&& leftStairs == rightStairs
+				&& leftSlack == rightSlack;
 		}
 	}
 
@@ -751,17 +837,9 @@ final class ReverseTimetableRaptorPlanner {
 	private record QueueEntry(long potential, long sequence, Seed seed, ReverseLabel label) {
 	}
 
-	/**
-	 * 상태 키. {@code blockedGroup}은 라벨 승차 열차의 운행일 overlay가 막는 전환 집합의 번호다(같은 집합이면 같은 번호).
-	 * 앞쪽 환승 판정은 앞 승차와 이 열차의 overlay 합집합으로 하므로, 차단 집합이 같은 라벨끼리만 지배를 비교해야
-	 * 정확하다(#461 리뷰 F1).
-	 */
-	private record ReverseStateKey(int transfersUsed, int station, int line, int blockedGroup) {
-	}
-
 	/** 승차 하나부터 도착역까지의 뒷부분 여정. 같은 상태 안 비교는 객체 동일성으로 한다. */
 	private static final class ReverseLabel {
-		private final ReverseStateKey stateKey;
+		private final long stateKey;
 		private final int departure;
 		private final int arrivalAtDestination;
 		private final long accessSeconds;
@@ -774,10 +852,11 @@ final class ReverseTimetableRaptorPlanner {
 		private final ReverseLabel parent;
 		private String traceKey;
 
+		@SuppressWarnings("java:S107")
 		private ReverseLabel(
-			ReverseStateKey stateKey, int departure, int arrivalAtDestination,
+			long stateKey, int departure, int arrivalAtDestination,
 			long accessSeconds, long accessMeters, long stairs, long slack, long potential,
-			TraceRide ride, TraceAccess access, ReverseLabel parent
+			TraceRide ride, TraceAccess access, ReverseLabel parent, String precomputedTraceKey
 		) {
 			this.stateKey = stateKey;
 			this.departure = departure;
@@ -790,12 +869,13 @@ final class ReverseTimetableRaptorPlanner {
 			this.ride = ride;
 			this.access = access;
 			this.parent = parent;
+			this.traceKey = precomputedTraceKey;
 		}
 
-		ReverseStateKey stateKey() { return stateKey; }
-		int transfersUsed() { return stateKey.transfersUsed(); }
-		int station() { return stateKey.station(); }
-		int line() { return stateKey.line(); }
+		long stateKey() { return stateKey; }
+		int transfersUsed() { return (int) ((stateKey >>> 57) & 0x3FL); }
+		int station() { return (int) ((stateKey >>> 22) & 0x7F_FFFFL); }
+		int line() { return (int) (stateKey & 0x3F_FFFFL); }
 		int departure() { return departure; }
 		int arrivalAtDestination() { return arrivalAtDestination; }
 		long accessSeconds() { return accessSeconds; }

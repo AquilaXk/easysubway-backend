@@ -13,6 +13,7 @@ import java.util.List;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Repository;
 public class JdbcErrorEventRepository implements ErrorEventRepository {
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcErrorEventRepository(DataSource dataSource) {
@@ -32,6 +34,10 @@ public class JdbcErrorEventRepository implements ErrorEventRepository {
 
 	@Override
 	public void upsertOccurrence(ErrorEvent event) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			upsertOccurrenceWithPostgresql(event);
+			return;
+		}
 		int updated = jdbcTemplate.update(
 			"""
 				UPDATE error_events
@@ -91,6 +97,34 @@ public class JdbcErrorEventRepository implements ErrorEventRepository {
 				event.pathPattern()
 			);
 		}
+	}
+
+	private void upsertOccurrenceWithPostgresql(ErrorEvent event) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO error_events (
+					first_occurred_at, last_occurred_at, code, category, http_status,
+					method, path_pattern, exception_class, stack_hash,
+					sample_correlation_id, occurrence_count
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (stack_hash, code, path_pattern) DO UPDATE SET
+					first_occurred_at = LEAST(error_events.first_occurred_at, EXCLUDED.first_occurred_at),
+					last_occurred_at = GREATEST(error_events.last_occurred_at, EXCLUDED.last_occurred_at),
+					sample_correlation_id = EXCLUDED.sample_correlation_id,
+					occurrence_count = error_events.occurrence_count + 1
+				""",
+			timestamp(event.firstOccurredAt()),
+			timestamp(event.lastOccurredAt()),
+			event.code(),
+			event.category(),
+			event.httpStatus(),
+			event.method(),
+			event.pathPattern(),
+			event.exceptionClass(),
+			event.stackHash(),
+			event.sampleCorrelationId(),
+			event.occurrenceCount()
+		);
 	}
 
 	@Override
@@ -186,5 +220,24 @@ public class JdbcErrorEventRepository implements ErrorEventRepository {
 	}
 
 	private record FilterSql(String sql, List<Object> args) {
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

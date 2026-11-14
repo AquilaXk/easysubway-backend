@@ -63,4 +63,26 @@ class AdminHtmlRequestTest {
 			assertThat(AdminHtmlRequest.matches(request)).isTrue();
 		}
 	}
+
+	@Test
+	@DisplayName("상태 변경 HTTP 메서드와 세션 인증 vs stateless Authorization 헤더를 정확히 구분한다")
+	void distinguishesStateChangingMethodsAndSessionAuthentication() {
+		for (String method : new String[] { "POST", "PUT", "PATCH", "DELETE" }) {
+			assertThat(AdminHtmlRequest.isStateChangingMethod(new MockHttpServletRequest(method, "/admin/notices"))).isTrue();
+		}
+		assertThat(AdminHtmlRequest.isStateChangingMethod(new MockHttpServletRequest("GET", "/admin/notices"))).isFalse();
+
+		MockHttpServletRequest sessionReq = new MockHttpServletRequest("POST", "/admin/notices");
+		sessionReq.setSession(new org.springframework.mock.web.MockHttpSession());
+		assertThat(AdminHtmlRequest.isSessionAuthenticated(sessionReq)).isTrue();
+
+		MockHttpServletRequest basicReq = new MockHttpServletRequest("POST", "/admin/notices");
+		basicReq.setSession(new org.springframework.mock.web.MockHttpSession());
+		basicReq.addHeader("Authorization", "Basic YWRtaW46c2VjcmV0");
+		assertThat(AdminHtmlRequest.isSessionAuthenticated(basicReq)).isFalse();
+
+		MockHttpServletRequest bearerReq = new MockHttpServletRequest("POST", "/admin/notices");
+		bearerReq.addHeader("Authorization", "Bearer wf-token");
+		assertThat(AdminHtmlRequest.isSessionAuthenticated(bearerReq)).isFalse();
+	}
 }

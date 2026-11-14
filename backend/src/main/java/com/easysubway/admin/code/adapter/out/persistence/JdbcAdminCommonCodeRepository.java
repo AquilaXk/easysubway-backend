@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Repository;
 public class JdbcAdminCommonCodeRepository implements AdminCommonCodeRepository {
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcAdminCommonCodeRepository(DataSource dataSource) {
@@ -74,6 +76,10 @@ public class JdbcAdminCommonCodeRepository implements AdminCommonCodeRepository 
 
 	@Override
 	public AdminCommonCode saveCode(AdminCommonCode code) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			upsertCodeWithPostgresql(code);
+			return code;
+		}
 		if (updateCode(code) == 0) {
 			try {
 				insertCode(code);
@@ -82,6 +88,49 @@ public class JdbcAdminCommonCodeRepository implements AdminCommonCodeRepository 
 			}
 		}
 		return code;
+	}
+
+	private void upsertCodeWithPostgresql(AdminCommonCode code) {
+		jdbcTemplate.update("""
+			INSERT INTO admin_common_codes (
+				group_code, code, display_name, description, sort_order, enabled, created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (group_code, code) DO UPDATE SET
+				display_name = EXCLUDED.display_name,
+				description = EXCLUDED.description,
+				sort_order = EXCLUDED.sort_order,
+				enabled = EXCLUDED.enabled,
+				updated_at = EXCLUDED.updated_at
+			""",
+			code.groupCode(),
+			code.code(),
+			code.displayName(),
+			code.description(),
+			code.sortOrder(),
+			code.enabled(),
+			code.createdAt(),
+			code.updatedAt()
+		);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 
 	private int updateCode(AdminCommonCode code) {

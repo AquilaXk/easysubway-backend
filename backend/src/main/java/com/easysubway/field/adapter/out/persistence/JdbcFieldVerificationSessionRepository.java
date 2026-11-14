@@ -8,7 +8,11 @@ import com.easysubway.field.domain.FieldVerificationStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +41,7 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 
 	@Override
 	public List<FieldVerificationSession> listAll() {
-		return jdbcTemplate.query(
+		List<SessionHeader> headers = jdbcTemplate.query(
 			"""
 				SELECT session_id,
 					station_id,
@@ -63,13 +67,14 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 				WHERE row_number = 1
 				ORDER BY verified_at DESC, station_id DESC, session_id ASC
 				""",
-			this::mapSession
+			this::mapSessionHeader
 		);
+		return attachItems(headers);
 	}
 
 	@Override
 	public Optional<FieldVerificationSession> findByStationId(String stationId) {
-		List<FieldVerificationSession> sessions = jdbcTemplate.query(
+		List<SessionHeader> headers = jdbcTemplate.query(
 			"""
 				SELECT session_id,
 					station_id,
@@ -83,10 +88,10 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 				ORDER BY verified_at DESC, session_id ASC
 				LIMIT 1
 				""",
-			this::mapSession,
+			this::mapSessionHeader,
 			stationId
 		);
-		return sessions.stream().findFirst();
+		return attachItems(headers).stream().findFirst();
 	}
 
 	@Override
@@ -97,7 +102,7 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 			return;
 		}
 		upsertSession(session);
-		session.items().forEach(item -> upsertItem(session, item));
+		upsertItemsWithPostgresql(session);
 	}
 
 	private void saveWithUpdateInsert(FieldVerificationSession session) {
@@ -259,42 +264,128 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 		);
 	}
 
-	private FieldVerificationSession mapSession(ResultSet resultSet, int rowNumber) throws SQLException {
-		String sessionId = resultSet.getString("session_id");
-		return new FieldVerificationSession(
-			sessionId,
+	private void upsertItemsWithPostgresql(FieldVerificationSession session) {
+		List<FieldVerificationItem> items = session.items();
+		if (items.isEmpty()) {
+			return;
+		}
+		List<Object[]> batchArgs = items.stream()
+			.map(item -> new Object[] {
+				item.id(),
+				session.id(),
+				item.type().name(),
+				item.targetName(),
+				item.status().name(),
+				item.note()
+			})
+			.toList();
+		jdbcTemplate.batchUpdate(
+			"""
+				INSERT INTO field_verification_items (
+					item_id,
+					session_id,
+					item_type,
+					target_name,
+					status,
+					note
+				)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT (item_id) DO UPDATE
+				SET session_id = EXCLUDED.session_id,
+					item_type = EXCLUDED.item_type,
+					target_name = EXCLUDED.target_name,
+					status = EXCLUDED.status,
+					note = EXCLUDED.note
+				""",
+			batchArgs
+		);
+	}
+
+	private SessionHeader mapSessionHeader(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new SessionHeader(
+			resultSet.getString("session_id"),
 			resultSet.getString("station_id"),
 			resultSet.getString("station_name"),
 			resultSet.getObject("verified_at", LocalDate.class),
 			resultSet.getString("verified_by"),
 			FieldVerificationStatus.valueOf(resultSet.getString("status")),
-			resultSet.getString("note"),
-			listItems(sessionId)
+			resultSet.getString("note")
 		);
 	}
 
-	private List<FieldVerificationItem> listItems(String sessionId) {
-		return jdbcTemplate.query(
-			"""
-				SELECT item_id,
-					item_type,
-					target_name,
-					status,
-					note
-				FROM field_verification_items
-				WHERE session_id = ?
-				ORDER BY CASE item_type
-					WHEN 'EXIT' THEN 1
-					WHEN 'ELEVATOR' THEN 2
-					WHEN 'ESCALATOR' THEN 3
-					WHEN 'RESTROOM' THEN 4
-					WHEN 'PLATFORM_TRANSFER' THEN 5
-					ELSE 99
-				END ASC, item_id ASC
-				""",
-			this::mapItem,
-			sessionId
-		);
+	private List<FieldVerificationSession> attachItems(List<SessionHeader> headers) {
+		if (headers.isEmpty()) {
+			return List.of();
+		}
+		List<String> sessionIds = headers.stream().map(SessionHeader::id).toList();
+		Map<String, List<FieldVerificationItem>> itemsBySessionId = loadItemsBySessionId(sessionIds);
+		return headers.stream()
+			.map(header -> new FieldVerificationSession(
+				header.id(),
+				header.stationId(),
+				header.stationName(),
+				header.verifiedAt(),
+				header.verifiedBy(),
+				header.status(),
+				header.note(),
+				itemsBySessionId.getOrDefault(header.id(), List.of())
+			))
+			.toList();
+	}
+
+	private record SessionHeader(
+		String id,
+		String stationId,
+		String stationName,
+		LocalDate verifiedAt,
+		String verifiedBy,
+		FieldVerificationStatus status,
+		String note
+	) {}
+
+	private Map<String, List<FieldVerificationItem>> loadItemsBySessionId(List<String> sessionIds) {
+		if (sessionIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, List<FieldVerificationItem>> grouped = new HashMap<>(sessionIds.size() * 2);
+		for (int start = 0; start < sessionIds.size(); start += 500) {
+			List<String> chunk = sessionIds.subList(start, Math.min(start + 500, sessionIds.size()));
+			String placeholders = String.join(", ", Collections.nCopies(chunk.size(), "?"));
+			jdbcTemplate.query(
+				"""
+					SELECT session_id,
+						item_id,
+						item_type,
+						target_name,
+						status,
+						note
+					FROM field_verification_items
+					WHERE session_id IN (""" + placeholders + """
+					)
+					ORDER BY session_id ASC,
+						CASE item_type
+							WHEN 'EXIT' THEN 1
+							WHEN 'ELEVATOR' THEN 2
+							WHEN 'ESCALATOR' THEN 3
+							WHEN 'RESTROOM' THEN 4
+							WHEN 'PLATFORM_TRANSFER' THEN 5
+							ELSE 99
+						END ASC,
+						item_id ASC
+					""",
+				resultSet -> {
+					while (resultSet.next()) {
+						String sessionId = resultSet.getString("session_id");
+						grouped.computeIfAbsent(sessionId, ignored -> new ArrayList<>())
+							.add(mapItem(resultSet, 0));
+					}
+					return null;
+				},
+				chunk.toArray()
+			);
+		}
+		grouped.replaceAll((ignored, items) -> List.copyOf(items));
+		return grouped;
 	}
 
 	private FieldVerificationItem mapItem(ResultSet resultSet, int rowNumber) throws SQLException {

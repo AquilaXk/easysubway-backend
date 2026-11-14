@@ -301,21 +301,28 @@ public class JdbcFavoriteRouteRepository implements
 	private void replaceRouteStations(FavoriteRoute favoriteRoute) {
 		deleteRouteStations(favoriteRoute.userId(), favoriteRoute.routeSearchId());
 		// 알림 대상 조회는 경로 본문 JSON을 매번 파싱하지 않도록 역 식별자만 별도 인덱스로 유지한다.
-		for (String stationId : routeStationIds(favoriteRoute.route())) {
-			jdbcTemplate.update(
-				"""
-					INSERT INTO favorite_route_stations (
-						user_id,
-						route_search_id,
-						station_id
-					)
-					VALUES (?, ?, ?)
-					""",
+		Set<String> stationIds = routeStationIds(favoriteRoute.route());
+		if (stationIds.isEmpty()) {
+			return;
+		}
+		List<Object[]> batchArgs = stationIds.stream()
+			.map(stationId -> new Object[] {
 				favoriteRoute.userId(),
 				favoriteRoute.routeSearchId(),
 				stationId
-			);
-		}
+			})
+			.toList();
+		jdbcTemplate.batchUpdate(
+			"""
+				INSERT INTO favorite_route_stations (
+					user_id,
+					route_search_id,
+					station_id
+				)
+				VALUES (?, ?, ?)
+				""",
+			batchArgs
+		);
 	}
 
 	private void deleteRouteStations(String userId, String routeSearchId) {

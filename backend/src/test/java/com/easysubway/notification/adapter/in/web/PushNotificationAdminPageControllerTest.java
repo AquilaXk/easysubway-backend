@@ -271,14 +271,14 @@ class PushNotificationAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("재발송은 command token 없이는 차단된다(중복·위조 방지)")
+	@DisplayName("재발송은 command token 없이는 403으로 차단된다(중복·위조 방지)")
 	void resendRequiresCommandToken() throws Exception {
 		mockMvc.perform(post("/admin/notifications/push/resend")
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("notificationIds", "push-x")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf()))
-			.andExpect(status().isConflict());
+			.andExpect(status().isForbidden());
 	}
 
 	@Test

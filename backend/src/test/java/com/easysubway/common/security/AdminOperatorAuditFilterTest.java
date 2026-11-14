@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import com.easysubway.common.web.TrustedClientIpResolver;
 import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.HttpSession;
 import java.util.regex.Matcher;
@@ -155,6 +156,49 @@ class AdminOperatorAuditFilterTest {
 			.contains("status=404")
 			.doesNotContain("https://storage.example/operator-upload")
 			.doesNotContain("operator-private-note");
+	}
+
+	@Test
+	@DisplayName("신뢰 프록시 검증과 User-Agent 제어문자 제거 및 256자 상한을 감사 필터에 적용한다")
+	void auditFilterValidatesClientIpAndSanitizesUserAgent() throws Exception {
+		var untrustedFilter = new AdminOperatorAuditFilter(
+			auditEventRepository,
+			java.time.Clock.systemUTC(),
+			TrustedClientIpResolver.fromCidrs("10.0.0.0/8")
+		);
+		var auth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+			"admin-test",
+			"N/A",
+			java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))
+		);
+		org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+		try {
+			var req1 = new MockHttpServletRequest("POST", "/admin/test-action");
+			req1.setRemoteAddr("198.51.100.77");
+			req1.addHeader("X-Forwarded-For", "203.0.113.99");
+			req1.addHeader("User-Agent", "TestAgent\r\nInjected: 1\t" + "Z".repeat(300));
+			untrustedFilter.doFilter(req1, new org.springframework.mock.web.MockHttpServletResponse(), new org.springframework.mock.web.MockFilterChain());
+
+			var event1 = auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1).getFirst();
+			assertThat(event1.clientIp()).isEqualTo("198.51.100.77");
+			assertThat(event1.userAgent())
+				.doesNotContain("\r")
+				.doesNotContain("\n")
+				.doesNotContain("\t")
+				.hasSize(256);
+
+			var req2 = new MockHttpServletRequest("POST", "/admin/test-action");
+			req2.setRemoteAddr("10.0.0.5");
+			req2.addHeader("X-Forwarded-For", "198.51.100.1, 203.0.113.55");
+			req2.addHeader("User-Agent", "\r\n\t\u0000\u007f");
+			untrustedFilter.doFilter(req2, new org.springframework.mock.web.MockHttpServletResponse(), new org.springframework.mock.web.MockFilterChain());
+
+			var event2 = auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1).getFirst();
+			assertThat(event2.clientIp()).isEqualTo("203.0.113.55");
+			assertThat(event2.userAgent()).isEqualTo("missing");
+		} finally {
+			org.springframework.security.core.context.SecurityContextHolder.clearContext();
+		}
 	}
 
 	private String createReport() throws Exception {

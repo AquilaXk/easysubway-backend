@@ -180,7 +180,7 @@ class TransitStationLayoutAdminPageControllerTest {
 				.param("commandToken", token)
 				.param("expectedVersion", "1")
 				.param("status", "PUBLISHED"))
-			.andExpect(status().isConflict())
+			.andExpect(status().isForbidden())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -188,7 +188,7 @@ class TransitStationLayoutAdminPageControllerTest {
 		String html = getAdminHtml("/admin/stations/station-sangnoksu/layouts/page", session);
 
 		assertThat(conflictHtml)
-			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("권한이 없습니다")
 			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
 		assertThat(html)
 			.contains("READY_FOR_REVIEW")

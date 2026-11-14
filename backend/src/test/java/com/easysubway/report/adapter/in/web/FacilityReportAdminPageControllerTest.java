@@ -417,7 +417,7 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("신고 검수 폼은 같은 command token 재전송을 409로 차단한다")
+	@DisplayName("신고 검수 폼은 같은 command token 재전송을 403으로 차단한다")
 	void reportReviewRejectsRepeatedCommandToken() throws Exception {
 		String reportId = createReport("중복 제출을 막을 신고");
 		MockHttpSession session = new MockHttpSession();
@@ -439,7 +439,7 @@ class FacilityReportAdminPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("commandToken", token)
 				.param("decision", "REJECT"))
-			.andExpect(status().isConflict())
+			.andExpect(status().isForbidden())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -447,7 +447,7 @@ class FacilityReportAdminPageControllerTest {
 		String detailHtml = getAdminHtml("/admin/reports/%s/page".formatted(reportId), session);
 
 		assertThat(conflictHtml)
-			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("권한이 없습니다")
 			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
 		assertThat(detailHtml)
 			.contains("반영됨")

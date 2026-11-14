@@ -122,6 +122,21 @@ class JdbcAdRepository implements AdRepository {
 	}
 
 	private void insertCreative(AdCreative creative) {
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			int inserted = jdbcTemplate.update("""
+				INSERT INTO ad_creatives (
+					id, placement_id, image_url, landing_url, advertiser_name,
+					alt_text, starts_at, ends_at, enabled
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (id) DO NOTHING
+				""",
+				creative.id(), creative.placementId(), creative.imageUrl(), creative.landingUrl(),
+				creative.advertiserName(), creative.altText(), creative.startsAt(), creative.endsAt(), creative.enabled());
+			if (inserted == 0) {
+				throw new DuplicateKeyException("Duplicate ad creative id: " + creative.id());
+			}
+			return;
+		}
 		jdbcTemplate.update("""
 			INSERT INTO ad_creatives (
 				id, placement_id, image_url, landing_url, advertiser_name,

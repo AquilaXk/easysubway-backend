@@ -134,6 +134,10 @@ public class JdbcPushNotificationOutboxRepository implements
 
 	@Override
 	public PushNotification savePushNotification(PushNotification notification) {
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			upsertPushNotificationWithPostgresql(notification);
+			return notification;
+		}
 		if (updatePushNotification(notification) == 0) {
 			try {
 				insertPushNotification(notification);
@@ -142,6 +146,39 @@ public class JdbcPushNotificationOutboxRepository implements
 			}
 		}
 		return notification;
+	}
+
+	private void upsertPushNotificationWithPostgresql(PushNotification notification) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					processing_claimed_at,
+					created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (notification_id) DO UPDATE SET
+					user_id = EXCLUDED.user_id,
+					platform = EXCLUDED.platform,
+					device_token = EXCLUDED.device_token,
+					notification_type = EXCLUDED.notification_type,
+					title = EXCLUDED.title,
+					body = EXCLUDED.body,
+					status = EXCLUDED.status,
+					failure_reason = EXCLUDED.failure_reason,
+					processing_claimed_at = EXCLUDED.processing_claimed_at,
+					created_at = EXCLUDED.created_at
+				""",
+			pushNotificationParameters(notification)
+		);
 	}
 
 	@Override

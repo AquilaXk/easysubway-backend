@@ -9,6 +9,7 @@ import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Repository;
 public class JdbcAutomationStatusRepository implements AutomationStatusRepository {
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	JdbcAutomationStatusRepository(DataSource dataSource) {
@@ -31,6 +33,22 @@ public class JdbcAutomationStatusRepository implements AutomationStatusRepositor
 	public SaveResult save(String payloadJson, Instant generatedAt, Instant receivedAt) {
 		OffsetDateTime generated = utc(generatedAt);
 		OffsetDateTime received = utc(receivedAt);
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			int changed = jdbcTemplate.update(
+				"""
+					INSERT INTO datapack_automation_status (id, payload_json, generated_at, received_at)
+					VALUES (1, ?, ?, ?)
+					ON CONFLICT (id) DO UPDATE SET
+						payload_json = EXCLUDED.payload_json,
+						generated_at = EXCLUDED.generated_at,
+						received_at = EXCLUDED.received_at
+					WHERE datapack_automation_status.generated_at < EXCLUDED.generated_at
+					""",
+				payloadJson,
+				generated,
+				received);
+			return changed == 1 ? SaveResult.ACCEPTED : SaveResult.STALE;
+		}
 		int updated = jdbcTemplate.update(
 			"UPDATE datapack_automation_status SET payload_json = ?, generated_at = ?, received_at = ? "
 				+ "WHERE id = 1 AND generated_at < ?",
@@ -65,5 +83,24 @@ public class JdbcAutomationStatusRepository implements AutomationStatusRepositor
 
 	private static OffsetDateTime utc(Instant instant) {
 		return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
@@ -31,6 +32,7 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactionTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcAdminIdentityRepository(DataSource dataSource) {
@@ -59,6 +61,10 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 
 	@Override
 	public AdminIdentity save(AdminIdentity identity) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			upsertWithPostgresql(identity);
+			return identity;
+		}
 		int updated = jdbcTemplate.update("""
 			UPDATE admin_users
 			SET display_name = ?,
@@ -105,12 +111,111 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 		if (current.isPresent()) {
 			return current.orElseThrow();
 		}
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			int inserted = insertIfAbsentPostgresql(identity);
+			if (inserted == 1) {
+				return identity;
+			}
+			return findByLoginId(identity.loginId())
+				.orElseThrow(() -> new IllegalStateException("관리자 identity를 찾을 수 없습니다."));
+		}
 		try {
 			insert(identity);
 			return identity;
 		} catch (DuplicateKeyException exception) {
 			return findByLoginId(identity.loginId()).orElseThrow(() -> exception);
 		}
+	}
+
+	private void upsertWithPostgresql(AdminIdentity identity) {
+		jdbcTemplate.update("""
+			INSERT INTO admin_users (
+				login_id, display_name, email, password_hash, auth_method, role, status,
+				failed_login_count, locked_until, password_changed_at, password_expires_at,
+				credential_rotation_required, break_glass_reason, bootstrap_managed, created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (login_id) DO UPDATE SET
+				display_name = EXCLUDED.display_name,
+				email = EXCLUDED.email,
+				password_hash = EXCLUDED.password_hash,
+				auth_method = EXCLUDED.auth_method,
+				role = EXCLUDED.role,
+				status = EXCLUDED.status,
+				failed_login_count = EXCLUDED.failed_login_count,
+				locked_until = EXCLUDED.locked_until,
+				password_changed_at = EXCLUDED.password_changed_at,
+				password_expires_at = EXCLUDED.password_expires_at,
+				credential_rotation_required = EXCLUDED.credential_rotation_required,
+				break_glass_reason = EXCLUDED.break_glass_reason,
+				bootstrap_managed = EXCLUDED.bootstrap_managed,
+				updated_at = EXCLUDED.updated_at
+			""",
+			normalize(identity.loginId()),
+			identity.displayName(),
+			identity.email(),
+			identity.passwordHash(),
+			identity.authMethod().name(),
+			identity.role().name(),
+			identity.status().name(),
+			identity.failedLoginCount(),
+			identity.lockedUntil(),
+			identity.passwordChangedAt(),
+			identity.passwordExpiresAt(),
+			identity.credentialRotationRequired(),
+			identity.breakGlassReason(),
+			identity.bootstrapManaged(),
+			identity.createdAt(),
+			identity.updatedAt()
+		);
+	}
+
+	private int insertIfAbsentPostgresql(AdminIdentity identity) {
+		return jdbcTemplate.update("""
+			INSERT INTO admin_users (
+				login_id, display_name, email, password_hash, auth_method, role, status,
+				failed_login_count, locked_until, password_changed_at, password_expires_at,
+				credential_rotation_required, break_glass_reason, bootstrap_managed, created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (login_id) DO NOTHING
+			""",
+			normalize(identity.loginId()),
+			identity.displayName(),
+			identity.email(),
+			identity.passwordHash(),
+			identity.authMethod().name(),
+			identity.role().name(),
+			identity.status().name(),
+			identity.failedLoginCount(),
+			identity.lockedUntil(),
+			identity.passwordChangedAt(),
+			identity.passwordExpiresAt(),
+			identity.credentialRotationRequired(),
+			identity.breakGlassReason(),
+			identity.bootstrapManaged(),
+			identity.createdAt(),
+			identity.updatedAt()
+		);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 
 	@Override

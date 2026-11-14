@@ -21,14 +21,19 @@ import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
-import com.easysubway.route.domain.RouteWarning;
+import com.easysubway.route.domain.RouteWarningCode;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -51,6 +56,7 @@ public class JdbcRouteSearchRepository
 	};
 	private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
 	};
+	private static final int DASHBOARD_QUERY_LIMIT = 5_000;
 	private static final String DELETED_USER_ID = "deleted-user";
 	private static final String DELETED_COMMENT = "사용자 데이터 삭제로 경로 피드백 내용이 삭제되었습니다.";
 
@@ -228,11 +234,13 @@ public class JdbcRouteSearchRepository
 					destination_station_id
 				FROM route_search_results
 				ORDER BY created_at DESC, route_search_id
+				LIMIT ?
 				""",
 			(resultSet, rowNumber) -> new RouteSearchStationPair(
 				resultSet.getString("origin_station_id"),
 				resultSet.getString("destination_station_id")
-			)
+			),
+			DASHBOARD_QUERY_LIMIT
 		);
 	}
 
@@ -245,11 +253,13 @@ public class JdbcRouteSearchRepository
 				FROM route_search_results
 				WHERE status = 'BLOCKED'
 				ORDER BY created_at DESC, route_search_id
+				LIMIT ?
 				""",
 			(resultSet, rowNumber) -> new RouteSearchStationPair(
 				resultSet.getString("origin_station_id"),
 				resultSet.getString("destination_station_id")
-			)
+			),
+			DASHBOARD_QUERY_LIMIT
 		);
 	}
 
@@ -260,15 +270,62 @@ public class JdbcRouteSearchRepository
 				SELECT blocked_reasons_json
 				FROM route_search_results
 				WHERE status = 'BLOCKED'
+				ORDER BY created_at DESC, route_search_id
+				LIMIT ?
 				""",
 			(resultSet, rowNumber) -> new RouteSearchBlockedReasons(
 				readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE)
-			)
+			),
+			DASHBOARD_QUERY_LIMIT
 		);
 	}
 
 	@Override
 	public List<RouteSearchQualitySignals> loadRouteSearchQualitySignalsForDashboard() {
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			return jdbcTemplate.query(
+				"""
+					SELECT r.status,
+						CASE
+							WHEN COALESCE(step_stats.step_count, 0) = 0 THEN 'PLANNED'
+							WHEN step_stats.has_planned_without_rt THEN 'PLANNED_WITHOUT_REALTIME'
+							WHEN step_stats.realtime_count = 0 THEN
+								CASE WHEN step_stats.all_planned THEN 'PLANNED' ELSE 'STATIC_BACKEND_ESTIMATE' END
+							WHEN step_stats.realtime_count = step_stats.step_count THEN 'REALTIME'
+							ELSE 'MIXED'
+						END AS eta_source,
+						warning_stats.warning_codes
+					FROM (
+						SELECT created_at,
+							route_search_id,
+							status,
+							steps_json,
+							warnings_json
+						FROM route_search_results
+						ORDER BY created_at DESC, route_search_id
+						LIMIT ?
+					) r
+					LEFT JOIN LATERAL (
+						SELECT COUNT(*) AS step_count,
+							COALESCE(BOOL_OR((elem->>'timeSource') IN ('FALLBACK', 'PLANNED_WITHOUT_REALTIME')), FALSE) AS has_planned_without_rt,
+							COUNT(*) FILTER (WHERE (elem->>'timeSource') = 'REALTIME') AS realtime_count,
+							COALESCE(BOOL_AND(COALESCE(elem->>'timeSource', '') = 'PLANNED'), FALSE) AS all_planned
+						FROM jsonb_array_elements(r.steps_json::jsonb) AS elem
+					) step_stats ON TRUE
+					LEFT JOIN LATERAL (
+						SELECT ARRAY_AGG(elem->>'code' ORDER BY ord) FILTER (WHERE elem->>'code' IS NOT NULL) AS warning_codes
+						FROM jsonb_array_elements(r.warnings_json::jsonb) WITH ORDINALITY AS t(elem, ord)
+					) warning_stats ON TRUE
+					ORDER BY r.created_at DESC, r.route_search_id
+					""",
+				(resultSet, rowNumber) -> new RouteSearchQualitySignals(
+					RouteSearchStatus.valueOf(resultSet.getString("status")),
+					EtaSource.valueOf(resultSet.getString("eta_source")),
+					extractWarningCodes(resultSet.getArray("warning_codes"))
+				),
+				DASHBOARD_QUERY_LIMIT
+			);
+		}
 		return jdbcTemplate.query(
 			"""
 				SELECT status,
@@ -276,18 +333,14 @@ public class JdbcRouteSearchRepository
 					warnings_json
 				FROM route_search_results
 				ORDER BY created_at DESC, route_search_id
+				LIMIT ?
 				""",
-			(resultSet, rowNumber) -> {
-				List<RouteStep> steps = readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE);
-				List<RouteWarning> warnings = RouteWarningJson.toDomainAll(readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE));
-				return new RouteSearchQualitySignals(
-					RouteSearchStatus.valueOf(resultSet.getString("status")),
-					etaSourceFromSteps(steps),
-					warnings.stream()
-						.map(RouteWarning::code)
-						.toList()
-				);
-			}
+			(resultSet, rowNumber) -> new RouteSearchQualitySignals(
+				RouteSearchStatus.valueOf(resultSet.getString("status")),
+				extractEtaSourceFromStepsJson(resultSet.getString("steps_json")),
+				extractWarningCodesFromWarningsJson(resultSet.getString("warnings_json"))
+			),
+			DASHBOARD_QUERY_LIMIT
 		);
 	}
 
@@ -538,24 +591,118 @@ public class JdbcRouteSearchRepository
 			.sum();
 	}
 
-	private EtaSource etaSourceFromSteps(List<RouteStep> steps) {
-		if (steps.isEmpty()) {
-			return EtaSource.PLANNED;
+	private List<RouteWarningCode> extractWarningCodes(Array sqlArray) throws SQLException {
+		if (sqlArray == null) {
+			return List.of();
 		}
-		boolean plannedWithoutRealtime = steps.stream()
-			.anyMatch(step -> isPlannedWithoutRealtime(step.timeSource()));
-		if (plannedWithoutRealtime) {
-			return EtaSource.PLANNED_WITHOUT_REALTIME;
+		Object rawArray = sqlArray.getArray();
+		if (!(rawArray instanceof Object[] elements) || elements.length == 0) {
+			return List.of();
 		}
-		long realtimeSteps = steps.stream()
-			.filter(step -> EtaSource.REALTIME.name().equals(step.timeSource()))
-			.count();
-		if (realtimeSteps == 0) {
-			return steps.stream().allMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource()))
-				? EtaSource.PLANNED
-				: EtaSource.STATIC_BACKEND_ESTIMATE;
+		List<RouteWarningCode> codes = new ArrayList<>(elements.length);
+		for (Object element : elements) {
+			if (element instanceof String codeText && !codeText.isBlank()) {
+				codes.add(RouteWarningCode.valueOf(codeText));
+			}
 		}
-		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
+		return codes;
+	}
+
+	private EtaSource extractEtaSourceFromStepsJson(String stepsJson) {
+		try (JsonParser parser = objectMapper.getFactory().createParser(stepsJson)) {
+			if (parser.nextToken() != JsonToken.START_ARRAY) {
+				throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.");
+			}
+			int stepCount = 0;
+			int realtimeSteps = 0;
+			boolean allPlanned = true;
+			boolean plannedWithoutRealtime = false;
+			JsonToken elementToken;
+			while ((elementToken = parser.nextToken()) != JsonToken.END_ARRAY) {
+				if (elementToken == null) {
+					throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.");
+				}
+				if (elementToken == JsonToken.START_OBJECT) {
+					String timeSource = null;
+					JsonToken fieldToken;
+					while ((fieldToken = parser.nextToken()) != JsonToken.END_OBJECT) {
+						if (fieldToken == null) {
+							throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.");
+						}
+						String fieldName = parser.currentName();
+						JsonToken valueToken = parser.nextToken();
+						if ("timeSource".equals(fieldName)) {
+							timeSource = valueToken == JsonToken.VALUE_NULL ? null : parser.getValueAsString();
+						} else if (valueToken != null && valueToken.isStructStart()) {
+							parser.skipChildren();
+						}
+					}
+					stepCount++;
+					if (isPlannedWithoutRealtime(timeSource)) {
+						plannedWithoutRealtime = true;
+					}
+					if (EtaSource.REALTIME.name().equals(timeSource)) {
+						realtimeSteps++;
+					}
+					if (!EtaSource.PLANNED.name().equals(timeSource)) {
+						allPlanned = false;
+					}
+				} else if (elementToken.isStructStart()) {
+					parser.skipChildren();
+				}
+			}
+			if (stepCount == 0) {
+				return EtaSource.PLANNED;
+			}
+			if (plannedWithoutRealtime) {
+				return EtaSource.PLANNED_WITHOUT_REALTIME;
+			}
+			if (realtimeSteps == 0) {
+				return allPlanned ? EtaSource.PLANNED : EtaSource.STATIC_BACKEND_ESTIMATE;
+			}
+			return realtimeSteps == stepCount ? EtaSource.REALTIME : EtaSource.MIXED;
+		} catch (IOException exception) {
+			throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.", exception);
+		}
+	}
+
+	private List<RouteWarningCode> extractWarningCodesFromWarningsJson(String warningsJson) {
+		try (JsonParser parser = objectMapper.getFactory().createParser(warningsJson)) {
+			if (parser.nextToken() != JsonToken.START_ARRAY) {
+				throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.");
+			}
+			List<RouteWarningCode> codes = new ArrayList<>();
+			JsonToken elementToken;
+			while ((elementToken = parser.nextToken()) != JsonToken.END_ARRAY) {
+				if (elementToken == null) {
+					throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.");
+				}
+				if (elementToken == JsonToken.START_OBJECT) {
+					String codeText = null;
+					JsonToken fieldToken;
+					while ((fieldToken = parser.nextToken()) != JsonToken.END_OBJECT) {
+						if (fieldToken == null) {
+							throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.");
+						}
+						String fieldName = parser.currentName();
+						JsonToken valueToken = parser.nextToken();
+						if ("code".equals(fieldName)) {
+							codeText = valueToken == JsonToken.VALUE_NULL ? null : parser.getValueAsString();
+						} else if (valueToken != null && valueToken.isStructStart()) {
+							parser.skipChildren();
+						}
+					}
+					if (codeText != null && !codeText.isBlank()) {
+						codes.add(RouteWarningCode.valueOf(codeText));
+					}
+				} else if (elementToken.isStructStart()) {
+					parser.skipChildren();
+				}
+			}
+			return codes;
+		} catch (IOException exception) {
+			throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.", exception);
+		}
 	}
 
 	private static boolean isPlannedWithoutRealtime(String timeSource) {

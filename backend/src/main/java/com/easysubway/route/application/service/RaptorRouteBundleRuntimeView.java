@@ -33,7 +33,7 @@ public final class RaptorRouteBundleRuntimeView
 	private final List<BundleFacility> bundleFacilities;
 	private final List<BundleStationExit> bundleStationExits;
 	private final Object stationTimetableIndexLock = new Object();
-	private StationTimetableIndex stationTimetableIndex;
+	private volatile StationTimetableIndex stationTimetableIndex;
 
 	private RaptorRouteBundleRuntimeView(
 		String routeBundleSha256,
@@ -294,9 +294,15 @@ public final class RaptorRouteBundleRuntimeView
 	// 이전 세대 색인은 그 세대 객체와 함께 버려진다.
 	@Override
 	public StationTimetableIndex stationTimetableIndex() {
+		StationTimetableIndex cached = stationTimetableIndex;
+		if (cached != null) return cached;
 		synchronized (stationTimetableIndexLock) {
-			if (stationTimetableIndex == null) stationTimetableIndex = StationTimetableIndex.of(compiledTimetable.source());
-			return stationTimetableIndex;
+			cached = stationTimetableIndex;
+			if (cached == null) {
+				cached = StationTimetableIndex.of(compiledTimetable.source());
+				stationTimetableIndex = cached;
+			}
+			return cached;
 		}
 	}
 

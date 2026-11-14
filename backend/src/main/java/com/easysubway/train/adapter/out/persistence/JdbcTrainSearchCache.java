@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,8 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class JdbcTrainSearchCache implements TrainSearchCache {
 	private static final int QUERY_TIMEOUT_SECONDS = 2;
+	private static final int PURGE_BATCH_SIZE = 1000;
+	private static final int MAX_PURGE_BATCHES = 50;
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTrainSearchCache(DataSource dataSource) {
@@ -105,6 +109,29 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 		if (ttl.isZero() || ttl.isNegative()) {
 			throw new IllegalArgumentException("ttl must be positive");
 		}
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			long ttlMicros = Math.max(1L, (ttl.toNanos() + 999L) / 1000L);
+			return jdbcTemplate.update(
+				"""
+					INSERT INTO train_search_cache (
+						cache_key,
+						last_access_at,
+						lease_owner,
+						lease_expires_at
+					)
+					VALUES (?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP + (? * INTERVAL '1 microsecond'))
+					ON CONFLICT (cache_key) DO UPDATE SET
+						last_access_at = CURRENT_TIMESTAMP,
+						lease_owner = EXCLUDED.lease_owner,
+						lease_expires_at = EXCLUDED.lease_expires_at
+					WHERE (train_search_cache.lease_owner IS NULL OR train_search_cache.lease_expires_at <= CURRENT_TIMESTAMP)
+						AND (train_search_cache.payload_json IS NULL OR train_search_cache.expires_at <= CURRENT_TIMESTAMP)
+					""",
+				key,
+				owner,
+				ttlMicros
+			) == 1;
+		}
 		Instant databaseNow = databaseNow();
 		jdbcTemplate.update(
 			"""
@@ -173,16 +200,31 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 	@Transactional(timeout = 2)
 	public int purgeExpiredBefore(Instant cutoff) {
 		Objects.requireNonNull(cutoff, "cutoff must not be null");
-		return jdbcTemplate.update(
-			"""
-				DELETE FROM train_search_cache
-				WHERE ((expires_at IS NOT NULL AND expires_at < ?)
-						OR (expires_at IS NULL AND last_access_at < ?))
-					AND (lease_owner IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
-				""",
-			Timestamp.from(cutoff),
-			Timestamp.from(cutoff)
-		);
+		Timestamp cutoffTs = Timestamp.from(cutoff);
+		int totalDeleted = 0;
+		for (int batch = 0; batch < MAX_PURGE_BATCHES; batch++) {
+			int deleted = jdbcTemplate.update(
+				"""
+					DELETE FROM train_search_cache
+					WHERE cache_key IN (
+						SELECT cache_key
+						FROM train_search_cache
+						WHERE ((expires_at IS NOT NULL AND expires_at < ?)
+								OR (expires_at IS NULL AND last_access_at < ?))
+							AND (lease_owner IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+						LIMIT ?
+					)
+					""",
+				cutoffTs,
+				cutoffTs,
+				PURGE_BATCH_SIZE
+			);
+			totalDeleted += deleted;
+			if (deleted < PURGE_BATCH_SIZE) {
+				break;
+			}
+		}
+		return totalDeleted;
 	}
 
 	private Instant databaseNow() {
@@ -196,5 +238,24 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 			throw new IllegalStateException("database timestamp query returned null");
 		}
 		return value.toInstant();
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

@@ -5,6 +5,7 @@ import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.error.CorrelationId;
+import com.easysubway.common.web.TrustedClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -13,9 +14,11 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -25,20 +28,54 @@ public class AdminAuditWriter {
 	private final AdminAuditEventRepository auditEventRepository;
 	private final Clock clock;
 	private final boolean enabled;
+	private final Supplier<TrustedClientIpResolver> clientIpResolverSupplier;
+	private volatile TrustedClientIpResolver clientIpResolver;
 
-	@Autowired
 	public AdminAuditWriter(AdminAuditEventRepository auditEventRepository) {
-		this(auditEventRepository, Clock.systemUTC(), true);
+		this(auditEventRepository, Clock.systemUTC(), true, TrustedClientIpResolver::directOnly);
 	}
 
-	private AdminAuditWriter(AdminAuditEventRepository auditEventRepository, Clock clock, boolean enabled) {
+	public AdminAuditWriter(
+		AdminAuditEventRepository auditEventRepository,
+		TrustedClientIpResolver clientIpResolver
+	) {
+		this(
+			auditEventRepository,
+			Clock.systemUTC(),
+			true,
+			() -> clientIpResolver == null ? TrustedClientIpResolver.directOnly() : clientIpResolver
+		);
+	}
+
+	@Autowired
+	public AdminAuditWriter(
+		AdminAuditEventRepository auditEventRepository,
+		ObjectProvider<TrustedClientIpResolver> clientIpResolverProvider
+	) {
+		this(
+			auditEventRepository,
+			Clock.systemUTC(),
+			true,
+			clientIpResolverProvider == null
+				? TrustedClientIpResolver::directOnly
+				: () -> clientIpResolverProvider.getIfAvailable(TrustedClientIpResolver::directOnly)
+		);
+	}
+
+	private AdminAuditWriter(
+		AdminAuditEventRepository auditEventRepository,
+		Clock clock,
+		boolean enabled,
+		Supplier<TrustedClientIpResolver> clientIpResolverSupplier
+	) {
 		this.auditEventRepository = auditEventRepository;
 		this.clock = clock;
 		this.enabled = enabled;
+		this.clientIpResolverSupplier = clientIpResolverSupplier;
 	}
 
 	public static AdminAuditWriter noop() {
-		return new AdminAuditWriter(null, Clock.systemUTC(), false);
+		return new AdminAuditWriter(null, Clock.systemUTC(), false, TrustedClientIpResolver::directOnly);
 	}
 
 	public void privacyRead(
@@ -239,19 +276,19 @@ public class AdminAuditWriter {
 		return trimmed;
 	}
 
-	private static String clientIp(HttpServletRequest request) {
-		String forwardedFor = request.getHeader("X-Forwarded-For");
-		if (forwardedFor != null && !forwardedFor.isBlank()) {
-			return forwardedFor.split(",", 2)[0].trim();
+	private String clientIp(HttpServletRequest request) {
+		TrustedClientIpResolver resolver = clientIpResolver;
+		if (resolver == null) {
+			resolver = clientIpResolverSupplier.get();
+			if (resolver == null) {
+				resolver = TrustedClientIpResolver.directOnly();
+			}
+			clientIpResolver = resolver;
 		}
-		return request.getRemoteAddr();
+		return resolver.resolve(request);
 	}
 
 	private static String userAgent(HttpServletRequest request) {
-		String value = request.getHeader("User-Agent");
-		if (value == null || value.isBlank()) {
-			return "missing";
-		}
-		return value.length() > 300 ? value.substring(0, 300) : value;
+		return TrustedClientIpResolver.sanitizeUserAgent(request.getHeader("User-Agent"));
 	}
 }

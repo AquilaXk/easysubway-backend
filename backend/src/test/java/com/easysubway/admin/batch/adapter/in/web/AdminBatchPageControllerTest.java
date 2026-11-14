@@ -86,7 +86,7 @@ class AdminBatchPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("배치 신규 실행 폼은 같은 command token 재전송을 409로 차단한다")
+	@DisplayName("배치 신규 실행 폼은 같은 command token 재전송을 403으로 차단한다")
 	void runRejectsRepeatedCommandToken() throws Exception {
 		MockHttpSession session = new MockHttpSession();
 		String token = commandTokenFrom(getAdminHtml("/admin/batches/page", session));
@@ -102,7 +102,7 @@ class AdminBatchPageControllerTest {
 			if (attempt == 0) {
 				result.andExpect(status().is3xxRedirection());
 			} else {
-				result.andExpect(status().isConflict());
+				result.andExpect(status().isForbidden());
 			}
 		}
 
@@ -344,13 +344,13 @@ class AdminBatchPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("commandToken", token)
 				.param("retryRequested", "true"))
-			.andExpect(status().isConflict())
+			.andExpect(status().isForbidden())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
 		assertThat(conflictHtml)
-			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("권한이 없습니다")
 			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 2))
 			.singleElement()

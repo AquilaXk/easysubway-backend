@@ -387,7 +387,7 @@ class AdminOperationsPageControllerTest {
 				.param("source", "HEALTH")
 				.param("summary", "database DOWN")
 				.param("owner", "ops"))
-			.andExpect(status().isConflict())
+			.andExpect(status().isForbidden())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -395,7 +395,7 @@ class AdminOperationsPageControllerTest {
 		String incidentsHtml = getAdminHtml("/admin/incidents/page", session);
 
 		assertThat(conflictHtml)
-			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("권한이 없습니다")
 			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
 		assertThat(incidentsHtml).containsOnlyOnce("database DOWN");
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1))
@@ -407,7 +407,7 @@ class AdminOperationsPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("관리자 form POST는 command token 누락을 409로 차단한다")
+	@DisplayName("관리자 form POST는 command token 누락을 403으로 차단한다")
 	void adminFormPostRejectsMissingCommandToken() throws Exception {
 		String html = mockMvc.perform(post("/admin/incidents")
 				.with(httpBasic("admin-user", "admin-test-password"))
@@ -418,13 +418,13 @@ class AdminOperationsPageControllerTest {
 				.param("source", "HEALTH")
 				.param("summary", "database DOWN")
 				.param("owner", "ops"))
-			.andExpect(status().isConflict())
+			.andExpect(status().isForbidden())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("권한이 없습니다")
 			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
 	}
 

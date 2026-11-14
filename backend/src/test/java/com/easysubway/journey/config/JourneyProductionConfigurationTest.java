@@ -920,7 +920,7 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("FacilityOperationalStatusStore 빈이 있으면 실어댑터를 배선하고 canary는 활성 번들 없이도 통과한다")
+	@DisplayName("FacilityOperationalStatusStore 빈이 있으면 실어댑터를 배선하고 canary는 후보 시설 상태와 active 독립성을 함께 검증한다")
 	void wiresRealFacilityAvailabilityAdapterWhenOperationalStoreIsPresentAndKeepsCanaryIndependentOfActiveBundle() {
 		validProductionContext()
 			.withUserConfiguration(OperationalStatusStoreConfiguration.class)
@@ -936,7 +936,7 @@ class JourneyProductionConfigurationTest {
 				var emptyRegistry = new RouteBundleActivationRegistry(Clock.fixed(VERIFIED_AT, ZoneOffset.UTC));
 				when(registry.activeSnapshot()).thenAnswer(ignored -> emptyRegistry.activeSnapshot());
 
-				var runtime = canaryRuntimeView();
+				var runtime = canaryRuntimeView(java.util.Map.of());
 				var stagedCandidate = com.easysubway.journey.bundle.LoadScenarioBundles.candidate("a", runtime, Instant.now());
 				var stagedExecution = new RouteBundleActivationRegistry.CandidateExecutionSnapshot(
 					1L, stagedCandidate.identity(), stagedCandidate.admissionEvidence(), runtime,
@@ -951,12 +951,94 @@ class JourneyProductionConfigurationTest {
 					.apply(springSecurity())
 					.build();
 				String manifest = com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a");
+
+				// 시설 상태 심장박동이 없으면 required=true 카나리는 fail-closed(503)로 거부해야 한다.
+				mockMvc.perform(post(CANARY_PATH)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+						.content(canaryCommand().formatted(manifest)))
+					.andExpect(status().isServiceUnavailable())
+					.andExpect(jsonPath("$.passed").value(false))
+					.andExpect(jsonPath("$.reason").value("UNAVAILABLE"))
+					.andExpect(jsonPath("$.failureReason").value("PLAN_ERROR"));
+
+				var statusStore = context.getBean(
+					com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.class);
+				Instant now = Instant.now();
+				when(statusStore.lastSuccessfulCollectionAt(
+					com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED))
+					.thenReturn(java.util.Optional.of(now));
+				when(statusStore.loadStatuses()).thenReturn(java.util.List.of());
+
 				mockMvc.perform(post(CANARY_PATH)
 						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
 						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 						.content(canaryCommand().formatted(manifest)))
 					.andExpect(status().isOk())
 					.andExpect(jsonPath("$.passed").value(true));
+			});
+	}
+
+	@Test
+	@DisplayName("후보 번들 카나리는 유일한 엘리베이터 고장 시 회피 경로가 없으면 fail-closed로 실패한다")
+	void canaryFailsClosedWhenCandidateElevatorOutageBlocksSoleStepFreePath() {
+		validProductionContext()
+			.withUserConfiguration(OperationalStatusStoreConfiguration.class)
+			.withPropertyValues("easysubway.journey.facility-status.required=true")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				var registry = context.getBean(RouteBundleActivationRegistry.class);
+				var emptyRegistry = new RouteBundleActivationRegistry(Clock.fixed(VERIFIED_AT, ZoneOffset.UTC));
+				when(registry.activeSnapshot()).thenAnswer(ignored -> emptyRegistry.activeSnapshot());
+
+				var runtime = transferCanaryRuntimeView(
+					java.util.Map.of("fac-transfer-elevator", java.util.Set.of("transfer-elevator-edge")));
+				var stagedCandidate = com.easysubway.journey.bundle.LoadScenarioBundles.candidate("a", runtime, Instant.now());
+				var stagedExecution = new RouteBundleActivationRegistry.CandidateExecutionSnapshot(
+					1L, stagedCandidate.identity(), stagedCandidate.admissionEvidence(), runtime,
+					stagedCandidate.verifiedAt(), Instant.now());
+				var stagedSummary = new RouteBundleActivationRegistry.CandidateSnapshot(
+					1L, stagedCandidate.identity(), stagedCandidate.admissionEvidence(),
+					stagedCandidate.verifiedAt(), stagedExecution.stagedAt());
+				when(registry.candidateExecutionSnapshot()).thenReturn(stagedExecution);
+				when(registry.candidateSnapshot()).thenReturn(stagedSummary);
+
+				var statusStore = context.getBean(
+					com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.class);
+				Instant now = Instant.now();
+				when(statusStore.lastSuccessfulCollectionAt(
+					com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED))
+					.thenReturn(java.util.Optional.of(now));
+				when(statusStore.loadStatuses()).thenReturn(java.util.List.of());
+
+				var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+					.apply(springSecurity())
+					.build();
+				String manifest = com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a");
+				mockMvc.perform(post(CANARY_PATH)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+						.content(canaryCommand().formatted(manifest)))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.passed").value(true));
+
+				when(statusStore.loadStatuses()).thenReturn(java.util.List.of(
+					new com.easysubway.transit.domain.FacilityOperationalStatus(
+						"fac-transfer-elevator",
+						com.easysubway.transit.domain.FacilityOperationalState.OUT_OF_SERVICE,
+						com.easysubway.transit.domain.FacilityStatusSource.SEOUL_METRO_FEED,
+						"보수중",
+						now,
+						now)));
+
+				mockMvc.perform(post(CANARY_PATH)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+						.content(canaryCommand().formatted(manifest)))
+					.andExpect(status().isServiceUnavailable())
+					.andExpect(jsonPath("$.passed").value(false))
+					.andExpect(jsonPath("$.reason").value("UNAVAILABLE"))
+					.andExpect(jsonPath("$.failureReason").value("NO_CANDIDATES"));
 			});
 	}
 
@@ -978,7 +1060,9 @@ class JourneyProductionConfigurationTest {
 			.isEqualTo("${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:true}");
 	}
 
-	private static com.easysubway.route.application.service.RaptorRouteBundleRuntimeView canaryRuntimeView() {
+	private static com.easysubway.route.application.service.RaptorRouteBundleRuntimeView canaryRuntimeView(
+		java.util.Map<String, java.util.Set<String>> candidateFacilityEdgeIds
+	) {
 		var calendar = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			java.time.LocalDate.of(2020, 1, 1), java.time.LocalDate.of(2099, 12, 31), "Asia/Seoul");
@@ -1023,7 +1107,78 @@ class JourneyProductionConfigurationTest {
 			java.util.List.of(calendar), java.util.List.of(), java.util.List.of(route),
 			java.util.List.of(trip), stopTimes, frequencies, java.util.List.of(), null, access);
 		return com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
-			com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a"), 1L, timetable);
+			com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a"),
+			1L,
+			timetable,
+			java.util.List.of(),
+			java.util.Map.of(),
+			java.util.Set.of(),
+			candidateFacilityEdgeIds,
+			java.util.Set.of("station-origin", "station-destination"),
+			java.util.List.of(),
+			java.util.List.of());
+	}
+
+	private static com.easysubway.route.application.service.RaptorRouteBundleRuntimeView transferCanaryRuntimeView(
+		java.util.Map<String, java.util.Set<String>> candidateFacilityEdgeIds
+	) {
+		var calendar = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			java.time.LocalDate.of(2020, 1, 1), java.time.LocalDate.of(2099, 12, 31), "Asia/Seoul");
+		var route1 = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute(
+			"route-1", "line-1", "1", "Line 1", "station-transfer", "Asia/Seoul");
+		var route2 = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute(
+			"route-2", "line-2", "2", "Line 2", "station-destination", "Asia/Seoul");
+		var trip1 = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip(
+			"trip-1", "route-1", "daily", "station-transfer", "down", "SUBWAY", "LOCAL", "1001", 0);
+		var trip2 = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip(
+			"trip-2", "route-2", "daily", "station-destination", "down", "SUBWAY", "LOCAL", "2001", 0);
+		var stopTimes = java.util.List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime(
+				"trip-1", 1, "station-origin", "line-1", 10_800, 10_800, 0, 0),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime(
+				"trip-1", 2, "station-transfer", "line-1", 11_100, 11_100, 0, 0),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime(
+				"trip-2", 1, "station-transfer", "line-2", 11_400, 11_400, 0, 0),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime(
+				"trip-2", 2, "station-destination", "line-2", 11_700, 11_700, 0, 0));
+		var frequencies = java.util.List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency(
+				"trip-1", 10_800, 97_500, 300, true),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency(
+				"trip-2", 10_800, 97_500, 300, true));
+		var access = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData(
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode(
+					"platform-transfer-1", "station-transfer", "line-1", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode(
+					"platform-transfer-2", "station-transfer", "line-2", "PLATFORM")),
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+					"transfer-elevator-edge", "platform-transfer-1", "platform-transfer-2", 120, 80,
+					false, false, 100, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE")),
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule(
+					"rule-transfer", "station-transfer", "line-1", "station-transfer", "line-2",
+					"IN_STATION", 120, "transfer-elevator-edge", "transfer-elevator-edge", "VERIFIED")),
+			java.util.List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-transfer", "station-transfer", "line-2", "transfer-elevator-edge", "TRANSFER",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+		var timetable = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable(
+			java.util.List.of(calendar), java.util.List.of(), java.util.List.of(route1, route2),
+			java.util.List.of(trip1, trip2), stopTimes, frequencies, java.util.List.of(), null, access);
+		return com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
+			com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a"),
+			1L,
+			timetable,
+			java.util.List.of(),
+			java.util.Map.of(),
+			java.util.Set.of(),
+			candidateFacilityEdgeIds,
+			java.util.Set.of("station-origin", "station-transfer", "station-destination"),
+			java.util.List.of(),
+			java.util.List.of());
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)

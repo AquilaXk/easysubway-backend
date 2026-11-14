@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ public class JdbcMobilityProfileRepository implements
 	DeleteUserMobilityProfilePort {
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcMobilityProfileRepository(DataSource dataSource) {
@@ -57,6 +59,10 @@ public class JdbcMobilityProfileRepository implements
 	@Override
 	@Transactional
 	public MobilityProfile saveProfile(MobilityProfile profile) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			upsertProfileWithPostgresql(profile);
+			return profile;
+		}
 		if (updateProfile(profile) == 0) {
 			try {
 				insertProfile(profile);
@@ -66,6 +72,48 @@ public class JdbcMobilityProfileRepository implements
 			}
 		}
 		return profile;
+	}
+
+	private void upsertProfileWithPostgresql(MobilityProfile profile) {
+		jdbcTemplate.update("""
+			INSERT INTO mobility_profiles (
+				user_id,
+				mobility_type,
+				avoid_stairs,
+				require_elevator,
+				allow_escalator,
+				minimize_transfers,
+				avoid_long_walks,
+				large_text,
+				high_contrast,
+				simple_view,
+				updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (user_id) DO UPDATE SET
+				mobility_type = EXCLUDED.mobility_type,
+				avoid_stairs = EXCLUDED.avoid_stairs,
+				require_elevator = EXCLUDED.require_elevator,
+				allow_escalator = EXCLUDED.allow_escalator,
+				minimize_transfers = EXCLUDED.minimize_transfers,
+				avoid_long_walks = EXCLUDED.avoid_long_walks,
+				large_text = EXCLUDED.large_text,
+				high_contrast = EXCLUDED.high_contrast,
+				simple_view = EXCLUDED.simple_view,
+				updated_at = EXCLUDED.updated_at
+			""",
+			profile.userId(),
+			profile.mobilityType().name(),
+			profile.avoidStairs(),
+			profile.requireElevator(),
+			profile.allowEscalator(),
+			profile.minimizeTransfers(),
+			profile.avoidLongWalks(),
+			profile.largeText(),
+			profile.highContrast(),
+			profile.simpleView(),
+			profile.updatedAt()
+		);
 	}
 
 	private int updateProfile(MobilityProfile profile) {
@@ -153,5 +201,24 @@ public class JdbcMobilityProfileRepository implements
 			resultSet.getBoolean("simple_view"),
 			resultSet.getObject("updated_at", LocalDateTime.class)
 		);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

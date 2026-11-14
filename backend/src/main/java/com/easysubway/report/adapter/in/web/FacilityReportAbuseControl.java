@@ -1,21 +1,20 @@
 package com.easysubway.report.adapter.in.web;
 
+import com.easysubway.common.web.TrustedClientIpResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.EnumMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,7 +36,7 @@ final class FacilityReportAbuseControl extends OncePerRequestFilter {
 		@Value("${easysubway.report.abuse-control.report-submit-limit:1000}") int reportSubmitLimit,
 		@Value("${easysubway.report.abuse-control.status-limit:1000}") int statusLimit,
 		@Value("${easysubway.report.abuse-control.confirm-limit:1000}") int confirmLimit,
-		@Value("${easysubway.report.abuse-control.max-counter-keys:4096}") int maxCounterKeys,
+		@Value("${easysubway.report.abuse-control.max-counter-keys:16384}") int maxCounterKeys,
 		@Value("${easysubway.report.abuse-control.store-mode:local}") String storeMode,
 		@Value("${easysubway.auth.client-ip.trusted-proxies:}") String trustedProxies,
 		ObjectProvider<Clock> clockProvider
@@ -154,6 +153,8 @@ record FacilityReportAbuseControlPolicy(
 
 class FacilityReportAbuseControlLimiter {
 
+	static final int MAX_KEYS_PER_GROUP = 16_384;
+
 	record AcquireResult(boolean allowed, long retryAfterSeconds) {
 		static AcquireResult allow() {
 			return new AcquireResult(true, 0);
@@ -166,12 +167,16 @@ class FacilityReportAbuseControlLimiter {
 
 	private final FacilityReportAbuseControlPolicy policy;
 	private final Clock clock;
-	private final Object monitor = new Object();
-	private final Map<LimiterKey, WindowCounter> counters = new ConcurrentHashMap<>();
+	private final EnumMap<ReportAbuseGroup, GroupWindowLru> groupLimiters;
 
 	FacilityReportAbuseControlLimiter(FacilityReportAbuseControlPolicy policy, Clock clock) {
 		this.policy = policy;
 		this.clock = clock;
+		int capacityPerGroup = Math.min(policy.maxCounterKeys(), MAX_KEYS_PER_GROUP);
+		this.groupLimiters = new EnumMap<>(ReportAbuseGroup.class);
+		for (ReportAbuseGroup group : ReportAbuseGroup.values()) {
+			this.groupLimiters.put(group, new GroupWindowLru(capacityPerGroup));
+		}
 	}
 
 	AcquireResult acquire(ReportAbuseGroup group, String clientIdentity) {
@@ -180,37 +185,19 @@ class FacilityReportAbuseControlLimiter {
 		long windowStartedAt = currentWindowStartedAt(now);
 		long elapsed = now.getEpochSecond() - windowStartedAt;
 		long retryAfterSeconds = Math.max(1, policy.windowSeconds() - elapsed);
-
-		WindowCounter counter = counterFor(new LimiterKey(group, clientIdentity), windowStartedAt);
-		if (counter == null) {
-			return AcquireResult.limit(retryAfterSeconds);
-		}
-		boolean allowed = counter.incrementWithin(windowStartedAt, limit);
-		return allowed ? AcquireResult.allow() : AcquireResult.limit(retryAfterSeconds);
+		return groupLimiters.get(group).acquire(clientIdentity, limit, windowStartedAt, retryAfterSeconds);
 	}
 
 	boolean tryAcquire(ReportAbuseGroup group, String clientIdentity) {
 		return acquire(group, clientIdentity).allowed();
 	}
 
-	private WindowCounter counterFor(LimiterKey key, long windowStartedAt) {
-		WindowCounter existingCounter = counters.get(key);
-		if (existingCounter != null) {
-			return existingCounter;
-		}
-		synchronized (monitor) {
-			WindowCounter counter = counters.get(key);
-			if (counter != null) {
-				return counter;
-			}
-			counters.entrySet().removeIf(entry -> entry.getValue().isBefore(windowStartedAt));
-			if (counters.size() >= policy.maxCounterKeys()) {
-				return null;
-			}
-			WindowCounter newCounter = new WindowCounter(windowStartedAt);
-			counters.put(key, newCounter);
-			return newCounter;
-		}
+	int maxKeysPerGroup() {
+		return Math.min(policy.maxCounterKeys(), MAX_KEYS_PER_GROUP);
+	}
+
+	int groupSize(ReportAbuseGroup group) {
+		return groupLimiters.get(group).size();
 	}
 
 	private long currentWindowStartedAt(Instant now) {
@@ -218,7 +205,62 @@ class FacilityReportAbuseControlLimiter {
 		return epochSecond - Math.floorMod(epochSecond, policy.windowSeconds());
 	}
 
-	private record LimiterKey(ReportAbuseGroup group, String clientIdentity) {
+	private static final class GroupWindowLru {
+
+		private static final int CLEANUP_INTERVAL_OPS = 64;
+		private static final int CLEANUP_MAX_BATCH = 32;
+
+		private final int capacity;
+		private final LinkedHashMap<String, WindowCounter> counters;
+		private int opsSinceCleanup;
+
+		private GroupWindowLru(int capacity) {
+			this.capacity = capacity;
+			this.counters = new LinkedHashMap<>(Math.min(capacity, 256), 0.75f, true);
+		}
+
+		private synchronized AcquireResult acquire(
+			String clientIdentity,
+			int limit,
+			long windowStartedAt,
+			long retryAfterSeconds
+		) {
+			opsSinceCleanup++;
+			if (opsSinceCleanup >= CLEANUP_INTERVAL_OPS) {
+				opsSinceCleanup = 0;
+				evictExpiredHead(windowStartedAt, CLEANUP_MAX_BATCH);
+			}
+			WindowCounter counter = counters.get(clientIdentity);
+			if (counter == null) {
+				if (counters.size() >= capacity) {
+					evictExpiredHead(windowStartedAt, capacity);
+					if (counters.size() >= capacity) {
+						return AcquireResult.limit(retryAfterSeconds);
+					}
+				}
+				counter = new WindowCounter(windowStartedAt);
+				counters.put(clientIdentity, counter);
+			}
+			boolean allowed = counter.incrementWithin(windowStartedAt, limit);
+			return allowed ? AcquireResult.allow() : AcquireResult.limit(retryAfterSeconds);
+		}
+
+		private void evictExpiredHead(long currentWindowStartedAt, int maxRemovals) {
+			int removed = 0;
+			Iterator<Map.Entry<String, WindowCounter>> iterator = counters.entrySet().iterator();
+			while (iterator.hasNext() && removed < maxRemovals) {
+				WindowCounter eldest = iterator.next().getValue();
+				if (!eldest.isBefore(currentWindowStartedAt)) {
+					break;
+				}
+				iterator.remove();
+				removed++;
+			}
+		}
+
+		private synchronized int size() {
+			return counters.size();
+		}
 	}
 
 	private static final class WindowCounter {
@@ -230,7 +272,7 @@ class FacilityReportAbuseControlLimiter {
 			this.windowStartedAt = windowStartedAt;
 		}
 
-		private synchronized boolean incrementWithin(long currentWindowStartedAt, int limit) {
+		private boolean incrementWithin(long currentWindowStartedAt, int limit) {
 			if (windowStartedAt != currentWindowStartedAt) {
 				windowStartedAt = currentWindowStartedAt;
 				count = 0;
@@ -242,7 +284,7 @@ class FacilityReportAbuseControlLimiter {
 			return true;
 		}
 
-		private synchronized boolean isBefore(long currentWindowStartedAt) {
+		private boolean isBefore(long currentWindowStartedAt) {
 			return windowStartedAt < currentWindowStartedAt;
 		}
 	}
@@ -250,37 +292,15 @@ class FacilityReportAbuseControlLimiter {
 
 class FacilityReportClientIdentityResolver {
 
-	static final String UNKNOWN_CLIENT = "unknown";
-	private final List<IpCidr> trustedProxies;
+	static final String UNKNOWN_CLIENT = TrustedClientIpResolver.UNKNOWN;
+	private final TrustedClientIpResolver ipResolver;
 
 	FacilityReportClientIdentityResolver(String trustedProxyCidrs) {
-		this.trustedProxies = parseTrustedProxies(trustedProxyCidrs);
+		this.ipResolver = TrustedClientIpResolver.fromCidrs(trustedProxyCidrs);
 	}
 
 	String resolve(HttpServletRequest request) {
-		String remoteAddress = normalizeAddress(request.getRemoteAddr());
-		if (isTrustedProxy(remoteAddress)) {
-			String forwardedFor = request.getHeader("X-Forwarded-For");
-			if (forwardedFor != null && !forwardedFor.isBlank()) {
-				return "ip:" + trustedClientAddress(forwardedFor);
-			}
-		}
-		return "ip:" + remoteAddress;
-	}
-
-	private String trustedClientAddress(String forwardedFor) {
-		String[] addresses = forwardedFor.split(",");
-		for (int index = addresses.length - 1; index >= 0; index--) {
-			String candidate = normalizeAddress(addresses[index]);
-			if (!UNKNOWN_CLIENT.equals(candidate) && !isTrustedProxy(candidate) && IpCidr.isValidIp(candidate)) {
-				return candidate;
-			}
-		}
-		return UNKNOWN_CLIENT;
-	}
-
-	private boolean isTrustedProxy(String remoteAddress) {
-		return trustedProxies.stream().anyMatch(proxy -> proxy.contains(remoteAddress));
+		return "ip:" + ipResolver.resolve(request);
 	}
 
 	static String normalizeAddress(String address) {
@@ -295,163 +315,6 @@ class FacilityReportClientIdentityResolver {
 	}
 
 	static InetAddress parseLiteral(String value) {
-		if (value == null) {
-			throw new IllegalArgumentException("IP address cannot be null");
-		}
-		String candidate = value.trim();
-		if (candidate.startsWith("[") && candidate.contains("]")) {
-			int closeBracket = candidate.indexOf("]");
-			candidate = candidate.substring(1, closeBracket);
-		} else if (candidate.contains(":") && candidate.indexOf(":") == candidate.lastIndexOf(":")) {
-			candidate = candidate.substring(0, candidate.indexOf(":"));
-		}
-		if (candidate.contains("%")) {
-			candidate = candidate.substring(0, candidate.indexOf("%"));
-		}
-		if (candidate.isBlank()) {
-			throw new IllegalArgumentException("invalid IP address: " + value);
-		}
-		if (candidate.contains(":")) {
-			if (!candidate.matches("[0-9A-Fa-f:.]+")) {
-				throw new IllegalArgumentException("invalid IPv6 address: " + value);
-			}
-		} else if (!validIpv4(candidate)) {
-			throw new IllegalArgumentException("invalid IPv4 address: " + value);
-		}
-		try {
-			return InetAddress.getByName(candidate);
-		} catch (UnknownHostException exception) {
-			throw new IllegalArgumentException("invalid IP address: " + value, exception);
-		}
-	}
-
-	private static boolean validIpv4(String value) {
-		String[] parts = value.split("\\.", -1);
-		if (parts.length != 4) {
-			return false;
-		}
-		for (String part : parts) {
-			if (part.isEmpty() || !part.chars().allMatch(Character::isDigit)) {
-				return false;
-			}
-			try {
-				int octet = Integer.parseInt(part);
-				if (octet < 0 || octet > 255) {
-					return false;
-				}
-			} catch (NumberFormatException exception) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static List<IpCidr> parseTrustedProxies(String trustedProxyCidrs) {
-		if (trustedProxyCidrs == null || trustedProxyCidrs.isBlank()) {
-			return List.of();
-		}
-		List<IpCidr> cidrs = new ArrayList<>();
-		for (String value : trustedProxyCidrs.split(",")) {
-			String normalized = value.trim();
-			if (!normalized.isBlank()) {
-				cidrs.add(IpCidr.parse(normalized));
-			}
-		}
-		return List.copyOf(cidrs);
+		return TrustedClientIpResolver.parseLiteral(value);
 	}
 }
-
-record IpCidr(byte[] address, int prefixLength) {
-
-	IpCidr {
-		address = address.clone();
-	}
-
-	@Override
-	public byte[] address() {
-		return address.clone();
-	}
-
-	static IpCidr parse(String value) {
-		String[] parts = value.split("/", -1);
-		if (parts.length < 1 || parts.length > 2 || parts[0].isBlank()) {
-			throw new IllegalArgumentException("invalid IPv4 CIDR: " + value);
-		}
-		InetAddress inetAddress;
-		try {
-			inetAddress = FacilityReportClientIdentityResolver.parseLiteral(parts[0].trim());
-		} catch (IllegalArgumentException e) {
-			throw new IllegalArgumentException("invalid IPv4 CIDR: " + value, e);
-		}
-		byte[] addressBytes = inetAddress.getAddress();
-		int maxPrefix = addressBytes.length * Byte.SIZE;
-		int prefixLength;
-		try {
-			prefixLength = parts.length == 2 ? Integer.parseInt(parts[1].trim()) : maxPrefix;
-		} catch (NumberFormatException e) {
-			throw new IllegalArgumentException("invalid IPv4 CIDR prefix: " + value, e);
-		}
-		if (prefixLength < 0 || prefixLength > maxPrefix) {
-			throw new IllegalArgumentException("invalid IPv4 CIDR prefix: " + value);
-		}
-		return new IpCidr(addressBytes, prefixLength);
-	}
-
-	boolean contains(String candidateAddress) {
-		if (candidateAddress == null || FacilityReportClientIdentityResolver.UNKNOWN_CLIENT.equals(candidateAddress)) {
-			return false;
-		}
-		try {
-			InetAddress inetAddress = FacilityReportClientIdentityResolver.parseLiteral(candidateAddress);
-			byte[] other = inetAddress.getAddress();
-			if (address.length != other.length) {
-				return false;
-			}
-			int fullBytes = prefixLength / Byte.SIZE;
-			for (int index = 0; index < fullBytes; index++) {
-				if (address[index] != other[index]) {
-					return false;
-				}
-			}
-			int remainingBits = prefixLength % Byte.SIZE;
-			if (remainingBits == 0) {
-				return true;
-			}
-			int mask = (0xFF << (Byte.SIZE - remainingBits)) & 0xFF;
-			return (address[fullBytes] & mask) == (other[fullBytes] & mask);
-		} catch (IllegalArgumentException exception) {
-			return false;
-		}
-	}
-
-	static boolean isValidIp(String value) {
-		try {
-			FacilityReportClientIdentityResolver.parseLiteral(value);
-			return true;
-		} catch (IllegalArgumentException exception) {
-			return false;
-		}
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (this == obj) {
-			return true;
-		}
-		if (!(obj instanceof IpCidr other)) {
-			return false;
-		}
-		return prefixLength == other.prefixLength && Arrays.equals(address, other.address);
-	}
-
-	@Override
-	public int hashCode() {
-		return 31 * Arrays.hashCode(address) + Integer.hashCode(prefixLength);
-	}
-
-	@Override
-	public String toString() {
-		return "IpCidr[address=" + Arrays.toString(address) + ", prefixLength=" + prefixLength + "]";
-	}
-}
-

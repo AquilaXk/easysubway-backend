@@ -1,24 +1,20 @@
 package com.easysubway.train.adapter.in.web;
 
 import com.easysubway.common.time.BusinessTime;
+import com.easysubway.common.web.ClientIpHashResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,7 +34,7 @@ class TrainSearchRateLimitFilter extends OncePerRequestFilter {
 	private final ObjectMapper objectMapper;
 	private final TrainSearchRateLimiter stationLimiter;
 	private final TrainSearchRateLimiter searchLimiter;
-	private final TrainSearchClientIdentityResolver identityResolver;
+	private final ClientIpHashResolver identityResolver;
 
 	@Autowired
 	TrainSearchRateLimitFilter(
@@ -46,7 +42,7 @@ class TrainSearchRateLimitFilter extends OncePerRequestFilter {
 		@Value("${EASYSUBWAY_TRAIN_STATION_RATE_LIMIT_PER_MINUTE:60}") int stationLimit,
 		@Value("${EASYSUBWAY_TRAIN_SEARCH_RATE_LIMIT_PER_MINUTE:24}") int searchLimit,
 		@Value("${EASYSUBWAY_TRAIN_SEARCH_RATE_LIMIT_PER_DAY:64}") int searchDailyLimit,
-		@Value("${EASYSUBWAY_TRAIN_SEARCH_RATE_LIMIT_MAX_KEYS:4096}") int maxKeys,
+		@Value("${EASYSUBWAY_TRAIN_SEARCH_RATE_LIMIT_MAX_KEYS:65536}") int maxKeys,
 		@Value("${easysubway.auth.client-ip.trusted-proxies:}") String trustedProxies,
 		ObjectProvider<Clock> clockProvider
 	) {
@@ -60,13 +56,13 @@ class TrainSearchRateLimitFilter extends OncePerRequestFilter {
 			clock,
 			BusinessTime.ZONE
 		);
-		this.identityResolver = new TrainSearchClientIdentityResolver(trustedProxies);
+		this.identityResolver = ClientIpHashResolver.fromTrustedProxies(trustedProxies, "");
 	}
 
 	TrainSearchRateLimitFilter(
 		ObjectMapper objectMapper,
 		TrainSearchRateLimiter limiter,
-		TrainSearchClientIdentityResolver identityResolver
+		ClientIpHashResolver identityResolver
 	) {
 		this.objectMapper = objectMapper;
 		this.stationLimiter = limiter;
@@ -125,15 +121,16 @@ class TrainSearchRateLimitFilter extends OncePerRequestFilter {
 
 final class TrainSearchRateLimiter {
 
+	static final int MAX_KEYS = 65_536;
 	private static final long WINDOW_SECONDS = 60;
+	private static final int HEAD_EXPIRY_BUDGET = 4;
 
 	private final int limit;
 	private final Integer dailyLimit;
 	private final int maxKeys;
 	private final Clock clock;
 	private final ZoneId dayZone;
-	private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
-	private long countersWindow = Long.MIN_VALUE;
+	private final LinkedHashMap<String, WindowCounter> counters;
 
 	TrainSearchRateLimiter(int limit, int maxKeys, Clock clock) {
 		this(limit, null, maxKeys, clock, ZoneId.of("UTC"));
@@ -149,9 +146,10 @@ final class TrainSearchRateLimiter {
 		}
 		this.limit = limit;
 		this.dailyLimit = dailyLimit;
-		this.maxKeys = maxKeys;
+		this.maxKeys = Math.min(maxKeys, MAX_KEYS);
 		this.clock = clock;
 		this.dayZone = dayZone;
+		this.counters = new LinkedHashMap<>(Math.min(this.maxKeys, 256), 0.75f, true);
 	}
 
 	synchronized AcquireResult acquire(String identity, int cost) {
@@ -161,12 +159,11 @@ final class TrainSearchRateLimiter {
 		long window = now - Math.floorMod(now, WINDOW_SECONDS);
 		LocalDate currentDate = currentInstant.atZone(dayZone).toLocalDate();
 		long day = currentDate.toEpochDay();
-		long retentionWindow = dailyLimit == null ? window : day;
-		if (countersWindow != retentionWindow) {
-			counters.clear();
-			countersWindow = retentionWindow;
-		}
-		WindowCounter counter = counterFor(identity, window, day);
+		boolean trackDaily = dailyLimit != null;
+
+		evictExpiredHead(window, day, trackDaily, HEAD_EXPIRY_BUDGET);
+		WindowCounter counter = counterFor(identity, window, day, trackDaily);
+
 		long minuteRetryAfter = WINDOW_SECONDS - Math.floorMod(now, WINDOW_SECONDS);
 		var untilNextDay = java.time.Duration.between(
 			currentInstant,
@@ -177,20 +174,46 @@ final class TrainSearchRateLimiter {
 			? WindowCounter.Decision.CARDINALITY_DENIED
 			: counter.acquire(window, day, cost, limit, dailyLimit);
 		boolean retriesNextDay = decision == WindowCounter.Decision.DAILY_DENIED
-			|| (decision == WindowCounter.Decision.CARDINALITY_DENIED && dailyLimit != null);
+			|| (decision == WindowCounter.Decision.CARDINALITY_DENIED && trackDaily);
 		long retryAfter = retriesNextDay ? dailyRetryAfter : minuteRetryAfter;
 		return decision == WindowCounter.Decision.ALLOWED
 			? new AcquireResult(true, 0)
 			: new AcquireResult(false, retryAfter);
 	}
 
-	private WindowCounter counterFor(String identity, long window, long day) {
+	int maxKeys() {
+		return maxKeys;
+	}
+
+	int currentSize() {
+		synchronized (this) {
+			return counters.size();
+		}
+	}
+
+	private WindowCounter counterFor(String identity, long window, long day, boolean trackDaily) {
 		WindowCounter existing = counters.get(identity);
 		if (existing != null) return existing;
-		if (counters.size() >= maxKeys) return null;
+		if (counters.size() >= maxKeys) {
+			evictExpiredHead(window, day, trackDaily, maxKeys);
+			if (counters.size() >= maxKeys) return null;
+		}
 		WindowCounter created = new WindowCounter(window, day);
 		counters.put(identity, created);
 		return created;
+	}
+
+	private void evictExpiredHead(long currentWindow, long currentDay, boolean trackDaily, int maxRemovals) {
+		int removed = 0;
+		Iterator<Map.Entry<String, WindowCounter>> iterator = counters.entrySet().iterator();
+		while (iterator.hasNext() && removed < maxRemovals) {
+			WindowCounter eldest = iterator.next().getValue();
+			if (!eldest.isExpired(currentWindow, currentDay, trackDaily)) {
+				break;
+			}
+			iterator.remove();
+			removed++;
+		}
 	}
 
 	record AcquireResult(boolean allowed, long retryAfterSeconds) {}
@@ -206,7 +229,11 @@ final class TrainSearchRateLimiter {
 			this.day = day;
 		}
 
-		private synchronized Decision acquire(
+		private boolean isExpired(long currentWindow, long currentDay, boolean trackDaily) {
+			return trackDaily ? day < currentDay : window < currentWindow;
+		}
+
+		private Decision acquire(
 			long currentWindow,
 			long currentDay,
 			int cost,
@@ -229,115 +256,5 @@ final class TrainSearchRateLimiter {
 		}
 
 		private enum Decision { ALLOWED, MINUTE_DENIED, DAILY_DENIED, CARDINALITY_DENIED }
-	}
-}
-
-final class TrainSearchClientIdentityResolver {
-
-	private final List<IpCidrRange> trustedProxies;
-
-	TrainSearchClientIdentityResolver(String trustedProxyCidrs) {
-		this.trustedProxies = parseCidrs(trustedProxyCidrs);
-	}
-
-	String resolve(HttpServletRequest request) {
-		String remote = normalize(request.getRemoteAddr());
-		if (trusted(remote)) {
-			String forwardedFor = request.getHeader("X-Forwarded-For");
-			if (forwardedFor != null && !forwardedFor.isBlank()) {
-				String[] chain = forwardedFor.split(",");
-				for (int index = chain.length - 1; index >= 0; index--) {
-					String candidate = normalize(chain[index]);
-					if (!"unknown".equals(candidate) && !trusted(candidate)) return "ip:" + candidate;
-				}
-				return "ip:unknown";
-			}
-		}
-		return "ip:" + remote;
-	}
-
-	private boolean trusted(String address) {
-		return trustedProxies.stream().anyMatch(cidr -> cidr.contains(address));
-	}
-
-	private static List<IpCidrRange> parseCidrs(String values) {
-		if (values == null || values.isBlank()) return List.of();
-		List<IpCidrRange> result = new ArrayList<>();
-		for (String value : values.split(",")) {
-			if (!value.isBlank()) result.add(IpCidrRange.parse(value.trim()));
-		}
-		return List.copyOf(result);
-	}
-
-	private static String normalize(String value) {
-		if (value == null || value.isBlank()) return "unknown";
-		try {
-			return parseLiteral(value.trim()).getHostAddress().toLowerCase(Locale.ROOT);
-		} catch (IllegalArgumentException exception) {
-			return "unknown";
-		}
-	}
-
-	static InetAddress parseLiteral(String value) {
-		String candidate = value.trim();
-		if (candidate.contains(":")) {
-			if (!candidate.matches("[0-9A-Fa-f:.]+")) throw new IllegalArgumentException("invalid IPv6 address");
-		} else if (!validIpv4(candidate)) {
-			throw new IllegalArgumentException("invalid IPv4 address");
-		}
-		try {
-			return InetAddress.getByName(candidate);
-		} catch (UnknownHostException exception) {
-			throw new IllegalArgumentException("invalid IP address", exception);
-		}
-	}
-
-	private static boolean validIpv4(String value) {
-		String[] parts = value.split("\\.", -1);
-		if (parts.length != 4) return false;
-		for (String part : parts) {
-			if (part.isEmpty() || !part.chars().allMatch(Character::isDigit)) return false;
-			try {
-				if (Integer.parseInt(part) > 255) return false;
-			} catch (NumberFormatException exception) {
-				return false;
-			}
-		}
-		return true;
-	}
-}
-
-record IpCidrRange(byte[] address, int prefixLength) {
-
-	static IpCidrRange parse(String value) {
-		String[] parts = value.split("/", -1);
-		if (parts.length > 2 || parts[0].isBlank()) throw new IllegalArgumentException("invalid IP CIDR");
-		byte[] address = TrainSearchClientIdentityResolver.parseLiteral(parts[0]).getAddress();
-		int maxPrefix = address.length * Byte.SIZE;
-		int prefix = parts.length == 2 ? Integer.parseInt(parts[1]) : maxPrefix;
-		if (prefix < 0 || prefix > maxPrefix) throw new IllegalArgumentException("invalid IP CIDR prefix");
-		return new IpCidrRange(address, prefix);
-	}
-
-	boolean contains(String candidate) {
-		if ("unknown".equals(candidate)) return false;
-		byte[] other;
-		try {
-			other = TrainSearchClientIdentityResolver.parseLiteral(candidate).getAddress();
-		} catch (IllegalArgumentException exception) {
-			return false;
-		}
-		if (address.length != other.length) return false;
-		int fullBytes = prefixLength / Byte.SIZE;
-		if (!Arrays.equals(Arrays.copyOf(address, fullBytes), Arrays.copyOf(other, fullBytes))) return false;
-		int remainingBits = prefixLength % Byte.SIZE;
-		if (remainingBits == 0) return true;
-		int mask = 0xff << (Byte.SIZE - remainingBits);
-		return (address[fullBytes] & mask) == (other[fullBytes] & mask);
-	}
-
-	@Override
-	public byte[] address() {
-		return address.clone();
 	}
 }

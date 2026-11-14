@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ public class JdbcFavoriteFacilityRepository implements
 	DeleteUserFavoriteFacilityPort {
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcFavoriteFacilityRepository(DataSource dataSource) {
@@ -93,6 +95,10 @@ public class JdbcFavoriteFacilityRepository implements
 	@Override
 	@Transactional
 	public FavoriteFacility saveFavoriteFacility(FavoriteFacility favoriteFacility) {
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			upsertFavoriteFacilityWithPostgresql(favoriteFacility);
+			return favoriteFacility;
+		}
 		DuplicateKeyException lastDuplicateKeyException = null;
 		for (int attempt = 0; attempt < 2; attempt++) {
 			if (updateFavoriteFacility(favoriteFacility) > 0) {
@@ -110,6 +116,24 @@ public class JdbcFavoriteFacilityRepository implements
 			}
 		}
 		throw new IllegalStateException("즐겨찾기 시설 저장 중 동시 변경이 반복되었습니다.", lastDuplicateKeyException);
+	}
+
+	private void upsertFavoriteFacilityWithPostgresql(FavoriteFacility favoriteFacility) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO favorite_facilities (
+					user_id,
+					facility_id,
+					added_at
+				)
+				VALUES (?, ?, ?)
+				ON CONFLICT (user_id, facility_id) DO UPDATE SET
+					added_at = EXCLUDED.added_at
+				""",
+			favoriteFacility.userId(),
+			favoriteFacility.facilityId(),
+			favoriteFacility.addedAt()
+		);
 	}
 
 	@Override
@@ -170,5 +194,24 @@ public class JdbcFavoriteFacilityRepository implements
 			resultSet.getString("facility_id"),
 			resultSet.getObject("added_at", LocalDateTime.class)
 		);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

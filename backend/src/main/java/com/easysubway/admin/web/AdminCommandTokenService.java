@@ -1,11 +1,11 @@
 package com.easysubway.admin.web;
 
-import com.easysubway.common.error.ConflictException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 public class AdminCommandTokenService {
 
 	public static final String PARAMETER_NAME = "commandToken";
+	public static final String HEADER_NAME = "X-Command-Token";
 	private static final String SESSION_ATTRIBUTE = AdminCommandTokenService.class.getName() + ".TOKENS";
 	private static final int MAX_TOKENS_PER_SESSION = 1024;
 
@@ -31,16 +32,16 @@ public class AdminCommandTokenService {
 
 	public void consume(HttpServletRequest request, String token) {
 		if (!StringUtils.hasText(token)) {
-			throw duplicateSubmit();
+			throw invalidOrExpiredCommandToken();
 		}
 		HttpSession session = request.getSession(false);
 		if (session == null) {
-			throw duplicateSubmit();
+			throw invalidOrExpiredCommandToken();
 		}
 		synchronized (session) {
 			Object value = session.getAttribute(SESSION_ATTRIBUTE);
 			if (!(value instanceof Set<?> tokens) || !tokens.remove(token)) {
-				throw duplicateSubmit();
+				throw invalidOrExpiredCommandToken();
 			}
 		}
 	}
@@ -56,7 +57,7 @@ public class AdminCommandTokenService {
 		return tokens;
 	}
 
-	private static ConflictException duplicateSubmit() {
-		return new ConflictException("이미 처리되었거나 만료된 관리자 요청입니다. 화면을 새로고침한 뒤 다시 시도해 주세요.");
+	private static AccessDeniedException invalidOrExpiredCommandToken() {
+		return new AccessDeniedException("이미 처리되었거나 만료된 관리자 요청입니다. 화면을 새로고침한 뒤 다시 시도해 주세요.");
 	}
 }

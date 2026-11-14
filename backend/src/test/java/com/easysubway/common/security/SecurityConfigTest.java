@@ -1082,6 +1082,24 @@ class SecurityConfigTest {
 		);
 	}
 
+	@Test
+	@DisplayName("fallback 로그인 유지 키 파생 시 원 비밀번호 대신 도메인 분리 SHA-256 해시를 사용한다")
+	void fallbackRememberMeKeyUsesSha256DomainDerivationInsteadOfRawPassword() throws Exception {
+		String rawSecret = "super-secret-admin-password-value";
+		String derived = SecurityConfig.resolveRememberMeKey("", rawSecret, false);
+
+		byte[] expectedDigest = java.security.MessageDigest.getInstance("SHA-256")
+			.digest(("easysubway-admin-remember-me:" + rawSecret).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		String expectedHex = java.util.HexFormat.of().formatHex(expectedDigest);
+
+		assertThat(derived)
+			.isEqualTo(expectedHex)
+			.hasSize(64)
+			.doesNotContain(rawSecret);
+		assertThat(SecurityConfig.resolveRememberMeKey("explicit-key", rawSecret, false))
+			.isEqualTo("explicit-key");
+	}
+
 	private record BootstrapIdentityCollision(
 		String adminUsername,
 		String adminPassword,

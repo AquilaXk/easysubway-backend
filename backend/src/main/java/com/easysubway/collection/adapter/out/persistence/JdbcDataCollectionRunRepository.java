@@ -11,8 +11,12 @@ import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,9 +56,23 @@ public class JdbcDataCollectionRunRepository implements
 			throw exception;
 		}
 		jdbcTemplate.update("DELETE FROM data_collection_run_steps WHERE run_id = ?", run.runId());
-		for (int index = 0; index < run.steps().size(); index++) {
-			DataCollectionRunStep step = run.steps().get(index);
-			jdbcTemplate.update("""
+		if (!run.steps().isEmpty()) {
+			List<Object[]> batchArgs = new ArrayList<>(run.steps().size());
+			for (int index = 0; index < run.steps().size(); index++) {
+				DataCollectionRunStep step = run.steps().get(index);
+				batchArgs.add(new Object[] {
+					run.runId(),
+					index,
+					step.name(),
+					step.status().name(),
+					step.inputSource(),
+					step.artifactReference(),
+					step.checksum(),
+					step.recordCount(),
+					step.failureMessage()
+				});
+			}
+			jdbcTemplate.batchUpdate("""
 				INSERT INTO data_collection_run_steps (
 					run_id,
 					step_order,
@@ -68,15 +86,7 @@ public class JdbcDataCollectionRunRepository implements
 				)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
-				run.runId(),
-				index,
-				step.name(),
-				step.status().name(),
-				step.inputSource(),
-				step.artifactReference(),
-				step.checksum(),
-				step.recordCount(),
-				step.failureMessage()
+				batchArgs
 			);
 		}
 		return run;
@@ -195,16 +205,17 @@ public class JdbcDataCollectionRunRepository implements
 	@Override
 	public Optional<DataCollectionRun> loadRun(String runId) {
 		try {
-			return Optional.ofNullable(jdbcTemplate.queryForObject(
+			RunHeader header = jdbcTemplate.queryForObject(
 				"""
 					SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
 						failure_message, retryable, operator_action
 					FROM data_collection_runs
 					WHERE run_id = ?
 					""",
-				this::mapRun,
+				this::mapRunHeader,
 				runId
-			));
+			);
+			return header == null ? Optional.empty() : Optional.of(toRun(header, loadSteps(header.runId())));
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
@@ -213,7 +224,7 @@ public class JdbcDataCollectionRunRepository implements
 	@Override
 	public Optional<DataCollectionRun> loadLatestCompletedRun(DataCollectionSource source) {
 		try {
-			return Optional.ofNullable(jdbcTemplate.queryForObject(
+			RunHeader header = jdbcTemplate.queryForObject(
 				"""
 					SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
 						failure_message, retryable, operator_action
@@ -224,10 +235,11 @@ public class JdbcDataCollectionRunRepository implements
 					ORDER BY completed_at DESC, run_id DESC
 					LIMIT 1
 					""",
-				this::mapRun,
+				this::mapRunHeader,
 				source.name(),
 				DataCollectionStatus.COMPLETED.name()
-			));
+			);
+			return header == null ? Optional.empty() : Optional.of(toRun(header, loadSteps(header.runId())));
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
@@ -236,7 +248,7 @@ public class JdbcDataCollectionRunRepository implements
 	@Override
 	public Optional<DataCollectionRun> loadRunningRun(DataCollectionSource source) {
 		try {
-			return Optional.ofNullable(jdbcTemplate.queryForObject(
+			RunHeader header = jdbcTemplate.queryForObject(
 				"""
 					SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
 						failure_message, retryable, operator_action
@@ -244,9 +256,10 @@ public class JdbcDataCollectionRunRepository implements
 					WHERE source = ?
 						AND status = 'RUNNING'
 					""",
-				this::mapRun,
+				this::mapRunHeader,
 				source.name()
-			));
+			);
+			return header == null ? Optional.empty() : Optional.of(toRun(header, loadSteps(header.runId())));
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
@@ -262,7 +275,7 @@ public class JdbcDataCollectionRunRepository implements
 		if (limit <= 0) {
 			return List.of();
 		}
-		return jdbcTemplate.query(
+		List<RunHeader> headers = jdbcTemplate.query(
 			"""
 				SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
 					failure_message, retryable, operator_action
@@ -270,16 +283,24 @@ public class JdbcDataCollectionRunRepository implements
 				ORDER BY started_at DESC, run_id DESC
 				LIMIT ? OFFSET ?
 				""",
-			this::mapRun,
+			this::mapRunHeader,
 			limit,
 			Math.max(offset, 0)
 		);
+		if (headers.isEmpty()) {
+			return List.of();
+		}
+		Map<String, List<DataCollectionRunStep>> stepsByRunId = loadStepsByRunId(
+			headers.stream().map(RunHeader::runId).toList()
+		);
+		return headers.stream()
+			.map(header -> toRun(header, stepsByRunId.getOrDefault(header.runId(), List.of())))
+			.toList();
 	}
 
-	private DataCollectionRun mapRun(ResultSet resultSet, int rowNumber) throws SQLException {
-		String runId = resultSet.getString("run_id");
-		return new DataCollectionRun(
-			runId,
+	private RunHeader mapRunHeader(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new RunHeader(
+			resultSet.getString("run_id"),
 			DataCollectionSource.valueOf(resultSet.getString("source")),
 			DataCollectionStatus.valueOf(resultSet.getString("status")),
 			resultSet.getString("requested_by"),
@@ -288,29 +309,81 @@ public class JdbcDataCollectionRunRepository implements
 			resultSet.getInt("collected_count"),
 			resultSet.getString("failure_message"),
 			resultSet.getBoolean("retryable"),
-			resultSet.getString("operator_action"),
-			loadSteps(runId)
+			resultSet.getString("operator_action")
+		);
+	}
+
+	private static DataCollectionRun toRun(RunHeader header, List<DataCollectionRunStep> steps) {
+		return new DataCollectionRun(
+			header.runId(),
+			header.source(),
+			header.status(),
+			header.requestedBy(),
+			header.startedAt(),
+			header.completedAt(),
+			header.collectedCount(),
+			header.failureMessage(),
+			header.retryable(),
+			header.operatorAction(),
+			steps
 		);
 	}
 
 	private List<DataCollectionRunStep> loadSteps(String runId) {
-		return jdbcTemplate.query(
-			"""
-				SELECT step_name, status, input_source, artifact_reference, checksum, record_count, failure_message
-				FROM data_collection_run_steps
-				WHERE run_id = ?
-				ORDER BY step_order ASC
-				""",
-			(resultSet, rowNumber) -> new DataCollectionRunStep(
-				resultSet.getString("step_name"),
-				DataCollectionStepStatus.valueOf(resultSet.getString("status")),
-				resultSet.getString("input_source"),
-				resultSet.getString("artifact_reference"),
-				resultSet.getString("checksum"),
-				resultSet.getInt("record_count"),
-				resultSet.getString("failure_message")
-			),
-			runId
-		);
+		return loadStepsByRunId(List.of(runId)).getOrDefault(runId, List.of());
+	}
+
+	private Map<String, List<DataCollectionRunStep>> loadStepsByRunId(List<String> runIds) {
+		if (runIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, List<DataCollectionRunStep>> stepsByRunId = new HashMap<>(runIds.size() * 2);
+		for (int start = 0; start < runIds.size(); start += 500) {
+			List<String> chunk = runIds.subList(start, Math.min(start + 500, runIds.size()));
+			String placeholders = String.join(", ", Collections.nCopies(chunk.size(), "?"));
+			jdbcTemplate.query(
+				"""
+					SELECT run_id, step_name, status, input_source, artifact_reference, checksum, record_count, failure_message
+					FROM data_collection_run_steps
+					WHERE run_id IN (""" + placeholders + """
+					)
+					ORDER BY run_id ASC, step_order ASC
+					""",
+				resultSet -> {
+					while (resultSet.next()) {
+						String runId = resultSet.getString("run_id");
+						stepsByRunId.computeIfAbsent(runId, ignored -> new ArrayList<>()).add(
+							new DataCollectionRunStep(
+								resultSet.getString("step_name"),
+								DataCollectionStepStatus.valueOf(resultSet.getString("status")),
+								resultSet.getString("input_source"),
+								resultSet.getString("artifact_reference"),
+								resultSet.getString("checksum"),
+								resultSet.getInt("record_count"),
+								resultSet.getString("failure_message")
+							)
+						);
+					}
+					return null;
+				},
+				chunk.toArray()
+			);
+		}
+		stepsByRunId.replaceAll((ignored, steps) -> List.copyOf(steps));
+		return stepsByRunId;
+	}
+
+	private record RunHeader(
+		String runId,
+		DataCollectionSource source,
+		DataCollectionStatus status,
+		String requestedBy,
+		LocalDateTime startedAt,
+		LocalDateTime completedAt,
+		int collectedCount,
+		String failureMessage,
+		boolean retryable,
+		String operatorAction
+	) {
 	}
 }

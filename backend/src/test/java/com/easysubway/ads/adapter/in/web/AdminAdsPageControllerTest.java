@@ -224,7 +224,7 @@ class AdminAdsPageControllerTest {
 				.with(operationsManager())
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("reason", "token 누락"))
-			.andExpect(status().isConflict());
+			.andExpect(status().isForbidden());
 	}
 
 	@Test

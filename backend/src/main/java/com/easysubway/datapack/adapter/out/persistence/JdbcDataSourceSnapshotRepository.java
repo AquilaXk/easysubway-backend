@@ -36,6 +36,19 @@ public class JdbcDataSourceSnapshotRepository {
 
 	public DataSourceSnapshot saveSnapshot(DataSourceSnapshot snapshot) {
 		snapshot.requireRawEvidenceWritePolicy();
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			int inserted = insertPostgresqlIfAbsent(snapshot);
+			if (inserted == 1) {
+				return snapshot;
+			}
+			DataSourceSnapshot existing = loadSnapshot(snapshot.snapshotId())
+				.orElseThrow(() -> new DuplicateKeyException(
+					"Duplicate source snapshot id or lineage constraint: " + snapshot.snapshotId()));
+			if (existing.equals(snapshot)) {
+				return snapshot;
+			}
+			throw new InvalidDataSourceSnapshotException("LOCKED source snapshot is append-only; create a new snapshot instead.");
+		}
 		try {
 			insert(snapshot);
 			return snapshot;
@@ -190,6 +203,55 @@ public class JdbcDataSourceSnapshotRepository {
 		}
 	}
 
+	public boolean insertEventIfAbsent(
+		String id,
+		String sourceId,
+		String snapshotId,
+		String operationType,
+		String operationStatus,
+		String requestedBy,
+		String reason,
+		String idempotencyKey,
+		LocalDateTime createdAt
+	) {
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			return jdbcTemplate.update("""
+				INSERT INTO datapack_source_snapshot_events (
+					id, source_id, snapshot_id, operation_type, operation_status,
+					requested_by, reason, idempotency_key, created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT DO NOTHING
+				""",
+				id,
+				sourceId,
+				snapshotId,
+				operationType,
+				operationStatus,
+				requestedBy,
+				reason,
+				idempotencyKey,
+				createdAt
+			) == 1;
+		}
+		try {
+			insertEvent(
+				id,
+				sourceId,
+				snapshotId,
+				operationType,
+				operationStatus,
+				requestedBy,
+				reason,
+				idempotencyKey,
+				createdAt
+			);
+			return true;
+		} catch (DuplicateKeyException exception) {
+			return false;
+		}
+	}
+
 	public void insertEvent(
 		String id,
 		String sourceId,
@@ -217,6 +279,48 @@ public class JdbcDataSourceSnapshotRepository {
 			reason,
 			idempotencyKey,
 			createdAt
+		);
+	}
+
+	private int insertPostgresqlIfAbsent(DataSourceSnapshot snapshot) {
+		return jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
+				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT DO NOTHING
+			""",
+			snapshot.snapshotId(),
+			snapshot.sourceId(),
+			snapshot.provider(),
+			snapshot.retrievedAt(),
+			snapshot.sourceUpdatedAt(),
+			snapshot.freshnessBasisAt(),
+			snapshot.providerValidUntil(),
+			snapshot.rowCount(),
+			snapshot.coverageCount(),
+			snapshot.rawSha256(),
+			snapshot.rawObjectUri(),
+			snapshot.redactedRequestFingerprint(),
+			snapshot.schemaFingerprint(),
+			snapshot.snapshotStatus(),
+			snapshot.schemaStatus(),
+			snapshot.licenseStatus(),
+			snapshot.fetchStatus(),
+			snapshot.redistributionAllowed(),
+			snapshot.credentialRedacted(),
+			snapshot.previousSnapshotId(),
+			snapshot.diffSummary(),
+			jsonParameter(snapshot.diffSummaryJson()),
+			snapshot.freshnessExpiresAt(),
+			snapshot.rawRetentionExpiresAt(),
+			snapshot.governancePolicyVersion(),
+			snapshot.governancePolicySha256()
 		);
 	}
 

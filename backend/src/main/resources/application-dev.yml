@@ -22,7 +22,7 @@ easysubway:
       report-submit-limit: ${EASYSUBWAY_REPORT_ABUSE_REPORT_SUBMIT_LIMIT:1000}
       status-limit: ${EASYSUBWAY_REPORT_ABUSE_STATUS_LIMIT:1000}
       confirm-limit: ${EASYSUBWAY_REPORT_ABUSE_CONFIRM_LIMIT:1000}
-      max-counter-keys: ${EASYSUBWAY_REPORT_ABUSE_MAX_COUNTER_KEYS:4096}
+      max-counter-keys: ${EASYSUBWAY_REPORT_ABUSE_MAX_COUNTER_KEYS:16384}
       store-mode: ${EASYSUBWAY_REPORT_ABUSE_STORE_MODE:local}
   admin:
     basic-auth:

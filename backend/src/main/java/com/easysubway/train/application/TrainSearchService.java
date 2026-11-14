@@ -23,8 +23,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,7 +37,6 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -69,9 +72,15 @@ public class TrainSearchService {
 	private final Clock clock;
 	private final Sleeper sleeper;
 	private final Supplier<String> ownerSupplier;
-	private final ConcurrentHashMap<String, CachedLeg> l1 = new ConcurrentHashMap<>();
-	private final ConcurrentLinkedQueue<String> l1Order = new ConcurrentLinkedQueue<>();
+	private final Object l1Lock = new Object();
+	private final Map<String, CachedLeg> l1 = new LinkedHashMap<>(256, 0.75f, true) {
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<String, CachedLeg> eldest) {
+			return size() > L1_LIMIT;
+		}
+	};
 	private final ConcurrentHashMap<String, CompletableFuture<CachedLeg>> singleFlights = new ConcurrentHashMap<>();
+	private volatile CachedDecodedCatalog l1Catalog;
 
 	@Autowired
 	public TrainSearchService(TrainSearchProvider provider, TrainSearchCache cache, ObjectMapper objectMapper) {
@@ -112,7 +121,7 @@ public class TrainSearchService {
 			var cached = cache.freshCatalog(CATALOG_KIND, now);
 			requireBefore(deadline);
 			return cached
-				.map(value -> new CatalogEntry(decodeCatalog(value), value.expiresAt()))
+				.map(this::cachedCatalogEntry)
 				.orElseGet(() -> refreshCatalogEntry(now, false, false, deadline));
 		} catch (TrainSearchFailure failure) {
 			throw failure;
@@ -133,10 +142,14 @@ public class TrainSearchService {
 		if (trainType != null) requireSupported(trainType);
 		String folded = normalizedQuery.toLowerCase(Locale.ROOT);
 		CatalogEntry catalog = catalogWithMetadata(requestDeadline());
-		List<Station> stations = catalog.catalog().stations().stream()
-			.filter(station -> station.name().toLowerCase(Locale.ROOT).contains(folded))
-			.sorted(Comparator.comparing(Station::name).thenComparing(Station::id))
-			.toList();
+		List<IndexedStation> indexedStations = catalog.sortedIndexedStations();
+		List<Station> stations = new ArrayList<>();
+		for (int i = 0, size = indexedStations.size(); i < size; i++) {
+			IndexedStation indexed = indexedStations.get(i);
+			if (indexed.foldedName().contains(folded)) {
+				stations.add(indexed.station());
+			}
+		}
 		return new StationSearchSnapshot(stations, catalog.expiresAt());
 	}
 
@@ -150,10 +163,9 @@ public class TrainSearchService {
 		SearchCriteria normalized = validateStructure(criteria, admittedServiceDay);
 		try {
 			CatalogEntry catalogEntry = catalogWithMetadata(deadline);
-			Catalog catalog = catalogEntry.catalog();
-			validateStations(normalized, catalog);
+			validateStations(normalized, catalogEntry);
 			LegResult outbound = direction(
-				catalog,
+				catalogEntry,
 				normalized.departureStationId(),
 				normalized.arrivalStationId(),
 				normalized.departureDate(),
@@ -162,7 +174,7 @@ public class TrainSearchService {
 				deadline
 			);
 			LegResult inbound = normalized.returnDate() == null ? null : direction(
-				catalog,
+				catalogEntry,
 				normalized.arrivalStationId(),
 				normalized.departureStationId(),
 				normalized.returnDate(),
@@ -231,8 +243,7 @@ public class TrainSearchService {
 		var existing = cache.freshCatalog(CATALOG_KIND, now);
 		requireBefore(deadline);
 		if (!force && existing.isPresent()) {
-			CachedCatalog cached = existing.orElseThrow();
-			return new CatalogEntry(decodeCatalog(cached), cached.expiresAt());
+			return cachedCatalogEntry(existing.orElseThrow());
 		}
 		String owner = ownerSupplier.get();
 		if (!cache.tryAcquireLease(CATALOG_LEASE_KEY, owner, now, CATALOG_LEASE_TTL)) {
@@ -249,8 +260,7 @@ public class TrainSearchService {
 			var cached = cache.freshCatalog(CATALOG_KIND, now);
 			requireBefore(deadline);
 			if (cached.isPresent() && catalogChanged(baseline, cached.orElseThrow())) {
-				CachedCatalog value = cached.orElseThrow();
-				return new CatalogEntry(decodeCatalog(value), value.expiresAt());
+				return cachedCatalogEntry(cached.orElseThrow());
 			}
 			String owner = ownerSupplier.get();
 			if (cache.tryAcquireLease(CATALOG_LEASE_KEY, owner, now, CATALOG_LEASE_TTL)) {
@@ -272,8 +282,7 @@ public class TrainSearchService {
 			var current = cache.freshCatalog(CATALOG_KIND, clock.instant());
 			requireBefore(deadline);
 			if (current.isPresent() && (!force || catalogChanged(baseline, current.orElseThrow()))) {
-				CachedCatalog value = current.orElseThrow();
-				return new CatalogEntry(decodeCatalog(value), value.expiresAt());
+				return cachedCatalogEntry(current.orElseThrow());
 			}
 			delegatedToLoad = true;
 			return loadCatalog(owner, catalogLoadDeadline(acquiredAt, deadline));
@@ -307,14 +316,15 @@ public class TrainSearchService {
 			String payload = write(filtered);
 			Instant expiresAt = completedAt.plus(CATALOG_TTL);
 			requireBefore(deadline);
+			String payloadSha256 = sha256(payload);
 			cache.replaceCatalog(List.of(new CachedCatalog(
 				CATALOG_KIND,
 				payload,
-				sha256(payload),
+				payloadSha256,
 				filtered.observedAt(),
 				expiresAt
 			)));
-			return new CatalogEntry(filtered, expiresAt);
+			return rememberCatalog(payload, payloadSha256, filtered, expiresAt);
 		} catch (ProviderFailure exception) {
 			throw failure(providerFailureCode(exception), exception);
 		} finally {
@@ -323,7 +333,7 @@ public class TrainSearchService {
 	}
 
 	private LegResult direction(
-		Catalog catalog,
+		CatalogEntry catalogEntry,
 		String departureStationId,
 		String arrivalStationId,
 		LocalDate date,
@@ -331,11 +341,15 @@ public class TrainSearchService {
 		LocalDate admittedServiceDay,
 		Instant deadline
 	) {
-		Station departure = station(catalog, departureStationId);
-		Station arrival = station(catalog, arrivalStationId);
-		List<TrainType> types = requestedTrainType == null
-			? catalog.trainTypes()
-			: catalog.trainTypes().stream().filter(type -> requestedTrainType.equals(type.code())).toList();
+		Station departure = station(catalogEntry, departureStationId);
+		Station arrival = station(catalogEntry, arrivalStationId);
+		List<TrainType> types;
+		if (requestedTrainType == null) {
+			types = catalogEntry.catalog().trainTypes();
+		} else {
+			TrainType matched = catalogEntry.trainTypesByCode().get(requestedTrainType);
+			types = matched == null ? List.of() : List.of(matched);
+		}
 		if (types.isEmpty() || types.stream().anyMatch(type -> type.providerCodes().isEmpty())) {
 			throw failure("TRAIN_SEARCH_UNAVAILABLE");
 		}
@@ -369,9 +383,8 @@ public class TrainSearchService {
 		requireBefore(deadline);
 		String key = key(query);
 		Instant now = clock.instant();
-		CachedLeg local = l1.get(key);
-		if (local != null && local.expiresAt().isAfter(now)) return validLeg(key, local);
-		if (local != null) forget(key, local);
+		CachedLeg local = l1Get(key, now);
+		if (local != null) return validLeg(key, local);
 		var shared = cache.freshLeg(key, now);
 		requireBefore(deadline);
 		if (shared.isPresent()) {
@@ -492,9 +505,10 @@ public class TrainSearchService {
 		);
 	}
 
-	private void validateStations(SearchCriteria criteria, Catalog catalog) {
-		if (catalog.stations().stream().map(Station::id).noneMatch(criteria.departureStationId()::equals)
-			|| catalog.stations().stream().map(Station::id).noneMatch(criteria.arrivalStationId()::equals)) {
+	private void validateStations(SearchCriteria criteria, CatalogEntry catalogEntry) {
+		Map<String, Station> stationsById = catalogEntry.stationsById();
+		if (!stationsById.containsKey(criteria.departureStationId())
+			|| !stationsById.containsKey(criteria.arrivalStationId())) {
 			throw failure("TRAIN_SEARCH_INVALID_ARGUMENT");
 		}
 	}
@@ -507,9 +521,12 @@ public class TrainSearchService {
 		}
 	}
 
-	private Station station(Catalog catalog, String id) {
-		return catalog.stations().stream().filter(value -> id.equals(value.id())).findFirst()
-			.orElseThrow(() -> failure("TRAIN_SEARCH_INVALID_ARGUMENT"));
+	private Station station(CatalogEntry catalogEntry, String id) {
+		Station found = catalogEntry.stationsById().get(id);
+		if (found == null) {
+			throw failure("TRAIN_SEARCH_INVALID_ARGUMENT");
+		}
+		return found;
 	}
 
 	private Map<String, Object> canonical(LegQuery query) {
@@ -585,28 +602,45 @@ public class TrainSearchService {
 		}
 	}
 
-	private synchronized void remember(String key, CachedLeg value) {
-		CachedLeg previous = l1.put(key, value);
-		if (previous == null) l1Order.add(key);
-		while (l1.size() > L1_LIMIT) {
-			String oldest = l1Order.poll();
-			if (oldest == null) break;
-			l1.remove(oldest);
+	private CachedLeg l1Get(String key, Instant now) {
+		synchronized (l1Lock) {
+			CachedLeg value = l1.get(key);
+			if (value == null) return null;
+			if (!value.expiresAt().isAfter(now)) {
+				l1.remove(key);
+				return null;
+			}
+			return value;
 		}
 	}
 
-	private synchronized void forget(String key, CachedLeg value) {
-		if (l1.remove(key, value)) l1Order.remove(key);
+	private void remember(String key, CachedLeg value) {
+		synchronized (l1Lock) {
+			l1.put(key, value);
+		}
 	}
 
-	private synchronized int purgeExpiredL1(Instant now) {
+	private void forget(String key, CachedLeg value) {
+		synchronized (l1Lock) {
+			l1.remove(key, value);
+		}
+	}
+
+	private int purgeExpiredL1(Instant now) {
+		CachedDecodedCatalog cachedCatalog = l1Catalog;
+		if (cachedCatalog != null && !cachedCatalog.expiresAt().isAfter(now)) {
+			l1Catalog = null;
+		}
 		int purged = 0;
-		for (Map.Entry<String, CachedLeg> entry : l1.entrySet()) {
-			if (!entry.getValue().expiresAt().isAfter(now) && l1.remove(entry.getKey(), entry.getValue())) {
-				purged += 1;
+		synchronized (l1Lock) {
+			Iterator<Map.Entry<String, CachedLeg>> iterator = l1.entrySet().iterator();
+			while (iterator.hasNext()) {
+				if (!iterator.next().getValue().expiresAt().isAfter(now)) {
+					iterator.remove();
+					purged += 1;
+				}
 			}
 		}
-		l1Order.removeIf(key -> !l1.containsKey(key));
 		return purged;
 	}
 
@@ -693,7 +727,70 @@ public class TrainSearchService {
 		return List.copyOf(result);
 	}
 
-	private record CatalogEntry(Catalog catalog, Instant expiresAt) {}
+	private CatalogEntry cachedCatalogEntry(CachedCatalog cached) {
+		CachedDecodedCatalog local = l1Catalog;
+		if (local != null
+			&& Objects.equals(cached.expiresAt(), local.expiresAt())
+			&& Objects.equals(cached.payloadSha256(), local.payloadSha256())
+			&& Objects.equals(cached.payloadJson(), local.payloadJson())) {
+			return local.entry();
+		}
+		Catalog decoded = decodeCatalog(cached);
+		return rememberCatalog(cached.payloadJson(), cached.payloadSha256(), decoded, cached.expiresAt());
+	}
+
+	private CatalogEntry rememberCatalog(String payloadJson, String payloadSha256, Catalog catalog, Instant expiresAt) {
+		CatalogEntry entry = indexCatalog(catalog, expiresAt);
+		l1Catalog = new CachedDecodedCatalog(payloadJson, payloadSha256, expiresAt, entry);
+		return entry;
+	}
+
+	private static CatalogEntry indexCatalog(Catalog catalog, Instant expiresAt) {
+		List<Station> stations = catalog.stations();
+		Map<String, Station> stationsById = HashMap.newHashMap(stations.size());
+		List<Station> sortedStations = new ArrayList<>(stations.size());
+		for (int i = 0, size = stations.size(); i < size; i++) {
+			Station station = stations.get(i);
+			stationsById.putIfAbsent(station.id(), station);
+			sortedStations.add(station);
+		}
+		sortedStations.sort(Comparator.comparing(Station::name).thenComparing(Station::id));
+		List<IndexedStation> indexedStations = new ArrayList<>(sortedStations.size());
+		for (int i = 0, size = sortedStations.size(); i < size; i++) {
+			Station station = sortedStations.get(i);
+			indexedStations.add(new IndexedStation(station, station.name().toLowerCase(Locale.ROOT)));
+		}
+		List<TrainType> trainTypes = catalog.trainTypes();
+		Map<String, TrainType> trainTypesByCode = HashMap.newHashMap(trainTypes.size());
+		for (int i = 0, size = trainTypes.size(); i < size; i++) {
+			TrainType trainType = trainTypes.get(i);
+			trainTypesByCode.putIfAbsent(trainType.code(), trainType);
+		}
+		return new CatalogEntry(
+			catalog,
+			expiresAt,
+			Collections.unmodifiableMap(stationsById),
+			List.copyOf(indexedStations),
+			Collections.unmodifiableMap(trainTypesByCode)
+		);
+	}
+
+	private record IndexedStation(Station station, String foldedName) {}
+
+	private record CatalogEntry(
+		Catalog catalog,
+		Instant expiresAt,
+		Map<String, Station> stationsById,
+		List<IndexedStation> sortedIndexedStations,
+		Map<String, TrainType> trainTypesByCode
+	) {}
+
+	private record CachedDecodedCatalog(
+		String payloadJson,
+		String payloadSha256,
+		Instant expiresAt,
+		CatalogEntry entry
+	) {}
 
 	private record LegResult(Instant observedAt, Instant expiresAt, List<Journey> journeys) {}
 

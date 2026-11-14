@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -24,6 +25,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @DisplayName("관리자 Basic auth 실패 잠금 provider")
 class AdminOperatorLockoutAuthenticationProviderTest {
@@ -88,6 +90,62 @@ class AdminOperatorLockoutAuthenticationProviderTest {
 
 		assertThat(repository.audits()).hasSize(auditCountBeforeLockedReject + 1);
 		assertThat(repository.audits().getLast().outcome()).isEqualTo("LOCKED");
+	}
+
+	@Test
+	@DisplayName("잠긴 계정 인증 시 타이밍 오라클 방지를 위해 LockedException 전에 더미 BCrypt 비교를 수행한다")
+	void lockedAuthenticationPerformsDummyPasswordComparisonBeforeThrowingLockedException() {
+		var clock = new MutableClock(Instant.parse("2026-06-22T00:00:00Z"));
+		var repository = new InMemoryAdminIdentityRepository();
+		var delegateEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var matchesCount = new AtomicInteger();
+		PasswordEncoder countingEncoder = new PasswordEncoder() {
+			@Override
+			public String encode(CharSequence rawPassword) {
+				return delegateEncoder.encode(rawPassword);
+			}
+
+			@Override
+			public boolean matches(CharSequence rawPassword, String encodedPassword) {
+				matchesCount.incrementAndGet();
+				return delegateEncoder.matches(rawPassword, encodedPassword);
+			}
+		};
+		repository.save(new AdminIdentity(
+			"admin-user",
+			"관리자",
+			null,
+			delegateEncoder.encode("admin-password"),
+			AdminIdentityAuthMethod.LOCAL,
+			AdminIdentityRole.ADMIN,
+			AdminIdentityStatus.ACTIVE,
+			5,
+			LocalDateTime.now(clock).plusMinutes(5),
+			LocalDateTime.now(clock),
+			null,
+			false,
+			null,
+			true,
+			LocalDateTime.now(clock),
+			LocalDateTime.now(clock)
+		));
+		var users = new ConcurrentUserDetailsManager();
+		users.createUser(User.withUsername("admin-user")
+			.password(delegateEncoder.encode("admin-password"))
+			.roles("ADMIN")
+			.build());
+		var provider = new AdminOperatorLockoutAuthenticationProvider(
+			new AdminIdentityUserDetailsService(repository, users, clock),
+			countingEncoder,
+			repository,
+			5,
+			Duration.ofMinutes(5),
+			clock
+		);
+
+		assertThatThrownBy(() -> provider.authenticate(token("admin-user", "admin-password")))
+			.isInstanceOf(LockedException.class);
+		assertThat(matchesCount.get()).isEqualTo(1);
 	}
 
 	@Test

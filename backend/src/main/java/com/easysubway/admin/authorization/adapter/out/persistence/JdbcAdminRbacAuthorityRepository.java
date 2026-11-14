@@ -14,6 +14,7 @@ import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -26,6 +27,7 @@ public class JdbcAdminRbacAuthorityRepository implements AdminRbacAuthorityRepos
 	private static final String BOOTSTRAP_PROVENANCE = "bootstrap";
 
 	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcAdminRbacAuthorityRepository(DataSource dataSource) {
@@ -50,6 +52,14 @@ public class JdbcAdminRbacAuthorityRepository implements AdminRbacAuthorityRepos
 			return;
 		}
 		String canonicalLoginId = normalize(loginId);
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			jdbcTemplate.update("""
+				INSERT INTO admin_user_roles (created_at, role_code, login_id, granted_by)
+				VALUES (?, ?, ?, ?)
+				ON CONFLICT (login_id, role_code) DO NOTHING
+				""", LocalDateTime.now(Clock.systemUTC()), role.name(), canonicalLoginId, BOOTSTRAP_PROVENANCE);
+			return;
+		}
 		Integer existing = jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM admin_user_roles
@@ -96,5 +106,24 @@ public class JdbcAdminRbacAuthorityRepository implements AdminRbacAuthorityRepos
 
 	private static String normalize(String loginId) {
 		return loginId == null ? "" : loginId.trim().toLowerCase(Locale.ROOT);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

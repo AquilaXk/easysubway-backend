@@ -123,6 +123,10 @@ public class JdbcNotificationPreferenceRepository implements
 
 	@Override
 	public NotificationSettings saveNotificationSettings(NotificationSettings settings) {
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			upsertNotificationSettingsWithPostgresql(settings);
+			return settings;
+		}
 		if (updateNotificationSettings(settings) == 0) {
 			try {
 				insertNotificationSettings(settings);
@@ -131,6 +135,34 @@ public class JdbcNotificationPreferenceRepository implements
 			}
 		}
 		return settings;
+	}
+
+	private void upsertNotificationSettingsWithPostgresql(NotificationSettings settings) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO notification_settings (
+					user_id,
+					favorite_station_facility_alerts,
+					favorite_route_facility_alerts,
+					report_status_alerts,
+					data_quality_alerts,
+					updated_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT (user_id) DO UPDATE SET
+					favorite_station_facility_alerts = EXCLUDED.favorite_station_facility_alerts,
+					favorite_route_facility_alerts = EXCLUDED.favorite_route_facility_alerts,
+					report_status_alerts = EXCLUDED.report_status_alerts,
+					data_quality_alerts = EXCLUDED.data_quality_alerts,
+					updated_at = EXCLUDED.updated_at
+				""",
+			settings.userId(),
+			settings.favoriteStationFacilityAlerts(),
+			settings.favoriteRouteFacilityAlerts(),
+			settings.reportStatusAlerts(),
+			settings.dataQualityAlerts(),
+			settings.updatedAt()
+		);
 	}
 
 	@Override

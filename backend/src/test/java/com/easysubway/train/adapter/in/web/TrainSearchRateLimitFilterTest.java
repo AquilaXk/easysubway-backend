@@ -2,6 +2,7 @@ package com.easysubway.train.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.common.web.ClientIpHashResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -20,7 +21,7 @@ class TrainSearchRateLimitFilterTest {
 		var filter = new TrainSearchRateLimitFilter(
 			new ObjectMapper(),
 			new TrainSearchRateLimiter(1, 10, fixedClock()),
-			new TrainSearchClientIdentityResolver("")
+			ClientIpHashResolver.fromTrustedProxies("", "test-hmac-secret")
 		);
 		var first = request();
 		first.setParameter("trainType", "KTX");
@@ -44,7 +45,7 @@ class TrainSearchRateLimitFilterTest {
 		var filter = new TrainSearchRateLimitFilter(
 			new ObjectMapper(),
 			new TrainSearchRateLimiter(24, 10, fixedClock()),
-			new TrainSearchClientIdentityResolver("")
+			ClientIpHashResolver.fromTrustedProxies("", "test-hmac-secret")
 		);
 
 		assertAllowed(filter, "KTX", null);
@@ -88,22 +89,46 @@ class TrainSearchRateLimitFilterTest {
 	}
 
 	@Test
-	void trustsForwardedChainOnlyWhenTheDirectPeerIsConfigured() {
-		var resolver = new TrainSearchClientIdentityResolver("10.0.0.0/8,172.16.0.0/12,2001:db8::/32");
+	void trustsForwardedChainOnlyWhenTheDirectPeerIsConfiguredAndUsesSubnetHmac() {
+		var resolver = ClientIpHashResolver.fromTrustedProxies("10.0.0.0/8,172.16.0.0/12,2001:db8::/32", "test-secret");
 		var trusted = request();
 		trusted.setRemoteAddr("172.20.0.1");
 		trusted.addHeader("X-Forwarded-For", "203.0.113.7, 10.0.0.1");
-		assertThat(resolver.resolve(trusted)).isEqualTo("ip:203.0.113.7");
+		String key4 = resolver.resolve(trusted);
+		assertThat(key4)
+			.startsWith("subnet-hmac:")
+			.isEqualTo(resolver.hashIpLiteral("203.0.113.250"))
+			.doesNotContain("203.0.113");
 
 		var trustedIpv6 = request();
 		trustedIpv6.setRemoteAddr("2001:db8::1");
 		trustedIpv6.addHeader("X-Forwarded-For", "2001:db9::7");
-		assertThat(resolver.resolve(trustedIpv6)).isEqualTo("ip:2001:db9:0:0:0:0:0:7");
+		assertThat(resolver.resolve(trustedIpv6))
+			.isEqualTo(resolver.hashIpLiteral("2001:db9::abcd"))
+			.doesNotContain("2001:db9");
 
 		var untrusted = request();
 		untrusted.setRemoteAddr("198.51.100.9");
 		untrusted.addHeader("X-Forwarded-For", "203.0.113.7");
-		assertThat(resolver.resolve(untrusted)).isEqualTo("ip:198.51.100.9");
+		assertThat(resolver.resolve(untrusted))
+			.isEqualTo(resolver.hashIpLiteral("198.51.100.99"))
+			.doesNotContain("198.51.100");
+	}
+
+	@Test
+	void enforcesMaxKeysBoundAndEvictsExpiredEntriesInO1LruOrder() {
+		var clock = new TestClock(Instant.parse("2026-07-19T00:00:30Z"));
+		var limiter = new TrainSearchRateLimiter(24, 100_000, clock);
+		assertThat(limiter.maxKeys()).isEqualTo(TrainSearchRateLimiter.MAX_KEYS);
+
+		var bounded = new TrainSearchRateLimiter(24, 2, clock);
+		assertThat(bounded.acquire("k1", 1).allowed()).isTrue();
+		assertThat(bounded.acquire("k2", 1).allowed()).isTrue();
+		clock.advanceSeconds(60);
+		assertThat(bounded.acquire("k2", 1).allowed()).isTrue();
+		assertThat(bounded.acquire("k3", 1).allowed()).isTrue();
+		assertThat(bounded.currentSize()).isEqualTo(2);
+		assertThat(bounded.acquire("k4", 1).allowed()).isFalse();
 	}
 
 	@Test
@@ -206,7 +231,7 @@ class TrainSearchRateLimitFilterTest {
 		return new TrainSearchRateLimitFilter(
 			new ObjectMapper(),
 			new TrainSearchRateLimiter(1, 10, fixedClock()),
-			new TrainSearchClientIdentityResolver("")
+			ClientIpHashResolver.fromTrustedProxies("", "test-hmac-secret")
 		);
 	}
 

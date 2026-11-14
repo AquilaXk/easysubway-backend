@@ -53,7 +53,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.function.BooleanSupplier;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Function;
@@ -89,6 +88,28 @@ public final class RouteTimetableRaptorPlanner {
 	static final byte STAIR_ACCESS_STAIRS = 1;
 	static final byte STAIR_ACCESS_UNCONFIRMED = 2;
 	private static final int WARNING_STATE_COUNT = 1 << 3;
+	private static final int[] PROPER_SUBMASK_MASK = new int[WARNING_STATE_COUNT];
+	private static final int[] PROPER_SUPERMASK_MASK = new int[WARNING_STATE_COUNT];
+
+	static {
+		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
+			int subMask = 0;
+			int supMask = 0;
+			for (int other = 0; other < WARNING_STATE_COUNT; other += 1) {
+				if (other == w) {
+					continue;
+				}
+				if ((other & w) == other) {
+					subMask |= (1 << other);
+				}
+				if ((w & other) == w) {
+					supMask |= (1 << other);
+				}
+			}
+			PROPER_SUBMASK_MASK[w] = subMask;
+			PROPER_SUPERMASK_MASK[w] = supMask;
+		}
+	}
 	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
 	static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
@@ -569,9 +590,9 @@ public final class RouteTimetableRaptorPlanner {
 		CompiledTimetable timetable, int u, int dist, int[] lb, StationHeap pq
 	) {
 		int[] occurrences = timetable.stopOccurrences(u);
-		for (int index = 0; index < occurrences.length; index += 2) {
-			int pattern = occurrences[index];
-			int pos = occurrences[index + 1];
+		for (int packed : occurrences) {
+			int pattern = packed >>> 16;
+			int pos = packed & 0xFFFF;
 			int[] stops = timetable.stopsByPattern(pattern);
 			int[] hops = timetable.minPatternRunningTimes(pattern);
 			for (int prevPos = 0; prevPos < pos; prevPos += 1) {
@@ -642,24 +663,23 @@ public final class RouteTimetableRaptorPlanner {
 		while (!pq.isEmpty()) {
 			int u = pq.poll();
 			int dist = lb[u];
-			for (int pattern : timetable.patternsByStop(u)) {
+			for (int packed : timetable.stopOccurrences(u)) {
+				int pattern = packed >>> 16;
+				int pos = packed & 0xFFFF;
 				int[] stops = timetable.stopsByPattern(pattern);
 				int[] adjusted = realtimeHops.get(pattern);
-				for (int pos = 0; pos < stops.length; pos += 1) {
-					if (stops[pos] != u) continue;
-					int from = towardAnchor ? 0 : pos + 1;
-					int to = towardAnchor ? pos : stops.length;
-					for (int other = from; other < to; other += 1) {
-						int earlier = towardAnchor ? other : pos;
-						int later = towardAnchor ? pos : other;
-						int runTime = adjusted != null ? adjusted[earlier * stops.length + later]
-							: timetable.minPatternRunningTime(pattern, earlier, later);
-						long nextDist = (long) dist + Math.max(0, runTime);
-						int v = stops[other];
-						if (nextDist < lb[v]) {
-							lb[v] = (int) nextDist;
-							pq.decreased(v);
-						}
+				int from = towardAnchor ? 0 : pos + 1;
+				int to = towardAnchor ? pos : stops.length;
+				for (int other = from; other < to; other += 1) {
+					int earlier = towardAnchor ? other : pos;
+					int later = towardAnchor ? pos : other;
+					int runTime = adjusted != null ? adjusted[earlier * stops.length + later]
+						: timetable.minPatternRunningTime(pattern, earlier, later);
+					long nextDist = (long) dist + Math.max(0, runTime);
+					int v = stops[other];
+					if (nextDist < lb[v]) {
+						lb[v] = (int) nextDist;
+						pq.decreased(v);
 					}
 				}
 			}
@@ -880,9 +900,13 @@ public final class RouteTimetableRaptorPlanner {
 				continue;
 			}
 			for (OutOfStationFootpath footpath : footpaths) {
+				int baseSlot = workspace.stationSlotBase(round, fromStation, footpath.fromLine());
+				if (baseSlot < 0) {
+					continue;
+				}
 				boolean reached = false;
 				for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-					if (workspace.arrivalSeconds[workspace.slot(round, fromStation, footpath.fromLine(), w)] != UNREACHED) {
+					if (workspace.arrivalSeconds[baseSlot + w] != UNREACHED) {
 						reached = true;
 						break;
 					}
@@ -916,8 +940,9 @@ public final class RouteTimetableRaptorPlanner {
 	private static void collectMarkedPatterns(CompiledTimetable timetable, ScanWorkspace workspace) {
 		for (int index = 0; index < workspace.markedStopCount; index += 1) {
 			int station = workspace.markedStops[index];
-			for (int pattern : timetable.patternsByStop(station)) {
-				int position = indexOf(timetable.stopsByPattern(pattern), station);
+			for (int packed : timetable.packedFirstPatternPosByStop(station)) {
+				int pattern = packed >>> 16;
+				int position = packed & 0xFFFF;
 				if (workspace.firstMarkedPosition[pattern] < 0) {
 					workspace.markedPatterns[workspace.markedPatternCount++] = pattern;
 					workspace.firstMarkedPosition[pattern] = position;
@@ -971,31 +996,33 @@ public final class RouteTimetableRaptorPlanner {
 			if (boardingLine < 0) {
 				continue;
 			}
-			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-				ScheduledTrip boardedTrip = workspace.bagTrips[w];
-				if (boardedTrip != null && position > workspace.bagBoardPositions[w] && boardedTrip.allowsDropOff(position)) {
-					workspace.relax(
-						station,
-						round + 1,
-						boardingLine,
-						boardedTrip.arrivalSeconds(position),
-						boardedTrip.index(),
-						workspace.bagBoardPositions[w],
-						position,
-						workspace.bagAccessTransitions[w],
-						workspace.bagReadySlots[w],
-						workspace.bagWarningBits[w]
-					);
+			if (workspace.bagActiveMask != 0) {
+				int stationSlot = timetable.slotOfStopInPattern(pattern, position);
+				for (int rem = workspace.bagActiveMask; rem != 0; rem &= rem - 1) {
+					int w = Integer.numberOfTrailingZeros(rem);
+					ScheduledTrip boardedTrip = workspace.bagTrips[w];
+					if (position > workspace.bagBoardPositions[w] && boardedTrip.allowsDropOff(position)) {
+						workspace.relaxAtStationSlot(
+							station,
+							stationSlot,
+							round + 1,
+							boardedTrip.arrivalSeconds(position),
+							boardedTrip.index(),
+							workspace.bagBoardPositions[w],
+							position,
+							workspace.bagAccessTransitions[w],
+							workspace.bagReadySlots[w],
+							workspace.bagWarningBits[w]
+						);
+					}
 				}
 			}
 			collectReadyBoardings(
 				timetable, workspace, station, boardingLine, round, slackSeconds,
 				accessProfileBit, input, ignoreAccessBlocks, UNREACHED, realtimeOverlay);
 
-			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-				if (!workspace.readyActive[w]) {
-					continue;
-				}
+			for (int rem = workspace.readyActiveMask; rem != 0; rem &= rem - 1) {
+				int w = Integer.numberOfTrailingZeros(rem);
 				int earliestDepartureSeconds = workspace.readyEarliestDepartureSeconds[w];
 				ScheduledTrip candidate = earliestBoardableTrip(trips, position, earliestDepartureSeconds);
 				if (candidate == null) {
@@ -1020,10 +1047,10 @@ public final class RouteTimetableRaptorPlanner {
 					workspace.bagWarningBits[w] = warningBits;
 				}
 
-				updateBagWithCandidate(workspace, w, candidate, position, earliestDepartureSeconds,
+				updateBagWithCandidateMasked(workspace, w, candidate, position, earliestDepartureSeconds,
 					accessTransition, readySlot, warningBits);
 			}
-			enforceBagCapacity(workspace, position, PARETO_LIMIT);
+			enforceBagCapacityMasked(workspace, position, PARETO_LIMIT);
 		}
 	}
 
@@ -1055,11 +1082,13 @@ public final class RouteTimetableRaptorPlanner {
 				if (boardingLine < 0) {
 					continue;
 				}
-				if (trip.allowsDropOff(position)) {
-					for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-						if (workspace.rtActive[w] && position > workspace.rtBoardingPositions[w]) {
-							workspace.relax(
-								station, round + 1, boardingLine,
+				if (workspace.rtActiveMask != 0 && trip.allowsDropOff(position)) {
+					int stationSlot = timetable.slotOfStopInPattern(pattern, position);
+					for (int rem = workspace.rtActiveMask; rem != 0; rem &= rem - 1) {
+						int w = Integer.numberOfTrailingZeros(rem);
+						if (position > workspace.rtBoardingPositions[w]) {
+							workspace.relaxAtStationSlot(
+								station, stationSlot, round + 1,
 								realtimeOverlay.arrivalSeconds(trip, position), trip.index(),
 								workspace.rtBoardingPositions[w], position, workspace.rtAccessTransitions[w],
 								workspace.rtReadySlots[w], workspace.rtWarningBits[w]);
@@ -1074,15 +1103,13 @@ public final class RouteTimetableRaptorPlanner {
 					timetable, workspace, station, boardingLine, round, slackSeconds,
 					accessProfileBit, input, ignoreAccessBlocks, departureSeconds, realtimeOverlay);
 
-				for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-					if (!workspace.readyActive[w]) {
-						continue;
-					}
+				for (int rem = workspace.readyActiveMask; rem != 0; rem &= rem - 1) {
+					int w = Integer.numberOfTrailingZeros(rem);
 					int earliestDepartureSeconds = workspace.readyEarliestDepartureSeconds[w];
 					if (departureSeconds < earliestDepartureSeconds) {
 						continue;
 					}
-					updateRealtimeBagWithCandidate(
+					updateRealtimeBagWithCandidateMasked(
 						workspace,
 						w,
 						position,
@@ -1092,7 +1119,7 @@ public final class RouteTimetableRaptorPlanner {
 						workspace.readyWarningBits[w]
 					);
 				}
-				enforceRealtimeBagCapacity(workspace, PARETO_LIMIT);
+				enforceRealtimeBagCapacityMasked(workspace, PARETO_LIMIT);
 			}
 		}
 	}
@@ -1106,14 +1133,28 @@ public final class RouteTimetableRaptorPlanner {
 		int readySlot,
 		byte warningBits
 	) {
-		for (int sub = 0; sub < WARNING_STATE_COUNT; sub += 1) {
-			if (workspace.rtActive[sub] && sub != warningState && (sub & warningState) == sub) {
-				return;
-			}
+		workspace.syncRtMask();
+		updateRealtimeBagWithCandidateMasked(
+			workspace, warningState, position, earliestDepartureSeconds, accessTransition, readySlot, warningBits);
+	}
+
+	private static void updateRealtimeBagWithCandidateMasked(
+		ScanWorkspace workspace,
+		int warningState,
+		int position,
+		int earliestDepartureSeconds,
+		int accessTransition,
+		int readySlot,
+		byte warningBits
+	) {
+		if ((workspace.rtActiveMask & PROPER_SUBMASK_MASK[warningState]) != 0) {
+			return;
 		}
-		for (int sup = 0; sup < WARNING_STATE_COUNT; sup += 1) {
-			if (workspace.rtActive[sup] && sup != warningState && (warningState & sup) == warningState) {
-				workspace.rtActive[sup] = false;
+		int toEvict = workspace.rtActiveMask & PROPER_SUPERMASK_MASK[warningState];
+		if (toEvict != 0) {
+			workspace.rtActiveMask &= ~toEvict;
+			for (int rem = toEvict; rem != 0; rem &= rem - 1) {
+				workspace.rtActive[Integer.numberOfTrailingZeros(rem)] = false;
 			}
 		}
 		if (!workspace.rtActive[warningState] || compareReadyBoardingKeys(
@@ -1122,6 +1163,7 @@ public final class RouteTimetableRaptorPlanner {
 			workspace.rtWarningBits[warningState],
 			workspace.rtReadySlots[warningState], true) < 0) {
 			workspace.rtActive[warningState] = true;
+			workspace.rtActiveMask |= (1 << warningState);
 			workspace.rtBoardingPositions[warningState] = position;
 			workspace.rtEarliestDepartureSeconds[warningState] = earliestDepartureSeconds;
 			workspace.rtAccessTransitions[warningState] = accessTransition;
@@ -1142,28 +1184,43 @@ public final class RouteTimetableRaptorPlanner {
 		int readySlot,
 		byte warningBits
 	) {
+		workspace.syncBagMask();
+		updateBagWithCandidateMasked(
+			workspace, warningState, candidate, position, earliestDepartureSeconds, accessTransition, readySlot, warningBits);
+	}
+
+	@SuppressWarnings("java:S107")
+	private static void updateBagWithCandidateMasked(
+		ScanWorkspace workspace,
+		int warningState,
+		ScheduledTrip candidate,
+		int position,
+		int earliestDepartureSeconds,
+		int accessTransition,
+		int readySlot,
+		byte warningBits
+	) {
 		int candidateDep = candidate.departureSeconds(position);
 		int candidateArr = candidate.arrivalSeconds(position);
 
-		for (int sub = 0; sub < WARNING_STATE_COUNT; sub += 1) {
+		for (int rem = workspace.bagActiveMask & PROPER_SUBMASK_MASK[warningState]; rem != 0; rem &= rem - 1) {
+			int sub = Integer.numberOfTrailingZeros(rem);
 			ScheduledTrip subTrip = workspace.bagTrips[sub];
-			if (subTrip != null && sub != warningState && (sub & warningState) == sub) {
-				int subDep = subTrip.departureSeconds(position);
-				int subArr = subTrip.arrivalSeconds(position);
-				if (subArr < candidateArr || (subArr == candidateArr && subDep <= candidateDep)) {
-					return;
-				}
+			int subDep = subTrip.departureSeconds(position);
+			int subArr = subTrip.arrivalSeconds(position);
+			if (subArr < candidateArr || (subArr == candidateArr && subDep <= candidateDep)) {
+				return;
 			}
 		}
 
-		for (int sup = 0; sup < WARNING_STATE_COUNT; sup += 1) {
+		for (int rem = workspace.bagActiveMask & PROPER_SUPERMASK_MASK[warningState]; rem != 0; rem &= rem - 1) {
+			int sup = Integer.numberOfTrailingZeros(rem);
 			ScheduledTrip supTrip = workspace.bagTrips[sup];
-			if (supTrip != null && sup != warningState && (warningState & sup) == warningState) {
-				int supDep = supTrip.departureSeconds(position);
-				int supArr = supTrip.arrivalSeconds(position);
-				if (candidateArr < supArr || (candidateArr == supArr && candidateDep <= supDep)) {
-					workspace.bagTrips[sup] = null;
-				}
+			int supDep = supTrip.departureSeconds(position);
+			int supArr = supTrip.arrivalSeconds(position);
+			if (candidateArr < supArr || (candidateArr == supArr && candidateDep <= supDep)) {
+				workspace.bagTrips[sup] = null;
+				workspace.bagActiveMask &= ~(1 << sup);
 			}
 		}
 
@@ -1174,6 +1231,7 @@ public final class RouteTimetableRaptorPlanner {
 				&& candidateDep == incumbent.departureSeconds(position)
 				&& candidateArr <= incumbent.arrivalSeconds(position))) {
 			workspace.bagTrips[warningState] = candidate;
+			workspace.bagActiveMask |= (1 << warningState);
 			workspace.bagBoardPositions[warningState] = position;
 			workspace.bagEarliestDepartureSeconds[warningState] = earliestDepartureSeconds;
 			workspace.bagAccessTransitions[warningState] = accessTransition;
@@ -1184,21 +1242,19 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	static void enforceBagCapacity(ScanWorkspace workspace, int position, int capacity) {
-		int count = 0;
-		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-			if (workspace.bagTrips[w] != null) {
-				count += 1;
-			}
-		}
+		workspace.syncBagMask();
+		enforceBagCapacityMasked(workspace, position, capacity);
+	}
+
+	private static void enforceBagCapacityMasked(ScanWorkspace workspace, int position, int capacity) {
+		int count = Integer.bitCount(workspace.bagActiveMask);
 		while (count > capacity) {
 			int worstW = -1;
 			int worstDep = -1;
 			int worstWarningCount = -1;
-			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
+			for (int rem = workspace.bagActiveMask; rem != 0; rem &= rem - 1) {
+				int w = Integer.numberOfTrailingZeros(rem);
 				ScheduledTrip trip = workspace.bagTrips[w];
-				if (trip == null) {
-					continue;
-				}
 				int dep = trip.departureSeconds(position);
 				int wc = warningCount(workspace.bagWarningBits[w]);
 				if (worstW < 0
@@ -1210,25 +1266,24 @@ public final class RouteTimetableRaptorPlanner {
 				}
 			}
 			workspace.bagTrips[worstW] = null;
+			workspace.bagActiveMask &= ~(1 << worstW);
 			count -= 1;
 		}
 	}
 
 	static void enforceRealtimeBagCapacity(ScanWorkspace workspace, int capacity) {
-		int count = 0;
-		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-			if (workspace.rtActive[w]) {
-				count += 1;
-			}
-		}
+		workspace.syncRtMask();
+		enforceRealtimeBagCapacityMasked(workspace, capacity);
+	}
+
+	private static void enforceRealtimeBagCapacityMasked(ScanWorkspace workspace, int capacity) {
+		int count = Integer.bitCount(workspace.rtActiveMask);
 		while (count > capacity) {
 			int worstW = -1;
 			int worstDep = -1;
 			int worstWarningCount = -1;
-			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-				if (!workspace.rtActive[w]) {
-					continue;
-				}
+			for (int rem = workspace.rtActiveMask; rem != 0; rem &= rem - 1) {
+				int w = Integer.numberOfTrailingZeros(rem);
 				int dep = workspace.rtEarliestDepartureSeconds[w];
 				int wc = warningCount(workspace.rtWarningBits[w]);
 				if (worstW < 0
@@ -1240,25 +1295,24 @@ public final class RouteTimetableRaptorPlanner {
 				}
 			}
 			workspace.rtActive[worstW] = false;
+			workspace.rtActiveMask &= ~(1 << worstW);
 			count -= 1;
 		}
 	}
 
 	static void enforceReadyCapacity(ScanWorkspace workspace, int capacity) {
-		int count = 0;
-		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-			if (workspace.readyActive[w]) {
-				count += 1;
-			}
-		}
+		workspace.syncReadyMask();
+		enforceReadyCapacityMasked(workspace, capacity);
+	}
+
+	private static void enforceReadyCapacityMasked(ScanWorkspace workspace, int capacity) {
+		int count = Integer.bitCount(workspace.readyActiveMask);
 		while (count > capacity) {
 			int worstW = -1;
 			int worstDep = -1;
 			int worstWarningCount = -1;
-			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-				if (!workspace.readyActive[w]) {
-					continue;
-				}
+			for (int rem = workspace.readyActiveMask; rem != 0; rem &= rem - 1) {
+				int w = Integer.numberOfTrailingZeros(rem);
 				int dep = workspace.readyEarliestDepartureSeconds[w];
 				int wc = warningCount(workspace.readyWarningBits[w]);
 				if (worstW < 0
@@ -1270,6 +1324,7 @@ public final class RouteTimetableRaptorPlanner {
 				}
 			}
 			workspace.readyActive[worstW] = false;
+			workspace.readyActiveMask &= ~(1 << worstW);
 			count -= 1;
 		}
 	}
@@ -1340,7 +1395,7 @@ public final class RouteTimetableRaptorPlanner {
 				timetable, workspace, station, boardingLine, round, slackSeconds,
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds, realtimeOverlay);
 		}
-		enforceReadyCapacity(workspace, PARETO_LIMIT);
+		enforceReadyCapacityMasked(workspace, PARETO_LIMIT);
 	}
 
 	@SuppressWarnings("java:S107")
@@ -1405,26 +1460,31 @@ public final class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		int boardingDeadlineSeconds
 	) {
+		int readyBaseSlot = workspace.stationSlotBase(round, station, incomingLine);
+		if (readyBaseSlot < 0) {
+			return;
+		}
+		int accessSeconds = round == 0 ? 0
+			: journeyTransferSeconds(input, timetable.transitionDurationSeconds(accessTransition),
+				timetable.transitionDistanceMeters(accessTransition));
+		byte transitionWarnings = timetable.transitionWarningCodes(
+			accessTransition, accessProfileBit, ignoreAccessBlocks);
 		for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-			int readySlot = workspace.slot(round, station, incomingLine, warningState);
+			int readySlot = readyBaseSlot + warningState;
 			int readySeconds = workspace.arrivalSeconds[readySlot];
 			if (readySeconds == UNREACHED) {
 				continue;
 			}
-			int accessSeconds = round == 0 ? 0
-				: journeyTransferSeconds(input, timetable.transitionDurationSeconds(accessTransition),
-					timetable.transitionDistanceMeters(accessTransition));
 			int earliestDepartureSeconds = readySeconds + accessSeconds + slackSeconds;
 			if (earliestDepartureSeconds > boardingDeadlineSeconds) {
 				continue;
 			}
-			byte warningBits = (byte) (workspace.warningBits[readySlot]
-				| timetable.transitionWarningCodes(accessTransition, accessProfileBit, ignoreAccessBlocks));
+			byte warningBits = (byte) (workspace.warningBits[readySlot] | transitionWarnings);
 			int candidateWarningState = Byte.toUnsignedInt(warningBits);
 			if (workspace.isDominatedByTarget(station, earliestDepartureSeconds, candidateWarningState)) {
 				continue;
 			}
-			updateReadyBoarding(
+			updateReadyBoardingMasked(
 				workspace, candidateWarningState, readySlot, accessTransition,
 				earliestDepartureSeconds, warningBits, boardingDeadlineSeconds != UNREACHED);
 		}
@@ -1439,20 +1499,32 @@ public final class RouteTimetableRaptorPlanner {
 		byte warningBits,
 		boolean hasDeadline
 	) {
-		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-			if (workspace.readyActive[w]
-				&& w != candidateWarningState
-				&& (w & candidateWarningState) == w
-				&& workspace.readyEarliestDepartureSeconds[w] <= earliestDepartureSeconds) {
+		workspace.syncReadyMask();
+		updateReadyBoardingMasked(
+			workspace, candidateWarningState, readySlot, accessTransition,
+			earliestDepartureSeconds, warningBits, hasDeadline);
+	}
+
+	private static void updateReadyBoardingMasked(
+		ScanWorkspace workspace,
+		int candidateWarningState,
+		int readySlot,
+		int accessTransition,
+		int earliestDepartureSeconds,
+		byte warningBits,
+		boolean hasDeadline
+	) {
+		for (int rem = workspace.readyActiveMask & PROPER_SUBMASK_MASK[candidateWarningState]; rem != 0; rem &= rem - 1) {
+			int w = Integer.numberOfTrailingZeros(rem);
+			if (workspace.readyEarliestDepartureSeconds[w] <= earliestDepartureSeconds) {
 				return;
 			}
 		}
-		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-			if (workspace.readyActive[w]
-				&& w != candidateWarningState
-				&& (candidateWarningState & w) == candidateWarningState
-				&& earliestDepartureSeconds <= workspace.readyEarliestDepartureSeconds[w]) {
+		for (int rem = workspace.readyActiveMask & PROPER_SUPERMASK_MASK[candidateWarningState]; rem != 0; rem &= rem - 1) {
+			int w = Integer.numberOfTrailingZeros(rem);
+			if (earliestDepartureSeconds <= workspace.readyEarliestDepartureSeconds[w]) {
 				workspace.readyActive[w] = false;
+				workspace.readyActiveMask &= ~(1 << w);
 			}
 		}
 		if (workspace.readyActive[candidateWarningState]) {
@@ -1469,6 +1541,7 @@ public final class RouteTimetableRaptorPlanner {
 			}
 		} else {
 			workspace.readyActive[candidateWarningState] = true;
+			workspace.readyActiveMask |= (1 << candidateWarningState);
 			workspace.readyEarliestDepartureSeconds[candidateWarningState] = earliestDepartureSeconds;
 			workspace.readyAccessTransitions[candidateWarningState] = accessTransition;
 			workspace.readySlots[candidateWarningState] = readySlot;
@@ -1525,6 +1598,10 @@ public final class RouteTimetableRaptorPlanner {
 	) {
 		boolean footpathDominated = true;
 		int minDepartureForFootpath = Integer.MAX_VALUE;
+		int readyBaseSlot = workspace.stationSlotBase(round, footpath.fromStation(), footpath.fromLine());
+		if (readyBaseSlot < 0) {
+			return false;
+		}
 		for (int accessTransition : footpath.candidateTransitions()) {
 			if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(accessTransition))
 				|| !timetable.isTransitionEligible(
@@ -1532,31 +1609,31 @@ public final class RouteTimetableRaptorPlanner {
 				input.requiresVerifiedJourneyDistance(), true)) {
 				continue;
 			}
+			int walkSeconds = journeyTransferSeconds(input,
+				timetable.transitionDurationSeconds(accessTransition),
+				timetable.transitionDistanceMeters(accessTransition));
+			byte transitionWarnings = timetable.transitionWarningCodes(
+				accessTransition, accessProfileBit, ignoreAccessBlocks);
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-				int readySlot = workspace.slot(round, footpath.fromStation(), footpath.fromLine(), warningState);
+				int readySlot = readyBaseSlot + warningState;
 				int readySeconds = workspace.arrivalSeconds[readySlot];
 				if (readySeconds == UNREACHED) {
 					continue;
 				}
-				int earliestDepartureSeconds = readySeconds
-					+ journeyTransferSeconds(input,
-						timetable.transitionDurationSeconds(accessTransition),
-						timetable.transitionDistanceMeters(accessTransition))
-					+ slackSeconds;
+				int earliestDepartureSeconds = readySeconds + walkSeconds + slackSeconds;
 				if (earliestDepartureSeconds < minDepartureForFootpath) {
 					minDepartureForFootpath = earliestDepartureSeconds;
 				}
 				if (earliestDepartureSeconds > boardingDeadlineSeconds) {
 					continue;
 				}
-				byte warningBits = (byte) (workspace.warningBits[readySlot]
-					| timetable.transitionWarningCodes(accessTransition, accessProfileBit, ignoreAccessBlocks));
+				byte warningBits = (byte) (workspace.warningBits[readySlot] | transitionWarnings);
 				int candidateWarningState = Byte.toUnsignedInt(warningBits);
 				if (workspace.isDominatedByTarget(station, earliestDepartureSeconds, candidateWarningState)) {
 					continue;
 				}
 				footpathDominated = false;
-				updateReadyBoarding(
+				updateReadyBoardingMasked(
 					workspace, candidateWarningState, readySlot, accessTransition,
 					earliestDepartureSeconds, warningBits, boardingDeadlineSeconds != UNREACHED);
 			}
@@ -1604,6 +1681,10 @@ public final class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
+		int fromBaseSlot = workspace.stationSlotBase(round, nextFp.fromStation(), nextFp.fromLine());
+		if (fromBaseSlot < 0) {
+			return true;
+		}
 		for (int nextCandidate : nextFp.candidateTransitions()) {
 			if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(nextCandidate))
 				|| !timetable.isTransitionEligible(
@@ -1611,19 +1692,19 @@ public final class RouteTimetableRaptorPlanner {
 				input.requiresVerifiedJourneyDistance(), true)) {
 				continue;
 			}
+			int walkSeconds = journeyTransferSeconds(input,
+				timetable.transitionDurationSeconds(nextCandidate),
+				timetable.transitionDistanceMeters(nextCandidate));
+			byte candidateWarnings = timetable.transitionWarningCodes(
+				nextCandidate, accessProfileBit, ignoreAccessBlocks);
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-				int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
+				int slot = fromBaseSlot + warningState;
 				int ready = workspace.arrivalSeconds[slot];
 				if (ready == UNREACHED) {
 					continue;
 				}
-				int dep = ready
-					+ journeyTransferSeconds(input,
-						timetable.transitionDurationSeconds(nextCandidate),
-						timetable.transitionDistanceMeters(nextCandidate))
-					+ slackSeconds;
-				byte warningBits = (byte) (workspace.warningBits[slot]
-					| timetable.transitionWarningCodes(nextCandidate, accessProfileBit, ignoreAccessBlocks));
+				int dep = ready + walkSeconds + slackSeconds;
+				byte warningBits = (byte) (workspace.warningBits[slot] | candidateWarnings);
 				int candidateWarningState = Byte.toUnsignedInt(warningBits);
 				if (!workspace.isDominatedByTarget(station, dep, candidateWarningState)) {
 					return false;
@@ -1667,10 +1748,8 @@ public final class RouteTimetableRaptorPlanner {
 			timetable, workspace, station, boardingLine, round, slackSeconds,
 			accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
 		ReadyBoarding best = null;
-		for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-			if (!workspace.readyActive[w]) {
-				continue;
-			}
+		for (int rem = workspace.readyActiveMask; rem != 0; rem &= rem - 1) {
+			int w = Integer.numberOfTrailingZeros(rem);
 			best = updateBestReadyBoarding(
 				best,
 				workspace.readySlots[w],
@@ -1731,8 +1810,12 @@ public final class RouteTimetableRaptorPlanner {
 			for (int lineIdx = 0; lineIdx < lineCountAtStation; lineIdx += 1) {
 				// #454: 도착역의 어느 승강장(역-노선)에 내려도 도착이다. 하차 간선을 찾지 않는다.
 				int incomingLine = timetable.stationLine(lineOffset + lineIdx);
+				int baseSlot = workspace.stationSlotBase(boardings, destination, incomingLine);
+				if (baseSlot < 0) {
+					continue;
+				}
 				for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-					int slot = workspace.slot(boardings, destination, incomingLine, warningState);
+					int slot = baseSlot + warningState;
 					if (workspace.arrivalSeconds[slot] == UNREACHED) {
 						continue;
 					}
@@ -1741,12 +1824,12 @@ public final class RouteTimetableRaptorPlanner {
 					int currentSlot = slot;
 					int currentBoardings = boardings;
 					while (currentBoardings > 0) {
-						ScheduledTrip trip = timetable.scheduledTrip(workspace.parentTrip[currentSlot]);
-						int boardingPosition = workspace.parentBoardStop[currentSlot];
-						int alightingPosition = workspace.parentAlightStop[currentSlot];
+						ScheduledTrip trip = timetable.scheduledTrip(workspace.parentTrip(currentSlot));
+						int boardingPosition = workspace.parentBoardStop(currentSlot);
+						int alightingPosition = workspace.parentAlightStop(currentSlot);
 						path.add(new RideLeg(trip, boardingPosition, alightingPosition, realtimeOverlay));
-						accessTransitions[currentBoardings - 1] = workspace.parentAccessTransition[currentSlot];
-						currentSlot = workspace.parentLabelSlot[currentSlot];
+						accessTransitions[currentBoardings - 1] = workspace.parentAccessTransition(currentSlot);
+						currentSlot = workspace.parentLabelSlot(currentSlot);
 						currentBoardings -= 1;
 					}
 					java.util.Collections.reverse(path);
@@ -2786,8 +2869,11 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[][] patternsByStop;
 		private final List<List<ScheduledTrip>> tripsByPattern;
 		private final int[] patternByScheduledTrip;
-		private final Map<DayOfWeek, List<ServiceCalendar>> calendarsByDay;
-		private final Map<LocalDate, List<ServiceCalendarDate>> exceptionsByDate;
+		private final int serviceCount;
+		private final int[] serviceIndexByScheduledTrip;
+		private final int[][] serviceIndicesByPattern;
+		private final DayCalendarEntry[][] calendarsByDayIndex;
+		private final Map<LocalDate, DateExceptionEntry[]> exceptionsByDateIndex;
 		private final List<ScheduledTrip> scheduledTrips;
 		private final AccessTransitions accessTransitions;
 		private final OutOfStationFootpath[][] footpathsByFromStation;
@@ -2796,6 +2882,8 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[][] minPatternRunningTimes;
 		private final int[][] lineByPatternPosition;
 		private final int[][] stopOccurrences;
+		private final int[][] packedFirstPatternPosByStop;
+		private final int[][] slotOfStopInPattern;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
@@ -2866,18 +2954,45 @@ public final class RouteTimetableRaptorPlanner {
 				}
 				lineByPatternPosition[pattern] = lines;
 			}
-			// 역마다 (패턴, 위치) 쌍을 패턴 번호·위치 순으로 미리 둔다. 하한 Dijkstra가 역을 꺼낼 때마다 그 역을 지나는
-			// 패턴의 정차 배열을 처음부터 훑어 위치를 찾지 않게 한다(#462).
+			// 역마다 (패턴, 위치) 쌍을 패턴 번호·위치 순으로 2패스 단일 할당으로 미리 둔다(16비트 패킹).
+			if (stopsByPattern.length > 65_535) {
+				throw new IllegalArgumentException(
+					"pattern count exceeds 16-bit packing limit: " + stopsByPattern.length);
+			}
+			for (int pattern = 0; pattern < stopsByPattern.length; pattern += 1) {
+				if (stopsByPattern[pattern].length > 65_535) {
+					throw new IllegalArgumentException(
+						"pattern stop count exceeds 16-bit packing limit: " + stopsByPattern[pattern].length);
+				}
+			}
 			stopOccurrences = new int[stationIndex.size()][];
+			packedFirstPatternPosByStop = new int[stationIndex.size()][];
 			for (int station = 0; station < stopOccurrences.length; station += 1) {
-				int[] occurrences = new int[0];
-				for (int pattern : patternsByStop[station]) {
+				int[] stationPatterns = patternsByStop[station];
+				int[] packedFirst = new int[stationPatterns.length];
+				int occurrenceCount = 0;
+				for (int pIdx = 0; pIdx < stationPatterns.length; pIdx += 1) {
+					int pattern = stationPatterns[pIdx];
+					int[] stops = stopsByPattern[pattern];
+					int firstPos = -1;
+					for (int position = 0; position < stops.length; position += 1) {
+						if (stops[position] == station) {
+							if (firstPos < 0) {
+								firstPos = position;
+							}
+							occurrenceCount += 1;
+						}
+					}
+					packedFirst[pIdx] = (pattern << 16) | (firstPos & 0xFFFF);
+				}
+				packedFirstPatternPosByStop[station] = packedFirst;
+				int[] occurrences = new int[occurrenceCount];
+				int writeIdx = 0;
+				for (int pattern : stationPatterns) {
 					int[] stops = stopsByPattern[pattern];
 					for (int position = 0; position < stops.length; position += 1) {
 						if (stops[position] == station) {
-							occurrences = Arrays.copyOf(occurrences, occurrences.length + 2);
-							occurrences[occurrences.length - 2] = pattern;
-							occurrences[occurrences.length - 1] = position;
+							occurrences[writeIdx++] = (pattern << 16) | (position & 0xFFFF);
 						}
 					}
 				}
@@ -2890,13 +3005,44 @@ public final class RouteTimetableRaptorPlanner {
 					patternByScheduledTrip[trip.index()] = pattern;
 				}
 			}
-			calendarsByDay = compileCalendarsByDay(source.serviceCalendars());
-			exceptionsByDate = Map.copyOf(source.serviceCalendarDates().stream().collect(
-				java.util.stream.Collectors.groupingBy(
-					ServiceCalendarDate::date,
-					java.util.stream.Collectors.collectingAndThen(java.util.stream.Collectors.toList(), List::copyOf)
-				)
-			));
+			Map<String, Integer> serviceIndex = new HashMap<>();
+			for (ScheduledTrip trip : scheduledTrips) {
+				serviceIndex.putIfAbsent(trip.trip().serviceId(), serviceIndex.size());
+			}
+			for (ServiceCalendar calendar : source.serviceCalendars()) {
+				serviceIndex.putIfAbsent(calendar.serviceId(), serviceIndex.size());
+			}
+			for (ServiceCalendarDate exception : source.serviceCalendarDates()) {
+				serviceIndex.putIfAbsent(exception.serviceId(), serviceIndex.size());
+			}
+			serviceCount = serviceIndex.size();
+			serviceIndexByScheduledTrip = new int[scheduledTrips.size()];
+			for (int i = 0; i < scheduledTrips.size(); i += 1) {
+				serviceIndexByScheduledTrip[i] = serviceIndex.get(scheduledTrips.get(i).trip().serviceId());
+			}
+			serviceIndicesByPattern = new int[tripsByPattern.size()][];
+			for (int pattern = 0; pattern < tripsByPattern.size(); pattern += 1) {
+				List<ScheduledTrip> pTrips = tripsByPattern.get(pattern);
+				int[] pServices = new int[pTrips.size()];
+				for (int i = 0; i < pTrips.size(); i += 1) {
+					pServices[i] = serviceIndexByScheduledTrip[pTrips.get(i).index()];
+				}
+				serviceIndicesByPattern[pattern] = pServices;
+			}
+			calendarsByDayIndex = compileCalendarsByDay(source.serviceCalendars(), serviceIndex);
+			Map<LocalDate, List<DateExceptionEntry>> excTemp = new HashMap<>();
+			for (ServiceCalendarDate exception : source.serviceCalendarDates()) {
+				Integer svcIdx = serviceIndex.get(exception.serviceId());
+				if (svcIdx != null) {
+					excTemp.computeIfAbsent(exception.date(), ignored -> new ArrayList<>())
+						.add(new DateExceptionEntry(svcIdx, exception.exceptionType()));
+				}
+			}
+			Map<LocalDate, DateExceptionEntry[]> excBuilt = HashMap.newHashMap(excTemp.size());
+			for (Map.Entry<LocalDate, List<DateExceptionEntry>> entry : excTemp.entrySet()) {
+				excBuilt.put(entry.getKey(), entry.getValue().toArray(DateExceptionEntry[]::new));
+			}
+			exceptionsByDateIndex = Map.copyOf(excBuilt);
 			accessTransitions = AccessTransitions.compile(source, stationIndex, lineIndex);
 			int numStations = stationIndex.size();
 			int numLines = lineIndex.size();
@@ -2995,6 +3141,24 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			stationSlotOffsets[numStations] = totalSlots;
 			totalStationSlots = totalSlots;
+			slotOfStopInPattern = new int[stopsByPattern.length][];
+			for (int pattern = 0; pattern < stopsByPattern.length; pattern += 1) {
+				int[] stops = stopsByPattern[pattern];
+				int[] patternLines = lineByPatternPosition[pattern];
+				int[] patternSlots = new int[stops.length];
+				for (int position = 0; position < stops.length; position += 1) {
+					int line = patternLines[position];
+					if (line < 0) {
+						patternSlots[position] = -1;
+					} else {
+						int localIndex = stationLineLocalIndex(stops[position], line);
+						patternSlots[position] = localIndex >= 0
+							? stationSlotOffsets[stops[position]] + localIndex
+							: -1;
+					}
+				}
+				slotOfStopInPattern[pattern] = patternSlots;
+			}
 			destinationLowerBounds = new AtomicReferenceArray<>(numStations);
 			carDoorHintsByStationLine = indexCarDoorHintsByStationLine(source.routeAccessData().carDoorHints());
 		}
@@ -3319,9 +3483,10 @@ public final class RouteTimetableRaptorPlanner {
 			int lineIdx = lineIndex(lineId);
 			ActiveServiceDay activeDay = activeServiceDay(serviceDate);
 			int minHeadway = Integer.MAX_VALUE;
-			for (int pattern : patternsByStop(fromStation)) {
+			for (int packed : packedFirstPatternPosByStop(fromStation)) {
+				int pattern = packed >>> 16;
+				int fromPos = packed & 0xFFFF;
 				int[] stops = stopsByPattern(pattern);
-				int fromPos = indexOf(stops, fromStation);
 				int toPos = indexOf(stops, toStation);
 				if (fromPos >= toPos || patternLine(pattern, fromPos) != lineIdx) {
 					continue;
@@ -3362,11 +3527,25 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		/**
-		 * 역이 나오는 (패턴, 위치) 쌍을 이어 붙인 배열. 패턴 번호, 같은 패턴 안에서는 위치 순이다. 하한 Dijkstra 내부
-		 * 루프용이라 범위를 검사하지 않는다. 역 번호는 {@code [0, stationCount())} 안이어야 한다.
+		 * 역이 나오는 (패턴, 위치) 쌍을 {@code (pattern << 16) | position}으로 패킹한 배열.
+		 * 패턴 번호·위치 순이며 하한 Dijkstra 내부 루프용이다.
 		 */
 		int[] stopOccurrences(int station) {
 			return stopOccurrences[station];
+		}
+
+		/**
+		 * 역이 처음 등장하는 패턴·위치를 {@code (pattern << 16) | firstPosition}으로 패킹한 배열.
+		 * {@link #patternsByStop(int)}와 1:1 순서를 가진다.
+		 */
+		int[] packedFirstPatternPosByStop(int station) {
+			return Integer.compareUnsigned(station, packedFirstPatternPosByStop.length) < 0
+				? packedFirstPatternPosByStop[station]
+				: NO_PATTERNS;
+		}
+
+		int slotOfStopInPattern(int pattern, int position) {
+			return slotOfStopInPattern[pattern][position];
 		}
 
 		/**
@@ -3433,16 +3612,48 @@ public final class RouteTimetableRaptorPlanner {
 			if (cached != null) {
 				return cached;
 			}
-			Set<String> activeServiceIds = activeServiceIds(serviceDate);
-			List<ScheduledTrip> activeTrips = scheduledTrips.stream()
-				.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
-				.toList();
-			List<List<ScheduledTrip>> activeTripsByPattern = tripsByPattern.stream()
-				.map(trips -> trips.stream()
-					.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
-					.toList())
-				.toList();
-			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips, activeTripsByPattern);
+			int wordCount = (serviceCount + 63) >>> 6;
+			long[] activeWords = new long[wordCount];
+			DayCalendarEntry[] dayCalendars = calendarsByDayIndex[serviceDate.getDayOfWeek().ordinal()];
+			for (DayCalendarEntry calendar : dayCalendars) {
+				if (!serviceDate.isBefore(calendar.startDate()) && !serviceDate.isAfter(calendar.endDate())) {
+					int s = calendar.serviceIndex();
+					activeWords[s >>> 6] |= (1L << (s & 63));
+				}
+			}
+			DateExceptionEntry[] dayExceptions = exceptionsByDateIndex.get(serviceDate);
+			if (dayExceptions != null) {
+				for (DateExceptionEntry exception : dayExceptions) {
+					int s = exception.serviceIndex();
+					long bit = 1L << (s & 63);
+					if (exception.exceptionType() == 1) {
+						activeWords[s >>> 6] |= bit;
+					} else {
+						activeWords[s >>> 6] &= ~bit;
+					}
+				}
+			}
+			List<ScheduledTrip> activeTrips = new ArrayList<>();
+			for (int i = 0; i < scheduledTrips.size(); i += 1) {
+				int s = serviceIndexByScheduledTrip[i];
+				if ((activeWords[s >>> 6] & (1L << (s & 63))) != 0L) {
+					activeTrips.add(scheduledTrips.get(i));
+				}
+			}
+			List<List<ScheduledTrip>> activeTripsByPattern = new ArrayList<>(tripsByPattern.size());
+			for (int pattern = 0; pattern < tripsByPattern.size(); pattern += 1) {
+				List<ScheduledTrip> pTrips = tripsByPattern.get(pattern);
+				int[] pServices = serviceIndicesByPattern[pattern];
+				List<ScheduledTrip> matched = new ArrayList<>(pTrips.size());
+				for (int i = 0; i < pTrips.size(); i += 1) {
+					int s = pServices[i];
+					if ((activeWords[s >>> 6] & (1L << (s & 63))) != 0L) {
+						matched.add(pTrips.get(i));
+					}
+				}
+				activeTripsByPattern.add(List.copyOf(matched));
+			}
+			ActiveServiceDay compiled = new ActiveServiceDay(List.copyOf(activeTrips), List.copyOf(activeTripsByPattern));
 			activeServiceDays.put(serviceDate, compiled);
 			if (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
 				activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
@@ -3462,21 +3673,10 @@ public final class RouteTimetableRaptorPlanner {
 			return activeServiceDay(serviceDate).trips().size();
 		}
 
-		private Set<String> activeServiceIds(LocalDate serviceDate) {
-			Set<String> active = new HashSet<>();
-			for (ServiceCalendar calendar : calendarsByDay.getOrDefault(serviceDate.getDayOfWeek(), List.of())) {
-				if (!serviceDate.isBefore(calendar.startDate()) && !serviceDate.isAfter(calendar.endDate())) {
-					active.add(calendar.serviceId());
-				}
-			}
-			for (ServiceCalendarDate exception : exceptionsByDate.getOrDefault(serviceDate, List.of())) {
-				if (exception.exceptionType() == 1) {
-					active.add(exception.serviceId());
-				} else {
-					active.remove(exception.serviceId());
-				}
-			}
-			return active;
+		private record DayCalendarEntry(int serviceIndex, LocalDate startDate, LocalDate endDate) {
+		}
+
+		private record DateExceptionEntry(int serviceIndex, int exceptionType) {
 		}
 
 		private static Map<String, Integer> denseIndex(List<String> ids) {
@@ -3569,12 +3769,25 @@ public final class RouteTimetableRaptorPlanner {
 			return patternsByStop;
 		}
 
-		private static Map<DayOfWeek, List<ServiceCalendar>> compileCalendarsByDay(List<ServiceCalendar> calendars) {
-			Map<DayOfWeek, List<ServiceCalendar>> byDay = new EnumMap<>(DayOfWeek.class);
-			for (DayOfWeek day : DayOfWeek.values()) {
-				byDay.put(day, calendars.stream().filter(calendar -> runsOn(calendar, day)).toList());
+		private static DayCalendarEntry[][] compileCalendarsByDay(
+			List<ServiceCalendar> calendars,
+			Map<String, Integer> serviceIndex
+		) {
+			DayOfWeek[] days = DayOfWeek.values();
+			DayCalendarEntry[][] byDay = new DayCalendarEntry[days.length][];
+			for (DayOfWeek day : days) {
+				List<DayCalendarEntry> list = new ArrayList<>();
+				for (ServiceCalendar calendar : calendars) {
+					if (runsOn(calendar, day)) {
+						Integer svcIdx = serviceIndex.get(calendar.serviceId());
+						if (svcIdx != null) {
+							list.add(new DayCalendarEntry(svcIdx, calendar.startDate(), calendar.endDate()));
+						}
+					}
+				}
+				byDay[day.ordinal()] = list.toArray(DayCalendarEntry[]::new);
 			}
-			return Map.copyOf(byDay);
+			return byDay;
 		}
 	}
 
@@ -4224,11 +4437,8 @@ public final class RouteTimetableRaptorPlanner {
 		private int totalStationSlots;
 		private int epoch = 0;
 		int[] arrivalSeconds = new int[0];
-		private int[] parentTrip = new int[0];
-		private int[] parentBoardStop = new int[0];
-		private int[] parentAlightStop = new int[0];
-		private int[] parentAccessTransition = new int[0];
-		private int[] parentLabelSlot = new int[0];
+		private long[] parentTripAndStops = new long[0];
+		private long[] parentLink = new long[0];
 		byte[] warningBits = new byte[0];
 		private int[] markedStops = new int[0];
 		int[] nextMarkedStops = new int[0];
@@ -4247,6 +4457,7 @@ public final class RouteTimetableRaptorPlanner {
 		int[] lowerBounds = null;
 
 		final ScheduledTrip[] bagTrips = new ScheduledTrip[WARNING_STATE_COUNT];
+		int bagActiveMask;
 		/** #469: 경고 상태별 가장 빠른 대안 동선을 고를 때 쓰는 칸. */
 		final int[] alternativeTransitions = new int[WARNING_STATE_COUNT];
 		final int[] alternativeSeconds = new int[WARNING_STATE_COUNT];
@@ -4257,12 +4468,14 @@ public final class RouteTimetableRaptorPlanner {
 		final byte[] bagWarningBits = new byte[WARNING_STATE_COUNT];
 
 		final boolean[] readyActive = new boolean[WARNING_STATE_COUNT];
+		int readyActiveMask;
 		final int[] readyEarliestDepartureSeconds = new int[WARNING_STATE_COUNT];
 		final int[] readyAccessTransitions = new int[WARNING_STATE_COUNT];
 		final int[] readySlots = new int[WARNING_STATE_COUNT];
 		final byte[] readyWarningBits = new byte[WARNING_STATE_COUNT];
 
 		final boolean[] rtActive = new boolean[WARNING_STATE_COUNT];
+		int rtActiveMask;
 		final int[] rtBoardingPositions = new int[WARNING_STATE_COUNT];
 		final int[] rtEarliestDepartureSeconds = new int[WARNING_STATE_COUNT];
 		final int[] rtAccessTransitions = new int[WARNING_STATE_COUNT];
@@ -4319,8 +4532,64 @@ public final class RouteTimetableRaptorPlanner {
 			return touchedSlotCount;
 		}
 
+		private static long packTripAndStops(int trip, int boardStop, int alightStop) {
+			return ((long) trip << 32) | ((boardStop & 0xFFFFL) << 16) | (alightStop & 0xFFFFL);
+		}
+
+		private static long packParentLink(int accessTransition, int previousLabelSlot) {
+			return ((long) accessTransition << 32) | (previousLabelSlot & 0xFFFFFFFFL);
+		}
+
 		int parentTrip(int slot) {
-			return parentTrip[slot];
+			return (int) (parentTripAndStops[slot] >>> 32);
+		}
+
+		int parentBoardStop(int slot) {
+			int pos = (int) ((parentTripAndStops[slot] >>> 16) & 0xFFFFL);
+			return pos == 0xFFFF ? -1 : pos;
+		}
+
+		int parentAlightStop(int slot) {
+			int pos = (int) (parentTripAndStops[slot] & 0xFFFFL);
+			return pos == 0xFFFF ? -1 : pos;
+		}
+
+		int parentAccessTransition(int slot) {
+			return (int) (parentLink[slot] >>> 32);
+		}
+
+		int parentLabelSlot(int slot) {
+			return (int) parentLink[slot];
+		}
+
+		void syncBagMask() {
+			int mask = 0;
+			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
+				if (bagTrips[w] != null) {
+					mask |= (1 << w);
+				}
+			}
+			bagActiveMask = mask;
+		}
+
+		void syncReadyMask() {
+			int mask = 0;
+			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
+				if (readyActive[w]) {
+					mask |= (1 << w);
+				}
+			}
+			readyActiveMask = mask;
+		}
+
+		void syncRtMask() {
+			int mask = 0;
+			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
+				if (rtActive[w]) {
+					mask |= (1 << w);
+				}
+			}
+			rtActiveMask = mask;
 		}
 
 		private void prepareInternal(
@@ -4344,11 +4613,8 @@ public final class RouteTimetableRaptorPlanner {
 			boolean bufferReallocated = false;
 			if (arrivalSeconds.length < labelSlots) {
 				arrivalSeconds = new int[labelSlots];
-				parentTrip = new int[labelSlots];
-				parentBoardStop = new int[labelSlots];
-				parentAlightStop = new int[labelSlots];
-				parentAccessTransition = new int[labelSlots];
-				parentLabelSlot = new int[labelSlots];
+				parentTripAndStops = new long[labelSlots];
+				parentLink = new long[labelSlots];
 				warningBits = new byte[labelSlots];
 				bufferReallocated = true;
 			}
@@ -4371,22 +4637,16 @@ public final class RouteTimetableRaptorPlanner {
 
 			if (bufferReallocated || touchedSlotCount == 0) {
 				Arrays.fill(arrivalSeconds, 0, labelSlots, UNREACHED);
-				Arrays.fill(parentTrip, 0, labelSlots, -1);
-				Arrays.fill(parentBoardStop, 0, labelSlots, -1);
-				Arrays.fill(parentAlightStop, 0, labelSlots, -1);
-				Arrays.fill(parentAccessTransition, 0, labelSlots, -1);
-				Arrays.fill(parentLabelSlot, 0, labelSlots, -1);
+				Arrays.fill(parentTripAndStops, 0, labelSlots, -1L);
+				Arrays.fill(parentLink, 0, labelSlots, -1L);
 				Arrays.fill(warningBits, 0, labelSlots, (byte) 0);
 				touchedSlotCount = 0;
 			} else {
 				for (int i = 0; i < touchedSlotCount; i += 1) {
 					int s = touchedSlots[i];
 					arrivalSeconds[s] = UNREACHED;
-					parentTrip[s] = -1;
-					parentBoardStop[s] = -1;
-					parentAlightStop[s] = -1;
-					parentAccessTransition[s] = -1;
-					parentLabelSlot[s] = -1;
+					parentTripAndStops[s] = -1L;
+					parentLink[s] = -1L;
 					warningBits[s] = (byte) 0;
 				}
 				touchedSlotCount = 0;
@@ -4423,6 +4683,7 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		void clearBag() {
+			bagActiveMask = 0;
 			Arrays.fill(bagTrips, null);
 			Arrays.fill(bagBoardPositions, -1);
 			Arrays.fill(bagEarliestDepartureSeconds, UNREACHED);
@@ -4432,6 +4693,7 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		void clearReady() {
+			readyActiveMask = 0;
 			Arrays.fill(readyActive, false);
 			Arrays.fill(readyEarliestDepartureSeconds, UNREACHED);
 			Arrays.fill(readyAccessTransitions, -1);
@@ -4440,6 +4702,7 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		void clearRealtimeBag() {
+			rtActiveMask = 0;
 			Arrays.fill(rtActive, false);
 			Arrays.fill(rtBoardingPositions, -1);
 			Arrays.fill(rtEarliestDepartureSeconds, UNREACHED);
@@ -4450,18 +4713,22 @@ public final class RouteTimetableRaptorPlanner {
 
 		private void pruneSlot(int slot) {
 			arrivalSeconds[slot] = UNREACHED;
-			parentTrip[slot] = -1;
-			parentBoardStop[slot] = -1;
-			parentAlightStop[slot] = -1;
-			parentAccessTransition[slot] = -1;
-			parentLabelSlot[slot] = -1;
+			parentTripAndStops[slot] = -1L;
+			parentLink[slot] = -1L;
 			warningBits[slot] = 0;
 		}
 
 		void enforceStationFrontierCapacity(int boardings, int station, int incomingLine, int capacity) {
+			int baseSlot = stationSlotBase(boardings, station, incomingLine);
+			if (baseSlot >= 0) {
+				enforceStationFrontierCapacityAtBase(baseSlot, capacity);
+			}
+		}
+
+		private void enforceStationFrontierCapacityAtBase(int baseSlot, int capacity) {
 			int activeCount = 0;
 			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-				if (arrivalSeconds[slot(boardings, station, incomingLine, w)] != UNREACHED) {
+				if (arrivalSeconds[baseSlot + w] != UNREACHED) {
 					activeCount += 1;
 				}
 			}
@@ -4470,7 +4737,7 @@ public final class RouteTimetableRaptorPlanner {
 				int worstArrival = -1;
 				int worstWarningCount = -1;
 				for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-					int s = slot(boardings, station, incomingLine, w);
+					int s = baseSlot + w;
 					int arrival = arrivalSeconds[s];
 					if (arrival == UNREACHED) {
 						continue;
@@ -4484,7 +4751,7 @@ public final class RouteTimetableRaptorPlanner {
 						worstWarningCount = wc;
 					}
 				}
-				pruneSlot(slot(boardings, station, incomingLine, worstWarning));
+				pruneSlot(baseSlot + worstWarning);
 				activeCount -= 1;
 			}
 		}
@@ -4501,15 +4768,17 @@ public final class RouteTimetableRaptorPlanner {
 		boolean isDominatedByTarget(int station, int candidateArrivalSeconds, int candidateWarningState) {
 			int lb = (lowerBounds != null && station >= 0 && station < lowerBounds.length) ? lowerBounds[station] : 0;
 			long estimatedArrival = (long) candidateArrivalSeconds + lb;
-			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-				if ((warningState & candidateWarningState) == warningState) {
-					int best = bestTargetArrivalSeconds[warningState];
-					if (best != UNREACHED && (station == targetStation ? best < candidateArrivalSeconds : best <= estimatedArrival)) {
-						return true;
-					}
+			int warningState = candidateWarningState;
+			while (true) {
+				int best = bestTargetArrivalSeconds[warningState];
+				if (best != UNREACHED && (station == targetStation ? best < candidateArrivalSeconds : best <= estimatedArrival)) {
+					return true;
 				}
+				if (warningState == 0) {
+					return false;
+				}
+				warningState = (warningState - 1) & candidateWarningState;
 			}
-			return false;
 		}
 
 		boolean isTargetDominatingDeparture(int station, int earliestDepartureSeconds) {
@@ -4547,7 +4816,7 @@ public final class RouteTimetableRaptorPlanner {
 			return totalStationSlots * LABEL_SLOT_COUNT * WARNING_STATE_COUNT + warningState;
 		}
 
-		int slot(int boardings, int station, int incomingLine, int warningState) {
+		int findStationSlot(int station, int incomingLine) {
 			int localIndex;
 			if (incomingLine == noIncomingLine()) {
 				localIndex = stationLineOffsets[station + 1] - stationLineOffsets[station];
@@ -4562,10 +4831,22 @@ public final class RouteTimetableRaptorPlanner {
 					}
 				}
 				if (localIndex < 0) {
-					return dummyUnreachedSlot(warningState);
+					return -1;
 				}
 			}
-			int stationSlot = stationSlotOffsets[station] + localIndex;
+			return stationSlotOffsets[station] + localIndex;
+		}
+
+		int stationSlotBase(int boardings, int station, int incomingLine) {
+			int stationSlot = findStationSlot(station, incomingLine);
+			return stationSlot < 0 ? -1 : (stationSlot * LABEL_SLOT_COUNT + boardings) * WARNING_STATE_COUNT;
+		}
+
+		int slot(int boardings, int station, int incomingLine, int warningState) {
+			int stationSlot = findStationSlot(station, incomingLine);
+			if (stationSlot < 0) {
+				return dummyUnreachedSlot(warningState);
+			}
 			return (stationSlot * LABEL_SLOT_COUNT + boardings) * WARNING_STATE_COUNT + warningState;
 		}
 		int noIncomingLine() {
@@ -4604,6 +4885,32 @@ public final class RouteTimetableRaptorPlanner {
 			int previousLabelSlot,
 			byte accumulatedWarnings
 		) {
+			relaxAtStationSlot(
+				station,
+				findStationSlot(station, incomingLine),
+				boardings,
+				candidateArrivalSeconds,
+				trip,
+				boardStop,
+				alightStop,
+				accessTransition,
+				previousLabelSlot,
+				accumulatedWarnings
+			);
+		}
+
+		void relaxAtStationSlot(
+			int station,
+			int stationSlot,
+			int boardings,
+			int candidateArrivalSeconds,
+			int trip,
+			int boardStop,
+			int alightStop,
+			int accessTransition,
+			int previousLabelSlot,
+			byte accumulatedWarnings
+		) {
 			int candidateWarningState = Byte.toUnsignedInt(accumulatedWarnings);
 			if (isDominatedByTarget(station, candidateArrivalSeconds, candidateWarningState)) {
 				return;
@@ -4612,14 +4919,18 @@ public final class RouteTimetableRaptorPlanner {
 				if (candidateArrivalSeconds < bestTargetArrivalSeconds[candidateWarningState]) {
 					bestTargetArrivalSeconds[candidateWarningState] = candidateArrivalSeconds;
 				}
-				for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-					if ((candidateWarningState & w) == candidateWarningState
-						&& candidateArrivalSeconds < bestTargetArrivalSeconds[w]) {
+				for (int rem = PROPER_SUPERMASK_MASK[candidateWarningState]; rem != 0; rem &= rem - 1) {
+					int w = Integer.numberOfTrailingZeros(rem);
+					if (candidateArrivalSeconds < bestTargetArrivalSeconds[w]) {
 						bestTargetArrivalSeconds[w] = candidateArrivalSeconds;
 					}
 				}
 			}
-			int candidateSlot = slot(boardings, station, incomingLine, candidateWarningState);
+			if (stationSlot < 0) {
+				return;
+			}
+			int candidateBase = (stationSlot * LABEL_SLOT_COUNT + boardings) * WARNING_STATE_COUNT;
+			int candidateSlot = candidateBase + candidateWarningState;
 			if (candidateSlot >= totalSlots()) {
 				return;
 			}
@@ -4627,42 +4938,48 @@ public final class RouteTimetableRaptorPlanner {
 			if (existingArrivalSeconds < candidateArrivalSeconds) {
 				return;
 			}
-			if (existingArrivalSeconds == candidateArrivalSeconds && (parentTrip[candidateSlot] < trip
-				|| parentTrip[candidateSlot] == trip && parentBoardStop[candidateSlot] <= boardStop)) {
-				return;
+			if (existingArrivalSeconds == candidateArrivalSeconds) {
+				long existingMeta = parentTripAndStops[candidateSlot];
+				int existingTrip = (int) (existingMeta >>> 32);
+				int existingBoard = ((int) ((existingMeta >>> 16) & 0xFFFFL));
+				if (existingBoard == 0xFFFF) {
+					existingBoard = -1;
+				}
+				if (existingTrip < trip || (existingTrip == trip && existingBoard <= boardStop)) {
+					return;
+				}
 			}
-			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-				if (warningState != candidateWarningState
-					&& (warningState & candidateWarningState) == warningState
-					&& arrivalSeconds[slot(boardings, station, incomingLine, warningState)] <= candidateArrivalSeconds) {
+			int sub = candidateWarningState;
+			while (true) {
+				if (sub != candidateWarningState && arrivalSeconds[candidateBase + sub] <= candidateArrivalSeconds) {
 					return;
 				}
 				for (int fewerBoardings = 0; fewerBoardings < boardings; fewerBoardings += 1) {
-					if ((warningState & candidateWarningState) == warningState
-						&& arrivalSeconds[slot(fewerBoardings, station, incomingLine, warningState)]
-							<= candidateArrivalSeconds) {
+					int fewerBase = (stationSlot * LABEL_SLOT_COUNT + fewerBoardings) * WARNING_STATE_COUNT;
+					if (arrivalSeconds[fewerBase + sub] <= candidateArrivalSeconds) {
 						return;
 					}
 				}
+				if (sub == 0) {
+					break;
+				}
+				sub = (sub - 1) & candidateWarningState;
 			}
-			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-				if (warningState != candidateWarningState
-					&& (candidateWarningState & warningState) == candidateWarningState
-					&& candidateArrivalSeconds <= arrivalSeconds[slot(boardings, station, incomingLine, warningState)]) {
-					pruneSlot(slot(boardings, station, incomingLine, warningState));
+			for (int rem = PROPER_SUPERMASK_MASK[candidateWarningState]; rem != 0; rem &= rem - 1) {
+				int warningState = Integer.numberOfTrailingZeros(rem);
+				int supSlot = candidateBase + warningState;
+				if (candidateArrivalSeconds <= arrivalSeconds[supSlot]) {
+					pruneSlot(supSlot);
 				}
 			}
 			if (existingArrivalSeconds == UNREACHED) {
 				recordTouchedSlot(candidateSlot);
 			}
 			arrivalSeconds[candidateSlot] = candidateArrivalSeconds;
-			parentTrip[candidateSlot] = trip;
-			parentBoardStop[candidateSlot] = boardStop;
-			parentAlightStop[candidateSlot] = alightStop;
-			parentAccessTransition[candidateSlot] = accessTransition;
-			parentLabelSlot[candidateSlot] = previousLabelSlot;
+			parentTripAndStops[candidateSlot] = packTripAndStops(trip, boardStop, alightStop);
+			parentLink[candidateSlot] = packParentLink(accessTransition, previousLabelSlot);
 			warningBits[candidateSlot] = accumulatedWarnings;
-			enforceStationFrontierCapacity(boardings, station, incomingLine, PARETO_LIMIT);
+			enforceStationFrontierCapacityAtBase(candidateBase, PARETO_LIMIT);
 			if (!nextMarked[station]) {
 				nextMarked[station] = true;
 				nextMarkedStops[nextMarkedStopCount++] = station;
@@ -4699,15 +5016,16 @@ public final class RouteTimetableRaptorPlanner {
 	 */
 	public static final class ScanWorkspacePool {
 
-		private static final int DEFAULT_MAX_IDLE_WORKSPACES = Math.max(16, Runtime.getRuntime().availableProcessors() * 2);
+		static final int MAX_POOL_SIZE = 32;
+		private static final int DEFAULT_MAX_IDLE_WORKSPACES =
+			Math.min(MAX_POOL_SIZE, Math.max(16, Runtime.getRuntime().availableProcessors() * 2));
 
 		private static final class SharedHolder {
 			private static final ScanWorkspacePool INSTANCE = new ScanWorkspacePool(DEFAULT_MAX_IDLE_WORKSPACES);
 		}
 
 		private final int maxIdleWorkspaces;
-		private final ConcurrentLinkedQueue<ScanWorkspace> idleWorkspaces = new ConcurrentLinkedQueue<>();
-		private final AtomicInteger idleCount = new AtomicInteger();
+		private final AtomicReferenceArray<ScanWorkspace> slots;
 		private final AtomicInteger totalAllocated = new AtomicInteger();
 
 		public static ScanWorkspacePool shared() {
@@ -4722,14 +5040,21 @@ public final class RouteTimetableRaptorPlanner {
 			if (maxIdleWorkspaces <= 0) {
 				throw new IllegalArgumentException("maxIdleWorkspaces must be positive: " + maxIdleWorkspaces);
 			}
-			this.maxIdleWorkspaces = maxIdleWorkspaces;
+			this.maxIdleWorkspaces = Math.min(MAX_POOL_SIZE, maxIdleWorkspaces);
+			this.slots = new AtomicReferenceArray<>(this.maxIdleWorkspaces);
 		}
 
 		ScanWorkspace acquire() {
-			ScanWorkspace workspace = idleWorkspaces.poll();
-			if (workspace != null) {
-				idleCount.decrementAndGet();
-				return workspace;
+			int len = slots.length();
+			int start = slotHint(len);
+			for (int i = 0; i < len; i += 1) {
+				int idx = (start + i) % len;
+				if (slots.get(idx) != null) {
+					ScanWorkspace workspace = slots.getAndSet(idx, null);
+					if (workspace != null) {
+						return workspace;
+					}
+				}
 			}
 			totalAllocated.incrementAndGet();
 			return new ScanWorkspace();
@@ -4739,20 +5064,40 @@ public final class RouteTimetableRaptorPlanner {
 			if (workspace == null) {
 				return;
 			}
-			while (true) {
-				int current = idleCount.get();
-				if (current >= maxIdleWorkspaces) {
-					return;
+			int len = slots.length();
+			int start = slotHint(len);
+			for (int pass = 0; pass < 2; pass += 1) {
+				boolean sawContention = false;
+				for (int i = 0; i < len; i += 1) {
+					int idx = (start + i) % len;
+					if (slots.get(idx) == null) {
+						if (slots.compareAndSet(idx, null, workspace)) {
+							return;
+						}
+						sawContention = true;
+					}
 				}
-				if (idleCount.compareAndSet(current, current + 1)) {
-					idleWorkspaces.offer(workspace);
+				if (!sawContention) {
 					return;
 				}
 			}
 		}
 
+		private static int slotHint(int len) {
+			long tid = Thread.currentThread().threadId();
+			int hash = (int) (tid ^ (tid >>> 32));
+			return (hash & 0x7FFF_FFFF) % len;
+		}
+
 		public int idleCount() {
-			return Math.max(0, idleCount.get());
+			int count = 0;
+			int len = slots.length();
+			for (int i = 0; i < len; i += 1) {
+				if (slots.get(i) != null) {
+					count += 1;
+				}
+			}
+			return count;
 		}
 
 		public int maxIdleWorkspaces() {
@@ -5439,7 +5784,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final RealtimeOverlay accessOverlay;
 		private final ProfileLimitTracker limits;
 		private final PrimitiveProfileLabelPool pool = new PrimitiveProfileLabelPool(1024);
-		private final Map<ProfileStateKey, IntArrayList> labelsByState = new HashMap<>();
+		private final PrimitiveLongObjectMap<IntArrayList> labelsByState = new PrimitiveLongObjectMap<>(256);
 		/** 도착 + 하한이 작은 라벨부터 꺼낸다. 대안 창 상한이 빨리 좁혀져 같은 결과를 더 적은 확장으로 얻는다. */
 		private final LongMinHeap pending = new LongMinHeap(256);
 		/** 도착역까지 노선 최소 주행 시간 하한. 환승 시간을 빼므로 실제보다 크지 않다. */
@@ -5539,11 +5884,11 @@ public final class RouteTimetableRaptorPlanner {
 				}
 				int labelIncomingLine = pool.incomingLine[label];
 
-				for (int pattern : timetable.patternsByStop(labelStation)) {
+				for (int packed : timetable.packedFirstPatternPosByStop(labelStation)) {
 					limits.consumeWork();
 					expandedRoutes += 1;
-					int position = indexOf(timetable.stopsByPattern(pattern), labelStation);
-					if (position < 0) continue;
+					int pattern = packed >>> 16;
+					int position = packed & 0xFFFF;
 					ProfilePatternTrips patternTrips = trips.tripsByPattern(pattern);
 					if (patternTrips.trips().isEmpty()) continue;
 					int boardingLine = timetable.patternLine(pattern, position);
@@ -5577,11 +5922,12 @@ public final class RouteTimetableRaptorPlanner {
 					limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 					continue;
 				}
-				for (int pattern : timetable.patternsByStop(footpath.toStation())) {
+				for (int packed : timetable.packedFirstPatternPosByStop(footpath.toStation())) {
 					limits.consumeWork();
 					expandedRoutes += 1;
-					// patternsByStop은 stopsByPattern의 역색인이라 도착역은 항상 패턴 안에 있다.
-					int position = indexOf(timetable.stopsByPattern(pattern), footpath.toStation());
+					// packedFirstPatternPosByStop은 stopsByPattern의 역색인이라 도착역은 항상 패턴 안에 있다.
+					int pattern = packed >>> 16;
+					int position = packed & 0xFFFF;
 					ProfilePatternTrips patternTrips = trips.tripsByPattern(pattern);
 					if (patternTrips.trips().isEmpty()
 						|| timetable.patternLine(pattern, position) != footpath.toLine()) continue;
@@ -5692,10 +6038,23 @@ public final class RouteTimetableRaptorPlanner {
 			return low;
 		}
 
+		private static long packProfileStateKey(int boardings, int station, int incomingLine) {
+			if ((boardings & ~0x7F) != 0
+				|| station < 0 || station >= (1 << 28)
+				|| incomingLine < -1 || incomingLine >= (1 << 27)) {
+				throw new IllegalArgumentException(
+					"Profile state key out of packed range: boardings=" + boardings
+						+ ", station=" + station + ", incomingLine=" + incomingLine);
+			}
+			return ((long) boardings << 56)
+				| ((long) station << 28)
+				| ((long) (incomingLine + 1) & 0x0FFF_FFFFL);
+		}
+
 		private boolean isCurrent(int label) {
-			ProfileStateKey state = new ProfileStateKey(
+			long stateKey = packProfileStateKey(
 				pool.boardings[label], pool.station[label], pool.incomingLine[label]);
-			IntArrayList labels = labelsByState.get(state);
+			IntArrayList labels = labelsByState.get(stateKey);
 			return labels != null && labels.contains(label);
 		}
 
@@ -5706,11 +6065,16 @@ public final class RouteTimetableRaptorPlanner {
 		) {
 			List<ProfileDestinationLabel> candidates = new ArrayList<>();
 			int earliestArrival = UNREACHED;
-			for (Map.Entry<ProfileStateKey, IntArrayList> entry : labelsByState.entrySet()) {
-				ProfileStateKey state = entry.getKey();
+			for (int slot = 0, cap = labelsByState.capacity(); slot < cap; slot += 1) {
+				long stateKey = labelsByState.keyAt(slot);
+				if (stateKey == PrimitiveLongObjectMap.EMPTY_KEY) {
+					continue;
+				}
+				int stateStation = (int) ((stateKey >>> 28) & 0x0FFF_FFFFL);
+				int stateBoardings = (int) (stateKey >>> 56);
 				// #454: 도착역의 어느 승강장(역-노선)에 내려도 도착이다. 하차 시간·거리를 더하지 않는다.
-				if (state.station() != destination || state.boardings() == 0) continue;
-				IntArrayList list = entry.getValue();
+				if (stateStation != destination || stateBoardings == 0) continue;
+				IntArrayList list = labelsByState.valueAt(slot);
 				int count = list.size();
 				for (int i = 0; i < count; i++) {
 					int label = list.get(i);
@@ -5762,9 +6126,13 @@ public final class RouteTimetableRaptorPlanner {
 				long bound = (long) bestDestinationArrival + windowSeconds;
 				if (arrivalBound == UNREACHED || bound < arrivalBound) arrivalBound = (int) Math.min(bound, UNREACHED - 1L);
 			}
-			ProfileStateKey state = new ProfileStateKey(
+			long stateKey = packProfileStateKey(
 				pool.boardings[candidate], pool.station[candidate], pool.incomingLine[candidate]);
-			IntArrayList labels = labelsByState.computeIfAbsent(state, ignored -> new IntArrayList(4));
+			IntArrayList labels = labelsByState.get(stateKey);
+			if (labels == null) {
+				labels = new IntArrayList(4);
+				labelsByState.put(stateKey, labels);
+			}
 			// 한 번 훑으며 (1) 상한이 좁혀져 창 밖이 된 라벨을 비우고(창 안 라벨을 지배할 수 없음: 도착이 더 늦음)
 			// (2) 후보를 지배하는 라벨이 있으면 거절하고 (3) 후보가 지배하는 라벨을 뺀다. 파레토 집합 안에서는 후보를
 			// 지배하는 라벨과 후보가 지배하는 라벨이 함께 있을 수 없으므로(추이성) 거절될 후보는 아무것도 빼지 않는다.
@@ -5879,9 +6247,6 @@ public final class RouteTimetableRaptorPlanner {
 				trace
 			);
 		}
-	}
-
-	private record ProfileStateKey(int boardings, int station, int incomingLine) {
 	}
 
 	private record ProfileLabel(
