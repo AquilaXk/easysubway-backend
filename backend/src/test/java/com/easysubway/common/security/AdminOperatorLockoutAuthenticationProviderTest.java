@@ -145,7 +145,9 @@ class AdminOperatorLockoutAuthenticationProviderTest {
 
 		assertThatThrownBy(() -> provider.authenticate(token("admin-user", "admin-password")))
 			.isInstanceOf(LockedException.class);
-		assertThat(matchesCount.get()).isEqualTo(1);
+		assertThatThrownBy(() -> provider.authenticate(token("admin-user", null)))
+			.isInstanceOf(LockedException.class);
+		assertThat(matchesCount.get()).isEqualTo(2);
 	}
 
 	@Test
@@ -202,8 +204,29 @@ class AdminOperatorLockoutAuthenticationProviderTest {
 		var clock = new MutableClock(Instant.parse("2026-06-22T00:00:00Z"));
 		assertThatThrownBy(() -> provider(clock, new InMemoryAdminIdentityRepository(), 0, Duration.ofMinutes(5)))
 			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> provider(clock, new InMemoryAdminIdentityRepository(), 2, Duration.ofMinutes(-1)))
+			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> provider(clock, new InMemoryAdminIdentityRepository(), 2, Duration.ZERO))
 			.isInstanceOf(IllegalArgumentException.class);
+		PasswordEncoder blankEncoder = new PasswordEncoder() {
+			@Override
+			public String encode(CharSequence rawPassword) {
+				return "";
+			}
+
+			@Override
+			public boolean matches(CharSequence rawPassword, String encodedPassword) {
+				return false;
+			}
+		};
+		assertThatThrownBy(() -> new AdminOperatorLockoutAuthenticationProvider(
+			new AdminIdentityUserDetailsService(new InMemoryAdminIdentityRepository(), new ConcurrentUserDetailsManager(), clock),
+			blankEncoder,
+			new InMemoryAdminIdentityRepository(),
+			2,
+			Duration.ofMinutes(5),
+			clock
+		)).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -216,6 +239,8 @@ class AdminOperatorLockoutAuthenticationProviderTest {
 			Duration.ofMinutes(5)
 		);
 
+		assertThatThrownBy(() -> provider.authenticate(token(null, "bad-password")))
+			.isInstanceOf(BadCredentialsException.class);
 		assertThatThrownBy(() -> provider.authenticate(token("app-user", "bad-password")))
 			.isInstanceOf(BadCredentialsException.class);
 		assertThatThrownBy(() -> provider.authenticate(token("app-user", "bad-password")))

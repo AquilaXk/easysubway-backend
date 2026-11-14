@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -29,7 +30,7 @@ public class AdminAuditWriter {
 	private final Clock clock;
 	private final boolean enabled;
 	private final Supplier<TrustedClientIpResolver> clientIpResolverSupplier;
-	private volatile TrustedClientIpResolver clientIpResolver;
+	private final AtomicReference<TrustedClientIpResolver> clientIpResolver = new AtomicReference<>();
 
 	public AdminAuditWriter(AdminAuditEventRepository auditEventRepository) {
 		this(auditEventRepository, Clock.systemUTC(), true, TrustedClientIpResolver::directOnly);
@@ -277,13 +278,13 @@ public class AdminAuditWriter {
 	}
 
 	private String clientIp(HttpServletRequest request) {
-		TrustedClientIpResolver resolver = clientIpResolver;
+		TrustedClientIpResolver resolver = clientIpResolver.get();
 		if (resolver == null) {
 			resolver = clientIpResolverSupplier.get();
 			if (resolver == null) {
 				resolver = TrustedClientIpResolver.directOnly();
 			}
-			clientIpResolver = resolver;
+			clientIpResolver.compareAndSet(null, resolver);
 		}
 		return resolver.resolve(request);
 	}

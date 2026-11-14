@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 public final class RaptorRouteBundleRuntimeView
@@ -33,7 +34,7 @@ public final class RaptorRouteBundleRuntimeView
 	private final List<BundleFacility> bundleFacilities;
 	private final List<BundleStationExit> bundleStationExits;
 	private final Object stationTimetableIndexLock = new Object();
-	private volatile StationTimetableIndex stationTimetableIndex;
+	private final AtomicReference<StationTimetableIndex> stationTimetableIndex = new AtomicReference<>();
 
 	private RaptorRouteBundleRuntimeView(
 		String routeBundleSha256,
@@ -294,13 +295,13 @@ public final class RaptorRouteBundleRuntimeView
 	// 이전 세대 색인은 그 세대 객체와 함께 버려진다.
 	@Override
 	public StationTimetableIndex stationTimetableIndex() {
-		StationTimetableIndex cached = stationTimetableIndex;
+		StationTimetableIndex cached = stationTimetableIndex.get();
 		if (cached != null) return cached;
 		synchronized (stationTimetableIndexLock) {
-			cached = stationTimetableIndex;
+			cached = stationTimetableIndex.get();
 			if (cached == null) {
 				cached = StationTimetableIndex.of(compiledTimetable.source());
-				stationTimetableIndex = cached;
+				stationTimetableIndex.set(cached);
 			}
 			return cached;
 		}

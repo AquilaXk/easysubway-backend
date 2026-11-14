@@ -40,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -80,7 +81,7 @@ public class TrainSearchService {
 		}
 	};
 	private final ConcurrentHashMap<String, CompletableFuture<CachedLeg>> singleFlights = new ConcurrentHashMap<>();
-	private volatile CachedDecodedCatalog l1Catalog;
+	private final AtomicReference<CachedDecodedCatalog> l1Catalog = new AtomicReference<>();
 
 	@Autowired
 	public TrainSearchService(TrainSearchProvider provider, TrainSearchCache cache, ObjectMapper objectMapper) {
@@ -620,16 +621,10 @@ public class TrainSearchService {
 		}
 	}
 
-	private void forget(String key, CachedLeg value) {
-		synchronized (l1Lock) {
-			l1.remove(key, value);
-		}
-	}
-
 	private int purgeExpiredL1(Instant now) {
-		CachedDecodedCatalog cachedCatalog = l1Catalog;
+		CachedDecodedCatalog cachedCatalog = l1Catalog.get();
 		if (cachedCatalog != null && !cachedCatalog.expiresAt().isAfter(now)) {
-			l1Catalog = null;
+			l1Catalog.compareAndSet(cachedCatalog, null);
 		}
 		int purged = 0;
 		synchronized (l1Lock) {
@@ -728,7 +723,7 @@ public class TrainSearchService {
 	}
 
 	private CatalogEntry cachedCatalogEntry(CachedCatalog cached) {
-		CachedDecodedCatalog local = l1Catalog;
+		CachedDecodedCatalog local = l1Catalog.get();
 		if (local != null
 			&& Objects.equals(cached.expiresAt(), local.expiresAt())
 			&& Objects.equals(cached.payloadSha256(), local.payloadSha256())
@@ -741,7 +736,7 @@ public class TrainSearchService {
 
 	private CatalogEntry rememberCatalog(String payloadJson, String payloadSha256, Catalog catalog, Instant expiresAt) {
 		CatalogEntry entry = indexCatalog(catalog, expiresAt);
-		l1Catalog = new CachedDecodedCatalog(payloadJson, payloadSha256, expiresAt, entry);
+		l1Catalog.set(new CachedDecodedCatalog(payloadJson, payloadSha256, expiresAt, entry));
 		return entry;
 	}
 

@@ -21,9 +21,6 @@ import org.springframework.util.Assert;
 
 public class AdminOperatorLockoutAuthenticationProvider implements AuthenticationProvider {
 
-	private static final String FALLBACK_DUMMY_BCRYPT =
-		"{bcrypt}$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG";
-
 	private final DaoAuthenticationProvider delegate = new DaoAuthenticationProvider();
 	private final PasswordEncoder passwordEncoder;
 	private final String dummyEncodedPassword;
@@ -89,10 +86,9 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 	}
 
 	private static String initializeDummyEncodedPassword(PasswordEncoder passwordEncoder) {
+		Assert.notNull(passwordEncoder, "passwordEncoder must not be null");
 		String encoded = passwordEncoder.encode("easysubway-lockout-timing-guard");
-		if (encoded == null || encoded.isBlank()) {
-			return FALLBACK_DUMMY_BCRYPT;
-		}
+		Assert.hasText(encoded, "passwordEncoder must produce non-blank dummy hash");
 		return encoded;
 	}
 
