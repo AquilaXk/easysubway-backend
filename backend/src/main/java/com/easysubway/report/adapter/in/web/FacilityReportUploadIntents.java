@@ -23,6 +23,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -55,8 +56,8 @@ class FacilityReportUploadIntents {
 	private final long maxTotalPendingBytes;
 	private final SecureRandom secureRandom;
 	private final String intentSigningKey;
-	private volatile Executor expiredDeleteExecutor = Runnable::run;
-	private volatile ExecutorService ownedExpiredDeleteExecutor;
+	private final AtomicReference<Executor> expiredDeleteExecutor = new AtomicReference<>(Runnable::run);
+	private final AtomicReference<ExecutorService> ownedExpiredDeleteExecutor = new AtomicReference<>();
 
 	@Autowired
 	FacilityReportUploadIntents(
@@ -79,8 +80,8 @@ class FacilityReportUploadIntents {
 			intentSigningKey
 		);
 		ExecutorService executor = createExpiredDeleteExecutor(EXPIRED_DELETE_QUEUE_CAPACITY);
-		this.ownedExpiredDeleteExecutor = executor;
-		this.expiredDeleteExecutor = executor;
+		this.ownedExpiredDeleteExecutor.set(executor);
+		this.expiredDeleteExecutor.set(executor);
 	}
 
 	FacilityReportUploadIntents(
@@ -145,7 +146,7 @@ class FacilityReportUploadIntents {
 	}
 
 	void useExpiredDeleteExecutorForTest(Executor executor) {
-		this.expiredDeleteExecutor = Objects.requireNonNull(executor, "executor");
+		this.expiredDeleteExecutor.set(Objects.requireNonNull(executor, "executor"));
 	}
 
 	static ExecutorService createExpiredDeleteExecutor(int queueCapacity) {
@@ -169,8 +170,9 @@ class FacilityReportUploadIntents {
 
 	@PreDestroy
 	void shutdown() {
-		if (ownedExpiredDeleteExecutor != null) {
-			ownedExpiredDeleteExecutor.shutdownNow();
+		ExecutorService executor = ownedExpiredDeleteExecutor.getAndSet(null);
+		if (executor != null) {
+			executor.shutdownNow();
 		}
 	}
 
@@ -338,7 +340,7 @@ class FacilityReportUploadIntents {
 		}
 		for (UploadIntent intent : expiredIntents) {
 			String objectKey = intent.objectKey();
-			expiredDeleteExecutor.execute(() -> {
+			expiredDeleteExecutor.get().execute(() -> {
 				try {
 					deleteObject.accept(objectKey);
 				} catch (RuntimeException exception) {
