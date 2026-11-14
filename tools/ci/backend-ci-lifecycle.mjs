@@ -84,7 +84,7 @@ export function validateCiExecutionControl(policy, workflow) {
   if ((workflow.match(/name: Dependency Vulnerability Scan \/ osv-scan/g) || []).length !== 1) policyFail('required OSV job names mismatch');
   requireText(workflow, 'timeout-minutes: 30');
   if ((workflow.match(/timeout-minutes: 10/g) || []).length !== 1) policyFail('OSV timeout mismatch');
-  requireText(workflow, "dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan / osv-scan\n    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}");
+  requireText(workflow, "dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan / osv-scan\n    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}");
   if (/^  dependency-vulnerability-scan-dispatch:/m.test(workflow)) policyFail('skipped OSV sibling remains');
   if (/google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/.test(workflow)) policyFail('reusable OSV caller remains');
   for (const fragment of [
@@ -98,31 +98,32 @@ export function validateCiExecutionControl(policy, workflow) {
   if ((workflow.match(/continue-on-error: true/g) || []).length !== 3) policyFail('scanner-only continue-on-error mismatch');
   const scannerAction = `uses: google/osv-scanner-action/osv-scanner-action@${policy.osv.scanner}`;
   const reporterAction = `uses: google/osv-scanner-action/osv-reporter-action@${policy.osv.scanner}`;
-  for (const [name, event, output] of [
-    ['Scan immutable PR base', 'pull_request', '/github/runner_temp/base-results.json'],
-    ['Scan tested PR head', 'pull_request', '/github/runner_temp/head-results.json'],
-    ['Scan immutable dispatch SHA', 'workflow_dispatch', '/github/runner_temp/results.json'],
-  ]) requireStep(workflow, name, ["if: ${{ github.event_name == '" + event + "' }}", 'continue-on-error: true', scannerAction, '--all-packages', `--output=${output}`]);
-  for (const [name, event, inputs] of [
-    ['Report PR dependency vulnerabilities', 'pull_request', ['/github/runner_temp/results.sarif', '--old=/github/runner_temp/base-results.json', '--new=/github/runner_temp/head-results.json']],
-    ['Report dispatch dependency vulnerabilities', 'workflow_dispatch', ['/github/runner_temp/results.sarif', '--new=/github/runner_temp/results.json']],
-  ]) requireStep(workflow, name, ["if: ${{ github.event_name == '" + event + "' }}", reporterAction, ...inputs], ['continue-on-error']);
+  const dispatchOrPushCondition = "github.event_name == 'workflow_dispatch' || github.event_name == 'push'";
+  for (const [name, cond, output] of [
+    ['Scan immutable PR base', "github.event_name == 'pull_request'", '/github/runner_temp/base-results.json'],
+    ['Scan tested PR head', "github.event_name == 'pull_request'", '/github/runner_temp/head-results.json'],
+    ['Scan immutable dispatch SHA', dispatchOrPushCondition, '/github/runner_temp/results.json'],
+  ]) requireStep(workflow, name, [`if: \${{ ${cond} }}`, 'continue-on-error: true', scannerAction, '--all-packages', `--output=${output}`]);
+  for (const [name, cond, inputs] of [
+    ['Report PR dependency vulnerabilities', "github.event_name == 'pull_request'", ['/github/runner_temp/results.sarif', '--old=/github/runner_temp/base-results.json', '--new=/github/runner_temp/head-results.json']],
+    ['Report dispatch dependency vulnerabilities', dispatchOrPushCondition, ['/github/runner_temp/results.sarif', '--new=/github/runner_temp/results.json']],
+  ]) requireStep(workflow, name, [`if: \${{ ${cond} }}`, reporterAction, ...inputs], ['continue-on-error']);
   requireStep(workflow, 'Validate immutable PR scan results', ["if: ${{ github.event_name == 'pull_request' }}", 'validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"'], ['continue-on-error']);
-  requireStep(workflow, 'Validate immutable dispatch results', ["if: ${{ github.event_name == 'workflow_dispatch' }}", 'validate-osv-results "${{ runner.temp }}/results.json"'], ['continue-on-error']);
+  requireStep(workflow, 'Validate immutable dispatch results', [`if: \${{ ${dispatchOrPushCondition} }}`, 'validate-osv-results "${{ runner.temp }}/results.json"'], ['continue-on-error']);
   requireStep(workflow, 'Upload PR OSV results', ["if: ${{ github.event_name == 'pull_request' && !cancelled() }}", `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/base-results.json', '${{ runner.temp }}/head-results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
   requireStep(workflow, 'Upload PR OSV SARIF', ["if: ${{ github.event_name == 'pull_request' && !cancelled() }}", `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  requireStep(workflow, 'Upload dispatch OSV results', ["if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}", `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  requireStep(workflow, 'Upload dispatch OSV SARIF', ["if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}", `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  for (const [checkout, ref, event] of [
-    ['Checkout immutable PR base', '${{ github.event.pull_request.base.sha }}', 'pull_request'],
-    ['Checkout tested PR head', '${{ github.sha }}', 'pull_request'],
-    ['Checkout immutable dispatch SHA', '${{ github.sha }}', 'workflow_dispatch'],
-  ]) requireStep(workflow, checkout, ["if: ${{ github.event_name == '" + event + "' }}", `actions/checkout@${policy.osv.checkout}`, `ref: ${ref}`, 'persist-credentials: false']);
-  for (const [verify, sha, event] of [
-    ['Verify immutable PR base checkout', '${{ github.event.pull_request.base.sha }}', 'pull_request'],
-    ['Verify tested PR head checkout', '${{ github.sha }}', 'pull_request'],
-    ['Verify immutable dispatch checkout', '${{ github.sha }}', 'workflow_dispatch'],
-  ]) requireStep(workflow, verify, ["if: ${{ github.event_name == '" + event + "' }}", `test "$(git rev-parse HEAD)" = "${sha}"`]);
+  requireStep(workflow, 'Upload dispatch OSV results', [`if: \${{ (${dispatchOrPushCondition}) && !cancelled() }}`, `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
+  requireStep(workflow, 'Upload dispatch OSV SARIF', [`if: \${{ (${dispatchOrPushCondition}) && !cancelled() }}`, `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
+  for (const [checkout, ref, cond] of [
+    ['Checkout immutable PR base', '${{ github.event.pull_request.base.sha }}', "github.event_name == 'pull_request'"],
+    ['Checkout tested PR head', '${{ github.sha }}', "github.event_name == 'pull_request'"],
+    ['Checkout immutable dispatch SHA', '${{ github.sha }}', dispatchOrPushCondition],
+  ]) requireStep(workflow, checkout, [`if: \${{ ${cond} }}`, `actions/checkout@${policy.osv.checkout}`, `ref: ${ref}`, 'persist-credentials: false']);
+  for (const [verify, sha, cond] of [
+    ['Verify immutable PR base checkout', '${{ github.event.pull_request.base.sha }}', "github.event_name == 'pull_request'"],
+    ['Verify tested PR head checkout', '${{ github.sha }}', "github.event_name == 'pull_request'"],
+    ['Verify immutable dispatch checkout', '${{ github.sha }}', dispatchOrPushCondition],
+  ]) requireStep(workflow, verify, [`if: \${{ ${cond} }}`, `test "$(git rev-parse HEAD)" = "${sha}"`]);
   for (const [checkout, verify] of [
     ['Checkout immutable PR base', 'Verify immutable PR base checkout'],
     ['Checkout tested PR head', 'Verify tested PR head checkout'],

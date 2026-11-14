@@ -48,15 +48,19 @@ import org.springframework.stereotype.Component;
  *       그 회차 관측에 없는 시설의 원천 행은 같은 트랜잭션에서 지우고, 관리자 확인 행은 남겨 수만 지표로 낸다.</li>
  *   <li>전송·HTTP·결과 코드·응답 형식·저장 오류는 그 회차를 반영하지 않고 실패 지표·로그로 드러낸다. 이전 값을 새 관측으로
  *       다시 쓰지 않는다.</li>
- *   <li>자체 호출 한도는 두지 않는다(QA 결정). 수집 주기만 설정한다.</li>
+ *   <li>수집 한도({@value #MAX_PAGES}페이지·{@value #MAX_TOTAL_ROWS}건·{@code 30s} 회차 마감)를 넘기면 회차를 실패로 닫고
+ *       기존 상태를 덮어쓰지 않는다.</li>
  *   <li>인증키({@code EASYSUBWAY_SEOUL_METRO_ELEVATOR_SERVICE_KEY})가 없으면 원천을 호출하지 않는다. 이때 심장박동이 옮겨지지
  *       않으므로 신선도 판단에서 명시적으로 드러난다.</li>
  * </ul>
  */
 @Component
-public class SeoulMetroElevatorStatusCollector {
+public final class SeoulMetroElevatorStatusCollector {
 
 	static final URI DEFAULT_ENDPOINT = URI.create("https://apis.data.go.kr/B553766/facility/getFcElvtr");
+	static final int MAX_PAGES = 20;
+	static final int MAX_TOTAL_ROWS = 20_000;
+	static final Duration DEFAULT_COLLECTION_DEADLINE = Duration.ofSeconds(30);
 	private static final Logger log = LoggerFactory.getLogger(SeoulMetroElevatorStatusCollector.class);
 	private static final String FEED = FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED;
 	private static final String METRIC_PREFIX = "easysubway.facility_status.feed.";
@@ -73,6 +77,7 @@ public class SeoulMetroElevatorStatusCollector {
 	private final Clock clock;
 	private final int pageSize;
 	private final int maxResponseBytes;
+	private final Duration collectionDeadline;
 	private final Function<List<JsonNode>, Classification> classifier;
 	private final Map<String, AtomicInteger> facilitiesByCode = new ConcurrentHashMap<>();
 	private final Map<UnidentifiableReason, AtomicInteger> unidentifiable = new EnumMap<>(UnidentifiableReason.class);
@@ -122,6 +127,34 @@ public class SeoulMetroElevatorStatusCollector {
 			clock,
 			pageSize,
 			maxResponseBytes,
+			DEFAULT_COLLECTION_DEADLINE,
+			SeoulMetroElevatorFeed::classify
+		);
+	}
+
+	SeoulMetroElevatorStatusCollector(
+		String serviceKey,
+		URI endpoint,
+		FacilityOperationalStatusStore store,
+		ObjectMapper objectMapper,
+		MeterRegistry meterRegistry,
+		HttpClient httpClient,
+		Clock clock,
+		int pageSize,
+		int maxResponseBytes,
+		Duration collectionDeadline
+	) {
+		this(
+			serviceKey,
+			endpoint,
+			store,
+			objectMapper,
+			meterRegistry,
+			httpClient,
+			clock,
+			pageSize,
+			maxResponseBytes,
+			collectionDeadline,
 			SeoulMetroElevatorFeed::classify
 		);
 	}
@@ -138,6 +171,34 @@ public class SeoulMetroElevatorStatusCollector {
 		int maxResponseBytes,
 		Function<List<JsonNode>, Classification> classifier
 	) {
+		this(
+			serviceKey,
+			endpoint,
+			store,
+			objectMapper,
+			meterRegistry,
+			httpClient,
+			clock,
+			pageSize,
+			maxResponseBytes,
+			DEFAULT_COLLECTION_DEADLINE,
+			classifier
+		);
+	}
+
+	SeoulMetroElevatorStatusCollector(
+		String serviceKey,
+		URI endpoint,
+		FacilityOperationalStatusStore store,
+		ObjectMapper objectMapper,
+		MeterRegistry meterRegistry,
+		HttpClient httpClient,
+		Clock clock,
+		int pageSize,
+		int maxResponseBytes,
+		Duration collectionDeadline,
+		Function<List<JsonNode>, Classification> classifier
+	) {
 		this.serviceKey = decodedServiceKey(serviceKey);
 		this.endpoint = endpoint;
 		this.store = store;
@@ -147,6 +208,7 @@ public class SeoulMetroElevatorStatusCollector {
 		this.clock = clock;
 		this.pageSize = pageSize;
 		this.maxResponseBytes = maxResponseBytes;
+		this.collectionDeadline = requirePositiveDuration(collectionDeadline);
 		this.classifier = Objects.requireNonNull(classifier, "classifier");
 		for (String code : SeoulMetroElevatorFeed.REPORTED_CODES) {
 			AtomicInteger count = new AtomicInteger();
@@ -258,12 +320,21 @@ public class SeoulMetroElevatorStatusCollector {
 	}
 
 	private List<JsonNode> fetchAllRows() {
+		Instant deadline = clock.instant().plus(collectionDeadline);
 		List<JsonNode> rows = new ArrayList<>();
 		Integer totalCount = null;
 		int pageNo = 1;
 		while (totalCount == null || rows.size() < totalCount) {
+			ensureWithinDeadline(deadline);
+			if (pageNo > MAX_PAGES) {
+				throw new CollectionFailure("UPSTREAM_PAGE_LIMIT_EXCEEDED", null);
+			}
 			JsonNode body = fetchPage(pageNo);
+			ensureWithinDeadline(deadline);
 			int pageTotal = totalCount(body);
+			if (pageTotal > MAX_TOTAL_ROWS) {
+				throw new CollectionFailure("MALFORMED_RESPONSE", null);
+			}
 			if (totalCount != null && pageTotal != totalCount) {
 				throw new CollectionFailure("MALFORMED_RESPONSE", null);
 			}
@@ -282,6 +353,20 @@ public class SeoulMetroElevatorStatusCollector {
 			throw new CollectionFailure("MALFORMED_RESPONSE", null);
 		}
 		return rows;
+	}
+
+	private void ensureWithinDeadline(Instant deadline) {
+		if (clock.instant().isAfter(deadline)) {
+			throw new CollectionFailure("UPSTREAM_TIMEOUT", null);
+		}
+	}
+
+	private static Duration requirePositiveDuration(Duration duration) {
+		Objects.requireNonNull(duration, "collectionDeadline");
+		if (duration.isZero() || duration.isNegative()) {
+			throw new IllegalArgumentException("collectionDeadline must be positive");
+		}
+		return duration;
 	}
 
 	private static int totalCount(JsonNode body) {

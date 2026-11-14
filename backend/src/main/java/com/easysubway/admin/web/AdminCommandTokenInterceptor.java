@@ -30,6 +30,6 @@ class AdminCommandTokenInterceptor implements HandlerInterceptor {
 			&& path.startsWith("/admin/")
 			&& !path.equals("/admin/login")
 			&& !path.startsWith("/admin/error")
-			&& AdminHtmlRequest.isFormUrlEncoded(request);
+			&& (AdminHtmlRequest.isBrowserFormContentType(request) || AdminHtmlRequest.matches(request));
 	}
 }

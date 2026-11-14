@@ -17,7 +17,7 @@ concurrency:
 jobs:
   dependency-vulnerability-scan:
     name: Dependency Vulnerability Scan / osv-scan
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -100,16 +100,16 @@ jobs:
           sarif_file: ${{ runner.temp }}/results.sarif
 
       - name: Checkout immutable dispatch SHA
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify immutable dispatch checkout
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
       - name: Scan immutable dispatch SHA
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
@@ -120,10 +120,10 @@ jobs:
             --format=json
             --output=/github/runner_temp/results.json
       - name: Validate immutable dispatch results
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/results.json"
       - name: Report dispatch dependency vulnerabilities
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         uses: google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |-
@@ -132,7 +132,7 @@ jobs:
             --gh-annotations=false
             --fail-on-vuln=true
       - name: Upload dispatch OSV results
-        if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
+        if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: osv-results-${{ github.sha }}
@@ -141,7 +141,7 @@ jobs:
             ${{ runner.temp }}/results.sarif
           retention-days: 5
       - name: Upload dispatch OSV SARIF
-        if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
+        if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && !cancelled() }}
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
@@ -343,10 +343,15 @@ jobs:
           node-version: 24
 
       - name: Check documentation fragment preflight sync
-        if: github.event_name == 'pull_request'
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.sha }}
-        run: node tools/ci/check-documentation-fragment-sync.mjs --base "${BASE_REF}"
+        run: |
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            node tools/ci/check-documentation-fragment-sync.mjs --base "${BASE_REF}"
+          else
+            node tools/ci/check-documentation-fragment-sync.mjs --check-all
+          fi
 
       - name: Test backend-owned Node contracts
         run: |

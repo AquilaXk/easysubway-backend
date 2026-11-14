@@ -46,6 +46,21 @@ class AdminHtmlRequestTest {
 		request.setContentType("Application/X-WWW-Form-Urlencoded; charset=UTF-8");
 
 		assertThat(AdminHtmlRequest.isFormUrlEncoded(request)).isTrue();
+		assertThat(AdminHtmlRequest.isBrowserFormContentType(request)).isTrue();
 		assertThat(AdminHtmlRequest.matches(request)).isTrue();
+	}
+
+	@Test
+	@DisplayName("multipart와 text/plain 등 브라우저 HTML form enctype도 모두 인식한다")
+	void browserFormContentTypesMatchHtml() {
+		for (String contentType : new String[] {
+			"multipart/form-data; boundary=----Boundary123",
+			"TEXT/PLAIN; charset=utf-8"
+		}) {
+			MockHttpServletRequest request = new MockHttpServletRequest("POST", "/admin/notices");
+			request.setContentType(contentType);
+			assertThat(AdminHtmlRequest.isBrowserFormContentType(request)).isTrue();
+			assertThat(AdminHtmlRequest.matches(request)).isTrue();
+		}
 	}
 }

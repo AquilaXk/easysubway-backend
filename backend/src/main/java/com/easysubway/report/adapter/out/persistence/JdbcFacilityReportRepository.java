@@ -24,6 +24,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -33,6 +34,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -180,6 +182,7 @@ public class JdbcFacilityReportRepository implements
 					receipt_token_hash
 				FROM facility_reports
 				ORDER BY created_at DESC, report_id ASC
+				LIMIT 5000
 				""",
 			this::mapFacilityReport
 		);
@@ -429,27 +432,31 @@ public class JdbcFacilityReportRepository implements
 
 	@Override
 	public ReportProcessingTimeSummary loadReportProcessingTimeSummary() {
-		List<Long> processingMinutes = jdbcTemplate.query(
+		return Objects.requireNonNull(jdbcTemplate.query(
 			"""
 				SELECT created_at,
 					reviewed_at
 				FROM facility_reports
 				WHERE reviewed_at IS NOT NULL
 				""",
-			(resultSet, rowNumber) -> Duration.between(
-				resultSet.getObject("created_at", LocalDateTime.class),
-				resultSet.getObject("reviewed_at", LocalDateTime.class)
-			).toMinutes()
-		).stream()
-			.filter(minutes -> minutes >= 0)
-			.toList();
-		if (processingMinutes.isEmpty()) {
-			return ReportProcessingTimeSummary.empty();
-		}
-		long averageMinutes = processingMinutes.stream()
-			.mapToLong(Long::longValue)
-			.sum() / processingMinutes.size();
-		return new ReportProcessingTimeSummary(processingMinutes.size(), averageMinutes);
+			(ResultSetExtractor<ReportProcessingTimeSummary>) resultSet -> {
+				long reviewedCount = 0L;
+				long totalMinutes = 0L;
+				while (resultSet.next()) {
+					LocalDateTime createdAt = resultSet.getObject("created_at", LocalDateTime.class);
+					LocalDateTime reviewedAt = resultSet.getObject("reviewed_at", LocalDateTime.class);
+					long minutes = Duration.between(createdAt, reviewedAt).toMinutes();
+					if (minutes >= 0L) {
+						reviewedCount++;
+						totalMinutes += minutes;
+					}
+				}
+				if (reviewedCount == 0L) {
+					return ReportProcessingTimeSummary.empty();
+				}
+				return new ReportProcessingTimeSummary(reviewedCount, totalMinutes / reviewedCount);
+			}
+		));
 	}
 
 	@Override

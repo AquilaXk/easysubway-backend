@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.in.web;
 
 import com.easysubway.report.domain.InvalidFacilityReportException;
+import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -9,11 +10,19 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -28,11 +37,15 @@ class FacilityReportUploadIntents {
 
 	private static final Logger log = LoggerFactory.getLogger(FacilityReportUploadIntents.class);
 	private static final int UPLOAD_ID_BYTES = 24;
+	private static final int EXPIRED_DELETE_QUEUE_CAPACITY = 2048;
 	private static final String OBJECT_KEY_PREFIX = "facility-reports/unclaimed/";
 	private static final String DEFAULT_INTENT_SIGNING_KEY = "local-dev-report-upload-intent-signing-key";
 
 	private final Object intentLock = new Object();
 	private final Map<String, UploadIntent> intents = new ConcurrentHashMap<>();
+	private final Map<String, String> uploadIdByObjectKey = new HashMap<>();
+	private final Map<String, SubjectPendingStats> pendingStatsBySubject = new HashMap<>();
+	private long totalPendingBytes = 0L;
 	private final Clock clock;
 	private final Duration ttl;
 	private final long maxBytes;
@@ -42,6 +55,8 @@ class FacilityReportUploadIntents {
 	private final long maxTotalPendingBytes;
 	private final SecureRandom secureRandom;
 	private final String intentSigningKey;
+	private volatile Executor expiredDeleteExecutor = Runnable::run;
+	private volatile ExecutorService ownedExpiredDeleteExecutor;
 
 	@Autowired
 	FacilityReportUploadIntents(
@@ -49,7 +64,7 @@ class FacilityReportUploadIntents {
 		@Value("${easysubway.report.upload.max-bytes:921600}") long maxBytes,
 		@Value("${easysubway.report.upload.max-pending-count:20}") int maxPendingCount,
 		@Value("${easysubway.report.upload.max-pending-bytes:18432000}") long maxPendingBytes,
-		@Value("${easysubway.report.upload.max-total-pending-count:200}") int maxTotalPendingCount,
+		@Value("${easysubway.report.upload.max-total-pending-count:2000}") int maxTotalPendingCount,
 		@Value("${easysubway.report.upload.max-total-pending-bytes:184320000}") long maxTotalPendingBytes,
 		@Value("${easysubway.report.upload.intent-signing-key:${easysubway.report.receipt-token-pepper:local-dev-report-upload-intent-signing-key}}") String intentSigningKey
 	) {
@@ -63,6 +78,9 @@ class FacilityReportUploadIntents {
 			maxTotalPendingBytes,
 			intentSigningKey
 		);
+		ExecutorService executor = createExpiredDeleteExecutor(EXPIRED_DELETE_QUEUE_CAPACITY);
+		this.ownedExpiredDeleteExecutor = executor;
+		this.expiredDeleteExecutor = executor;
 	}
 
 	FacilityReportUploadIntents(
@@ -126,6 +144,36 @@ class FacilityReportUploadIntents {
 		this.intentSigningKey = requireSigningKey(intentSigningKey);
 	}
 
+	void useExpiredDeleteExecutorForTest(Executor executor) {
+		this.expiredDeleteExecutor = Objects.requireNonNull(executor, "executor");
+	}
+
+	static ExecutorService createExpiredDeleteExecutor(int queueCapacity) {
+		return new ThreadPoolExecutor(
+			1,
+			1,
+			0L,
+			TimeUnit.MILLISECONDS,
+			new ArrayBlockingQueue<>(queueCapacity),
+			runnable -> {
+				Thread thread = new Thread(runnable, "facility-report-expired-delete");
+				thread.setDaemon(true);
+				return thread;
+			},
+			(task, executor) -> log.warn(
+				"Dropping expired facility report upload cleanup task because delete queue reached {}",
+				queueCapacity
+			)
+		);
+	}
+
+	@PreDestroy
+	void shutdown() {
+		if (ownedExpiredDeleteExecutor != null) {
+			ownedExpiredDeleteExecutor.shutdownNow();
+		}
+	}
+
 	CreatedUploadIntent create(
 		String clientSubmissionId,
 		String contentType,
@@ -167,8 +215,8 @@ class FacilityReportUploadIntents {
 				sizeBytes,
 				expiresAt
 			);
-			intents.put(uploadId, intent);
-			return new CreatedUploadIntent(uploadId, objectKey, contentType, sha256.trim(), sizeBytes, issuedAt, expiresAt);
+			recordIntentLocked(intent);
+			return new CreatedUploadIntent(uploadId, objectKey, contentType, normalizedSha256, sizeBytes, issuedAt, expiresAt);
 		}
 	}
 
@@ -190,8 +238,13 @@ class FacilityReportUploadIntents {
 		if (objectKey == null || objectKey.isBlank()) {
 			return;
 		}
+		String normalizedObjectKey = objectKey.trim();
 		synchronized (intentLock) {
-			intents.values().removeIf(intent -> intent.objectKey().equals(objectKey.trim()));
+			String uploadId = uploadIdByObjectKey.get(normalizedObjectKey);
+			if (uploadId == null) {
+				return;
+			}
+			removeIntentLocked(Objects.requireNonNull(intents.get(uploadId), "intent"));
 		}
 	}
 
@@ -219,7 +272,7 @@ class FacilityReportUploadIntents {
 		}
 		if (intent != null) {
 			synchronized (intentLock) {
-				intents.remove(intent.uploadId(), intent);
+				removeIntentLocked(intent);
 			}
 		}
 	}
@@ -273,20 +326,25 @@ class FacilityReportUploadIntents {
 		Instant now = clock.instant();
 		List<UploadIntent> expiredIntents = new ArrayList<>();
 		synchronized (intentLock) {
-			intents.values().removeIf(intent -> {
-				if (intent.expiresAt().isAfter(now)) {
-					return false;
+			Iterator<UploadIntent> iterator = intents.values().iterator();
+			while (iterator.hasNext()) {
+				UploadIntent intent = iterator.next();
+				if (!intent.expiresAt().isAfter(now)) {
+					iterator.remove();
+					removeIndexAndStatsLocked(intent);
+					expiredIntents.add(intent);
 				}
-				expiredIntents.add(intent);
-				return true;
-			});
+			}
 		}
 		for (UploadIntent intent : expiredIntents) {
-			try {
-				deleteObject.accept(intent.objectKey());
-			} catch (RuntimeException exception) {
-				log.warn("Failed to delete expired facility report upload object {}", intent.objectKey(), exception);
-			}
+			String objectKey = intent.objectKey();
+			expiredDeleteExecutor.execute(() -> {
+				try {
+					deleteObject.accept(objectKey);
+				} catch (RuntimeException exception) {
+					log.warn("Failed to delete expired facility report upload object {}", objectKey, exception);
+				}
+			});
 		}
 	}
 
@@ -307,44 +365,45 @@ class FacilityReportUploadIntents {
 		if (sizeBytes < 1 || sizeBytes > maxBytes) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
-		if (pendingCount(normalizedClientSubmissionId) >= maxPendingCount
-			|| pendingBytes(normalizedClientSubmissionId) + sizeBytes > maxPendingBytes
+		SubjectPendingStats subjectStats = pendingStatsBySubject.get(normalizedClientSubmissionId);
+		int subjectCount = subjectStats == null ? 0 : subjectStats.count;
+		long subjectBytes = subjectStats == null ? 0L : subjectStats.totalBytes;
+		if (subjectCount >= maxPendingCount
+			|| sizeBytes > maxPendingBytes - subjectBytes
 			|| intents.size() >= maxTotalPendingCount
-			|| totalPendingBytes() + sizeBytes > maxTotalPendingBytes) {
+			|| sizeBytes > maxTotalPendingBytes - totalPendingBytes) {
 			throw new InvalidFacilityReportException("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 		}
 		return normalizedClientSubmissionId;
 	}
 
-	private long pendingCount(String clientSubmissionId) {
-		return intents.values()
-			.stream()
-			.filter(intent -> intent.clientSubmissionId().equals(clientSubmissionId))
-			.count();
+	private void recordIntentLocked(UploadIntent intent) {
+		intents.put(intent.uploadId(), intent);
+		uploadIdByObjectKey.put(intent.objectKey(), intent.uploadId());
+		pendingStatsBySubject.computeIfAbsent(intent.clientSubmissionId(), ignored -> new SubjectPendingStats())
+			.add(intent.sizeBytes());
+		totalPendingBytes += intent.sizeBytes();
 	}
 
-	private long pendingBytes(String clientSubmissionId) {
-		return intents.values()
-			.stream()
-			.filter(intent -> intent.clientSubmissionId().equals(clientSubmissionId))
-			.mapToLong(UploadIntent::sizeBytes)
-			.sum();
+	private void removeIntentLocked(UploadIntent intent) {
+		if (intents.remove(intent.uploadId(), intent)) {
+			removeIndexAndStatsLocked(intent);
+		}
 	}
 
-	private long totalPendingBytes() {
-		return intents.values()
-			.stream()
-			.mapToLong(UploadIntent::sizeBytes)
-			.sum();
+	private void removeIndexAndStatsLocked(UploadIntent intent) {
+		uploadIdByObjectKey.remove(intent.objectKey(), intent.uploadId());
+		pendingStatsBySubject.computeIfPresent(intent.clientSubmissionId(), (ignored, stats) -> {
+			stats.remove(intent.sizeBytes());
+			return stats.count == 0 ? null : stats;
+		});
+		totalPendingBytes = Math.max(0L, totalPendingBytes - intent.sizeBytes());
 	}
 
 	private UploadIntent pendingObjectKey(String objectKey) {
 		synchronized (intentLock) {
-			return intents.values()
-				.stream()
-				.filter(intent -> intent.objectKey().equals(objectKey))
-				.findFirst()
-				.orElse(null);
+			String uploadId = uploadIdByObjectKey.get(objectKey);
+			return uploadId == null ? null : intents.get(uploadId);
 		}
 	}
 
@@ -576,5 +635,20 @@ class FacilityReportUploadIntents {
 		Instant expiresAt,
 		String signature
 	) {
+	}
+
+	private static final class SubjectPendingStats {
+		private int count;
+		private long totalBytes;
+
+		private void add(long sizeBytes) {
+			count++;
+			totalBytes += sizeBytes;
+		}
+
+		private void remove(long sizeBytes) {
+			count = Math.max(0, count - 1);
+			totalBytes = Math.max(0L, totalBytes - sizeBytes);
+		}
 	}
 }

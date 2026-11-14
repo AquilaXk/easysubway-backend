@@ -81,7 +81,7 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.match(workflow, /concurrency:\n  group: \$\{\{ github\.event_name == 'pull_request'[\s\S]*github\.event\.pull_request\.number[\s\S]*github\.run_id[^\n]*\}\}/);
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.match(workflow, /name: Backend CI\n    runs-on: ubuntu-latest\n    timeout-minutes: 30/);
-  assert.match(workflow, /dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan \/ osv-scan\n    if: \$\{\{ github\.event_name == 'pull_request' \|\| github\.event_name == 'workflow_dispatch' \}\}\n    runs-on: ubuntu-latest\n    timeout-minutes: 10/);
+  assert.match(workflow, /dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan \/ osv-scan\n    if: \$\{\{ github\.event_name == 'pull_request' \|\| github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'push' \}\}\n    runs-on: ubuntu-latest\n    timeout-minutes: 10/);
   assert.doesNotMatch(workflow, /google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/);
   assert.match(workflow, new RegExp(`google/osv-scanner-action/osv-scanner-action@${scanner}`, 'g'));
   assert.match(workflow, new RegExp(`google/osv-scanner-action/osv-reporter-action@${scanner}`));
@@ -153,6 +153,6 @@ test('policy/workflow static validation fails closed for unknown or malformed mu
   const missingEquality = workflow.replace('run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"', 'run: true');
   assert.throws(() => validateCiExecutionControl(policy, missingEquality), /workflow missing "test/);
   assert.throws(() => validateCiExecutionControl(policy, workflow.replace('name: Dependency Vulnerability Scan / osv-scan', 'name: osv-scan')), /workflow missing "name: Dependency Vulnerability Scan \/ osv-scan"|required OSV job names/);
-  assert.throws(() => validateCiExecutionControl(policy, workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' }}\n        uses: actions/checkout", 'uses: actions/checkout')), /workflow missing "if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}"|step Checkout immutable dispatch SHA/);
+  assert.throws(() => validateCiExecutionControl(policy, workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}\n        uses: actions/checkout", 'uses: actions/checkout')), /workflow missing "if: \$\{\{ github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'push' \}\}"|step Checkout immutable dispatch SHA/);
   assert.throws(() => validateCiExecutionControl(policy, workflow.replace('cancel-in-progress: ${{ github.event_name == \'pull_request\' }}', 'cancel-in-progress: false')), /workflow missing/);
 });

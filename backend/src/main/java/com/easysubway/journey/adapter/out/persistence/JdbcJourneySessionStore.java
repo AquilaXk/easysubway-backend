@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import javax.sql.DataSource;
@@ -22,17 +23,36 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Profile("prod | staging | release | prod-like")
 public class JdbcJourneySessionStore implements JourneySessionStore {
 
+	static final Duration DEFAULT_CLEANUP_INTERVAL = Duration.ofSeconds(5);
+
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactions;
+	private final long cleanupIntervalMillis;
+	private long lastCleanupAtEpochMillis = Long.MIN_VALUE;
 
 	@Autowired
 	public JdbcJourneySessionStore(DataSource dataSource, PlatformTransactionManager transactionManager) {
-		this.jdbcTemplate = new JdbcTemplate(dataSource);
-		this.transactions = new TransactionTemplate(transactionManager);
+		this(dataSource, transactionManager, DEFAULT_CLEANUP_INTERVAL);
 	}
 
 	JdbcJourneySessionStore(DataSource dataSource) {
-		this(dataSource, new DataSourceTransactionManager(dataSource));
+		this(dataSource, new DataSourceTransactionManager(dataSource), DEFAULT_CLEANUP_INTERVAL);
+	}
+
+	JdbcJourneySessionStore(DataSource dataSource, Duration cleanupInterval) {
+		this(dataSource, new DataSourceTransactionManager(dataSource), cleanupInterval);
+	}
+
+	private JdbcJourneySessionStore(
+		DataSource dataSource,
+		PlatformTransactionManager transactionManager,
+		Duration cleanupInterval
+	) {
+		this.jdbcTemplate = new JdbcTemplate(dataSource);
+		this.transactions = new TransactionTemplate(transactionManager);
+		this.cleanupIntervalMillis = cleanupInterval == null
+			? DEFAULT_CLEANUP_INTERVAL.toMillis()
+			: Math.max(0L, cleanupInterval.toMillis());
 	}
 
 	@Override
@@ -43,14 +63,16 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 		Session session
 	) {
 		Boolean claimed = transactions.execute(status -> {
-			jdbcTemplate.update(
-				"DELETE FROM journey_v3_nonce_claims WHERE expires_at <= ?",
-				Timestamp.from(now)
-			);
-			jdbcTemplate.update(
-				"DELETE FROM journey_v3_sessions WHERE expires_at <= ?",
-				Timestamp.from(now)
-			);
+			if (shouldRunExpiredCleanup(now.toEpochMilli())) {
+				jdbcTemplate.update(
+					"DELETE FROM journey_v3_nonce_claims WHERE expires_at <= ?",
+					Timestamp.from(now)
+				);
+				jdbcTemplate.update(
+					"DELETE FROM journey_v3_sessions WHERE expires_at <= ?",
+					Timestamp.from(now)
+				);
+			}
 			if (!claimNonce(nonceSha256, nonceExpiresAt, now)) {
 				return false;
 			}
@@ -87,6 +109,19 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 				return false;
 			}
 		}));
+	}
+
+	private synchronized boolean shouldRunExpiredCleanup(long nowEpochMillis) {
+		if (cleanupIntervalMillis == 0L) {
+			return true;
+		}
+		long previous = lastCleanupAtEpochMillis;
+		if (previous != Long.MIN_VALUE
+			&& (nowEpochMillis <= previous || nowEpochMillis - previous < cleanupIntervalMillis)) {
+			return false;
+		}
+		lastCleanupAtEpochMillis = nowEpochMillis;
+		return true;
 	}
 
 	@Override

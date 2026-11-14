@@ -326,6 +326,36 @@ class FacilityReportPhotoProcessorTest {
 	}
 
 	@Test
+	@DisplayName("작은 VP8X 헤더 뒤에 초대형 VP8/VP8L 청크나 애니메이션/후행 바이트가 붙은 WebP는 거부한다")
+	void rejectSpoofedVp8xAnimatedAndTrailingBytesWebp() {
+		byte[] smallVp8xThenOversizedVp8 = appendChunk(oversizedVp8xWebp(100, 100), "VP8 ", vp8Frame(4_097, 100));
+		assertThatThrownBy(() -> processor.processBytes("bomb-vp8.webp", "image/webp", smallVp8xThenOversizedVp8))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 이미지 크기를 줄여야 합니다.");
+
+		byte[] smallVp8xThenOversizedVp8l = appendChunk(oversizedVp8xWebp(100, 100), "VP8L", vp8LosslessFrame(4_097, 100));
+		assertThatThrownBy(() -> processor.processBytes("bomb-vp8l.webp", "image/webp", smallVp8xThenOversizedVp8l))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 이미지 크기를 줄여야 합니다.");
+
+		byte[] animatedWebp = appendChunk(VALID_WEBP_BYTES, "ANIM", new byte[6]);
+		assertThatThrownBy(() -> processor.processBytes("animated.webp", "image/webp", animatedWebp))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		byte[] trailingGarbageWebp = appendRawChunkHeader(VALID_WEBP_BYTES, "NOOP", 2, new byte[] {1, 2, 3});
+		assertThatThrownBy(() -> processor.processBytes("trailing.webp", "image/webp", trailingGarbageWebp))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		byte[] mismatchedRiffSizeWebp = VALID_WEBP_BYTES.clone();
+		writeLittleEndianInt(mismatchedRiffSizeWebp, 4, VALID_WEBP_BYTES.length);
+		assertThatThrownBy(() -> processor.processBytes("riff-mismatch.webp", "image/webp", mismatchedRiffSizeWebp))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
 	@DisplayName("PhotoMediaType은 canonical 미디어 타입과 확장을 올바르게 반환하고 비교한다")
 	void photoMediaTypeCanonicalAndExtension() {
 		com.easysubway.report.domain.FacilityReport.PhotoMediaType jpeg =
@@ -449,5 +479,25 @@ class FacilityReportPhotoProcessorTest {
 		bytes[offset + 1] = (byte) ((value >> 8) & 0xff);
 		bytes[offset + 2] = (byte) ((value >> 16) & 0xff);
 		bytes[offset + 3] = (byte) ((value >> 24) & 0xff);
+	}
+
+	private byte[] vp8Frame(int width, int height) {
+		return new byte[] {
+			0, 0, 0,
+			(byte) 0x9d, 0x01, 0x2a,
+			(byte) (width & 0xff), (byte) ((width >> 8) & 0x3f),
+			(byte) (height & 0xff), (byte) ((height >> 8) & 0x3f)
+		};
+	}
+
+	private byte[] vp8LosslessFrame(int width, int height) {
+		int encoded = ((height - 1) << 14) | (width - 1);
+		return new byte[] {
+			0x2f,
+			(byte) (encoded & 0xff),
+			(byte) ((encoded >> 8) & 0xff),
+			(byte) ((encoded >> 16) & 0xff),
+			(byte) ((encoded >> 24) & 0xff)
+		};
 	}
 }

@@ -506,6 +506,159 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("만료 정리 삭제 콜백이 블로킹되어도 executor로 비동기 실행되어 intent 생성 락을 막지 않는다")
+	void cleanupExpiredOffloadsDeleteOutsideIntentLock() throws Exception {
+		var asyncExecutor = Executors.newSingleThreadExecutor();
+		try {
+			FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+				clock,
+				Duration.ofMinutes(15),
+				900L * 1024L,
+				10,
+				10L * 900L * 1024L,
+				2000,
+				100L * 900L * 1024L
+			);
+			intents.useExpiredDeleteExecutorForTest(asyncExecutor);
+			var expired = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 100L);
+			clock.advance(Duration.ofMinutes(16));
+
+			var deleteStarted = new CountDownLatch(1);
+			var releaseDelete = new CountDownLatch(1);
+			List<String> deletedKeys = new ArrayList<>();
+
+			var created = intents.create("client-submission-2", "image/jpeg", "b".repeat(64), 100L, objectKey -> {
+				deleteStarted.countDown();
+				try {
+					releaseDelete.await(5, TimeUnit.SECONDS);
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+				}
+				synchronized (deletedKeys) {
+					deletedKeys.add(objectKey);
+				}
+			});
+
+			assertThat(deleteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			var concurrent = intents.create("client-submission-3", "image/jpeg", "c".repeat(64), 100L);
+			assertThat(concurrent.objectKey()).isNotEqualTo(created.objectKey());
+
+			releaseDelete.countDown();
+			asyncExecutor.shutdown();
+			assertThat(asyncExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(deletedKeys).containsExactly(expired.objectKey());
+		} finally {
+			asyncExecutor.shutdownNow();
+		}
+	}
+
+	@Test
+	@DisplayName("O(1) pending 카운터는 consume·discard·expire 이후 사용자별 및 전체 한도를 정확히 해제한다")
+	void o1PendingCountersReleaseQuotaAfterConsumeDiscardAndExpire() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			1_000L,
+			2,
+			150L,
+			3,
+			250L
+		);
+		var first = intents.create("sub-1", "image/jpeg", "a".repeat(64), 100L);
+		var second = intents.create("sub-1", "image/jpeg", "b".repeat(64), 50L);
+
+		assertThatThrownBy(() -> intents.create("sub-1", "image/jpeg", "c".repeat(64), 1L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+
+		intents.consumeObjectKey(first.objectKey());
+		var third = intents.create("sub-1", "image/jpeg", "c".repeat(64), 100L);
+		var fourth = intents.create("sub-2", "image/jpeg", "d".repeat(64), 100L);
+
+		assertThatThrownBy(() -> intents.create("sub-3", "image/jpeg", "e".repeat(64), 1L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+
+		intents.discardPendingObjectKey("sub-2", fourth.objectKey(), "image/jpeg", "d".repeat(64), 100L, ignored -> {
+		});
+		var fifth = intents.create("sub-3", "image/jpeg", "e".repeat(64), 100L);
+		assertThat(fifth.objectKey()).isNotEqualTo(third.objectKey());
+		assertThat(second.objectKey()).isNotEqualTo(third.objectKey());
+
+		clock.advance(Duration.ofMinutes(16));
+		intents.cleanupExpired(ignored -> {
+		});
+		var afterExpire = intents.create("sub-1", "image/jpeg", "f".repeat(64), 150L);
+		assertThat(afterExpire.sizeBytes()).isEqualTo(150L);
+
+		// 존재하지 않는 object key 소비는 조용히 무시되고, 4-arg create는 만료 시 기본 no-op delete를 탄다
+		intents.consumeObjectKey("facility-reports/unclaimed/missing.jpg");
+		clock.advance(Duration.ofMinutes(16));
+		var reloadedAfterNoopCleanup = intents.create("sub-1", "image/jpeg", "1".repeat(64), 100L);
+		assertThatThrownBy(() -> intents.create("sub-1", "image/jpeg", "2".repeat(64), 51L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+		intents.create("sub-4", "image/jpeg", "3".repeat(64), 100L);
+		assertThatThrownBy(() -> intents.create("sub-5", "image/jpeg", "4".repeat(64), 51L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+		assertThat(reloadedAfterNoopCleanup.sizeBytes()).isEqualTo(100L);
+		intents.shutdown();
+	}
+
+	@Test
+	@DisplayName("기본 만료 삭제 executor는 데몬 스레드로 삭제를 실행하고 포화 시 드롭하며 shutdown으로 종료된다")
+	void defaultExpiredDeleteExecutorRunsDaemonThreadDropsWhenFullAndShutsDown() throws Exception {
+		var springIntents = new FacilityReportUploadIntents(
+			0L,
+			1_000L,
+			10,
+			10_000L,
+			100,
+			100_000L,
+			"test-upload-intent-signing-key-with-enough-entropy"
+		);
+		try {
+			var deletedKeys = new ArrayList<String>();
+			var deletedLatch = new CountDownLatch(1);
+			var first = springIntents.create("sub-spring-1", "image/jpeg", "a".repeat(64), 10L);
+			springIntents.create("sub-spring-2", "image/jpeg", "b".repeat(64), 10L, key -> {
+				synchronized (deletedKeys) {
+					deletedKeys.add(key);
+				}
+				deletedLatch.countDown();
+			});
+			assertThat(deletedLatch.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(deletedKeys).containsExactly(first.objectKey());
+		} finally {
+			springIntents.shutdown();
+		}
+
+		var boundedExecutor = FacilityReportUploadIntents.createExpiredDeleteExecutor(1);
+		var workerStarted = new CountDownLatch(1);
+		var releaseWorker = new CountDownLatch(1);
+		try {
+			boundedExecutor.execute(() -> {
+				workerStarted.countDown();
+				try {
+					releaseWorker.await(5, TimeUnit.SECONDS);
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+				}
+			});
+			assertThat(workerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			boundedExecutor.execute(() -> {
+			});
+			// queueCapacity=1이 꽉 찬 상태에서 세 번째 작업은 예외 없이 드롭된다
+			assertThatNoException().isThrownBy(() -> boundedExecutor.execute(() -> {
+			}));
+		} finally {
+			releaseWorker.countDown();
+			boundedExecutor.shutdownNow();
+		}
+	}
+
+	@Test
 	@DisplayName("개발 upload signer는 backend 상대 upload URL만 반환한다")
 	void localUploadSignerReturnsBackendRelativeUrl() {
 		var signer = new LocalFacilityReportUploadUrlSigner();
@@ -523,6 +676,40 @@ class FacilityReportUploadIntentsTest {
 
 		assertThat(signedUrl.uploadUrl()).isEqualTo("/api/v1/report-uploads/upload-id-1");
 		assertThat(signedUrl.uploadMethod()).isEqualTo("PUT");
+	}
+
+	@Test
+	@DisplayName("pending object 정리 중 이미 소비된 intent는 quota를 중복 차감하지 않는다")
+	void discardPendingObjectKeyDoesNotDoubleDecrementWhenConsumedConcurrently() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			2,
+			20L,
+			2,
+			20L,
+			"test-upload-intent-signing-key-with-enough-entropy"
+		);
+		var first = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 10L);
+		intents.create("client-submission-1", "image/jpeg", "b".repeat(64), 10L);
+
+		intents.discardPendingObjectKey(
+			"client-submission-1",
+			first.objectKey(),
+			"image/jpeg",
+			"a".repeat(64),
+			10L,
+			intents::consumeObjectKey
+		);
+
+		intents.create("client-submission-1", "image/jpeg", "c".repeat(64), 10L);
+		assertThatThrownBy(() -> intents.create("client-submission-1", "image/jpeg", "d".repeat(64), 1L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+		assertThatThrownBy(() -> intents.create("client-submission-2", "image/jpeg", "e".repeat(64), 1L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 	}
 
 	private FacilityReportUploadIntents signedIntents() {

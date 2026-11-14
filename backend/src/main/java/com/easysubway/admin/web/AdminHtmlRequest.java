@@ -23,7 +23,7 @@ public final class AdminHtmlRequest {
 		return (accept != null && accept.contains(MediaType.TEXT_HTML_VALUE))
 			|| uri.contains("/page")
 			|| uri.startsWith("/admin/batches/")
-			|| isFormUrlEncoded(request);
+			|| isBrowserFormContentType(request);
 	}
 
 	public static String pathWithinApplication(HttpServletRequest request) {
@@ -45,6 +45,21 @@ public final class AdminHtmlRequest {
 		}
 		try {
 			return MediaType.APPLICATION_FORM_URLENCODED.isCompatibleWith(MediaType.parseMediaType(contentType));
+		} catch (InvalidMediaTypeException exception) {
+			return false;
+		}
+	}
+
+	public static boolean isBrowserFormContentType(HttpServletRequest request) {
+		String contentType = request.getContentType();
+		if (contentType == null) {
+			return false;
+		}
+		try {
+			MediaType mediaType = MediaType.parseMediaType(contentType);
+			return MediaType.APPLICATION_FORM_URLENCODED.isCompatibleWith(mediaType)
+				|| MediaType.MULTIPART_FORM_DATA.isCompatibleWith(mediaType)
+				|| MediaType.TEXT_PLAIN.isCompatibleWith(mediaType);
 		} catch (InvalidMediaTypeException exception) {
 			return false;
 		}

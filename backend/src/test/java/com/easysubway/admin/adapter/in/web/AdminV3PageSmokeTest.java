@@ -12,11 +12,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -496,9 +499,22 @@ class AdminV3PageSmokeTest {
 	@Test
 	@DisplayName("시설 등록·수정 화면은 실제 마스터 데이터 저장 흐름을 사용한다")
 	void facilityEditorSavesMasterData() throws Exception {
+		var session = new MockHttpSession();
+		String initialHtml = mockMvc.perform(get("/admin/facilities/editor/page")
+				.session(session)
+				.param("stationId", "station-sangnoksu")
+				.param("facilityId", "facility-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
 		mockMvc.perform(post("/admin/facilities/editor/page")
+				.session(session)
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.param("commandToken", commandTokenFrom(initialHtml))
 				.param("facilityId", "facility-sangnoksu-elevator-1")
 				.param("stationId", "station-sangnoksu")
 				.param("exitId", "exit-sangnoksu-1")
@@ -516,6 +532,7 @@ class AdminV3PageSmokeTest {
 			.andExpect(redirectedUrl("/admin/facilities/editor/page?stationId=station-sangnoksu&facilityId=facility-sangnoksu-elevator-1"));
 
 		String updatedHtml = mockMvc.perform(get("/admin/facilities/editor/page")
+				.session(session)
 				.param("stationId", "station-sangnoksu")
 				.param("facilityId", "facility-sangnoksu-elevator-1")
 				.with(httpBasic("admin-user", "admin-test-password")))
@@ -530,8 +547,10 @@ class AdminV3PageSmokeTest {
 			.contains("QA 요청으로 관리자 편집 저장을 확인합니다.");
 
 		mockMvc.perform(post("/admin/facilities/editor/page")
+				.session(session)
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.param("commandToken", commandTokenFrom(updatedHtml))
 				.param("stationId", "station-sangnoksu")
 				.param("exitId", "exit-sangnoksu-2")
 				.param("type", "RAMP")
@@ -561,7 +580,9 @@ class AdminV3PageSmokeTest {
 	@Test
 	@DisplayName("현장 검증 상세 화면은 각 검증 항목을 개별 저장한다")
 	void fieldVerificationDetailSavesEachItem() throws Exception {
+		var session = new MockHttpSession();
 		String html = mockMvc.perform(get("/admin/field-verifications/station-sangnoksu/page")
+				.session(session)
 				.with(httpBasic("admin-user", "admin-test-password")))
 			.andExpect(status().isOk())
 			.andReturn()
@@ -575,8 +596,10 @@ class AdminV3PageSmokeTest {
 			.contains("변경할 상태 선택");
 
 		mockMvc.perform(post("/admin/field-verifications/station-sangnoksu/items/field-verification-sangnoksu-escalator/page/status")
+				.session(session)
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.param("commandToken", commandTokenFrom(html))
 				.param("status", "NEEDS_RECHECK")
 				.param("note", "에스컬레이터 방향 재확인이 필요합니다."))
 			.andExpect(status().is3xxRedirection())
@@ -625,5 +648,13 @@ class AdminV3PageSmokeTest {
 			.isLessThan(html.indexOf("id=\"admin-content\""));
 		assertThat(html.indexOf("id=\"admin-content\""))
 			.isLessThan(html.indexOf("<header class=\"admin-page-head\">"));
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		if (!matcher.find()) {
+			throw new IllegalStateException("commandToken input missing");
+		}
+		return matcher.group(1);
 	}
 }

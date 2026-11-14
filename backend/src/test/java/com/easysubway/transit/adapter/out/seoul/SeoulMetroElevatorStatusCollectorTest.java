@@ -1,6 +1,7 @@
 package com.easysubway.transit.adapter.out.seoul;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.transit.adapter.out.persistence.JdbcFacilityOperationalStatusRepository;
@@ -369,6 +370,98 @@ class SeoulMetroElevatorStatusCollectorTest {
 
 		assertFailedWithoutApplying("UNEXPECTED");
 		assertThat(store.applied).isEmpty();
+	}
+
+	@Test
+	@DisplayName("원천 totalCount가 MAX_TOTAL_ROWS를 넘기면 MALFORMED_RESPONSE로 실패하고 반영하지 않는다")
+	void rejectsTotalCountAboveMaxTotalRowsWithoutApplying() throws IOException {
+		startServer(exchange -> respond(
+			exchange,
+			200,
+			page(
+				"[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"1번 출입구\",\"oprtngSitu\":\"M\"}]",
+				SeoulMetroElevatorStatusCollector.MAX_TOTAL_ROWS + 1
+			)
+		));
+		var collector = collector("test-key", 1, 1_048_576);
+
+		collector.collect();
+
+		assertFailedWithoutApplying("MALFORMED_RESPONSE");
+		assertThat(requests).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("페이지 수가 MAX_PAGES를 넘기면 UPSTREAM_PAGE_LIMIT_EXCEEDED로 실패하고 반영하지 않는다")
+	void rejectsPageCountAboveMaxPagesWithoutApplying() throws IOException {
+		int totalRows = SeoulMetroElevatorStatusCollector.MAX_PAGES + 1;
+		startServer(exchange -> {
+			String pageNo = query(exchange.getRequestURI()).get("pageNo");
+			String row = "[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\""
+				+ pageNo + "번 출입구\",\"oprtngSitu\":\"M\"}]";
+			respond(exchange, 200, page(row, totalRows));
+		});
+		var collector = collector("test-key", 1, 1_048_576);
+
+		collector.collect();
+
+		assertFailedWithoutApplying("UPSTREAM_PAGE_LIMIT_EXCEEDED");
+		assertThat(requests).hasSize(SeoulMetroElevatorStatusCollector.MAX_PAGES);
+	}
+
+	@Test
+	@DisplayName("전체 수집 시간이 deadline을 넘기면 UPSTREAM_TIMEOUT으로 실패하고 후속 페이지를 호출하지 않는다")
+	void abortsCollectionWhenDeadlineIsExceeded() throws IOException {
+		startServer(exchange -> {
+			clock.advance(Duration.ofSeconds(31));
+			respond(
+				exchange,
+				200,
+				page(
+					"[{\"stnCd\":\"0201\",\"stnNm\":\"가역\",\"lineNm\":\"2호선\",\"dtlPstn\":\"1번 출입구\",\"oprtngSitu\":\"M\"}]",
+					2
+				)
+			);
+		});
+		var collector = new SeoulMetroElevatorStatusCollector(
+			"test-key",
+			endpoint(),
+			store,
+			objectMapper,
+			meterRegistry,
+			httpClient(),
+			clock,
+			1,
+			1_048_576,
+			Duration.ofSeconds(30)
+		);
+
+		collector.collect();
+
+		assertFailedWithoutApplying("UPSTREAM_TIMEOUT");
+		assertThat(requests).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("0 이하의 collectionDeadline은 거부한다")
+	void rejectsNonPositiveCollectionDeadline() throws IOException {
+		startServer(exchange -> respond(exchange, 200, page(PAGE_ONE_ROWS, 1)));
+		for (Duration invalid : List.of(Duration.ZERO, Duration.ofSeconds(-1))) {
+			assertThatThrownBy(() -> new SeoulMetroElevatorStatusCollector(
+				"test-key",
+				endpoint(),
+				store,
+				objectMapper,
+				meterRegistry,
+				httpClient(),
+				clock,
+				1,
+				1_048_576,
+				invalid
+			))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("collectionDeadline must be positive");
+		}
 	}
 
 	private void assertFailedWithoutApplying(String reason) {

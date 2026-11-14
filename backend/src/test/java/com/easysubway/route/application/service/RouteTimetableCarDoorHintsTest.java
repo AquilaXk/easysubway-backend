@@ -708,5 +708,12 @@ class RouteTimetableCarDoorHintsTest {
 		var revRide1 = (RouteTimetableRaptorPlanner.JourneyRideProjection) reversePlan.itineraries().getFirst().legs().get(0);
 		assertThat(revRide1.alightingCarDoors())
 			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(1, 4, "ELEVATOR"));
+
+		var indexedLookup = compiledWithElevator.selectAlightingCarDoors("station-c", "line-2", "down", false, false);
+		assertThat(indexedLookup).containsExactly(
+			new RouteTimetableRaptorPlanner.AlightingCarDoor(2, 3, "ELEVATOR")
+		);
+		assertThat(compiledWithElevator.selectAlightingCarDoors("station-unknown", "line-1", "up", false, false)).isEmpty();
+		assertThat(compiledWithElevator.selectAlightingCarDoors("station-b", "line-999", "up", false, false)).isEmpty();
 	}
 }

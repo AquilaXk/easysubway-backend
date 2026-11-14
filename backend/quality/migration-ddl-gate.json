@@ -67,6 +67,14 @@
     {
       "file": "V79__datapack_automation_status.sql",
       "sha256": "8a47852f23fd188d3f1a077bbe75660b5d7467536a65928f52faf93a862da54f"
+    },
+    {
+      "file": "V80__facility_reports_station_facility_created_index.sql",
+      "sha256": "248991fd1032b9eb88e3a79b0f7a21676b13a7645ac5a567e9afadb6e1598369"
+    },
+    {
+      "file": "V81__facility_reports_type_station_facility_index.sql",
+      "sha256": "f1e73dd0a532705745d195d33e7ca1500b8c31b32d37e1df47d7edf73fcc37d6"
     }
   ],
   "allowlist": [

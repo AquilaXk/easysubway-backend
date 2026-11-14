@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.journey.application.JourneySessionStore.AuthorizationStatus;
 import com.easysubway.journey.application.JourneySessionStore.Session;
 import java.lang.reflect.Modifier;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -218,6 +219,112 @@ class JdbcJourneySessionStoreTest {
 		assertThatThrownBy(() -> store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1, 0))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("maxCostUnitsPerSession must be positive");
+	}
+
+	@Test
+	@DisplayName("cleanup interval 내 연속 호출은 expired sweep을 건너뛰고 간격 이후 다시 정리한다")
+	void throttlesExpiredCleanupWithinConfiguredInterval() {
+		var dataSource = jdbcTemplate.getDataSource();
+		var throttledStore = new JdbcJourneySessionStore(dataSource, Duration.ofSeconds(5));
+		String firstExpiredNonce = "11".repeat(32);
+		String secondExpiredNonce = "22".repeat(32);
+		String thirdExpiredNonce = "33".repeat(32);
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			firstExpiredNonce, NOW.minusSeconds(120), NOW
+		);
+
+		assertThat(throttledStore.claimNonceAndSaveSession(
+			"44".repeat(32),
+			NOW.plusSeconds(120),
+			NOW,
+			new Session("55".repeat(32), "journey:v3", NOW, NOW.plusSeconds(600))
+		)).isTrue();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			firstExpiredNonce
+		)).isZero();
+
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			secondExpiredNonce, NOW.minusSeconds(120), NOW.plusSeconds(1)
+		);
+		assertThat(throttledStore.claimNonceAndSaveSession(
+			"66".repeat(32),
+			NOW.plusSeconds(120),
+			NOW.plusSeconds(4),
+			new Session("77".repeat(32), "journey:v3", NOW.plusSeconds(4), NOW.plusSeconds(604))
+		)).isTrue();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			secondExpiredNonce
+		)).isOne();
+
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			thirdExpiredNonce, NOW.minusSeconds(120), NOW.plusSeconds(5)
+		);
+		assertThat(throttledStore.claimNonceAndSaveSession(
+			"88".repeat(32),
+			NOW.plusSeconds(120),
+			NOW.plusSeconds(5),
+			new Session("99".repeat(32), "journey:v3", NOW.plusSeconds(5), NOW.plusSeconds(605))
+		)).isTrue();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			secondExpiredNonce
+		)).isZero();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			thirdExpiredNonce
+		)).isZero();
+
+		// clock 역전(now <= previous) 시 추가 정리를 건너뛴다
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			"aa".repeat(32), NOW.minusSeconds(120), NOW
+		);
+		assertThat(throttledStore.claimNonceAndSaveSession(
+			"bb".repeat(32),
+			NOW.plusSeconds(120),
+			NOW,
+			new Session("cc".repeat(32), "journey:v3", NOW, NOW.plusSeconds(600))
+		)).isTrue();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			"aa".repeat(32)
+		)).isOne();
+
+		// null interval은 기본 5초 간격, Duration.ZERO는 매 호출 정리를 수행한다
+		var defaultIntervalStore = new JdbcJourneySessionStore(dataSource, (Duration) null);
+		assertThat(defaultIntervalStore.claimNonceAndSaveSession(
+			"dd".repeat(32),
+			NOW.plusSeconds(120),
+			NOW.plusSeconds(10),
+			new Session("ee".repeat(32), "journey:v3", NOW.plusSeconds(10), NOW.plusSeconds(610))
+		)).isTrue();
+
+		var unthrottledStore = new JdbcJourneySessionStore(dataSource, Duration.ZERO);
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			"ff".repeat(32), NOW.minusSeconds(120), NOW.plusSeconds(10)
+		);
+		assertThat(unthrottledStore.claimNonceAndSaveSession(
+			"12".repeat(32),
+			NOW.plusSeconds(120),
+			NOW.plusSeconds(10),
+			new Session("13".repeat(32), "journey:v3", NOW.plusSeconds(10), NOW.plusSeconds(610))
+		)).isTrue();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			"ff".repeat(32)
+		)).isZero();
 	}
 
 	@Test

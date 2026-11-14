@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 /**
  * 지하철 노선 시각화 뱃지 뷰 모델.
- * 카카오맵·네이버지도·공식 교통 기준의 노선 고유 색상과 엠블럼을 제공한다.
+ * 참조 앱·공식 교통 기준의 노선 고유 색상과 엠블럼을 제공한다.
  */
 public record SubwayLineBadgeView(
 	String id,

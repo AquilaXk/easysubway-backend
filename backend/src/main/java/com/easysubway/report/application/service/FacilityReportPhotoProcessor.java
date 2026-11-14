@@ -200,26 +200,52 @@ final class FacilityReportPhotoProcessor {
 	}
 
 	private PhotoDimensions readWebpDimensions(byte[] bytes) {
+		if (chunkSize(bytes, 0) != bytes.length - 8) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		PhotoDimensions bitstreamDimensions = null;
 		int offset = 12;
-		while (offset <= bytes.length - 8) {
+		while (offset < bytes.length) {
+			if (offset > bytes.length - 8) {
+				throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+			}
 			String chunkType = chunkType(bytes, offset);
 			int chunkSize = chunkSize(bytes, offset);
 			int dataOffset = offset + 8;
-			requireChunkBounds(bytes, dataOffset, chunkSize);
+			int nextOffset = nextChunkOffset(bytes, dataOffset, chunkSize);
 			switch (chunkType) {
+				case "ANIM", "ANMF" -> throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 				case "VP8 " -> {
-					return readVp8Dimensions(bytes, dataOffset, chunkSize);
+					PhotoDimensions dimensions = readVp8Dimensions(bytes, dataOffset, chunkSize);
+					requireAllowedDimensions(dimensions);
+					if (bitstreamDimensions == null) {
+						bitstreamDimensions = dimensions;
+					}
 				}
 				case "VP8L" -> {
-					return readVp8LosslessDimensions(bytes, dataOffset, chunkSize);
+					PhotoDimensions dimensions = readVp8LosslessDimensions(bytes, dataOffset, chunkSize);
+					requireAllowedDimensions(dimensions);
+					if (bitstreamDimensions == null) {
+						bitstreamDimensions = dimensions;
+					}
 				}
 				case "VP8X" -> {
-					return readVp8ExtendedDimensions(bytes, dataOffset, chunkSize);
+					PhotoDimensions dimensions = readVp8ExtendedDimensions(bytes, dataOffset, chunkSize);
+					if ((bytes[dataOffset] & 0x02) != 0) {
+						throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+					}
+					requireAllowedDimensions(dimensions);
 				}
-				default -> offset = nextChunkOffset(bytes, dataOffset, chunkSize);
+				default -> {
+					// Metadata/unknown chunks validated only by RIFF framing bounds above.
+				}
 			}
+			offset = nextOffset;
 		}
-		throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		if (bitstreamDimensions == null) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		return bitstreamDimensions;
 	}
 
 	private PhotoDimensions readVp8Dimensions(byte[] bytes, int dataOffset, int chunkSize) {

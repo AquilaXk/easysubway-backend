@@ -2807,6 +2807,7 @@ public final class RouteTimetableRaptorPlanner {
 		 * 세대 교체로 이 시간표를 놓으면 행도 함께 회수된다.
 		 */
 		private final AtomicReferenceArray<int[]> destinationLowerBounds;
+		private final Map<CarDoorStationLineKey, List<LoadRouteTimetablePort.CarDoorHint>> carDoorHintsByStationLine;
 
 		private CompiledTimetable(RouteTimetable source) {
 			this(source, computeTimetableDigest(source), 1L);
@@ -2995,6 +2996,26 @@ public final class RouteTimetableRaptorPlanner {
 			stationSlotOffsets[numStations] = totalSlots;
 			totalStationSlots = totalSlots;
 			destinationLowerBounds = new AtomicReferenceArray<>(numStations);
+			carDoorHintsByStationLine = indexCarDoorHintsByStationLine(source.routeAccessData().carDoorHints());
+		}
+
+		private static Map<CarDoorStationLineKey, List<LoadRouteTimetablePort.CarDoorHint>> indexCarDoorHintsByStationLine(
+			List<LoadRouteTimetablePort.CarDoorHint> hints
+		) {
+			if (hints.isEmpty()) {
+				return Map.of();
+			}
+			Map<CarDoorStationLineKey, List<LoadRouteTimetablePort.CarDoorHint>> grouped = new HashMap<>();
+			for (LoadRouteTimetablePort.CarDoorHint hint : hints) {
+				grouped.computeIfAbsent(new CarDoorStationLineKey(hint.stationId(), hint.lineId()), ignored -> new ArrayList<>())
+					.add(hint);
+			}
+			Map<CarDoorStationLineKey, List<LoadRouteTimetablePort.CarDoorHint>> immutable =
+				HashMap.newHashMap(grouped.size());
+			for (Map.Entry<CarDoorStationLineKey, List<LoadRouteTimetablePort.CarDoorHint>> entry : grouped.entrySet()) {
+				immutable.put(entry.getKey(), List.copyOf(entry.getValue()));
+			}
+			return Map.copyOf(immutable);
 		}
 
 		/**
@@ -3218,16 +3239,14 @@ public final class RouteTimetableRaptorPlanner {
 			// BOTH는 공식 원천이 방향 구분 없이 제공한 힌트라 모든 트립에 적용한다.
 			// UP/DOWN은 공식 up/down 트립에만 대응하며 INNER/OUTER와 그 외 방향은 추정하지 않는다.
 			String targetDirection = "up".equals(directionId) ? "UP" : "down".equals(directionId) ? "DOWN" : null;
-			List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint> allHints =
-				source.routeAccessData().carDoorHints();
-			if (allHints.isEmpty()) {
+			List<LoadRouteTimetablePort.CarDoorHint> stationLineHints =
+				carDoorHintsByStationLine.getOrDefault(new CarDoorStationLineKey(stationId, lineId), List.of());
+			if (stationLineHints.isEmpty()) {
 				return List.of();
 			}
-			List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint> candidates =
-				allHints.stream()
-					.filter(h -> stationId.equals(h.stationId())
-						&& lineId.equals(h.lineId())
-						&& ("BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction()))))
+			List<LoadRouteTimetablePort.CarDoorHint> candidates =
+				stationLineHints.stream()
+					.filter(h -> "BOTH".equals(h.direction()) || (targetDirection != null && targetDirection.equals(h.direction())))
 					.toList();
 			if (candidates.isEmpty()) {
 				return List.of();
@@ -6509,6 +6528,9 @@ public final class RouteTimetableRaptorPlanner {
 	}
 
 	private record IndexedRealtimeUpdate(int scheduledTripIndex, TimetableRealtimeUpdate update) {
+	}
+
+	private record CarDoorStationLineKey(String stationId, String lineId) {
 	}
 
 	private record RealtimeEvidence(String providerSnapshotId, Instant providerObservedAt) {
