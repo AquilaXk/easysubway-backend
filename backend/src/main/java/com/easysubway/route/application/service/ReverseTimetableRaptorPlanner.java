@@ -357,7 +357,7 @@ final class ReverseTimetableRaptorPlanner {
 		/** 패턴·하차 위치마다 그 앞 승차 위치들의 최소 선행 승차 수(출발역 승차는 0). */
 		private final int[][] ridesBeforeAlight;
 		private final PriorityQueue<QueueEntry> queue = new PriorityQueue<>(QUEUE_ORDER);
-		private final PrimitiveLongObjectMap<List<ReverseLabel>> labelsByState = new PrimitiveLongObjectMap<>(256);
+		private final PrimitiveLongObjectMap<List<ReverseLabel>> labelsByState = new PrimitiveLongObjectMap<>(16);
 		private final List<Candidate> candidates = new ArrayList<>();
 		private long sequence;
 		private long latestReadyAt = Long.MIN_VALUE;

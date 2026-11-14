@@ -900,18 +900,8 @@ public final class RouteTimetableRaptorPlanner {
 				continue;
 			}
 			for (OutOfStationFootpath footpath : footpaths) {
-				int baseSlot = workspace.stationSlotBase(round, fromStation, footpath.fromLine());
-				if (baseSlot < 0) {
-					continue;
-				}
-				boolean reached = false;
-				for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
-					if (workspace.arrivalSeconds[baseSlot + w] != UNREACHED) {
-						reached = true;
-						break;
-					}
-				}
-				if (reached) {
+				int baseSlot = workspace.slot(round, fromStation, footpath.fromLine(), 0);
+				if (workspace.hasReachedAtBase(baseSlot)) {
 					workspace.markNext(footpath.toStation());
 				}
 			}
@@ -1377,8 +1367,12 @@ public final class RouteTimetableRaptorPlanner {
 			if (round > 0) {
 				workspace.expandedTransfers += 1;
 			}
-			evaluateTransitionIntoReady(
-				timetable, workspace, station, incomingLine, canonicalTransition, round, slackSeconds,
+			int readyBaseSlot = workspace.slot(round, station, incomingLine, 0);
+			if (!workspace.hasReachedAtBase(readyBaseSlot)) {
+				continue;
+			}
+			evaluateTransitionIntoReadyAtBase(
+				timetable, workspace, station, readyBaseSlot, canonicalTransition, round, slackSeconds,
 				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
 
 			// #469: 엄격 무단차가 아니면 경고 상태(계단 없음 확정 여부)마다 환승 시간이 가장 짧은 동선도 본다. 표준·느린
@@ -1386,7 +1380,7 @@ public final class RouteTimetableRaptorPlanner {
 			// 동선 옆의 계단 확정 동선, #469 F1)을 함께 찾는다.
 			if (round > 0 && input.preservesStairAlternatives()) {
 				evaluateWarningStateAlternatives(timetable, workspace, station, incomingLine, boardingLine,
-					canonicalTransition, round, slackSeconds, accessProfileBit, input, ignoreAccessBlocks,
+					readyBaseSlot, canonicalTransition, round, slackSeconds, accessProfileBit, input, ignoreAccessBlocks,
 					boardingDeadlineSeconds, realtimeOverlay);
 			}
 		}
@@ -1405,6 +1399,7 @@ public final class RouteTimetableRaptorPlanner {
 		int station,
 		int incomingLine,
 		int boardingLine,
+		int readyBaseSlot,
 		int canonicalTransition,
 		int round,
 		int slackSeconds,
@@ -1439,19 +1434,19 @@ public final class RouteTimetableRaptorPlanner {
 		for (int state = 0; state < WARNING_STATE_COUNT; state += 1) {
 			int alternative = bestByWarningState[state];
 			if (alternative >= 0 && alternative != canonicalTransition) {
-				evaluateTransitionIntoReady(
-					timetable, workspace, station, incomingLine, alternative, round, slackSeconds,
+				evaluateTransitionIntoReadyAtBase(
+					timetable, workspace, station, readyBaseSlot, alternative, round, slackSeconds,
 					accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
 			}
 		}
 	}
 
 	@SuppressWarnings("java:S107")
-	private static void evaluateTransitionIntoReady(
+	private static void evaluateTransitionIntoReadyAtBase(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
 		int station,
-		int incomingLine,
+		int readyBaseSlot,
 		int accessTransition,
 		int round,
 		int slackSeconds,
@@ -1460,10 +1455,6 @@ public final class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		int boardingDeadlineSeconds
 	) {
-		int readyBaseSlot = workspace.stationSlotBase(round, station, incomingLine);
-		if (readyBaseSlot < 0) {
-			return;
-		}
 		int accessSeconds = round == 0 ? 0
 			: journeyTransferSeconds(input, timetable.transitionDurationSeconds(accessTransition),
 				timetable.transitionDistanceMeters(accessTransition));
@@ -1598,8 +1589,8 @@ public final class RouteTimetableRaptorPlanner {
 	) {
 		boolean footpathDominated = true;
 		int minDepartureForFootpath = Integer.MAX_VALUE;
-		int readyBaseSlot = workspace.stationSlotBase(round, footpath.fromStation(), footpath.fromLine());
-		if (readyBaseSlot < 0) {
+		int readyBaseSlot = workspace.slot(round, footpath.fromStation(), footpath.fromLine(), 0);
+		if (!workspace.hasReachedAtBase(readyBaseSlot)) {
 			return false;
 		}
 		for (int accessTransition : footpath.candidateTransitions()) {
@@ -1681,8 +1672,8 @@ public final class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
-		int fromBaseSlot = workspace.stationSlotBase(round, nextFp.fromStation(), nextFp.fromLine());
-		if (fromBaseSlot < 0) {
+		int fromBaseSlot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), 0);
+		if (!workspace.hasReachedAtBase(fromBaseSlot)) {
 			return true;
 		}
 		for (int nextCandidate : nextFp.candidateTransitions()) {
@@ -4842,6 +4833,16 @@ public final class RouteTimetableRaptorPlanner {
 			return stationSlot < 0 ? -1 : (stationSlot * LABEL_SLOT_COUNT + boardings) * WARNING_STATE_COUNT;
 		}
 
+		boolean hasReachedAtBase(int baseSlot) {
+			int[] arr = arrivalSeconds;
+			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
+				if (arr[baseSlot + w] != UNREACHED) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		int slot(int boardings, int station, int incomingLine, int warningState) {
 			int stationSlot = findStationSlot(station, incomingLine);
 			if (stationSlot < 0) {
@@ -5784,7 +5785,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final RealtimeOverlay accessOverlay;
 		private final ProfileLimitTracker limits;
 		private final PrimitiveProfileLabelPool pool = new PrimitiveProfileLabelPool(1024);
-		private final PrimitiveLongObjectMap<IntArrayList> labelsByState = new PrimitiveLongObjectMap<>(256);
+		private final PrimitiveLongObjectMap<IntArrayList> labelsByState = new PrimitiveLongObjectMap<>(16);
 		/** 도착 + 하한이 작은 라벨부터 꺼낸다. 대안 창 상한이 빨리 좁혀져 같은 결과를 더 적은 확장으로 얻는다. */
 		private final LongMinHeap pending = new LongMinHeap(256);
 		/** 도착역까지 노선 최소 주행 시간 하한. 환승 시간을 빼므로 실제보다 크지 않다. */
