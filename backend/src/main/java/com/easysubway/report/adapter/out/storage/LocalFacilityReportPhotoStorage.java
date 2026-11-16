@@ -23,7 +23,7 @@ public class LocalFacilityReportPhotoStorage implements
 	DeleteFacilityReportPhotoPort,
 	StoreFacilityReportUploadedPhotoPort {
 
-	private static final long MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+	private static final long MAX_PHOTO_BYTES = 10L * 1024 * 1024;
 
 	private final Path storageRoot;
 

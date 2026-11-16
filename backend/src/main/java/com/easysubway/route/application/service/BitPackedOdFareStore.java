@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 64-bit 워드 패킹 기반의 전국 O-D 공식 운임 인메모리 스토어.
@@ -41,7 +42,7 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 	private final List<MetadataTuple> metadataCatalog;
 	private final Map<String, OfficialFareQuote> overflowMap;
 	private final int totalSize;
-	private volatile Map<String, OfficialFareQuote> materializedView;
+	private final AtomicReference<Map<String, OfficialFareQuote>> materializedView = new AtomicReference<>();
 
 	public record MetadataTuple(String sourceId, String snapshotId, String mappingLedgerHash) {
 		public MetadataTuple {
@@ -74,36 +75,11 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 		Map<String, OfficialFareQuote> quotes
 	) {
 		Objects.requireNonNull(quotes, "quotes");
-		Map<String, Integer> stationIdxMap = new HashMap<>();
-		int idx = 0;
-		if (canonicalStations != null) {
-			for (String station : canonicalStations) {
-				if (station != null && !station.isBlank() && !stationIdxMap.containsKey(station)) {
-					stationIdxMap.put(station, idx++);
-				}
-			}
-		}
-		// quotes 내에 등장하는 역도 보충
-		for (OfficialFareQuote quote : quotes.values()) {
-			if (quote != null) {
-				if (!stationIdxMap.containsKey(quote.originStationId())) {
-					stationIdxMap.put(quote.originStationId(), idx++);
-				}
-				if (!stationIdxMap.containsKey(quote.destinationStationId())) {
-					stationIdxMap.put(quote.destinationStationId(), idx++);
-				}
-			}
-		}
-
+		Map<String, Integer> stationIdxMap = buildStationIndex(canonicalStations, quotes.values());
 		int rawCount = stationIdxMap.size();
 		boolean matrixEnabled = rawCount > 0 && rawCount <= MAX_MATRIX_STATIONS;
 		int count = matrixEnabled ? rawCount : 0;
-		String[] ids = new String[count];
-		if (matrixEnabled) {
-			for (var entry : stationIdxMap.entrySet()) {
-				ids[entry.getValue()] = entry.getKey();
-			}
-		}
+		String[] ids = buildStationIdArray(stationIdxMap, count, matrixEnabled);
 
 		long[] wordsArray = matrixEnabled ? new long[count * count] : new long[0];
 		Map<MetadataTuple, Integer> metaMap = new LinkedHashMap<>();
@@ -112,38 +88,12 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 
 		for (var entry : quotes.entrySet()) {
 			OfficialFareQuote quote = entry.getValue();
-			if (quote == null) {
-				continue;
-			}
-			String orig = quote.originStationId();
-			String dest = quote.destinationStationId();
-			Integer origIdx = matrixEnabled ? stationIdxMap.get(orig) : null;
-			Integer destIdx = matrixEnabled ? stationIdxMap.get(dest) : null;
-
-			if (origIdx == null || destIdx == null || !canPack(quote)) {
-				overflows.put(entry.getKey(), quote);
-				continue;
-			}
-
-			MetadataTuple meta = new MetadataTuple(quote.sourceId(), quote.snapshotId(), quote.mappingLedgerHash());
-			Integer metaIdx = metaMap.get(meta);
-			if (metaIdx == null) {
-				if (metaMap.size() >= MAX_METADATA_COMBINATIONS) {
+			if (quote != null) {
+				if (tryPackEntry(quote, stationIdxMap, count, matrixEnabled, wordsArray, metaMap)) {
+					packedCount++;
+				} else {
 					overflows.put(entry.getKey(), quote);
-					continue;
 				}
-				metaIdx = metaMap.size();
-				metaMap.put(meta, metaIdx);
-			}
-
-			long word = pack(quote, metaIdx);
-			int slot = origIdx * count + destIdx;
-			if ((wordsArray[slot] & PRESENCE_BIT) != 0L) {
-				// 중복 엔트리 슬롯 충돌 시 오버플로 격리
-				overflows.put(entry.getKey(), quote);
-			} else {
-				wordsArray[slot] = word;
-				packedCount++;
 			}
 		}
 
@@ -159,13 +109,82 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 		);
 	}
 
+	private static Map<String, Integer> buildStationIndex(
+		Collection<String> canonicalStations,
+		Collection<OfficialFareQuote> quotes
+	) {
+		Map<String, Integer> stationIdxMap = new HashMap<>();
+		if (canonicalStations != null) {
+			for (String station : canonicalStations) {
+				if (station != null && !station.isBlank()) {
+					stationIdxMap.putIfAbsent(station, stationIdxMap.size());
+				}
+			}
+		}
+		for (OfficialFareQuote quote : quotes) {
+			if (quote != null) {
+				stationIdxMap.putIfAbsent(quote.originStationId(), stationIdxMap.size());
+				stationIdxMap.putIfAbsent(quote.destinationStationId(), stationIdxMap.size());
+			}
+		}
+		return stationIdxMap;
+	}
+
+	private static String[] buildStationIdArray(
+		Map<String, Integer> stationIdxMap,
+		int count,
+		boolean matrixEnabled
+	) {
+		String[] ids = new String[count];
+		if (matrixEnabled) {
+			for (var entry : stationIdxMap.entrySet()) {
+				ids[entry.getValue()] = entry.getKey();
+			}
+		}
+		return ids;
+	}
+
+	private static boolean tryPackEntry(
+		OfficialFareQuote quote,
+		Map<String, Integer> stationIdxMap,
+		int count,
+		boolean matrixEnabled,
+		long[] wordsArray,
+		Map<MetadataTuple, Integer> metaMap
+	) {
+		Integer origIdx = matrixEnabled ? stationIdxMap.get(quote.originStationId()) : null;
+		Integer destIdx = matrixEnabled ? stationIdxMap.get(quote.destinationStationId()) : null;
+		if (origIdx == null || destIdx == null || !canPack(quote)) {
+			return false;
+		}
+		int slot = origIdx * count + destIdx;
+		if ((wordsArray[slot] & PRESENCE_BIT) != 0L) {
+			return false;
+		}
+		MetadataTuple meta = new MetadataTuple(quote.sourceId(), quote.snapshotId(), quote.mappingLedgerHash());
+		Integer metaIdx = metaMap.get(meta);
+		if (metaIdx == null) {
+			if (metaMap.size() >= MAX_METADATA_COMBINATIONS) {
+				return false;
+			}
+			metaIdx = metaMap.size();
+			metaMap.put(meta, metaIdx);
+		}
+		wordsArray[slot] = pack(quote, metaIdx);
+		return true;
+	}
+
 	private static boolean canPack(OfficialFareQuote q) {
-		return q.gnrlCardFare() >= 0 && q.gnrlCardFare() <= MAX_PACKABLE_FARE && (q.gnrlCardFare() % 10 == 0)
-			&& q.gnrlCashFare() >= 0 && q.gnrlCashFare() <= MAX_PACKABLE_FARE && (q.gnrlCashFare() % 10 == 0)
-			&& q.yungCardFare() >= 0 && q.yungCardFare() <= MAX_PACKABLE_FARE && (q.yungCardFare() % 10 == 0)
-			&& q.yungCashFare() >= 0 && q.yungCashFare() <= MAX_PACKABLE_FARE && (q.yungCashFare() % 10 == 0)
-			&& q.childCardFare() >= 0 && q.childCardFare() <= MAX_PACKABLE_FARE && (q.childCardFare() % 10 == 0)
-			&& q.childCashFare() >= 0 && q.childCashFare() <= MAX_PACKABLE_FARE && (q.childCashFare() % 10 == 0);
+		return isPackableFare(q.gnrlCardFare())
+			&& isPackableFare(q.gnrlCashFare())
+			&& isPackableFare(q.yungCardFare())
+			&& isPackableFare(q.yungCashFare())
+			&& isPackableFare(q.childCardFare())
+			&& isPackableFare(q.childCashFare());
+	}
+
+	private static boolean isPackableFare(int fare) {
+		return fare >= 0 && fare <= MAX_PACKABLE_FARE && (fare % 10 == 0);
 	}
 
 	private static long pack(OfficialFareQuote q, int metaIdx) {
@@ -176,7 +195,7 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 		w |= (((long) (q.yungCashFare() / 10) & FARE_MASK_10BIT) << 30);
 		w |= (((long) (q.childCardFare() / 10) & FARE_MASK_10BIT) << 40);
 		w |= (((long) (q.childCashFare() / 10) & FARE_MASK_10BIT) << 50);
-		w |= (((long) metaIdx & 0x7L) << 60);
+		w |= ((metaIdx & 0x7L) << 60);
 		return w;
 	}
 
@@ -311,7 +330,7 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 	}
 
 	private Map<String, OfficialFareQuote> materialized() {
-		Map<String, OfficialFareQuote> view = materializedView;
+		Map<String, OfficialFareQuote> view = materializedView.get();
 		if (view != null) {
 			return view;
 		}
@@ -329,7 +348,7 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 		}
 		map.putAll(overflowMap);
 		Map<String, OfficialFareQuote> unmodifiable = Collections.unmodifiableMap(map);
-		materializedView = unmodifiable;
+		materializedView.set(unmodifiable);
 		return unmodifiable;
 	}
 }
