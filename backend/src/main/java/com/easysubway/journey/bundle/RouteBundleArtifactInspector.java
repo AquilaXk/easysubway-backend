@@ -23,6 +23,7 @@ final class RouteBundleArtifactInspector {
 		"manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256",
 		"topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "provenanceSha256",
 		"compatibilitySha256", "serviceTimezone", "activeFrom", "freshUntil", "schemaCompatibility", "keyId", "signature");
+	private static final int MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
 	private static final ObjectMapper JSON = new ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
@@ -46,6 +47,9 @@ final class RouteBundleArtifactInspector {
 
 	private static JsonNode parse(byte[] bytes) {
 		if (bytes == null) throw failure(RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);
+		if (bytes.length > MAX_MANIFEST_BYTES) {
+			throw new IllegalArgumentException("route-bundle manifest exceeds maximum allowed size of 16 MiB");
+		}
 		try {
 			var manifest = JSON.readTree(strictUtf8(bytes));
 			if (manifest == null || !manifest.isObject()) throw failure(RouteBundleInspectionException.Reason.MANIFEST_SCHEMA_INVALID);

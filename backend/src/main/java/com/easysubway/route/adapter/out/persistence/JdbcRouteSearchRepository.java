@@ -236,10 +236,16 @@ public class JdbcRouteSearchRepository
 				ORDER BY created_at DESC, route_search_id
 				LIMIT ?
 				""",
-			(resultSet, rowNumber) -> new RouteSearchStationPair(
-				resultSet.getString("origin_station_id"),
-				resultSet.getString("destination_station_id")
-			),
+			rs -> {
+				var list = new ArrayList<RouteSearchStationPair>(DASHBOARD_QUERY_LIMIT);
+				while (rs.next()) {
+					list.add(new RouteSearchStationPair(
+						rs.getString("origin_station_id"),
+						rs.getString("destination_station_id")
+					));
+				}
+				return list;
+			},
 			DASHBOARD_QUERY_LIMIT
 		);
 	}
@@ -255,10 +261,16 @@ public class JdbcRouteSearchRepository
 				ORDER BY created_at DESC, route_search_id
 				LIMIT ?
 				""",
-			(resultSet, rowNumber) -> new RouteSearchStationPair(
-				resultSet.getString("origin_station_id"),
-				resultSet.getString("destination_station_id")
-			),
+			rs -> {
+				var list = new ArrayList<RouteSearchStationPair>(DASHBOARD_QUERY_LIMIT);
+				while (rs.next()) {
+					list.add(new RouteSearchStationPair(
+						rs.getString("origin_station_id"),
+						rs.getString("destination_station_id")
+					));
+				}
+				return list;
+			},
 			DASHBOARD_QUERY_LIMIT
 		);
 	}
@@ -273,9 +285,15 @@ public class JdbcRouteSearchRepository
 				ORDER BY created_at DESC, route_search_id
 				LIMIT ?
 				""",
-			(resultSet, rowNumber) -> new RouteSearchBlockedReasons(
-				readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE)
-			),
+			rs -> {
+				var list = new ArrayList<RouteSearchBlockedReasons>(DASHBOARD_QUERY_LIMIT);
+				while (rs.next()) {
+					list.add(new RouteSearchBlockedReasons(
+						readJson(rs.getString("blocked_reasons_json"), STRING_LIST_TYPE)
+					));
+				}
+				return list;
+			},
 			DASHBOARD_QUERY_LIMIT
 		);
 	}
@@ -318,11 +336,17 @@ public class JdbcRouteSearchRepository
 					) warning_stats ON TRUE
 					ORDER BY r.created_at DESC, r.route_search_id
 					""",
-				(resultSet, rowNumber) -> new RouteSearchQualitySignals(
-					RouteSearchStatus.valueOf(resultSet.getString("status")),
-					EtaSource.valueOf(resultSet.getString("eta_source")),
-					extractWarningCodes(resultSet.getArray("warning_codes"))
-				),
+				rs -> {
+					var list = new ArrayList<RouteSearchQualitySignals>(DASHBOARD_QUERY_LIMIT);
+					while (rs.next()) {
+						list.add(new RouteSearchQualitySignals(
+							RouteSearchStatus.valueOf(rs.getString("status")),
+							EtaSource.valueOf(rs.getString("eta_source")),
+							extractWarningCodes(rs.getArray("warning_codes"))
+						));
+					}
+					return list;
+				},
 				DASHBOARD_QUERY_LIMIT
 			);
 		}
@@ -335,11 +359,17 @@ public class JdbcRouteSearchRepository
 				ORDER BY created_at DESC, route_search_id
 				LIMIT ?
 				""",
-			(resultSet, rowNumber) -> new RouteSearchQualitySignals(
-				RouteSearchStatus.valueOf(resultSet.getString("status")),
-				extractEtaSourceFromStepsJson(resultSet.getString("steps_json")),
-				extractWarningCodesFromWarningsJson(resultSet.getString("warnings_json"))
-			),
+			rs -> {
+				var list = new ArrayList<RouteSearchQualitySignals>(DASHBOARD_QUERY_LIMIT);
+				while (rs.next()) {
+					list.add(new RouteSearchQualitySignals(
+						RouteSearchStatus.valueOf(rs.getString("status")),
+						extractEtaSourceFromStepsJson(rs.getString("steps_json")),
+						extractWarningCodesFromWarningsJson(rs.getString("warnings_json"))
+					));
+				}
+				return list;
+			},
 			DASHBOARD_QUERY_LIMIT
 		);
 	}

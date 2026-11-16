@@ -59,20 +59,25 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 	public void replaceCatalog(List<CachedCatalog> catalogs) {
 		Objects.requireNonNull(catalogs, "catalogs must not be null");
 		jdbcTemplate.update("DELETE FROM train_catalog_cache");
-		for (CachedCatalog catalog : catalogs) {
-			jdbcTemplate.update(
-				"""
-					INSERT INTO train_catalog_cache
-					(catalog_kind, payload_json, payload_sha256, observed_at, expires_at)
-					VALUES (?, ?, ?, ?, ?)
-					""",
-				catalog.kind(),
-				catalog.payloadJson(),
-				catalog.payloadSha256(),
-				Timestamp.from(catalog.observedAt()),
-				Timestamp.from(catalog.expiresAt())
-			);
+		if (catalogs.isEmpty()) {
+			return;
 		}
+		jdbcTemplate.batchUpdate(
+			"""
+				INSERT INTO train_catalog_cache
+				(catalog_kind, payload_json, payload_sha256, observed_at, expires_at)
+				VALUES (?, ?, ?, ?, ?)
+				""",
+			catalogs,
+			catalogs.size(),
+			(ps, catalog) -> {
+				ps.setString(1, catalog.kind());
+				ps.setString(2, catalog.payloadJson());
+				ps.setString(3, catalog.payloadSha256());
+				ps.setTimestamp(4, Timestamp.from(catalog.observedAt()));
+				ps.setTimestamp(5, Timestamp.from(catalog.expiresAt()));
+			}
+		);
 	}
 
 	@Override

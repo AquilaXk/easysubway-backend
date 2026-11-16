@@ -23,6 +23,8 @@ public class LocalFacilityReportPhotoStorage implements
 	DeleteFacilityReportPhotoPort,
 	StoreFacilityReportUploadedPhotoPort {
 
+	private static final long MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
 	private final Path storageRoot;
 
 	public LocalFacilityReportPhotoStorage(
@@ -76,6 +78,9 @@ public class LocalFacilityReportPhotoStorage implements
 			return Optional.empty();
 		}
 		try {
+			if (Files.size(objectPath) > MAX_PHOTO_BYTES) {
+				throw new IllegalArgumentException("Facility report photo exceeds maximum allowed size: " + objectKey);
+			}
 			return Optional.of(new LoadedFacilityReportPhoto(contentTypeFor(objectKey), Files.readAllBytes(objectPath)));
 		} catch (IOException exception) {
 			throw new UncheckedIOException("Failed to load facility report photo object", exception);

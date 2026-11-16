@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2026 EasySubway. All rights reserved.
+ *
+ * This class incorporates hash mixing and open-addressing patterns from:
+ * vigna/fastutil (Apache License 2.0, Copyright (C) 2002-2024 Sebastiano Vigna)
+ * - HashCommon.mix(long) 2-step mixing and dirty touched slot tracking.
+ */
 package com.easysubway.route.application.service;
 
 import java.util.Arrays;
@@ -16,6 +23,8 @@ final class PrimitiveLongObjectMap<V> {
 
 	private long[] keys;
 	private Object[] values;
+	private int[] touchedSlots;
+	private int touchedCount;
 	private int mask;
 	private int size;
 	private int resizeThreshold;
@@ -33,6 +42,8 @@ final class PrimitiveLongObjectMap<V> {
 		this.keys = new long[tableCap];
 		Arrays.fill(this.keys, EMPTY_KEY);
 		this.values = new Object[tableCap];
+		this.touchedSlots = new int[tableCap];
+		this.touchedCount = 0;
 		this.mask = tableCap - 1;
 		this.resizeThreshold = thresholdFor(tableCap);
 	}
@@ -66,6 +77,7 @@ final class PrimitiveLongObjectMap<V> {
 			if (k == EMPTY_KEY) {
 				keys[slot] = key;
 				values[slot] = value;
+				touchedSlots[touchedCount++] = slot;
 				size += 1;
 				return;
 			}
@@ -79,6 +91,14 @@ final class PrimitiveLongObjectMap<V> {
 
 	int capacity() {
 		return keys.length;
+	}
+
+	int touchedCount() {
+		return touchedCount;
+	}
+
+	int touchedSlotAt(int index) {
+		return touchedSlots[index];
 	}
 
 	long keyAt(int slot) {
@@ -99,6 +119,8 @@ final class PrimitiveLongObjectMap<V> {
 		long[] newKeys = new long[newCap];
 		Arrays.fill(newKeys, EMPTY_KEY);
 		Object[] newValues = new Object[newCap];
+		int[] newTouched = new int[newCap];
+		int newTouchedCount = 0;
 		int newMask = newCap - 1;
 		for (int i = 0; i < oldCap; i += 1) {
 			long k = keys[i];
@@ -109,10 +131,13 @@ final class PrimitiveLongObjectMap<V> {
 				}
 				newKeys[slot] = k;
 				newValues[slot] = values[i];
+				newTouched[newTouchedCount++] = slot;
 			}
 		}
 		this.keys = newKeys;
 		this.values = newValues;
+		this.touchedSlots = newTouched;
+		this.touchedCount = newTouchedCount;
 		this.mask = newMask;
 		this.resizeThreshold = thresholdFor(newCap);
 	}
@@ -123,9 +148,14 @@ final class PrimitiveLongObjectMap<V> {
 		}
 	}
 
+	/**
+	 * vigna/fastutil HashCommon.mix(long):
+	 * 2-step bit avalanche mixing for 64-bit keys.
+	 */
 	private static int mix(long key) {
 		long h = key * 0x9E3779B97F4A7C15L;
-		return (int) (h ^ (h >>> 32));
+		h ^= h >>> 32;
+		return (int) (h ^ (h >>> 16));
 	}
 
 	private static int tableSizeFor(long target) {

@@ -95,8 +95,12 @@ public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequ
 	public List<DatapackReleaseRequest> claimReconciliationDue(
 		LocalDateTime cutoff, LocalDateTime now, LocalDateTime leaseUntil, int limit) {
 		var candidates = findReconciliationDue(cutoff, now, limit);
+		if (candidates.isEmpty()) {
+			return List.of();
+		}
 		var claimed = new ArrayList<DatapackReleaseRequest>(candidates.size());
-		for (var candidate : candidates) {
+		if (candidates.size() == 1) {
+			var candidate = candidates.getFirst();
 			int updated = jdbcTemplate.update("""
 				UPDATE datapack_release_request SET reconciliation_next_attempt_at = ?
 				WHERE approval_id = ?
@@ -105,6 +109,23 @@ public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequ
 				  AND (reconciliation_next_attempt_at IS NULL OR reconciliation_next_attempt_at <= ?)
 				""", leaseUntil, candidate.approvalId(), cutoff, now);
 			if (updated == 1) claimed.add(candidate);
+			return claimed;
+		}
+		List<Object[]> batchArgs = new ArrayList<>(candidates.size());
+		for (var candidate : candidates) {
+			batchArgs.add(new Object[] { leaseUntil, candidate.approvalId(), cutoff, now });
+		}
+		int[] results = jdbcTemplate.batchUpdate("""
+			UPDATE datapack_release_request SET reconciliation_next_attempt_at = ?
+			WHERE approval_id = ?
+			  AND status IN ('APPROVED', 'DISPATCHED', 'DISPATCH_FAILED')
+			  AND updated_at <= ?
+			  AND (reconciliation_next_attempt_at IS NULL OR reconciliation_next_attempt_at <= ?)
+			""", batchArgs);
+		for (int i = 0; i < candidates.size(); i++) {
+			if (results[i] == 1 || results[i] == -2) {
+				claimed.add(candidates.get(i));
+			}
 		}
 		return claimed;
 	}

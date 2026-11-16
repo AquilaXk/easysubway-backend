@@ -5,6 +5,7 @@
 !/README.md
 !/README.ko.md
 !/SECURITY.md
+!/THIRD_PARTY_NOTICES.md
 
 # Local environment and secrets
 .env

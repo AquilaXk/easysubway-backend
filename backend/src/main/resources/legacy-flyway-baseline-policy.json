@@ -15,9 +15,9 @@
   "approval": "APPROVED_BY_ISSUE_8",
   "reason": "REVIEWED_LEGACY_V1_SCHEMA",
   "schemaFingerprintSha256": "077beae456593c54ea6c8b99a2f41f7c263623812aab17ff4ae018ce8c68290c",
-  "migrationInventorySha256": "b12662b53bf6421a299ad6dc79c374886b55ec291a9fbe843685a7faf358e21d",
-  "migrationDdlPolicySha256": "a370bf9d0a0e1956fe05d05514db7ec7d21ee2515a6dd72b8b0b4ca45f2843b7",
-  "productionConfigSha256": "c41dcfef9376ad2e344ac4657e6a7c3931e3e17239be573f6c09865a2faf20a6",
+  "migrationInventorySha256": "ae2661c5797779257bb8123ad61869a275e641133bbf2c17823fe37c4ca1587d",
+  "migrationDdlPolicySha256": "08e3536b7cffed4511b18b3e9c90aed56d384d5b87f643345ef26a6c7f1cbb3a",
+  "productionConfigSha256": "0aeaffbf8048f1665499197c9c9e39d3fdb379e47f5b8e78138929d29dc97cdd",
   "advisoryLockKey": 4960703508659600721,
   "resultReasons": [
     "BASELINED",

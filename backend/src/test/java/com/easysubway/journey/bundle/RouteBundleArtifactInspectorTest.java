@@ -29,6 +29,15 @@ class RouteBundleArtifactInspectorTest {
 	}
 
 	@Test
+	void rejectsManifestExceedingMaximumAllowedSize() {
+		var payloads = payloads();
+		byte[] oversized = new byte[16 * 1024 * 1024 + 1];
+		assertThatThrownBy(() -> RouteBundleArtifactInspector.inspect(oversized, payloads))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("route-bundle manifest exceeds maximum allowed size");
+	}
+
+	@Test
 	void rejectsMalformedJsonWithItsExactReason() {
 		var payloads = payloads();
 		assertReason(payloads, "{\"manifestVersion\":1,".getBytes(StandardCharsets.UTF_8), RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);

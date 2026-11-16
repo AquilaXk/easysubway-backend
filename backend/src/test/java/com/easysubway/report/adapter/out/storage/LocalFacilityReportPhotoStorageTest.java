@@ -91,4 +91,16 @@ class LocalFacilityReportPhotoStorageTest {
 			new com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand(".", new byte[] {1})))
 			.isInstanceOf(IllegalArgumentException.class);
 	}
+
+	@Test
+	void rejectsOversizedPhotoObjectExceedingTenMiB() throws Exception {
+		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(tempDir);
+		Path oversized = tempDir.resolve("facility-reports/report-huge/oversized.png");
+		Files.createDirectories(oversized.getParent());
+		Files.write(oversized, new byte[10 * 1024 * 1024 + 1]);
+
+		assertThatThrownBy(() -> storage.loadFacilityReportPhoto("facility-reports/report-huge/oversized.png"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("exceeds maximum allowed size");
+	}
 }

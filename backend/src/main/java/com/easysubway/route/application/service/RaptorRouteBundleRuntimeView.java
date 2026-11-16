@@ -27,7 +27,7 @@ public final class RaptorRouteBundleRuntimeView
 	private final long generation;
 	private final RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable;
 	private final List<Facility> smrtElevatorFacilities;
-	private final Map<String, OfficialFareQuote> officialFareQuotes;
+	private final BitPackedOdFareStore officialFareQuotes;
 	private final Set<StationLine> canonicalStationLines;
 	private final Map<String, Set<String>> transitionEdgeIdsByFacility;
 	private final Set<String> canonicalStationIds;
@@ -88,13 +88,15 @@ public final class RaptorRouteBundleRuntimeView
 				throw new IllegalArgumentException("officialFareQuotes key mismatch: expected " + expectedKey + " but got " + entry.getKey());
 			}
 		}
-		this.officialFareQuotes = Map.copyOf(officialFareQuotes);
+		this.canonicalStationIds = Collections.unmodifiableSet(
+			new LinkedHashSet<>(Objects.requireNonNull(canonicalStationIds, "canonicalStationIds")));
 		this.canonicalStationLines = Set.copyOf(Objects.requireNonNull(canonicalStationLines, "canonicalStationLines"));
 		this.transitionEdgeIdsByFacility = alreadyFiltered
 			? transitionEdgeIdsByFacility
 			: filterCompiledTransitionEdges(this.compiledTimetable, transitionEdgeIdsByFacility);
-		this.canonicalStationIds = Collections.unmodifiableSet(
-			new LinkedHashSet<>(Objects.requireNonNull(canonicalStationIds, "canonicalStationIds")));
+		this.officialFareQuotes = officialFareQuotes instanceof BitPackedOdFareStore store
+			? store
+			: BitPackedOdFareStore.from(this.canonicalStationIds, officialFareQuotes);
 		this.bundleFacilities = List.copyOf(Objects.requireNonNull(bundleFacilities, "bundleFacilities"));
 		this.bundleStationExits = List.copyOf(Objects.requireNonNull(bundleStationExits, "bundleStationExits"));
 	}
@@ -288,7 +290,7 @@ public final class RaptorRouteBundleRuntimeView
 	}
 
 	public Map<String, OfficialFareQuote> officialFareQuotes() {
-		return officialFareQuotes;
+		return Collections.unmodifiableMap(officialFareQuotes);
 	}
 
 	// #476 F3: 역 시간표 색인은 이 세대 객체에 묶어 처음 쓰일 때 한 번만 만든다. 세대가 바뀌면 새 객체가 새 색인을 만들고,

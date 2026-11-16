@@ -911,7 +911,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		Objects.requireNonNull(fareQuotes, "fareQuotes");
-		List<String> sectionKeys = new ArrayList<>();
+		record Section(String from, String to) {}
+		List<Section> sections = new ArrayList<>();
 		RouteTimetableRaptorPlanner.JourneyRideProjection sectionFirstRide = null;
 		RouteTimetableRaptorPlanner.JourneyRideProjection sectionLastRide = null;
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
@@ -924,14 +925,14 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				if (sectionFirstRide == null) {
 					throw new IllegalArgumentException("Journey re-boarding transfer must follow a ride");
 				}
-				sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+				sections.add(new Section(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
 				sectionFirstRide = null;
 			}
 		}
 		if (sectionFirstRide == null) {
 			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
 		}
-		sectionKeys.add(OfficialFareQuote.fareKey(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+		sections.add(new Section(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
 
 		int adultCard = 0;
 		int adultCash = 0;
@@ -940,8 +941,11 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		int childCard = 0;
 		int childCash = 0;
 		Set<String> snapshotIds = new LinkedHashSet<>();
-		for (String key : sectionKeys) {
-			OfficialFareQuote quote = fareQuotes.get(key);
+		BitPackedOdFareStore bitPacked = fareQuotes instanceof BitPackedOdFareStore store ? store : null;
+		for (Section section : sections) {
+			OfficialFareQuote quote = bitPacked != null
+				? bitPacked.getQuote(section.from(), section.to())
+				: fareQuotes.get(OfficialFareQuote.fareKey(section.from(), section.to()));
 			if (quote == null) {
 				return JourneyCandidate.Fare.unavailable();
 			}

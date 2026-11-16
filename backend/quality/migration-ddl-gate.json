@@ -75,6 +75,14 @@
     {
       "file": "V81__facility_reports_type_station_facility_index.sql",
       "sha256": "f1e73dd0a532705745d195d33e7ca1500b8c31b32d37e1df47d7edf73fcc37d6"
+    },
+    {
+      "file": "V82__route_search_results_status_created_index.sql",
+      "sha256": "dbbfb4c2b01a874ca90027709fadabfad6865fb40dc723adec9a76a289f9bf72"
+    },
+    {
+      "file": "V83__push_notification_outbox_status_claimed_index.sql",
+      "sha256": "5818097034ff57800fa9dcc0af2a07c3c6f76a1feba99ca658bf49ce98fde259"
     }
   ],
   "allowlist": [

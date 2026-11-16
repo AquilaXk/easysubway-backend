@@ -9,10 +9,22 @@ import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import com.easysubway.journey.application.JourneyAlternatives;
 import com.easysubway.journey.application.JourneyRequest.ConstraintMode;
 import com.easysubway.journey.application.SimpleFacilityAvailabilityView;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -76,6 +88,79 @@ class JourneyFacilityBlockOverlayTest {
 			assertThat(capture.status()).isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
 			assertThat(capture.overlay().isEmpty()).isTrue();
 		}
+	}
+
+	@Test
+	void preservesMappedBlocksAndReportsUnobservedWhenUnmappedEdgeOccursInNonRequireStepFree() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var compiled = planner.compile(sampleTimetableWithTransfer());
+		int[] mappedTransitions = compiled.transitionIdsForEdge("transfer-primary");
+		assertThat(mappedTransitions).isNotEmpty();
+
+		// "transfer-primary"는 정상 매핑, "unmapped-edge-999"는 미매핑
+		var view = new SimpleFacilityAvailabilityView(true, NOW, Set.of("transfer-primary", "unmapped-edge-999"));
+
+		// 1) REQUIRE_STEP_FREE + required=true: 미매핑 간선으로 인해 예외 발생 (Fail-Closed)
+		assertThatThrownBy(() -> new JourneyFacilityBlockOverlay(() -> view, true, CLOCK)
+			.captureWithStatus(ConstraintMode.REQUIRE_STEP_FREE, compiled))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessage(REJECTION_PREFIX + "blocked pathway edge is not in the captured route bundle");
+
+		// 2) ConstraintMode.NONE + required=true: 일반 요청은 미매핑 간선 시 전체 뷰 거절 계약(empty) 유지
+		var nonStepFree = new JourneyFacilityBlockOverlay(() -> view, true, CLOCK)
+			.captureWithStatus(ConstraintMode.NONE, compiled);
+		assertThat(nonStepFree.status()).isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		assertThat(nonStepFree.overlay().isEmpty()).isTrue();
+
+		// 3) required=false인 REQUIRE_STEP_FREE: 마찬가지로 차단 유지 + UNOBSERVED
+		var notRequired = new JourneyFacilityBlockOverlay(() -> view, false, CLOCK)
+			.captureWithStatus(ConstraintMode.REQUIRE_STEP_FREE, compiled);
+		assertThat(notRequired.status()).isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		assertThat(notRequired.overlay().isEmpty()).isFalse();
+		for (int trans : mappedTransitions) {
+			assertThat(notRequired.overlay().isTransitionBlocked(trans)).isTrue();
+		}
+	}
+
+	private static RouteTimetable sampleTimetableWithTransfer() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-first", "line-a", "A", "First", "transfer", "Asia/Seoul"),
+			new TransitRoute("route-second", "line-b", "B", "Second", "destination", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip("trip-first", "route-first", "daily", "station-transfer", "down",
+				"SUBWAY", "LOCAL", "3001", 0),
+			new TransitTrip("trip-second", "route-second", "daily", "station-b", "down",
+				"SUBWAY", "LOCAL", "3002", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
+			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
+		var edges = List.of(
+			new PathwayEdge(
+				"transfer-primary", "platform-transfer-a", "platform-transfer-b", 180, 150, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+		var evidence = List.of(
+			new RouteEdgeEvidence(
+				"transfer-evidence-primary", "station-transfer", "line-b", "transfer-primary", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		var transferRulePrimary = new TransferRule(
+			"transfer-rule-primary", "station-transfer", "line-a", "station-transfer", "line-b",
+			"IN_STATION", 180, "transfer-primary", "transfer-primary", "VERIFIED");
+		var nodes = List.of(
+			new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+			new PathwayNode("platform-a", "station-a", "line-a", "PLATFORM"),
+			new PathwayNode("platform-transfer-a", "station-transfer", "line-a", "PLATFORM"),
+			new PathwayNode("platform-transfer-b", "station-transfer", "line-b", "PLATFORM"),
+			new PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
+			new PathwayNode("outside", "station-b", null, "EXIT"));
+		var accessData = new RouteAccessData(
+			nodes, edges, List.of(transferRulePrimary), evidence);
+		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes,
+			List.of(), List.of(), null, accessData);
 	}
 
 	private static void assertRejected(FacilityAvailabilityView view, String reason) {

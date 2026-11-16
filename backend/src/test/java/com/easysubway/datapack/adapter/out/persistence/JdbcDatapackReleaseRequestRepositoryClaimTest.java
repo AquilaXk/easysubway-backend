@@ -39,4 +39,33 @@ class JdbcDatapackReleaseRequestRepositoryClaimTest {
 		assertThat(repository.claimReconciliationDue(
 			T0.plusMinutes(10), T0.plusMinutes(10), T0.plusMinutes(20), 100)).isEmpty();
 	}
+
+	@Test
+	@DisplayName("다건 후보 배치 선점 시 갱신 성공(1) 및 SUCCESS_NO_INFO(-2)만 반환하고 경합 패배(0)는 제외한다")
+	void claimsMultiCandidateBatchPreservingWinnerAndSuccessNoInfoOnly() {
+		var first = DatapackReleaseRequest.requested(
+			"appr-1", "cand-1", "scope-1", "production", SHA, SHA, SHA, "alice", T0).approve("bob", T0);
+		var second = DatapackReleaseRequest.requested(
+			"appr-2", "cand-2", "scope-1", "production", SHA, SHA, SHA, "alice", T0).approve("bob", T0);
+		var third = DatapackReleaseRequest.requested(
+			"appr-3", "cand-3", "scope-1", "production", SHA, SHA, SHA, "alice", T0).approve("bob", T0);
+		var batchJdbc = new JdbcTemplate() {
+			@Override
+			@SuppressWarnings("unchecked")
+			public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
+				return List.of((T) first, (T) second, (T) third);
+			}
+
+			@Override
+			public int[] batchUpdate(String sql, List<Object[]> batchArgs) {
+				assertThat(batchArgs).hasSize(3);
+				return new int[] { 1, 0, -2 };
+			}
+		};
+		var repository = new JdbcDatapackReleaseRequestRepository(batchJdbc);
+
+		assertThat(repository.claimReconciliationDue(
+			T0.plusMinutes(10), T0.plusMinutes(10), T0.plusMinutes(20), 100))
+			.containsExactly(first, third);
+	}
 }

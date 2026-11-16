@@ -55,18 +55,22 @@ final class JourneyFacilityBlockOverlay {
 		FacilityAvailabilityView view = currentView();
 		BitSet blocked = new BitSet();
 		String unusableReason = unusableReason(view, clock.instant());
+		String unmappedReason = null;
 		if (unusableReason == null) {
-			unusableReason = compileBlocked(view, timetable, blocked);
+			unmappedReason = compileBlocked(view, timetable, blocked);
 		}
-		if (unusableReason == null) {
+		if (unusableReason == null && unmappedReason == null) {
 			return new Capture(RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked),
 				JourneyAlternatives.FacilityStatus.APPLIED);
 		}
 		if (required && constraintMode == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
-			throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: " + unusableReason);
+			String reason = unusableReason != null ? unusableReason : unmappedReason;
+			throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: " + reason);
 		}
-		return new Capture(RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
-			JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = (unusableReason == null && !required && !blocked.isEmpty())
+			? RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked)
+			: RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		return new Capture(overlay, JourneyAlternatives.FacilityStatus.UNOBSERVED);
 	}
 
 	record Capture(RouteTimetableRaptorPlanner.RealtimeOverlay overlay, JourneyAlternatives.FacilityStatus status) {
@@ -99,13 +103,17 @@ final class JourneyFacilityBlockOverlay {
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		BitSet blocked
 	) {
+		String missingEdgeReason = null;
 		for (String edgeId : view.blockedPathwayEdgeIds()) {
 			int[] transitions = timetable.transitionIdsForEdge(edgeId);
-			if (transitions.length == 0) return "blocked pathway edge is not in the captured route bundle";
+			if (transitions.length == 0) {
+				missingEdgeReason = "blocked pathway edge is not in the captured route bundle";
+				continue;
+			}
 			for (int transition : transitions) {
 				blocked.set(transition);
 			}
 		}
-		return null;
+		return missingEdgeReason;
 	}
 }

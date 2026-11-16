@@ -272,7 +272,7 @@ final class ReverseTimetableRaptorPlanner {
 			int[] stops = timetable.stopsByPattern(pattern);
 			RouteTimetableRaptorPlanner.ScheduledTrip representative = timetable.patternRepresentative(pattern);
 			for (int position = 0; position < stops.length; position += 1) {
-				int line = timetable.lineIndex(representative.lineId(position));
+				int line = timetable.patternLine(pattern, position);
 				if (stops[position] == origin && representative.allowsPickup(position) && line >= 0) {
 					before[origin * lines + line] = 0;
 				}
@@ -286,7 +286,7 @@ final class ReverseTimetableRaptorPlanner {
 				RouteTimetableRaptorPlanner.ScheduledTrip representative = timetable.patternRepresentative(pattern);
 				boolean boarded = false;
 				for (int position = 0; position < stops.length; position += 1) {
-					int line = timetable.lineIndex(representative.lineId(position));
+					int line = timetable.patternLine(pattern, position);
 					if (line < 0) continue;
 					if (boarded && representative.allowsDropOff(position)) alighted[stops[position] * lines + line] = true;
 					if (representative.allowsPickup(position) && before[stops[position] * lines + line] <= rides - 1) {
@@ -401,7 +401,7 @@ final class ReverseTimetableRaptorPlanner {
 					result[position] = best;
 					if (representative.allowsPickup(position)) {
 						best = Math.min(best, ridesBefore(stops[position],
-							timetable.lineIndex(representative.lineId(position))));
+							timetable.patternLine(pattern, position)));
 					}
 				}
 				values = result;
@@ -536,7 +536,7 @@ final class ReverseTimetableRaptorPlanner {
 							limits.count(JourneyRaptorPruningInventoryV1.PROFILE_TRANSFER_BUDGET);
 							continue;
 						}
-						int upstreamLine = timetable.lineIndex(patternTrips.first().lineId(alight));
+						int upstreamLine = timetable.patternLine(pattern, alight);
 						for (int block = 0; block < patternTrips.blockCount(); block += 1) {
 							int start = patternTrips.blockStart(block);
 							int end = patternTrips.blockEnd(block);
@@ -656,7 +656,8 @@ final class ReverseTimetableRaptorPlanner {
 				return;
 			}
 			if (transfersUsed >= query.maxTransfers()) return;
-			int line = timetable.lineIndex(datedTrip.lineId(board));
+			int pattern = timetable.patternOfScheduledTrip(datedTrip.scheduledTrip().index());
+			int line = timetable.patternLine(pattern, board);
 			if (line < 0) return;
 			if ((long) transfersUsed + ridesBefore(station, line) > query.maxTransfers()) {
 				limits.count(JourneyRaptorPruningInventoryV1.PROFILE_TRANSFER_BUDGET);
@@ -1736,7 +1737,6 @@ final class ReverseTimetableRaptorPlanner {
 		private int arrivalSeconds(int stopIndex) { return scheduledTrip.arrivalSeconds(stopIndex); }
 		private boolean allowsPickup(int stopIndex) { return scheduledTrip.allowsPickup(stopIndex); }
 		private boolean allowsDropOff(int stopIndex) { return scheduledTrip.allowsDropOff(stopIndex); }
-		private String lineId(int stopIndex) { return scheduledTrip.lineId(stopIndex); }
 	}
 
 	private record TraceRide(DatedScheduledTrip trip, int boardIndex, int alightIndex)

@@ -8,6 +8,7 @@ import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.easysubway.realtime.domain.RealtimeTripMapping;
+import com.google.common.cache.CacheBuilder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -43,6 +44,7 @@ public class RealtimeGatewayService {
 	private static final Duration PROVIDER_FRESHNESS_TTL = Duration.ofSeconds(90);
 	private static final Duration ARRIVAL_ARCHIVE_RETENTION = Duration.ofDays(30);
 	private static final Duration QUOTA_CIRCUIT_OPEN = Duration.ofSeconds(60);
+	private static final int MAX_CACHE_ENTRIES = 4096;
 	private static final int MAX_LAST_SERVED_POSITIONS = 5000;
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
@@ -64,8 +66,14 @@ public class RealtimeGatewayService {
 	private final RealtimeProviderControl providerControl;
 	private final Executor archiveExecutor;
 	private final ProviderMetrics providerMetrics = new ProviderMetrics();
-	private final Map<String, CachedArrival> arrivalCache = new ConcurrentHashMap<>();
-	private final Map<String, CachedTrainPosition> trainPositionCache = new ConcurrentHashMap<>();
+	private final Map<String, CachedArrival> arrivalCache = CacheBuilder.newBuilder()
+		.maximumSize(MAX_CACHE_ENTRIES)
+		.<String, CachedArrival>build()
+		.asMap();
+	private final Map<String, CachedTrainPosition> trainPositionCache = CacheBuilder.newBuilder()
+		.maximumSize(MAX_CACHE_ENTRIES)
+		.<String, CachedTrainPosition>build()
+		.asMap();
 	private final Map<String, CompletableFuture<RealtimeArrivalResult>> arrivalRequests = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeTrainPositionResult>> trainPositionRequests = new ConcurrentHashMap<>();
 	private final Map<String, Instant> lastServedPositionAt = new ConcurrentHashMap<>();

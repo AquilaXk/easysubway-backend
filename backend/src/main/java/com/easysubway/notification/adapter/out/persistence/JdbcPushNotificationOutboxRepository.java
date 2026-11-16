@@ -102,6 +102,7 @@ public class JdbcPushNotificationOutboxRepository implements
 						)
 					)
 				ORDER BY created_at ASC, notification_id ASC
+				FOR UPDATE SKIP LOCKED
 				""",
 			this::mapPushNotification,
 			userId,

@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2026 EasySubway. All rights reserved.
+ *
+ * This class incorporates architectural patterns and low-level algorithms from:
+ * 1. vigna/fastutil (Apache License 2.0, Copyright (C) 2002-2024 Sebastiano Vigna)
+ *    - HashCommon.mix(long) and touched slot tracking for arrival state pruning.
+ * 2. motis-project/nigiri (MIT License, Copyright (c) 2022 Felix Gündling / MOTIS Project)
+ *    - Flat contiguous timetable array layout, 64-bit service day bitfield filtering,
+ *      and pre-indexed integer lookups removing hot-loop Map queries.
+ */
 package com.easysubway.route.application.service;
 
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
@@ -754,7 +764,7 @@ public final class RouteTimetableRaptorPlanner {
 				ScheduledTrip representative = timetable.patternRepresentative(pattern);
 				for (int board = 0; board < stops.length; board += 1) {
 					if (!representative.allowsPickup(board)) continue;
-					int line = timetable.lineIndex(representative.lineId(board));
+					int line = timetable.patternLine(pattern, board);
 					if (line < 0) continue;
 					for (int alight = board + 1; alight < stops.length; alight += 1) {
 						if (representative.allowsDropOff(alight)
@@ -2586,23 +2596,22 @@ public final class RouteTimetableRaptorPlanner {
 		CompiledTimetable timetable
 	) {
 		ScanInput input = scanInput(query);
+		List<CompiledTimetable.StationDepartureOccurrence> occurrences =
+			timetable.stationDepartures(input.originStationId());
 		Map<String, List<JourneyTimetableRealtimeResolver.Departure>> departuresByLine = new LinkedHashMap<>();
-		for (ScheduledTrip trip : timetable.activeServiceDay(input.serviceDay().date()).trips()) {
-			if (trip.trip().trainNo() == null) {
-				continue;
-			}
-			for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
-				TransitStopTime stop = trip.stopTimes().get(stopIndex);
-				if (!input.originStationId().equals(stop.stationId()) || !trip.allowsPickup(stopIndex)) {
+		if (!occurrences.isEmpty()) {
+			ActiveServiceDay activeDay = timetable.activeServiceDay(input.serviceDay().date());
+			for (CompiledTimetable.StationDepartureOccurrence occ : occurrences) {
+				if (!activeDay.hasTrip(occ.tripIndex())) {
 					continue;
 				}
-				departuresByLine.computeIfAbsent(stop.lineId(), ignored -> new ArrayList<>())
+				ScheduledTrip trip = timetable.scheduledTrip(occ.tripIndex());
+				departuresByLine.computeIfAbsent(occ.lineId(), ignored -> new ArrayList<>())
 					.add(new JourneyTimetableRealtimeResolver.Departure(
-						stop.stationId(), stop.lineId(), trip.trip().id(), trip.trip().trainNo(), trip.trip().servicePattern(),
-						input.serviceDay().date(), stop.stopSequence(),
-						serviceInstant(input.serviceDay(), trip.arrivalSeconds(stopIndex)),
-						serviceInstant(input.serviceDay(), trip.departureSeconds(stopIndex))));
-				break;
+						input.originStationId(), occ.lineId(), trip.trip().id(), occ.trainNo(), occ.servicePattern(),
+						input.serviceDay().date(), occ.stopSequence(),
+						serviceInstant(input.serviceDay(), trip.arrivalSeconds(occ.stopIndex())),
+						serviceInstant(input.serviceDay(), trip.departureSeconds(occ.stopIndex()))));
 			}
 		}
 		Instant readyAt = serviceInstant(input.serviceDay(), input.readyAtSeconds());
@@ -2875,7 +2884,12 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[][] stopOccurrences;
 		private final int[][] packedFirstPatternPosByStop;
 		private final int[][] slotOfStopInPattern;
-		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
+		private final Map<String, Integer> tripIndexById;
+		private final Map<String, List<StationDepartureOccurrence>> departuresByStation;
+		private final java.util.concurrent.ConcurrentHashMap<LocalDate, ActiveServiceDay> activeServiceDays =
+			new java.util.concurrent.ConcurrentHashMap<>();
+		private final java.util.concurrent.ConcurrentLinkedDeque<LocalDate> activeServiceDayOrder =
+			new java.util.concurrent.ConcurrentLinkedDeque<>();
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
 		private final int[] stationSlotOffsets;
@@ -3152,7 +3166,46 @@ public final class RouteTimetableRaptorPlanner {
 			}
 			destinationLowerBounds = new AtomicReferenceArray<>(numStations);
 			carDoorHintsByStationLine = indexCarDoorHintsByStationLine(source.routeAccessData().carDoorHints());
+
+			Map<String, Integer> tripMap = new HashMap<>(scheduledTrips.size());
+			for (ScheduledTrip trip : scheduledTrips) {
+				String id = trip.trip().id();
+				if (tripMap.putIfAbsent(id, trip.index()) != null) {
+					tripMap.put(id, -2);
+				}
+			}
+			this.tripIndexById = Map.copyOf(tripMap);
+
+			Map<String, List<StationDepartureOccurrence>> depTemp = new HashMap<>();
+			for (ScheduledTrip trip : scheduledTrips) {
+				if (trip.trip().trainNo() == null) continue;
+				List<TransitStopTime> stopTimes = trip.stopTimes();
+				Set<String> seenStations = new HashSet<>(stopTimes.size());
+				for (int stopIndex = 0; stopIndex < stopTimes.size(); stopIndex++) {
+					if (!trip.allowsPickup(stopIndex)) continue;
+					TransitStopTime stop = stopTimes.get(stopIndex);
+					if (!seenStations.add(stop.stationId())) continue;
+					depTemp.computeIfAbsent(stop.stationId(), ignored -> new ArrayList<>())
+						.add(new StationDepartureOccurrence(
+							trip.index(), stopIndex, stop.lineId(), trip.trip().trainNo(),
+							trip.trip().servicePattern(), stop.stopSequence()));
+				}
+			}
+			Map<String, List<StationDepartureOccurrence>> depBuilt = HashMap.newHashMap(depTemp.size());
+			for (var entry : depTemp.entrySet()) {
+				depBuilt.put(entry.getKey(), List.copyOf(entry.getValue()));
+			}
+			this.departuresByStation = Map.copyOf(depBuilt);
 		}
+
+		record StationDepartureOccurrence(
+			int tripIndex,
+			int stopIndex,
+			String lineId,
+			String trainNo,
+			String servicePattern,
+			int stopSequence
+		) {}
 
 		private static Map<CarDoorStationLineKey, List<LoadRouteTimetablePort.CarDoorHint>> indexCarDoorHintsByStationLine(
 			List<LoadRouteTimetablePort.CarDoorHint> hints
@@ -3569,17 +3622,13 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		int uniqueScheduledTripIndex(String tripId) {
-			int selected = -1;
-			for (ScheduledTrip trip : scheduledTrips) {
-				if (!trip.trip().id().equals(tripId)) {
-					continue;
-				}
-				if (selected >= 0) {
-					return -1;
-				}
-				selected = trip.index();
-			}
-			return selected;
+			if (tripId == null) return -1;
+			Integer idx = tripIndexById.get(tripId);
+			return (idx != null && idx >= 0) ? idx : -1;
+		}
+
+		List<StationDepartureOccurrence> stationDepartures(String stationId) {
+			return departuresByStation.getOrDefault(stationId, List.of());
 		}
 
 		int patternOfScheduledTrip(int scheduledTripIndex) {
@@ -3598,11 +3647,41 @@ public final class RouteTimetableRaptorPlanner {
 			return Math.toIntExact(scheduledTrips.stream().filter(trip -> trip.times() != null).count());
 		}
 
-		synchronized ActiveServiceDay activeServiceDay(LocalDate serviceDate) {
+		ActiveServiceDay activeServiceDay(LocalDate serviceDate) {
 			ActiveServiceDay cached = activeServiceDays.get(serviceDate);
 			if (cached != null) {
+				recordAccess(serviceDate);
 				return cached;
 			}
+			ActiveServiceDay compiled = compileActiveServiceDay(serviceDate);
+			ActiveServiceDay existing = activeServiceDays.putIfAbsent(serviceDate, compiled);
+			if (existing != null) {
+				recordAccess(serviceDate);
+				return existing;
+			}
+			recordNewEntry(serviceDate);
+			return compiled;
+		}
+
+		private synchronized void recordAccess(LocalDate date) {
+			activeServiceDayOrder.remove(date);
+			activeServiceDayOrder.add(date);
+		}
+
+		private synchronized void recordNewEntry(LocalDate date) {
+			activeServiceDayOrder.remove(date);
+			activeServiceDayOrder.add(date);
+			while (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
+				LocalDate oldest = activeServiceDayOrder.poll();
+				if (oldest != null) {
+					activeServiceDays.remove(oldest);
+				} else {
+					break;
+				}
+			}
+		}
+
+		private ActiveServiceDay compileActiveServiceDay(LocalDate serviceDate) {
 			int wordCount = (serviceCount + 63) >>> 6;
 			long[] activeWords = new long[wordCount];
 			DayCalendarEntry[] dayCalendars = calendarsByDayIndex[serviceDate.getDayOfWeek().ordinal()];
@@ -3644,19 +3723,14 @@ public final class RouteTimetableRaptorPlanner {
 				}
 				activeTripsByPattern.add(List.copyOf(matched));
 			}
-			ActiveServiceDay compiled = new ActiveServiceDay(List.copyOf(activeTrips), List.copyOf(activeTripsByPattern));
-			activeServiceDays.put(serviceDate, compiled);
-			if (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
-				activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
-			}
-			return compiled;
+			return new ActiveServiceDay(List.copyOf(activeTrips), List.copyOf(activeTripsByPattern));
 		}
 
-		synchronized int activeServiceDayCacheSize() {
+		int activeServiceDayCacheSize() {
 			return activeServiceDays.size();
 		}
 
-		synchronized boolean isServiceDayCached(LocalDate serviceDate) {
+		boolean isServiceDayCached(LocalDate serviceDate) {
 			return activeServiceDays.containsKey(serviceDate);
 		}
 
@@ -4334,11 +4408,27 @@ public final class RouteTimetableRaptorPlanner {
 
 		private final List<ScheduledTrip> trips;
 		private final List<List<ScheduledTrip>> tripsByPattern;
+		private final long[] activeTripWords;
 		private volatile Map<String, List<BoardingStop>> boardingsByStation;
 
 		private ActiveServiceDay(List<ScheduledTrip> trips, List<List<ScheduledTrip>> tripsByPattern) {
 			this.trips = List.copyOf(trips);
 			this.tripsByPattern = tripsByPattern;
+			int maxTripIdx = 0;
+			for (ScheduledTrip trip : trips) {
+				if (trip.index() > maxTripIdx) maxTripIdx = trip.index();
+			}
+			long[] words = new long[(maxTripIdx + 64) >>> 6];
+			for (ScheduledTrip trip : trips) {
+				int idx = trip.index();
+				words[idx >>> 6] |= (1L << (idx & 63));
+			}
+			this.activeTripWords = words;
+		}
+
+		boolean hasTrip(int tripIndex) {
+			int wordIdx = tripIndex >>> 6;
+			return wordIdx < activeTripWords.length && (activeTripWords[wordIdx] & (1L << (tripIndex & 63))) != 0L;
 		}
 
 		private List<ScheduledTrip> trips() {
@@ -5670,21 +5760,99 @@ public final class RouteTimetableRaptorPlanner {
 			if (pool.traceKeys[index] != null) {
 				return pool.traceKeys[index];
 			}
-			int parent = pool.parentIndex[index];
-			String parentKey = parent >= 0 ? traceKey(pool, parent) : "";
-			if (pool.trip[index] == null && pool.tripIndex[index] < 0) {
-				return pool.traceKeys[index] = parentKey;
+			int curr = index;
+			int depth = 0;
+			while (curr >= 0) {
+				if (pool.traceKeys[curr] != null) {
+					break;
+				}
+				depth++;
+				curr = pool.parentIndex[curr];
 			}
-			return pool.traceKeys[index] = parentKey + '/' + pool.serviceDate[index] + ':'
-				+ pool.tripIndex[index] + ':' + pool.fromStopIndex[index]
-				+ ':' + pool.toStopIndex[index] + ':' + pool.transition[index];
+			String prefix = curr >= 0 ? pool.traceKeys[curr] : "";
+			int[] path = new int[depth];
+			curr = index;
+			for (int d = depth - 1; d >= 0; d--) {
+				path[d] = curr;
+				curr = pool.parentIndex[curr];
+			}
+			StringBuilder sb = new StringBuilder(prefix.length() + depth * 32);
+			sb.append(prefix);
+			for (int i = 0; i < depth; i++) {
+				int node = path[i];
+				if (hasSegment(pool, node)) {
+					sb.append('/').append(pool.serviceDate[node]).append(':')
+						.append(pool.tripIndex[node]).append(':')
+						.append(pool.fromStopIndex[node]).append(':')
+						.append(pool.toStopIndex[node]).append(':')
+						.append(pool.transition[node]);
+				}
+				pool.traceKeys[node] = sb.toString();
+			}
+			return pool.traceKeys[index];
+		}
+
+		private static final int[] EMPTY_INTS = new int[0];
+
+		private static boolean hasSegment(PrimitiveProfileLabelPool pool, int node) {
+			return pool.trip[node] != null || pool.tripIndex[node] >= 0;
+		}
+
+		private static boolean sameSegment(PrimitiveProfileLabelPool pool, int l, int r) {
+			return pool.tripIndex[l] == pool.tripIndex[r]
+				&& pool.fromStopIndex[l] == pool.fromStopIndex[r]
+				&& pool.toStopIndex[l] == pool.toStopIndex[r]
+				&& pool.transition[l] == pool.transition[r]
+				&& Objects.equals(pool.serviceDate[l], pool.serviceDate[r]);
+		}
+
+		private static int compareSegment(PrimitiveProfileLabelPool pool, int l, int r) {
+			String segL = "/" + pool.serviceDate[l] + ":" + pool.tripIndex[l] + ":"
+				+ pool.fromStopIndex[l] + ":" + pool.toStopIndex[l] + ":" + pool.transition[l];
+			String segR = "/" + pool.serviceDate[r] + ":" + pool.tripIndex[r] + ":"
+				+ pool.fromStopIndex[r] + ":" + pool.toStopIndex[r] + ":" + pool.transition[r];
+			return segL.compareTo(segR);
+		}
+
+		private static int[] collectSegments(PrimitiveProfileLabelPool pool, int index) {
+			if (index < 0) return EMPTY_INTS;
+			int curr = index;
+			int count = 0;
+			while (curr >= 0) {
+				if (hasSegment(pool, curr)) count++;
+				curr = pool.parentIndex[curr];
+			}
+			int[] segs = new int[count];
+			curr = index;
+			int idx = count - 1;
+			while (curr >= 0) {
+				if (hasSegment(pool, curr)) {
+					segs[idx--] = curr;
+				}
+				curr = pool.parentIndex[curr];
+			}
+			return segs;
 		}
 
 		static int compareTrace(PrimitiveProfileLabelPool pool, int left, int right) {
 			if (left == right) {
 				return 0;
 			}
-			return traceKey(pool, left).compareTo(traceKey(pool, right));
+			if (pool.traceKeys[left] != null && pool.traceKeys[right] != null) {
+				return pool.traceKeys[left].compareTo(pool.traceKeys[right]);
+			}
+			int[] segsLeft = collectSegments(pool, left);
+			int[] segsRight = collectSegments(pool, right);
+			int minLen = Math.min(segsLeft.length, segsRight.length);
+			for (int i = 0; i < minLen; i++) {
+				int lNode = segsLeft[i];
+				int rNode = segsRight[i];
+				if (sameSegment(pool, lNode, rNode)) {
+					continue;
+				}
+				return compareSegment(pool, lNode, rNode);
+			}
+			return Integer.compare(segsLeft.length, segsRight.length);
 		}
 	}
 
@@ -5842,7 +6010,7 @@ public final class RouteTimetableRaptorPlanner {
 				ScheduledTrip representative = timetable.patternRepresentative(pattern);
 				int[] result = new int[stops.length];
 				for (int board = 0; board < stops.length; board += 1) {
-					int line = timetable.lineIndex(representative.lineId(board));
+					int line = timetable.patternLine(pattern, board);
 					int best = UNREACHABLE_BOARDINGS;
 					for (int alight = board + 1; alight < stops.length && line >= 0; alight += 1) {
 						if (!representative.allowsDropOff(alight)) continue;
@@ -6066,7 +6234,8 @@ public final class RouteTimetableRaptorPlanner {
 		) {
 			List<ProfileDestinationLabel> candidates = new ArrayList<>();
 			int earliestArrival = UNREACHED;
-			for (int slot = 0, cap = labelsByState.capacity(); slot < cap; slot += 1) {
+			for (int idx = 0, count = labelsByState.touchedCount(); idx < count; idx += 1) {
+				int slot = labelsByState.touchedSlotAt(idx);
 				long stateKey = labelsByState.keyAt(slot);
 				if (stateKey == PrimitiveLongObjectMap.EMPTY_KEY) {
 					continue;
@@ -6076,8 +6245,8 @@ public final class RouteTimetableRaptorPlanner {
 				// #454: 도착역의 어느 승강장(역-노선)에 내려도 도착이다. 하차 시간·거리를 더하지 않는다.
 				if (stateStation != destination || stateBoardings == 0) continue;
 				IntArrayList list = labelsByState.valueAt(slot);
-				int count = list.size();
-				for (int i = 0; i < count; i++) {
+				int labelCount = list.size();
+				for (int i = 0; i < labelCount; i++) {
 					int label = list.get(i);
 					limits.consumeWork();
 					earliestArrival = Math.min(earliestArrival, pool.arrivalSeconds[label]);
@@ -6190,7 +6359,7 @@ public final class RouteTimetableRaptorPlanner {
 				if (!dominated) frontier.add(candidate);
 				else limits.count("FORWARD_DESTINATION_DOMINANCE_V1");
 			}
-			frontier.sort(Comparator.comparing(candidate -> PrimitiveProfileLabelPool.traceKey(pool, candidate.labelIndex())));
+			frontier.sort((a, b) -> PrimitiveProfileLabelPool.compareTrace(pool, a.labelIndex(), b.labelIndex()));
 			return List.copyOf(frontier);
 		}
 

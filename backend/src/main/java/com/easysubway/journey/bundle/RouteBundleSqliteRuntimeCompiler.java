@@ -310,9 +310,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 					|| !root.path("eligible").isBoolean() || !root.path("eligible").booleanValue()) {
 					throw new IllegalArgumentException("accessibility evidence identity is invalid");
 				}
-				ObjectNode unsigned = ((ObjectNode) root).deepCopy();
-				unsigned.remove("evaluationDigest");
-				if (!evaluationDigest.equals(sha256(canonical(unsigned).getBytes(StandardCharsets.UTF_8)))) {
+				String unsignedJson = canonicalWithout(root, "evaluationDigest");
+				if (!evaluationDigest.equals(sha256(unsignedJson.getBytes(StandardCharsets.UTF_8)))) {
 					throw new IllegalArgumentException("accessibility evidence digest mismatch");
 				}
 				JsonNode results = root.path("results");
@@ -332,11 +331,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 						|| !edge.rawSha256().equals(result.path("rawEdgeSha256").textValue())) {
 						throw new IllegalArgumentException("accessibility evidence result mismatch");
 					}
-					ObjectNode unsignedResult = ((ObjectNode) result).deepCopy();
-					String resultDigest = unsignedResult.path("evidenceSha256").textValue();
-					unsignedResult.remove("evidenceSha256");
+					String resultDigest = result.path("evidenceSha256").textValue();
 					if (!requireSha256(resultDigest, "edge evidence digest")
-						.equals(sha256(canonical(unsignedResult).getBytes(StandardCharsets.UTF_8)))) {
+						.equals(sha256(canonicalWithout(result, "evidenceSha256").getBytes(StandardCharsets.UTF_8)))) {
 						throw new IllegalArgumentException("accessibility edge evidence digest mismatch");
 					}
 					evaluations.put(edgeId, new Evaluation(state, result.path("reason").textValue()));
@@ -856,24 +853,34 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	private static String canonical(JsonNode node) throws IOException {
-		return JSON.writeValueAsString(sorted(node));
+		return canonicalWithout(node, null);
 	}
 
-	private static JsonNode sorted(JsonNode node) {
+	private static String canonicalWithout(JsonNode node, String excludedKey) throws IOException {
+		return JSON.writeValueAsString(sortedWithout(node, excludedKey));
+	}
+
+	private static JsonNode sortedWithout(JsonNode node, String excludedKey) {
 		if (node.isObject()) {
 			ObjectNode result = JSON.createObjectNode();
 			var names = new ArrayList<String>();
-			node.fieldNames().forEachRemaining(names::add);
+			node.fieldNames().forEachRemaining(name -> {
+				if (!name.equals(excludedKey)) {
+					names.add(name);
+				}
+			});
 			names.sort(Comparator.naturalOrder());
-			for (var name : names) result.set(name, sorted(node.get(name)));
+			for (var name : names) {
+				result.set(name, sortedWithout(node.get(name), null));
+			}
 			return result;
 		}
 		if (node.isArray()) {
 			ArrayNode result = JSON.createArrayNode();
-			node.forEach(value -> result.add(sorted(value)));
+			node.forEach(value -> result.add(sortedWithout(value, null)));
 			return result;
 		}
-		return node.deepCopy();
+		return node;
 	}
 
 	private static String sha256(byte[] bytes) {
@@ -943,9 +950,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 
 		@Override
 		public Map<String, byte[]> compressedPayloads() {
-			var copied = new LinkedHashMap<String, byte[]>();
-			compressedPayloads.forEach((path, bytes) -> copied.put(path, bytes.clone()));
-			return Map.copyOf(copied);
+			return compressedPayloads;
 		}
 	}
 
