@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jre@sha256:371da296b8cb74c7e53fbe7083d5374befc0011b493231d97d45fa789915e434
+FROM eclipse-temurin:21-jre@sha256:ca73b4d3961703d6d7830a4361f49ef0478f8f28b39defc07bb72f4cc7f834f6
 
 RUN groupadd --system --gid 10001 app && \
     useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app && \
@@ -25,4 +25,4 @@ ENV SPRING_PROFILES_ACTIVE=prod
 
 USER 10001:10001
 
-ENTRYPOINT ["java", "-Dorg.sqlite.lib.path=/opt/easysubway/native", "-Dorg.sqlite.lib.name=libsqlitejdbc.so", "-DZstdNativePath=/opt/easysubway/native/libzstd-jni-1.5.7-13.so", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-XX:-UseBASE64Intrinsics", "-Dorg.sqlite.lib.path=/opt/easysubway/native", "-Dorg.sqlite.lib.name=libsqlitejdbc.so", "-DZstdNativePath=/opt/easysubway/native/libzstd-jni-1.5.7-13.so", "-jar", "/app/app.jar"]

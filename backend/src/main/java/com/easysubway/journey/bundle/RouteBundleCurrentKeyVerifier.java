@@ -20,12 +20,18 @@ import java.util.regex.Pattern;
 public final class RouteBundleCurrentKeyVerifier {
 
 	static final int MAX_TRUSTED_KEYS = 8;
+	static final int MAX_SIGNATURE_BASE64_CHARS = 1_368;
+	static final int MAX_PUBLIC_KEY_BASE64_CHARS = 4_096;
 	private static final String SIGNING_INPUT_PATH = "manifest.signing-input.json";
 	private static final String SIGNATURE_ALGORITHM = "rsa-sha256-server-route-bundle-v1";
 	private static final String JCA_SIGNATURE_ALGORITHM = "SHA256withRSA";
 	private static final String PEM_HEADER = "-----BEGIN PUBLIC KEY-----";
 	private static final String PEM_FOOTER = "-----END PUBLIC KEY-----";
 	private static final Pattern PEM_BODY = Pattern.compile("[A-Za-z0-9+/]+={0,2}");
+	private static final long BASE64_URL_LO = (((1L << 10) - 1L) << '0') | (1L << '-');
+	private static final long BASE64_URL_HI = (((1L << 26) - 1L) << ('A' - 64))
+		| (((1L << 26) - 1L) << ('a' - 64))
+		| (1L << ('_' - 64));
 
 	private RouteBundleCurrentKeyVerifier() {
 	}
@@ -260,6 +266,8 @@ public final class RouteBundleCurrentKeyVerifier {
 			normalized.length() - PEM_FOOTER.length() - 1);
 		String compact = body.replace("\n", "");
 		if (compact.isEmpty()
+			|| compact.length() > MAX_PUBLIC_KEY_BASE64_CHARS
+			|| (compact.length() & 3) != 0
 			|| !PEM_BODY.matcher(compact).matches()
 			|| body.startsWith("\n")
 			|| body.endsWith("\n")
@@ -280,7 +288,10 @@ public final class RouteBundleCurrentKeyVerifier {
 		}
 	}
 
-	private static void verifySignature(PublicKey publicKey, byte[] signingInputBytes, String signatureValue) {
+	static void verifySignature(PublicKey publicKey, byte[] signingInputBytes, String signatureValue) {
+		if (!isValidSignatureBase64Url(signatureValue)) {
+			throw failure(Reason.MANIFEST_SIGNATURE_INVALID, "manifest signature is malformed");
+		}
 		try {
 			Signature verifier = Signature.getInstance(JCA_SIGNATURE_ALGORITHM);
 			verifier.initVerify(publicKey);
@@ -294,6 +305,35 @@ public final class RouteBundleCurrentKeyVerifier {
 		} catch (java.security.GeneralSecurityException | IllegalArgumentException exception) {
 			throw failure(Reason.MANIFEST_SIGNATURE_INVALID, "manifest signature is malformed", exception);
 		}
+	}
+
+	private static boolean isValidSignatureBase64Url(String value) {
+		if (value == null) {
+			return false;
+		}
+		int len = value.length();
+		if (len == 0 || len > MAX_SIGNATURE_BASE64_CHARS || (len & 3) == 1) {
+			return false;
+		}
+		int padCount = 0;
+		for (int i = 0; i < len; i++) {
+			char ch = value.charAt(i);
+			if (ch == '=') {
+				if ((len & 3) != 0 || ++padCount > 2) {
+					return false;
+				}
+			} else if (padCount > 0 || !isBase64UrlChar(ch)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isBase64UrlChar(char ch) {
+		if (ch < 64) {
+			return ((BASE64_URL_LO >>> ch) & 1L) != 0L;
+		}
+		return ch < 128 && ((BASE64_URL_HI >>> (ch - 64)) & 1L) != 0L;
 	}
 
 	private static String sha256(byte[] value) {

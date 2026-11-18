@@ -192,7 +192,7 @@ jobs:
               test ! -w /opt/easysubway/native/libzstd-jni-1.5.7-13.so
               touch /tmp/runtime-write-check
               touch /opt/easysubway/logs/runtime-write-check
-              java -XX:-UsePerfData \
+              java -XX:-UsePerfData -XX:-UseBASE64Intrinsics \
                 -Dorg.sqlite.lib.path=/opt/easysubway/native \
                 -Dorg.sqlite.lib.name=libsqlitejdbc.so \
                 -DZstdNativePath=/opt/easysubway/native/libzstd-jni-1.5.7-13.so \

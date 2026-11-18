@@ -27,6 +27,9 @@ final class FacilityReportPhotoProcessor {
 	private static final int MAX_PHOTO_HEIGHT = 4_096;
 	private static final long MAX_PHOTO_PIXELS = 12_000_000;
 	private static final int THUMBNAIL_MAX_SIDE = 320;
+	private static final long BASE64_STD_LO = (((1L << 10) - 1L) << '0') | (1L << '+') | (1L << '/');
+	private static final long BASE64_STD_HI = (((1L << 26) - 1L) << ('A' - 64))
+		| (((1L << 26) - 1L) << ('a' - 64));
 
 	FacilityReportPhotoAttachment processBytes(String fileName, String contentType, byte[] rawBytes) {
 		validateAttachmentMetadata(fileName, contentType);
@@ -114,20 +117,45 @@ final class FacilityReportPhotoProcessor {
 		}
 	}
 
-	private byte[] decode(String photoBase64) {
+	byte[] decode(String photoBase64) {
 		String normalized = photoBase64.trim();
 		if (normalized.length() > MAX_PHOTO_BASE64_CHARS) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
-		try {
-			byte[] decodedBytes = Base64.getDecoder().decode(normalized);
-			if (decodedBytes.length > MAX_PHOTO_BYTES) {
-				throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
-			}
-			return decodedBytes;
-		} catch (IllegalArgumentException exception) {
+		if (!isCanonicalStandardBase64(normalized)) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
+		byte[] decodedBytes = Base64.getDecoder().decode(normalized);
+		if (decodedBytes.length > MAX_PHOTO_BYTES) {
+			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+		}
+		return decodedBytes;
+	}
+
+	private static boolean isCanonicalStandardBase64(String value) {
+		int len = value.length();
+		if (len == 0 || (len & 3) != 0) {
+			return false;
+		}
+		int padCount = 0;
+		for (int i = 0; i < len; i++) {
+			char ch = value.charAt(i);
+			if (ch == '=') {
+				if (++padCount > 2) {
+					return false;
+				}
+			} else if (padCount > 0 || !isStandardBase64Char(ch)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isStandardBase64Char(char ch) {
+		if (ch < 64) {
+			return ((BASE64_STD_LO >>> ch) & 1L) != 0L;
+		}
+		return ch < 128 && ((BASE64_STD_HI >>> (ch - 64)) & 1L) != 0L;
 	}
 
 	private void requireSupportedMagic(byte[] bytes, String contentType) {

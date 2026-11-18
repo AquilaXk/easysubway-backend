@@ -478,6 +478,72 @@ class HttpDatapackReleaseCatalogAdapterTest {
 	}
 
 	@Test
+	void rejectsMultiblockMalformedPaddingAndOversizedSignaturesAndPemInputs() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] validManifest = signedManifest(keyPair, 42);
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		var responseHolder = new java.util.concurrent.atomic.AtomicReference<>(validManifest);
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, responseHolder.get()));
+		server.createContext("/catalog/release-requests/"
+			+ sha256("request-sec".getBytes(StandardCharsets.UTF_8)) + ".json",
+			exchange -> respond(exchange, responseHolder.get()));
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			String oversizedPem = "-----BEGIN PUBLIC KEY-----\n"
+				+ "\n".repeat(8_200)
+				+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+					.encodeToString(keyPair.getPublic().getEncoded())
+				+ "\n-----END PUBLIC KEY-----";
+			var oversizedPemAdapter = new HttpDatapackReleaseCatalogAdapter(
+				baseUrl, oversizedPem, "production-v1");
+			assertThatThrownBy(() -> oversizedPemAdapter.fetchCurrent("production"))
+				.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.pemBytes(null))
+				.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.pemBytes("A".repeat(8_193)))
+				.isInstanceOf(IllegalArgumentException.class);
+			assertThat(HttpDatapackReleaseCatalogAdapter.isValidSignatureBase64Url(null)).isFalse();
+
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				baseUrl, publicKey(keyPair), "production-v1");
+			for (String malformedSignature : java.util.List.of(
+				"",
+				"AQID",
+				"0".repeat(85) + "===",
+				"0".repeat(44) + "=" + "A".repeat(43),
+				"A".repeat(89),
+				"A".repeat(86) + "=",
+				"A".repeat(87) + "+",
+				"A".repeat(87) + "/",
+				"A".repeat(87) + "~",
+				"A".repeat(87) + "\u0080",
+				"A".repeat(1_369),
+				"A".repeat(1_372)
+			)) {
+				var tamperedManifest = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(validManifest);
+				((com.fasterxml.jackson.databind.node.ObjectNode) tamperedManifest.get("signature"))
+					.put("value", malformedSignature);
+				responseHolder.set(JSON.writeValueAsBytes(tamperedManifest));
+				assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+					.as("manifest signature %s", malformedSignature)
+					.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+
+				var tamperedBinding = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(
+					signedBinding(keyPair, 42, "request-sec", sha256(validManifest)));
+				((com.fasterxml.jackson.databind.node.ObjectNode) tamperedBinding.get("signature"))
+					.put("value", malformedSignature);
+				responseHolder.set(JSON.writeValueAsBytes(tamperedBinding));
+				assertThatThrownBy(() -> adapter.findByRequest("production", "request-sec"))
+					.as("binding signature %s", malformedSignature)
+					.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+			}
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
 	void requestBindingLookupFailsClosedOnUnavailableCatalogAndMalformedBinding() throws Exception {
 		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
 		for (var body : new String[] {null, "not-json"}) {

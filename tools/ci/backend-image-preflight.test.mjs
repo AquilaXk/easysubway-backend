@@ -23,7 +23,7 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
   ]);
   assert.doesNotMatch(dockerfile, /^[\t ]*ADD\b/im);
   assert.doesNotMatch(dockerfile, /JAVA_TOOL_OPTIONS/);
-  assert.match(dockerfile, /ENTRYPOINT \["java", "-Dorg\.sqlite\.lib\.path=\/opt\/easysubway\/native", "-Dorg\.sqlite\.lib\.name=libsqlitejdbc\.so", "-DZstdNativePath=\/opt\/easysubway\/native\/libzstd-jni-1\.5\.7-13\.so", "-jar", "\/app\/app\.jar"\]/);
+  assert.match(dockerfile, /ENTRYPOINT \["java", "-XX:-UseBASE64Intrinsics", "-Dorg\.sqlite\.lib\.path=\/opt\/easysubway\/native", "-Dorg\.sqlite\.lib\.name=libsqlitejdbc\.so", "-DZstdNativePath=\/opt\/easysubway\/native\/libzstd-jni-1\.5\.7-13\.so", "-jar", "\/app\/app\.jar"\]/);
 
   const preflight = workflow.slice(0, workflow.indexOf('\n  backend-release:'));
   const step = preflight.match(
@@ -92,7 +92,7 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'test ! -w /opt/easysubway/native/libsqlitejdbc.so',
     'test -r /opt/easysubway/native/libzstd-jni-1.5.7-13.so',
     'test ! -w /opt/easysubway/native/libzstd-jni-1.5.7-13.so',
-    'java -XX:-UsePerfData',
+    'java -XX:-UsePerfData -XX:-UseBASE64Intrinsics',
     '-Dorg.sqlite.lib.path=/opt/easysubway/native',
     '-Dorg.sqlite.lib.name=libsqlitejdbc.so',
     '-DZstdNativePath=/opt/easysubway/native/libzstd-jni-1.5.7-13.so',

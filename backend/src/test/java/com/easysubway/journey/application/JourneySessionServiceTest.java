@@ -130,6 +130,98 @@ class JourneySessionServiceTest {
 	}
 
 	@Test
+	void rejectsMultiblockMalformedAndOversizedRequestHashesAndAcceptsCanonicalSinglePad() {
+		for (String malformedHash : List.of(
+			"",
+			"A".repeat(85) + "===",
+			"A".repeat(44) + "=" + "A".repeat(43),
+			"A".repeat(89),
+			"A".repeat(88),
+			REQUEST_HASH.substring(0, 42) + "+",
+			REQUEST_HASH.substring(0, 42) + "/",
+			REQUEST_HASH.substring(0, 42) + "~",
+			REQUEST_HASH.substring(0, 42) + "\u0080",
+			REQUEST_HASH.substring(0, 42) + "=",
+			REQUEST_HASH + "A",
+			REQUEST_HASH + "=="
+		)) {
+			assertThat(JourneySessionService.isValidRequestHashFormat(malformedHash))
+				.as("malformed requestHash %s", malformedHash)
+				.isFalse();
+			Fakes fakes = new Fakes();
+			fakes.verdict = copy(
+				fakes.verdict,
+				fakes.verdict.requestPackageName(),
+				malformedHash,
+				fakes.verdict.requestTimestamp(),
+				fakes.verdict.appPackageName(),
+				fakes.verdict.appRecognitionVerdict(),
+				fakes.verdict.certificateSha256Digests(),
+				fakes.verdict.appLicensingVerdict(),
+				fakes.verdict.deviceRecognitionVerdicts()
+			);
+			assertFailure(() -> fakes.service().issue("integrity-token", NONCE), Kind.ATTESTATION_REJECTED);
+			assertThat(fakes.claimCalls).isZero();
+		}
+		assertThat(JourneySessionService.isValidRequestHashFormat(null)).isFalse();
+		assertThat(JourneySessionService.isValidRequestHashFormat(REQUEST_HASH)).isTrue();
+		assertThat(JourneySessionService.isValidRequestHashFormat(REQUEST_HASH + "=")).isTrue();
+
+		Fakes nullHash = new Fakes();
+		nullHash.verdict = copy(
+			nullHash.verdict,
+			nullHash.verdict.requestPackageName(),
+			null,
+			nullHash.verdict.requestTimestamp(),
+			nullHash.verdict.appPackageName(),
+			nullHash.verdict.appRecognitionVerdict(),
+			nullHash.verdict.certificateSha256Digests(),
+			nullHash.verdict.appLicensingVerdict(),
+			nullHash.verdict.deviceRecognitionVerdicts()
+		);
+		assertFailure(() -> nullHash.service().issue("integrity-token", NONCE), Kind.ATTESTATION_REJECTED);
+		assertThat(nullHash.claimCalls).isZero();
+
+		Fakes canonicalSinglePad = new Fakes();
+		canonicalSinglePad.verdict = copy(
+			canonicalSinglePad.verdict,
+			canonicalSinglePad.verdict.requestPackageName(),
+			REQUEST_HASH + "=",
+			canonicalSinglePad.verdict.requestTimestamp(),
+			canonicalSinglePad.verdict.appPackageName(),
+			canonicalSinglePad.verdict.appRecognitionVerdict(),
+			canonicalSinglePad.verdict.certificateSha256Digests(),
+			canonicalSinglePad.verdict.appLicensingVerdict(),
+			canonicalSinglePad.verdict.deviceRecognitionVerdicts()
+		);
+		assertThat(canonicalSinglePad.service().issue("integrity-token", NONCE).scope()).isEqualTo("journey:v3");
+		assertThat(canonicalSinglePad.claimCalls).isOne();
+
+		for (String invalidCertDigest : List.of("", "short", "A".repeat(42) + "+", "A".repeat(42) + "B")) {
+			assertThatThrownBy(() -> new JourneySessionService(
+				token -> validVerdict(),
+				new Fakes().store(),
+				Clock.fixed(NOW, ZoneOffset.UTC),
+				new FixedSecureRandom(),
+				invalidCertDigest,
+				MAX_SEARCHES_PER_SESSION
+			))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("certificateDigest is invalid");
+		}
+		assertThatThrownBy(() -> new JourneySessionService(
+			token -> validVerdict(),
+			new Fakes().store(),
+			Clock.fixed(NOW, ZoneOffset.UTC),
+			new FixedSecureRandom(),
+			null,
+			MAX_SEARCHES_PER_SESSION
+		))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("certificateDigest is invalid");
+	}
+
+	@Test
 	void mapsProviderUnavailableAndDuplicateNonceWithoutRetry() {
 		Fakes unavailable = new Fakes();
 		unavailable.decoderFailure = new ProviderUnavailableException(new IllegalStateException("provider"));
@@ -295,43 +387,47 @@ class JourneySessionServiceTest {
 					if (decoderFailure != null) throw decoderFailure;
 					return verdict;
 				},
-				new JourneySessionStore() {
-					@Override
-					public boolean claimNonceAndSaveSession(
-						String nonceSha256,
-						Instant expiresAt,
-						Instant now,
-						Session session
-					) {
-						claimCalls++;
-						savedNonceSha256 = nonceSha256;
-						nonceExpiresAt = expiresAt;
-						savedSession = session;
-						return claimed;
-					}
-
-					@Override
-					public SessionUse authorizeAndConsume(
-						String tokenSha256,
-						String scope,
-						Instant now,
-						int cost,
-						int maxCostUnits
-					) {
-						authorizeCalls++;
-						authorizedTokenSha256 = tokenSha256;
-						requiredScope = scope;
-						costUnits = cost;
-						maxCostUnitsPerSession = maxCostUnits;
-						if (authorizationFailure != null) throw authorizationFailure;
-						return authorization;
-					}
-				},
+				store(),
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new FixedSecureRandom(),
 				CERTIFICATE_DIGEST,
 				maxSearches
 			);
+		}
+
+		private JourneySessionStore store() {
+			return new JourneySessionStore() {
+				@Override
+				public boolean claimNonceAndSaveSession(
+					String nonceSha256,
+					Instant expiresAt,
+					Instant now,
+					Session session
+				) {
+					claimCalls++;
+					savedNonceSha256 = nonceSha256;
+					nonceExpiresAt = expiresAt;
+					savedSession = session;
+					return claimed;
+				}
+
+				@Override
+				public SessionUse authorizeAndConsume(
+					String tokenSha256,
+					String scope,
+					Instant now,
+					int cost,
+					int maxCostUnits
+				) {
+					authorizeCalls++;
+					authorizedTokenSha256 = tokenSha256;
+					requiredScope = scope;
+					costUnits = cost;
+					maxCostUnitsPerSession = maxCostUnits;
+					if (authorizationFailure != null) throw authorizationFailure;
+					return authorization;
+				}
+			};
 		}
 	}
 

@@ -23,7 +23,7 @@ test('the composite holds the shared setup steps in order, every external action
   const references = [...composite.matchAll(/^\s+uses: ([^\s]+)$/gm)].map(([, reference]) => reference);
   assert.equal(references.length, 3);
   for (const reference of references) assert.match(reference, /@[0-9a-f]{40}$/, `${reference} must be pinned to a commit sha`);
-  assert.match(composite, /java-version: "21\.0\.11"/);
+  assert.match(composite, /java-version: "21\.0\.13"/);
 });
 
 test('the composite takes the Gradle cache and Node.js setup as explicit inputs with the caching defaults', () => {

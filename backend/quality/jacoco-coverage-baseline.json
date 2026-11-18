@@ -16,7 +16,7 @@
     "gradleVersion": "8.14.5",
     "javaVendor": "ADOPTIUM",
     "javaLanguageVersion": 21,
-    "javaLauncherSha256": "b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2",
+    "javaLauncherSha256": "9cad3f2620d3ef2ed10b26f922af7e773d54fdaa05f615d6d6df014f3fec4155",
     "jacocoVersion": "0.8.13",
     "testTask": "test",
     "reportTask": "jacocoTestReport",

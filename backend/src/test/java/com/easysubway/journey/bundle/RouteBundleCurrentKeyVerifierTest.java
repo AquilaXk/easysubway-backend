@@ -202,6 +202,78 @@ class RouteBundleCurrentKeyVerifierTest {
 	}
 
 	@Test
+	void rejectsMultiblockMalformedPaddingAndOversizedBase64InputsBeforeDecoder() throws Exception {
+		KeyPair signingKey = rsaKeyPair();
+		var currentKey = new RouteBundleCurrentKeyVerifier.CurrentKey(
+			"launch-2026", pem(signingKey.getPublic()));
+		for (String malformedUnpaddedSignature : List.of(
+			"A".repeat(89),
+			"A".repeat(1_369),
+			"A".repeat(1_372)
+		)) {
+			var handoff = RouteBundleConsumerHandoffParserTest.fixture("launch-2026", malformedUnpaddedSignature);
+			var failure = assertThrows(
+				RouteBundleCurrentKeyVerifier.VerificationException.class,
+				() -> RouteBundleCurrentKeyVerifier.verify(
+					handoff.bytes(), ACTIVATION_REQUEST, handoff.signingInputBytes(), currentKey));
+			assertEquals(MANIFEST_SIGNATURE_INVALID, failure.reason());
+			assertEquals("manifest signature is malformed", failure.getMessage());
+			assertEquals(null, failure.getCause());
+		}
+
+		var unsigned = RouteBundleConsumerHandoffParserTest.fixture("launch-2026", "AQID");
+		for (String malformedSignature : java.util.Arrays.asList(
+			null,
+			"",
+			"0".repeat(85) + "===",
+			"0".repeat(44) + "=" + "A".repeat(43),
+			"A".repeat(89),
+			"A".repeat(86) + "=",
+			"A".repeat(87) + "+",
+			"A".repeat(87) + "/",
+			"A".repeat(87) + "~",
+			"A".repeat(87) + "\u0080",
+			"A".repeat(1_369),
+			"A".repeat(1_372)
+		)) {
+			var failure = assertThrows(
+				RouteBundleCurrentKeyVerifier.VerificationException.class,
+				() -> RouteBundleCurrentKeyVerifier.verifySignature(
+					signingKey.getPublic(), unsigned.signingInputBytes(), malformedSignature));
+			assertEquals(MANIFEST_SIGNATURE_INVALID, failure.reason());
+			assertEquals("manifest signature is malformed", failure.getMessage());
+			assertEquals(null, failure.getCause());
+		}
+
+		Signature signer = Signature.getInstance("SHA256withRSA");
+		signer.initSign(signingKey.getPrivate());
+		signer.update(unsigned.signingInputBytes());
+		String paddedSignature = Base64.getUrlEncoder().encodeToString(signer.sign());
+		RouteBundleCurrentKeyVerifier.verifySignature(
+			signingKey.getPublic(), unsigned.signingInputBytes(), paddedSignature);
+
+		var valid = signedFixture(signingKey, "launch-2026");
+		for (String invalidPemBody : List.of(
+			"A".repeat(4_100),
+			"A".repeat(86),
+			"A".repeat(85) + "===",
+			"A".repeat(44) + "=" + "A".repeat(43)
+		)) {
+			String invalidPem = "-----BEGIN PUBLIC KEY-----\n" + invalidPemBody + "\n-----END PUBLIC KEY-----";
+			var failure = assertThrows(
+				RouteBundleCurrentKeyVerifier.VerificationException.class,
+				() -> RouteBundleCurrentKeyVerifier.verify(
+					valid.bytes(),
+					ACTIVATION_REQUEST,
+					valid.signingInputBytes(),
+					new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", invalidPem)));
+			assertEquals(CURRENT_KEY_CONFIG_INVALID, failure.reason());
+			assertEquals("current public key PEM body is invalid", failure.getMessage());
+			assertEquals(null, failure.getCause());
+		}
+	}
+
+	@Test
 	void rejectsStaleSignedBytesAfterManifestAndUnkeyedEvidenceAreRebound() throws Exception {
 		KeyPair signingKey = rsaKeyPair();
 		var original = RouteBundleConsumerHandoffParserTest.fixture("launch-2026", "AQID");

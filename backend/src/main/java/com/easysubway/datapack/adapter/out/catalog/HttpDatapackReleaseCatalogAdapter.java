@@ -36,6 +36,12 @@ import org.springframework.stereotype.Component;
 @Component
 public final class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalogPort {
 	static final int MAX_TRUSTED_SIGNING_KEYS = 8;
+	static final int MAX_SIGNATURE_BASE64_CHARS = 1_368;
+	static final int MAX_PUBLIC_KEY_PEM_CHARS = 8_192;
+	private static final long BASE64_URL_LO = (((1L << 10) - 1L) << '0') | (1L << '-');
+	private static final long BASE64_URL_HI = (((1L << 26) - 1L) << ('A' - 64))
+		| (((1L << 26) - 1L) << ('a' - 64))
+		| (1L << ('_' - 64));
 
 	public record TrustedSigningKey(String keyId, String publicKeyPem) {}
 
@@ -249,6 +255,9 @@ public final class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseC
 	}
 
 	private static boolean verify(JsonNode manifest, PublicKey publicKey, String signatureValue) {
+		if (!isValidSignatureBase64Url(signatureValue)) {
+			return false;
+		}
 		try {
 			var verifier = Signature.getInstance("SHA256withRSA");
 			verifier.initVerify(publicKey);
@@ -259,6 +268,35 @@ public final class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseC
 		} catch (java.security.GeneralSecurityException | IllegalArgumentException exception) {
 			return false;
 		}
+	}
+
+	static boolean isValidSignatureBase64Url(String value) {
+		if (value == null) {
+			return false;
+		}
+		int len = value.length();
+		if (len == 0 || len > MAX_SIGNATURE_BASE64_CHARS || (len & 3) == 1) {
+			return false;
+		}
+		int padCount = 0;
+		for (int i = 0; i < len; i++) {
+			char ch = value.charAt(i);
+			if (ch == '=') {
+				if ((len & 3) != 0 || ++padCount > 2) {
+					return false;
+				}
+			} else if (padCount > 0 || !isBase64UrlChar(ch)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isBase64UrlChar(char ch) {
+		if (ch < 64) {
+			return ((BASE64_URL_LO >>> ch) & 1L) != 0L;
+		}
+		return ch < 128 && ((BASE64_URL_HI >>> (ch - 64)) & 1L) != 0L;
 	}
 
 	static byte[] canonical(JsonNode value) {
@@ -348,7 +386,10 @@ public final class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseC
 		}
 	}
 
-	private static byte[] pemBytes(String pem) {
+	static byte[] pemBytes(String pem) {
+		if (pem == null || pem.length() > MAX_PUBLIC_KEY_PEM_CHARS) {
+			throw new IllegalArgumentException("public key PEM exceeds bounds");
+		}
 		return Base64.getMimeDecoder().decode(pem.replace("\\n", "\n")
 			.replace("-----BEGIN PUBLIC KEY-----", "")
 			.replace("-----END PUBLIC KEY-----", ""));

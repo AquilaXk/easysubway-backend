@@ -179,6 +179,42 @@ class FacilityReportPhotoProcessorTest {
 	}
 
 	@Test
+	@DisplayName("다중 블록 기형 패딩·비정렬 길이·비표준 문자 Base64 본문은 디코더 진입 전에 거부한다")
+	void rejectMultiblockMalformedPaddingAndUnalignedBase64() throws IOException {
+		int width = 64;
+		byte[] pngBytes = encodedImage("png", width, 64);
+		while (pngBytes.length % 3 == 0) {
+			pngBytes = encodedImage("png", ++width, 64);
+		}
+		String unpaddedMultiblock = Base64.getEncoder().withoutPadding().encodeToString(pngBytes);
+		assertThat(unpaddedMultiblock.length()).isGreaterThan(64);
+		assertThat(unpaddedMultiblock.length() & 3).isNotZero();
+
+		for (String malformed : java.util.List.of(
+			unpaddedMultiblock,
+			"0".repeat(85) + "===",
+			"0".repeat(44) + "=" + "A".repeat(43),
+			"A".repeat(89),
+			"A".repeat(86) + "-_",
+			"A".repeat(87) + "~",
+			"A".repeat(87) + "\u0080",
+			"===="
+		)) {
+			assertThatThrownBy(() -> processor.process(
+				"broken.png",
+				"image/png",
+				malformed
+			))
+				.as("malformed photoBase64 len=%d", malformed.length())
+				.isInstanceOf(InvalidFacilityReportException.class)
+				.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		}
+		assertThatThrownBy(() -> processor.decode("   "))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
 	@DisplayName("첨부 파일명이나 본문이 비어있으면 거부한다")
 	void rejectBlankAttachmentFields() {
 		assertThatThrownBy(() -> processor.process(

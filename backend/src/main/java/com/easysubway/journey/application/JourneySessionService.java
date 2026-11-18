@@ -29,6 +29,10 @@ public final class JourneySessionService {
 	private static final Pattern CERTIFICATE_DIGEST = Pattern.compile("^[A-Za-z0-9_-]{43}$");
 	private static final Base64.Encoder BASE64_URL = Base64.getUrlEncoder().withoutPadding();
 	private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
+	private static final long BASE64_URL_LO = (((1L << 10) - 1L) << '0') | (1L << '-');
+	private static final long BASE64_URL_HI = (((1L << 26) - 1L) << ('A' - 64))
+		| (((1L << 26) - 1L) << ('a' - 64))
+		| (1L << ('_' - 64));
 
 	private final JourneySessionIntegrityPort integrityPort;
 	private final JourneySessionStore store;
@@ -134,14 +138,11 @@ public final class JourneySessionService {
 	}
 
 	private boolean validNonce(String clientNonce) {
-		try {
-			return clientNonce != null
-				&& NONCE.matcher(clientNonce).matches()
-				&& BASE64_URL_DECODER.decode(clientNonce).length == 16
-				&& BASE64_URL.encodeToString(BASE64_URL_DECODER.decode(clientNonce)).equals(clientNonce);
-		} catch (IllegalArgumentException exception) {
+		if (clientNonce == null || !NONCE.matcher(clientNonce).matches()) {
 			return false;
 		}
+		byte[] decoded = BASE64_URL_DECODER.decode(clientNonce);
+		return decoded.length == 16 && BASE64_URL.encodeToString(decoded).equals(clientNonce);
 	}
 
 	private void validateVerdict(Verdict verdict, String clientNonce, Instant now) {
@@ -163,28 +164,38 @@ public final class JourneySessionService {
 	}
 
 	private boolean requestHashMatches(String clientNonce, String actualHash) {
-		if (actualHash == null) return false;
-		try {
-			byte[] expected = sha256(canonicalRequest(clientNonce).getBytes(StandardCharsets.UTF_8));
-			byte[] actual = BASE64_URL_DECODER.decode(actualHash);
-			return MessageDigest.isEqual(expected, actual);
-		} catch (IllegalArgumentException exception) {
-			return false;
+		if (!isValidRequestHashFormat(actualHash)) return false;
+		byte[] expected = sha256(canonicalRequest(clientNonce).getBytes(StandardCharsets.UTF_8));
+		byte[] actual = BASE64_URL_DECODER.decode(actualHash);
+		return MessageDigest.isEqual(expected, actual);
+	}
+
+	static boolean isValidRequestHashFormat(String value) {
+		if (value == null) return false;
+		int len = value.length();
+		if (len != 43 && len != 44) return false;
+		for (int i = 0; i < 43; i++) {
+			if (!isBase64UrlChar(value.charAt(i))) return false;
 		}
+		return len == 43 || value.charAt(43) == '=';
+	}
+
+	private static boolean isBase64UrlChar(char ch) {
+		if (ch < 64) {
+			return ((BASE64_URL_LO >>> ch) & 1L) != 0L;
+		}
+		return ch < 128 && ((BASE64_URL_HI >>> (ch - 64)) & 1L) != 0L;
 	}
 
 	private static String validateCertificateDigest(String value) {
-		try {
-			if (value == null
-				|| !CERTIFICATE_DIGEST.matcher(value).matches()
-				|| BASE64_URL_DECODER.decode(value).length != 32
-				|| !BASE64_URL.encodeToString(BASE64_URL_DECODER.decode(value)).equals(value)) {
-				throw new IllegalArgumentException("certificateDigest is invalid");
-			}
-			return value;
-		} catch (IllegalArgumentException exception) {
-			throw new IllegalArgumentException("certificateDigest is invalid", exception);
+		if (value == null || !CERTIFICATE_DIGEST.matcher(value).matches()) {
+			throw new IllegalArgumentException("certificateDigest is invalid");
 		}
+		byte[] decoded = BASE64_URL_DECODER.decode(value);
+		if (decoded.length != 32 || !BASE64_URL.encodeToString(decoded).equals(value)) {
+			throw new IllegalArgumentException("certificateDigest is invalid");
+		}
+		return value;
 	}
 
 	private static String sha256Hex(String value) {
