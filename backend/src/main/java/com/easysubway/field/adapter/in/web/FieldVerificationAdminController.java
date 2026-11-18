@@ -1,0 +1,327 @@
+package com.easysubway.field.adapter.in.web;
+
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
+import com.easysubway.common.error.InvalidRequestException;
+import com.easysubway.common.web.ApiResponse;
+import com.easysubway.common.web.UtcTimestamps;
+import com.easysubway.common.web.export.EgovExcelExportSupport;
+import com.easysubway.field.application.port.in.FieldVerificationUseCase;
+import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
+import com.easysubway.field.domain.FieldVerificationChangeHistory;
+import com.easysubway.field.domain.FieldVerificationItem;
+import com.easysubway.field.domain.FieldVerificationItemType;
+import com.easysubway.field.domain.FieldVerificationSession;
+import com.easysubway.field.domain.FieldVerificationStatus;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.nio.charset.StandardCharsets;
+import java.security.Principal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+class FieldVerificationAdminController {
+
+	private static final MediaType TEXT_CSV_UTF8 = new MediaType("text", "csv", StandardCharsets.UTF_8);
+	private static final String XLSX_CONTENT_TYPE =
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+	private static final String CSV_HEADER = "sessionId,stationId,stationName,verifiedAt,verifiedBy,sessionStatus,itemType,itemLabel,targetName,itemStatus,note";
+	private static final List<String> XLSX_HEADER = List.of(
+		"sessionId", "stationId", "stationName", "verifiedAt", "verifiedBy", "sessionStatus",
+		"itemType", "itemLabel", "targetName", "itemStatus", "note"
+	);
+
+	private final FieldVerificationUseCase fieldVerificationUseCase;
+	private final AdminAuditWriter auditWriter;
+	private final EgovExcelExportSupport excelExportSupport;
+
+	FieldVerificationAdminController(FieldVerificationUseCase fieldVerificationUseCase) {
+		this(fieldVerificationUseCase, AdminAuditWriter.noop(), new EgovExcelExportSupport());
+	}
+
+	@Autowired
+	FieldVerificationAdminController(
+		FieldVerificationUseCase fieldVerificationUseCase,
+		AdminAuditWriter auditWriter,
+		EgovExcelExportSupport excelExportSupport
+	) {
+		this.fieldVerificationUseCase = fieldVerificationUseCase;
+		this.auditWriter = auditWriter;
+		this.excelExportSupport = excelExportSupport;
+	}
+
+	@GetMapping("/admin/field-verifications/stations")
+	ApiResponse<List<FieldVerificationView>> stationFieldVerifications() {
+		return ApiResponse.ok(fieldVerificationUseCase.listStationVerifications().stream()
+			.map(FieldVerificationView::from)
+			.toList());
+	}
+
+	@GetMapping("/admin/field-verifications/stations/{stationId}")
+	ApiResponse<FieldVerificationView> stationFieldVerification(@PathVariable String stationId) {
+		return ApiResponse.ok(FieldVerificationView.from(fieldVerificationUseCase.getStationVerification(stationId)));
+	}
+
+	@GetMapping("/admin/field-verifications/stations/{stationId}/history")
+	ApiResponse<List<FieldVerificationChangeHistoryView>> stationFieldVerificationChangeHistory(
+		@PathVariable String stationId
+	) {
+		return ApiResponse.ok(fieldVerificationUseCase.listStationChangeHistory(stationId).stream()
+			.map(FieldVerificationChangeHistoryView::from)
+			.toList());
+	}
+
+	@PatchMapping("/admin/field-verifications/stations/{stationId}/items/{itemId}/status")
+	ApiResponse<FieldVerificationView> updateFieldVerificationItemStatus(
+		@PathVariable String stationId,
+		@PathVariable String itemId,
+		@Valid @RequestBody UpdateFieldVerificationItemStatusRequest request,
+		Principal principal
+	) {
+		FieldVerificationSession session = fieldVerificationUseCase.updateItemStatus(
+			request.toCommand(stationId, itemId, principal.getName())
+		);
+		return ApiResponse.ok(FieldVerificationView.from(session));
+	}
+
+	@GetMapping("/admin/field-verifications/stations/{stationId}/export.csv")
+	ResponseEntity<byte[]> stationFieldVerificationCsv(
+		@PathVariable String stationId,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		FieldVerificationSession session = fieldVerificationUseCase.getStationVerification(stationId);
+		auditWriter.privacyRead(
+			authentication,
+			request,
+			"FIELD_VERIFICATION_SESSION",
+			session.id(),
+			"EXPORT_FIELD_VERIFICATION_CSV",
+			"업무 맥락: 현장 확인 CSV export"
+		);
+		byte[] body = toCsv(session).getBytes(StandardCharsets.UTF_8);
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(TEXT_CSV_UTF8);
+		headers.setContentDisposition(
+			ContentDisposition.attachment()
+				.filename("easysubway-field-verification-" + safeFilenameStationId(stationId) + ".csv")
+				.build()
+		);
+		return ResponseEntity.ok().headers(headers).body(body);
+	}
+
+	@GetMapping("/admin/field-verifications/stations/{stationId}/export.xlsx")
+	ResponseEntity<byte[]> stationFieldVerificationXlsx(
+		@PathVariable String stationId,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		FieldVerificationSession session = fieldVerificationUseCase.getStationVerification(stationId);
+		auditWriter.privacyRead(
+			authentication,
+			request,
+			"FIELD_VERIFICATION_SESSION",
+			session.id(),
+			"EXPORT_FIELD_VERIFICATION_XLSX",
+			"업무 맥락: 현장 확인 xlsx export"
+		);
+		byte[] xlsx = excelExportSupport.toXlsx("field-verification", XLSX_HEADER, toXlsxRows(session));
+		HttpHeaders headers = new HttpHeaders();
+		headers.add(HttpHeaders.CONTENT_TYPE, XLSX_CONTENT_TYPE);
+		headers.add(
+			HttpHeaders.CONTENT_DISPOSITION,
+			"attachment; filename=\"easysubway-field-verification-" + safeFilenameStationId(stationId) + ".xlsx\""
+		);
+		return new ResponseEntity<>(xlsx, headers, HttpStatus.OK);
+	}
+
+	private List<List<String>> toXlsxRows(FieldVerificationSession session) {
+		List<List<String>> rows = new ArrayList<>();
+		session.items().forEach(item -> rows.add(List.of(
+			cellValue(session.id()),
+			cellValue(session.stationId()),
+			cellValue(session.stationName()),
+			cellValue(String.valueOf(session.verifiedAt())),
+			cellValue(session.verifiedBy()),
+			cellValue(session.status().name()),
+			cellValue(item.type().name()),
+			cellValue(item.type().label()),
+			cellValue(item.targetName()),
+			cellValue(item.status().name()),
+			cellValue(item.note())
+		)));
+		return rows;
+	}
+
+	// xlsx 셀은 CSV와 동일한 데이터 정책(수식 주입 이스케이프)을 적용하되 CSV 전송용 따옴표 감싸기는 하지 않는다.
+	private String cellValue(String value) {
+		return value == null ? "" : escapeSpreadsheetFormula(value);
+	}
+
+	private String toCsv(FieldVerificationSession session) {
+		StringBuilder csv = new StringBuilder(CSV_HEADER).append('\n');
+		session.items().forEach(item -> appendItemRow(csv, session, item));
+		return csv.toString();
+	}
+
+	private void appendItemRow(StringBuilder csv, FieldVerificationSession session, FieldVerificationItem item) {
+		csv.append(csvValue(session.id()))
+			.append(',')
+			.append(csvValue(session.stationId()))
+			.append(',')
+			.append(csvValue(session.stationName()))
+			.append(',')
+			.append(csvValue(String.valueOf(session.verifiedAt())))
+			.append(',')
+			.append(csvValue(session.verifiedBy()))
+			.append(',')
+			.append(csvValue(session.status().name()))
+			.append(',')
+			.append(csvValue(item.type().name()))
+			.append(',')
+			.append(csvValue(item.type().label()))
+			.append(',')
+			.append(csvValue(item.targetName()))
+			.append(',')
+			.append(csvValue(item.status().name()))
+			.append(',')
+			.append(csvValue(item.note()))
+			.append('\n');
+	}
+
+	private String csvValue(String value) {
+		if (value == null) {
+			return "";
+		}
+		String safe = escapeSpreadsheetFormula(value);
+		if (safe.contains(",") || safe.contains("\"") || safe.contains("\n") || safe.contains("\r")) {
+			return "\"" + safe.replace("\"", "\"\"") + "\"";
+		}
+		return safe;
+	}
+
+	private String escapeSpreadsheetFormula(String value) {
+		if (value.isEmpty()) {
+			return value;
+		}
+		char first = value.charAt(0);
+		if (first == '=' || first == '+' || first == '-' || first == '@') {
+			return "'" + value;
+		}
+		return value;
+	}
+
+	private String safeFilenameStationId(String stationId) {
+		return stationId.replaceAll("[^A-Za-z0-9_-]", "_");
+	}
+
+	record FieldVerificationView(
+		String sessionId,
+		String stationId,
+		String stationName,
+		LocalDate verifiedAt,
+		String verifiedBy,
+		FieldVerificationStatus status,
+		String note,
+		List<FieldVerificationItemView> items
+	) {
+
+		static FieldVerificationView from(FieldVerificationSession session) {
+			return new FieldVerificationView(
+				session.id(),
+				session.stationId(),
+				session.stationName(),
+				session.verifiedAt(),
+				session.verifiedBy(),
+				session.status(),
+				session.note(),
+				session.items().stream()
+					.map(FieldVerificationItemView::from)
+					.toList()
+			);
+		}
+	}
+
+	record FieldVerificationItemView(
+		String itemId,
+		FieldVerificationItemType type,
+		String label,
+		String targetName,
+		FieldVerificationStatus status,
+		String note
+	) {
+
+		static FieldVerificationItemView from(FieldVerificationItem item) {
+			return new FieldVerificationItemView(
+				item.id(),
+				item.type(),
+				item.type().label(),
+				item.targetName(),
+				item.status(),
+				item.note()
+			);
+		}
+	}
+
+	record FieldVerificationChangeHistoryView(
+		String historyId,
+		String sessionId,
+		String stationId,
+		String itemId,
+		FieldVerificationStatus previousStatus,
+		FieldVerificationStatus newStatus,
+		String previousNote,
+		String newNote,
+		String changedBy,
+		Instant changedAt
+	) {
+
+		static FieldVerificationChangeHistoryView from(FieldVerificationChangeHistory history) {
+			return new FieldVerificationChangeHistoryView(
+				history.id(),
+				history.sessionId(),
+				history.stationId(),
+				history.itemId(),
+				history.previousStatus(),
+				history.newStatus(),
+				history.previousNote(),
+				history.newNote(),
+				history.changedBy(),
+				UtcTimestamps.toInstant(history.changedAt())
+			);
+		}
+	}
+
+	record UpdateFieldVerificationItemStatusRequest(
+		@NotNull(message = "{validation.field-verification.status.required}")
+		FieldVerificationStatus status,
+		String note
+	) {
+
+		UpdateFieldVerificationItemStatusCommand toCommand(String stationId, String itemId, String changedBy) {
+			if (status == null) {
+				throw new InvalidRequestException("현장 확인 상태를 선택해야 합니다.");
+			}
+			if (status != FieldVerificationStatus.VERIFIED
+				&& status != FieldVerificationStatus.NEEDS_RECHECK) {
+				throw new InvalidRequestException("현장 확인 상태는 확인 완료 또는 다시 확인 필요만 선택할 수 있습니다.");
+			}
+			return new UpdateFieldVerificationItemStatusCommand(stationId, itemId, status, note, changedBy);
+		}
+	}
+}

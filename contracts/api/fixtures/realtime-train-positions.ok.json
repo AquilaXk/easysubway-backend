@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "data": {
+    "status": "FRESH",
+    "fallbackCode": null,
+    "message": null,
+    "receivedAt": "__RECEIVED_AT__",
+    "providerId": "seoul-topis",
+    "sourceNotice": "열차 위치는 GPS가 아니라 운행 정보 기준 위치입니다.",
+    "trainPositions": [
+      {
+        "lineId": "4",
+        "stationName": "상록수",
+        "trainNo": "4123",
+        "trainStatus": "운행중",
+        "direction": "상행",
+        "destination": "당고개",
+        "providerReceivedAt": "__RECEIVED_AT__"
+      }
+    ]
+  }
+}

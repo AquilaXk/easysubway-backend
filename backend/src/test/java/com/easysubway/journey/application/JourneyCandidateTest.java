@@ -1,0 +1,408 @@
+package com.easysubway.journey.application;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class JourneyCandidateTest {
+
+	private static final Instant DEPARTURE = Instant.parse("2026-08-11T00:01:00Z");
+	private static final Instant ARRIVAL = Instant.parse("2026-08-11T00:06:00Z");
+
+	@Test
+	void preservesClosedTimetableCandidateAccessibilityAndLegOrder() {
+		List<String> reasons = new ArrayList<>(List.of("STEP_FREE_PATH"));
+		List<JourneyCandidate.Leg> legs = new ArrayList<>(List.of(
+			new JourneyCandidate.Entry("station-origin", 30),
+			TestRides.candidateRide(
+				"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+				DEPARTURE, ARRIVAL, null, null
+			),
+			new JourneyCandidate.Transfer("station-a", "station-b", 45),
+			new JourneyCandidate.Exit("station-destination", 20)
+		));
+
+		JourneyCandidate candidate = TestJourneyCandidates.unavailableFare(
+			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 1, 75,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, reasons),
+			legs
+		);
+		reasons.clear();
+		legs.clear();
+
+		assertThat(candidate.status()).isEqualTo(JourneyCandidate.Status.FOUND);
+		assertThat(candidate.planSource()).isEqualTo(JourneyCandidate.PlanSource.SERVER_TIMETABLE_RAPTOR);
+		assertThat(candidate.accessibility().result()).isEqualTo(JourneyCandidate.AccessibilityResult.VERIFIED);
+		assertThat(candidate.accessibility().reasonCodes()).containsExactly("STEP_FREE_PATH");
+		assertThat(candidate.legs()).extracting(JourneyCandidate.Leg::type)
+			.containsExactly(
+				JourneyCandidate.LegType.ENTRY,
+				JourneyCandidate.LegType.RIDE,
+				JourneyCandidate.LegType.TRANSFER,
+				JourneyCandidate.LegType.EXIT
+			);
+		assertThatThrownBy(() -> candidate.legs().add(new JourneyCandidate.Exit("station-x", 1)))
+			.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void acceptsOnlyCompleteRealtimePairsForRealtimeCandidatesAndRideLegs() {
+		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
+		Instant realtimeArrival = ARRIVAL.plusSeconds(30);
+		JourneyCandidate candidate = TestJourneyCandidates.unavailableFare(
+			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
+			JourneyCandidate.TimeSource.REALTIME,
+			new JourneyCandidate.Accessibility(true, List.of()),
+			List.of(TestRides.candidateRide(
+				"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+				DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival
+			))
+		);
+
+		assertThat(candidate.hasRealtime()).isTrue();
+		assertThat(candidate.realtimeDepartureTime()).isEqualTo(realtimeDeparture);
+		assertThat(candidate.realtimeArrivalTime()).isEqualTo(realtimeArrival);
+	}
+
+	@Test
+	void rejectsInvalidIdentityTimesMetricsModeAndCollections() {
+		assertThatThrownBy(() -> candidate(" ", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
+			"journey-1", ARRIVAL, DEPARTURE, null, null, 300, 0, 50,
+			JourneyCandidate.TimeSource.TIMETABLE, accessibility(), legs(null, null)
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> candidate(
+			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, DEPARTURE, null, 300, 0, 50
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> candidate(
+			"journey-1", JourneyCandidate.TimeSource.REALTIME, null, null, 300, 0, 50
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> candidate(
+			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, -1, 0, 50
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> candidate(
+			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 4, 50
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> candidate(
+			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, -1
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
+			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 0, 50,
+			JourneyCandidate.TimeSource.TIMETABLE, accessibility(), List.of()
+		)).isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void rejectsInvalidAccessibilityAndLegFields() {
+		assertThatThrownBy(() -> new JourneyCandidate.Accessibility(true, List.of("A", "A")))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.Accessibility(true, List.of(" ")))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.Entry(" ", 1))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.Transfer("station-a", "station-b", -1))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> TestRides.candidateRide(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			ARRIVAL, DEPARTURE, null, null
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> TestRides.candidateRide(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			DEPARTURE, ARRIVAL, DEPARTURE, null
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(0, 1, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(11, 1, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 0, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 5, "TRANSFER"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 1, " "))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyCandidate.AlightingCarDoor(1, 1, null))
+			.isInstanceOf(NullPointerException.class);
+
+		var door = new JourneyCandidate.AlightingCarDoor(1, 2, "TRANSFER");
+		assertThat(door.carNumber()).isEqualTo(1);
+		assertThat(door.doorNumber()).isEqualTo(2);
+		assertThat(door.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(door).isEqualTo(new JourneyCandidate.AlightingCarDoor(1, 2, "TRANSFER"));
+		assertThat(door.hashCode()).isNotZero();
+		assertThat(door.toString()).contains("1");
+
+		var rideWithNullDoors = new JourneyCandidate.Ride(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			"LOCAL", DEPARTURE, ARRIVAL, null, null,
+			List.of(
+				new JourneyCandidate.Stop("station-origin", null, DEPARTURE, null, null),
+				new JourneyCandidate.Stop("station-destination", ARRIVAL, null, null, null)
+			), null, null, null
+		);
+		assertThat(rideWithNullDoors.alightingCarDoors()).isEmpty();
+	}
+
+	@Test
+	void rideAndProfileRideExposeOnlyTheirCanonicalConstructorSoNoServicePatternOrStopsAreFabricated() {
+		assertThat(JourneyCandidate.Ride.class.getDeclaredConstructors()).hasSize(1);
+		assertThat(JourneyProfileRaptorPort.RideLeg.class.getDeclaredConstructors()).hasSize(1);
+	}
+
+	@Test
+	void candidateAndProfileItineraryExposeOnlyTheirCanonicalConstructorSoFareIsNeverDefaulted() {
+		assertThat(JourneyCandidate.class.getDeclaredConstructors()).hasSize(1);
+		assertThat(JourneyProfileRaptorPort.Itinerary.class.getDeclaredConstructors()).hasSize(1);
+	}
+
+	@Test
+	void rejectsUnknownServicePatternAndTooFewStops() {
+		List<JourneyCandidate.Stop> twoStops = List.of(
+			new JourneyCandidate.Stop("station-origin", null, DEPARTURE, null, null),
+			new JourneyCandidate.Stop("station-destination", ARRIVAL, null, null, null)
+		);
+		assertThatThrownBy(() -> new JourneyCandidate.Ride(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			"NIGHT", DEPARTURE, ARRIVAL, null, null, twoStops, List.of(), List.of(), List.of()
+		)).isInstanceOf(IllegalStateException.class)
+			.hasMessage("servicePattern must be LOCAL or EXPRESS, got: NIGHT");
+		assertThatThrownBy(() -> new JourneyCandidate.Ride(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			"EXPRESS", DEPARTURE, ARRIVAL, null, null, twoStops.subList(0, 1), List.of(), List.of(), List.of()
+		)).isInstanceOf(IllegalStateException.class)
+			.hasMessage("stops must contain at least 2 stops, got: 1");
+		assertThatThrownBy(() -> new JourneyCandidate.Ride(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			"EXPRESS", DEPARTURE, ARRIVAL, null, null, null, List.of(), List.of(), List.of()
+		)).isInstanceOf(IllegalStateException.class)
+			.hasMessage("stops must contain at least 2 stops, got: 0");
+		assertThatThrownBy(() -> new JourneyCandidate.Stop(" ", null, DEPARTURE, null, null))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void buildsAvailableFareWithSixAmountsAndCopiedSnapshotIds() {
+		var fare = JourneyCandidate.Fare.available(1400, 1500, 800, 900, 500, 600, List.of("snap-1", "snap-2"));
+
+		assertThat(fare.status()).isEqualTo(JourneyCandidate.FareStatus.AVAILABLE);
+		assertThat(fare.adultCardWon()).isEqualTo(1400);
+		assertThat(fare.childCashWon()).isEqualTo(600);
+		assertThat(fare.sourceSnapshotIds()).containsExactly("snap-1", "snap-2");
+		var unavailable = JourneyCandidate.Fare.unavailable();
+		assertThat(unavailable.status()).isEqualTo(JourneyCandidate.FareStatus.UNAVAILABLE);
+		assertThat(unavailable.adultCardWon()).isNull();
+		assertThat(unavailable.sourceSnapshotIds()).isEmpty();
+		assertThat(new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, null, null, null).sourceSnapshotIds()).isEmpty();
+	}
+
+	@Test
+	void rejectsUnavailableFareCarryingAnyAmount() {
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			1, null, null, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, 1, null, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, 1, null, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, 1, null, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, 1, null, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.UNAVAILABLE,
+			null, null, null, null, null, 1, List.of())).hasMessage("fare amounts must be null when status is UNAVAILABLE");
+	}
+
+	@Test
+	void rejectsAvailableFareWithMissingNegativeAmountOrNoSnapshot() {
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			null, 1, 1, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("adultCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, null, 1, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("adultCashWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, null, 1, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("youthCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, null, 1, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("youthCashWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, 1, null, 1, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("childCardWon");
+		assertThatThrownBy(() -> new JourneyCandidate.Fare(JourneyCandidate.FareStatus.AVAILABLE,
+			1, 1, 1, 1, 1, null, List.of("s"))).isInstanceOf(NullPointerException.class).hasMessage("childCashWon");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(-1, 1, 1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, -1, 1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, -1, 1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, -1, 1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, -1, 1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, -1, List.of("s")))
+			.hasMessage("fare amounts must not be negative");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, 1, List.of()))
+			.hasMessage("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+		assertThatThrownBy(() -> JourneyCandidate.Fare.available(1, 1, 1, 1, 1, 1, null))
+			.hasMessage("sourceSnapshotIds must not be empty when fare is AVAILABLE");
+	}
+
+	@Test
+	void rejectsCandidateAndRideRealtimeModeDrift() {
+		Instant realtimeDeparture = DEPARTURE.plusSeconds(30);
+		Instant realtimeArrival = ARRIVAL.plusSeconds(30);
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
+			"journey-1", DEPARTURE, ARRIVAL, null, null, 300, 0, 50,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			accessibility(),
+			legs(realtimeDeparture, realtimeArrival)
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> TestJourneyCandidates.unavailableFare(
+			"journey-1", DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, 300, 0, 50,
+			JourneyCandidate.TimeSource.REALTIME,
+			accessibility(),
+			legs(null, null)
+		)).isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void rejectsInvalidPortIdentityAndPreservesPlanResultBytes() {
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot-1", "bundle-1", "BAD", "timetable-1", "accessibility-1", 1,
+			new TestRuntimeView("BAD", 1), ARRIVAL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot-1", "bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", 0,
+			new TestRuntimeView("a".repeat(64), 0), ARRIVAL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", "BAD", new TestRealtimeView("realtime-1", "BAD", 1), ARRIVAL, true
+		)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult(" ", List.of(),
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3), JourneyRaptorPort.RouteBoundaryReceipt.observed(0)))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		List<JourneyCandidate> candidates = new ArrayList<>(List.of(candidate(
+			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50
+		)));
+		JourneyRaptorPort.PlanResult result = new JourneyRaptorPort.PlanResult("query-1", candidates,
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3), JourneyRaptorPort.RouteBoundaryReceipt.observed(0), JourneyRaptorPort.RouteMeasurementReceipt.unobservable(), TestJourneyCandidates.stairFreeAlternative(candidates));
+		candidates.clear();
+		assertThat(result.candidates()).extracting(JourneyCandidate::journeyId).containsExactly("journey-1");
+		assertThatThrownBy(() -> result.candidates().clear()).isInstanceOf(UnsupportedOperationException.class);
+
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotBoundaryReceipt(
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.UNOBSERVABLE, 0L, null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotBoundaryReceipt(
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED, null, 0L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteBoundaryReceipt(
+			JourneyRaptorPort.RouteBoundaryReceipt.Status.UNOBSERVABLE, 0L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteBoundaryReceipt(
+			JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED, -1L))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		var activeServingIdentity = new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			"b".repeat(64), "c".repeat(64), "sha256:" + "d".repeat(64), "e".repeat(40), "03:00");
+		var activeReadinessIdentity = new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", "d".repeat(64),
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), "a".repeat(64),
+			"bundle-1", 1, 1, "Asia/Seoul", "03:00", 1, true, false,
+			ARRIVAL, DEPARTURE, "3".repeat(64));
+		var requestIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000000", "a".repeat(64), 1,
+			activeReadinessIdentity, activeServingIdentity);
+		var measurement = new JourneyRequestMeasurement(requestIdentity.requestId());
+		measurement.observeActiveRegistryRead(
+			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation());
+		assertThat(ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+			measurement.bindActiveIdentity(requestIdentity)).identity()).isEqualTo(requestIdentity);
+		assertThat(JourneyRaptorPort.RouteMeasurementReceipt.observed(measurement.observeDirectRaptor(
+			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation())).identity())
+			.isEqualTo(requestIdentity);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotMeasurementReceipt(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.UNOBSERVABLE, null, 0L, null, null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotMeasurementReceipt(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.UNOBSERVABLE,
+			requestIdentity, null, null, null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotMeasurementReceipt(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED,
+			requestIdentity, -1L, 0L, 0L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteMeasurementReceipt(
+			JourneyRaptorPort.RouteMeasurementReceipt.Status.UNOBSERVABLE, null, 0L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteMeasurementReceipt(
+			JourneyRaptorPort.RouteMeasurementReceipt.Status.UNOBSERVABLE, requestIdentity, null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteMeasurementReceipt(
+			JourneyRaptorPort.RouteMeasurementReceipt.Status.OBSERVED, requestIdentity, -1L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000000", "a".repeat(64), 1,
+			activeReadinessIdentity, JourneyExecutionResult.ActiveServingIdentity.unobservable()))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	private static JourneyCandidate candidate(
+		String id,
+		JourneyCandidate.TimeSource source,
+		Instant realtimeDeparture,
+		Instant realtimeArrival,
+		long duration,
+		int transfers,
+		long walkingDistance
+	) {
+		return TestJourneyCandidates.unavailableFare(
+			id, DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival, duration, transfers, walkingDistance,
+			source, accessibility(), legs(realtimeDeparture, realtimeArrival)
+		);
+	}
+
+	private static JourneyCandidate.Accessibility accessibility() {
+		return new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH"));
+	}
+
+	private static List<JourneyCandidate.Leg> legs(Instant realtimeDeparture, Instant realtimeArrival) {
+		return List.of(TestRides.candidateRide(
+			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+			DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival
+		));
+	}
+
+	private record TestRuntimeView(String routeBundleSha256, long generation)
+		implements JourneyRaptorRuntimeView {
+	}
+
+	@Test
+	void ofStairAccessMapsTheThreeStatesAndRejectsUnconfirmedWithoutStairs() {
+		// #503: 확정 계단 없음 / 확정 계단 / 미확정(미확정은 계단 쪽으로 센다).
+		var verified = JourneyCandidate.Accessibility.ofStairAccess(false, false);
+		assertThat(verified.stairFree()).isTrue();
+		assertThat(verified.reasonCodes()).containsExactly("ACCESSIBILITY_VERIFIED");
+		var stairs = JourneyCandidate.Accessibility.ofStairAccess(true, false);
+		assertThat(stairs.stairFree()).isFalse();
+		assertThat(stairs.reasonCodes()).containsExactly("ACCESSIBILITY_STAIRS_INCLUDED");
+		var undetermined = JourneyCandidate.Accessibility.ofStairAccess(true, true);
+		assertThat(undetermined.stairFree()).isFalse();
+		assertThat(undetermined.reasonCodes()).containsExactly("ACCESSIBILITY_UNDETERMINED");
+		assertThatThrownBy(() -> JourneyCandidate.Accessibility.ofStairAccess(false, true))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("unconfirmed stair access must be counted as stairs");
+	}
+
+	private record TestRealtimeView(String identity, String routeBundleSha256, long generation)
+		implements JourneyRaptorRealtimeView {
+	}
+}

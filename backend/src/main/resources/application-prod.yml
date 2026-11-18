@@ -1,0 +1,104 @@
+logging:
+  level:
+    com.easysubway: INFO
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: "readinessState,db,productionReadiness"
+
+server:
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: "30s"
+  datasource:
+    url: ${EASYSUBWAY_DATASOURCE_URL}
+    username: ${EASYSUBWAY_DATASOURCE_USERNAME}
+    password: ${EASYSUBWAY_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${EASYSUBWAY_HIKARI_MAX_POOL_SIZE:20}
+      minimum-idle: ${EASYSUBWAY_HIKARI_MIN_IDLE:5}
+      connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      data-source-properties:
+        reWriteBatchedInserts: true
+  sql:
+    init:
+      mode: never
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/postgresql
+    postgresql:
+      transactional-lock: false
+    # 일반 서비스 기동은 legacy schema를 자동 승인하지 않는다. 별도 검증된 one-shot 전환만 baseline을 수행한다.
+    baseline-on-migrate: false
+    baseline-version: 1
+  batch:
+    jdbc:
+      # Batch metadata table은 Flyway baseline migration에서 운영 schema와 함께 관리한다.
+      initialize-schema: never
+
+easysubway:
+  journey:
+    facility-status:
+      required: ${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:true}
+    profile:
+      resource-policy-path: ${EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_PATH}
+      resource-policy-sha256: ${EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256}
+      max-request-bytes: ${EASYSUBWAY_JOURNEY_PROFILE_MAX_REQUEST_BYTES}
+    session:
+      certificate-sha256: ${EASYSUBWAY_JOURNEY_SESSION_CERTIFICATE_SHA256}
+  journey-v3:
+    session-web:
+      enabled: true
+    search-web:
+      enabled: true
+  ads:
+    event-daily-cap: ${EASYSUBWAY_ADS_EVENT_DAILY_CAP}
+  report:
+    receipt-token-pepper: ${EASYSUBWAY_REPORT_RECEIPT_PEPPER}
+    abuse-control:
+      window-seconds: ${EASYSUBWAY_REPORT_ABUSE_WINDOW_SECONDS:60}
+      upload-intent-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_INTENT_LIMIT:60}
+      upload-claim-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_CLAIM_LIMIT:120}
+      report-submit-limit: ${EASYSUBWAY_REPORT_ABUSE_REPORT_SUBMIT_LIMIT:30}
+      status-limit: ${EASYSUBWAY_REPORT_ABUSE_STATUS_LIMIT:120}
+      confirm-limit: ${EASYSUBWAY_REPORT_ABUSE_CONFIRM_LIMIT:30}
+      max-counter-keys: ${EASYSUBWAY_REPORT_ABUSE_MAX_COUNTER_KEYS:16384}
+      store-mode: ${EASYSUBWAY_REPORT_ABUSE_STORE_MODE:local}
+    upload:
+      bucket: ${EASYSUBWAY_REPORT_UPLOAD_BUCKET:}
+      max-bytes: ${EASYSUBWAY_REPORT_UPLOAD_MAX_BYTES:921600}
+      url-ttl-seconds: ${EASYSUBWAY_REPORT_UPLOAD_URL_TTL_SECONDS:900}
+      intent-signing-key: ${EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY}
+      object-storage-endpoint: ${EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT:}
+      public-base-url: ${EASYSUBWAY_REPORT_UPLOAD_PUBLIC_BASE_URL:}
+      object-storage-access-key: ${EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY:}
+      object-storage-secret-key: ${EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY:}
+      object-storage-region: ${EASYSUBWAY_OBJECT_STORAGE_REGION:us-east-1}
+  admin:
+    username: ${EASYSUBWAY_ADMIN_USERNAME}
+    password: ${EASYSUBWAY_ADMIN_PASSWORD}
+    remember-me:
+      key: ${EASYSUBWAY_ADMIN_REMEMBER_ME_KEY:}
+    basic-auth:
+      enabled: ${EASYSUBWAY_ADMIN_BASIC_AUTH_ENABLED:false}
+      exception-owner: ${EASYSUBWAY_ADMIN_BASIC_AUTH_EXCEPTION_OWNER:}
+      exception-expires-at: ${EASYSUBWAY_ADMIN_BASIC_AUTH_EXCEPTION_EXPIRES_AT:}
+  operator:
+    username: ${EASYSUBWAY_OPERATOR_USERNAME:}
+    password: ${EASYSUBWAY_OPERATOR_PASSWORD:}
+  auth:
+    client-ip:
+      trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS}
+  notifications:
+    push:
+      external-enabled: ${EASYSUBWAY_PUSH_EXTERNAL_ENABLED:false}
+  play-integrity:
+    credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}

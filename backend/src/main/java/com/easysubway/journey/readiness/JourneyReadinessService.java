@@ -1,0 +1,194 @@
+package com.easysubway.journey.readiness;
+
+import com.easysubway.journey.bundle.ActiveRouteBundleSnapshot;
+import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
+import com.easysubway.journey.bundle.RouteBundleIdentity;
+import com.easysubway.journey.application.ServiceDayResolver;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.Objects;
+import org.springframework.boot.availability.ApplicationAvailability;
+import org.springframework.boot.availability.ReadinessState;
+
+public final class JourneyReadinessService {
+
+	private static final int SCHEMA_VERSION = 1;
+	private static final String CANDIDATE_KIND = "journey-v3-candidate-readiness";
+	private static final String ACTIVE_KIND = "journey-v3-active-readiness";
+
+	private final RouteBundleActivationRegistry registry;
+	private final JourneyReadinessProperties properties;
+	private final ApplicationAvailability applicationAvailability;
+
+	public JourneyReadinessService(
+		RouteBundleActivationRegistry registry,
+		JourneyReadinessProperties properties,
+		ApplicationAvailability applicationAvailability) {
+		this.registry = Objects.requireNonNull(registry, "registry");
+		this.properties = Objects.requireNonNull(properties, "properties");
+		this.applicationAvailability = Objects.requireNonNull(applicationAvailability, "applicationAvailability");
+	}
+
+	public CandidateReadiness candidate() {
+		var snapshot = registry.candidateSnapshot();
+		var identity = snapshot.identity();
+		boolean ready = acceptsTraffic();
+		String evidenceSha256 = evidenceSha256(
+			"schemaVersion", SCHEMA_VERSION,
+			"artifactKind", CANDIDATE_KIND,
+			"instanceId", properties.instanceId(),
+			"releaseTupleSha256", properties.releaseTupleSha256(),
+			"backendImageDigest", properties.backendImageDigest(),
+			"backendConfigSha256", properties.backendConfigSha256(),
+			"journeyContractSha256", properties.journeyContractSha256(),
+			"routeBundleManifestSha256", snapshot.admissionEvidence().manifestSha256(),
+			"bundleId", identity.bundleId(),
+			"bundleReleaseSequence", identity.releaseSequence(),
+			"generation", snapshot.generation(),
+			"warmed", true,
+			"ready", ready,
+			"freshUntil", identity.freshUntilInstant(),
+			"verifiedAt", snapshot.verifiedAt(),
+			"stagedAt", snapshot.stagedAt());
+		return new CandidateReadiness(
+			SCHEMA_VERSION,
+			CANDIDATE_KIND,
+			properties.instanceId(),
+			properties.releaseTupleSha256(),
+			properties.backendImageDigest(),
+			properties.backendConfigSha256(),
+			properties.journeyContractSha256(),
+			snapshot.admissionEvidence().manifestSha256(),
+			identity.bundleId(),
+			identity.releaseSequence(),
+			snapshot.generation(),
+			true,
+			ready,
+			identity.freshUntilInstant(),
+			snapshot.verifiedAt(),
+			snapshot.stagedAt(),
+			evidenceSha256);
+	}
+
+	public ActiveReadiness active() {
+		return active(registry.activeSnapshot());
+	}
+
+	public ActiveReadiness active(ActiveRouteBundleSnapshot snapshot) {
+		Objects.requireNonNull(snapshot, "snapshot");
+		RouteBundleIdentity identity = snapshot.identity();
+		if (!ServiceDayResolver.TIMEZONE.equals(identity.serviceTimezone())) {
+			throw new IllegalStateException("active route bundle service timezone is not current");
+		}
+		boolean servingReady = acceptsTraffic();
+		boolean draining = !servingReady;
+		String evidenceSha256 = evidenceSha256(
+			"schemaVersion", SCHEMA_VERSION,
+			"artifactKind", ACTIVE_KIND,
+			"instanceId", properties.instanceId(),
+			"releaseTupleSha256", properties.releaseTupleSha256(),
+			"backendImageDigest", properties.backendImageDigest(),
+			"backendConfigSha256", properties.backendConfigSha256(),
+			"journeyContractSha256", properties.journeyContractSha256(),
+			"routeBundleManifestSha256", snapshot.admissionEvidence().manifestSha256(),
+			"bundleId", identity.bundleId(),
+			"bundleReleaseSequence", identity.releaseSequence(),
+			"generation", snapshot.generation(),
+			"serviceTimezone", identity.serviceTimezone(),
+			"serviceDayCutoff", ServiceDayResolver.CUTOFF_LOCAL_TIME,
+			"trafficGeneration", properties.trafficGeneration(),
+			"servingReady", servingReady,
+			"draining", draining,
+			"freshUntil", identity.freshUntilInstant(),
+			"activatedAt", snapshot.activatedAt());
+		return new ActiveReadiness(
+			SCHEMA_VERSION,
+			ACTIVE_KIND,
+			properties.instanceId(),
+			properties.releaseTupleSha256(),
+			properties.backendImageDigest(),
+			properties.backendConfigSha256(),
+			properties.journeyContractSha256(),
+			snapshot.admissionEvidence().manifestSha256(),
+			identity.bundleId(),
+			identity.releaseSequence(),
+			snapshot.generation(),
+			identity.serviceTimezone(),
+			ServiceDayResolver.CUTOFF_LOCAL_TIME,
+			properties.trafficGeneration(),
+			servingReady,
+			draining,
+			identity.freshUntilInstant(),
+			snapshot.activatedAt(),
+			evidenceSha256);
+	}
+
+	private boolean acceptsTraffic() {
+		return applicationAvailability.getReadinessState() == ReadinessState.ACCEPTING_TRAFFIC;
+	}
+
+	private static String evidenceSha256(Object... values) {
+		var canonical = new StringBuilder();
+		for (Object value : values) {
+			byte[] bytes = String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+			canonical.append(bytes.length).append(':').append(new String(bytes, StandardCharsets.UTF_8));
+		}
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+				.digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 is unavailable", exception);
+		}
+	}
+
+	public record CandidateReadiness(
+		int schemaVersion,
+		String artifactKind,
+		String instanceId,
+		String releaseTupleSha256,
+		String backendImageDigest,
+		String backendConfigSha256,
+		String journeyContractSha256,
+		String routeBundleManifestSha256,
+		String bundleId,
+		long bundleReleaseSequence,
+		long generation,
+		boolean warmed,
+		boolean ready,
+		Instant freshUntil,
+		Instant verifiedAt,
+		Instant stagedAt,
+		String evidenceSha256) {
+	}
+
+	public record ActiveReadiness(
+		int schemaVersion,
+		String artifactKind,
+		String instanceId,
+		String releaseTupleSha256,
+		String backendImageDigest,
+		String backendConfigSha256,
+		String journeyContractSha256,
+		String routeBundleManifestSha256,
+		String bundleId,
+		long bundleReleaseSequence,
+		long generation,
+		String serviceTimezone,
+		String serviceDayCutoff,
+		long trafficGeneration,
+		boolean servingReady,
+		boolean draining,
+		Instant freshUntil,
+		Instant activatedAt,
+		String evidenceSha256) {
+		public ActiveReadiness {
+			if (!ServiceDayResolver.TIMEZONE.equals(serviceTimezone)
+				|| !ServiceDayResolver.CUTOFF_LOCAL_TIME.equals(serviceDayCutoff)) {
+				throw new IllegalArgumentException("active readiness service-day identity is not current");
+			}
+		}
+	}
+}

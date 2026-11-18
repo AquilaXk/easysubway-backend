@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>신고 상세</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-reports')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<!-- breadcrumb은 풀페이지 전용(드로어 fragment 밖) -->
+	<div th:replace="~{admin/fragments/shell :: breadcrumb('제보·품질·확인', '제보 확인 대기열', '/admin/reports/page', '상세')}"></div>
+	<!-- 드로어(사이드 패널) htmx 로드 대상(#1737): 이 fragment만 부분 응답으로 반환된다. -->
+	<div th:fragment="detailBody">
+	<header class="admin-page-head">
+		<div>
+			<h1>제보 상세·판정</h1>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn plain" th:href="@{/admin/reports/page}">목록으로</a>
+		</div>
+	</header>
+	<h1 class="sr-only">신고 상세</h1>
+	<div class="alert warning" th:if="${masterDataError}">
+		<strong>확인 요청 차단</strong>
+		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
+	</div>
+	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
+
+	<section class="admin-panel">
+		<h2>신고 내용</h2>
+		<dl>
+			<dt>신고 번호</dt>
+			<dd th:text="${report.id}">report-id</dd>
+			<dt>상태</dt>
+			<dd><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></dd>
+			<dt>유형</dt>
+			<dd th:text="${report.reportTypeLabel}">고장</dd>
+			<dt>내용</dt>
+			<dd th:text="${report.description}">신고 내용</dd>
+			<dt>역</dt>
+			<dd>
+				<!-- 역 허브 크로스링크: 인간 친화적 역명 -->
+				<a th:href="@{/admin/stations/{stationId}/page(stationId=${report.stationId},tab='reports')}"
+				   th:text="${stationLabel}">상록수</a>
+			</dd>
+			<dt>시설</dt>
+			<dd th:text="${facilityLabel}">엘리베이터</dd>
+			<dt th:if="${report.correctionOverrideHref != null}">임시 override</dt>
+			<dd th:if="${report.correctionOverrideHref != null}"><a class="admin-btn outline" th:href="@{__${report.correctionOverrideHref}__}">manual override 요청</a></dd>
+			<dt>신고자</dt>
+			<dd th:text="${report.userId}">user-id</dd>
+			<dt>좌표</dt>
+			<dd th:text="${report.coordinateLabel}">위치 없음</dd>
+			<dt>접수일</dt>
+			<dd th:text="${report.createdAt}">2026-06-15T10:00:00</dd>
+		</dl>
+	</section>
+
+	<section class="admin-panel">
+		<h2>사진</h2>
+		<dl>
+			<dt>파일명</dt>
+			<dd th:text="${report.hasPhoto() ? report.photoFileName : '없음'}">없음</dd>
+			<dt>미리보기</dt>
+			<dd>
+				<span th:if="${!report.hasPhoto()}">없음</span>
+				<!-- 사진 열람 권한(REPORT_PHOTO_READ)이 있을 때만 미리보기, 없으면 '있음' 텍스트(#1740). -->
+				<img th:if="${report.hasPhoto() and canReadPhoto}"
+				     class="photo-preview"
+				     th:src="@{/admin/reports/{reportId}/photo/thumbnail(reportId=${report.id})}"
+				     alt="첨부 사진">
+				<span th:if="${report.hasPhoto() and !canReadPhoto}">있음</span>
+			</dd>
+		</dl>
+	</section>
+
+	<section class="admin-panel">
+		<h2>확인 기록</h2>
+		<dl>
+			<dt>확인한 사람</dt>
+			<dd th:text="${report.reviewedBy != null ? report.reviewedBy : '없음'}">없음</dd>
+			<dt>확인일</dt>
+			<dd th:text="${report.reviewedAt != null ? report.reviewedAt : '없음'}">없음</dd>
+			<dt>기준 신고</dt>
+			<dd th:text="${report.duplicateOfReportId != null ? report.duplicateOfReportId : '없음'}">없음</dd>
+		</dl>
+	</section>
+
+	<section class="admin-panel">
+		<h2>감사 이력</h2>
+		<div th:if="${reviewAudits.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('확인 이력이 없습니다.', '제보를 승인·반려하면 여기에 기록됩니다.')}"></div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!reviewAudits.isEmpty()}">
+		<table>
+			<thead>
+			<tr>
+				<th>확인한 사람</th>
+				<th>결정</th>
+				<th>이전 상태</th>
+				<th>이후 상태</th>
+				<th>기록일</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="audit : ${reviewAudits}">
+				<td th:text="${audit.reviewerId}">admin</td>
+				<td th:text="${audit.decisionLabel}">승인</td>
+				<td th:text="${audit.previousStatusLabel}">접수됨</td>
+				<td th:text="${audit.nextStatusLabel}">반영됨</td>
+				<td th:text="${audit.createdAt}">2026-06-15T10:00:00</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>같은 시설 신고</h2>
+		<!-- 같은 역·시설의 다른 신고(#1740): 판정 전 반복 신고 맥락을 준다. 읽기 전용 목록으로 #1163 병합과 독립. -->
+		<div th:if="${sameFacilityReports.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('같은 시설의 다른 신고가 없습니다.', '같은 시설에 신고가 접수되면 여기에 표시됩니다.')}"></div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!sameFacilityReports.isEmpty()}">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">상태</th>
+				<th scope="col">유형</th>
+				<th scope="col">신고 내용</th>
+				<th scope="col">접수일</th>
+				<th scope="col">상세</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${sameFacilityReports}">
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${row.statusLabel})}">접수됨</span></td>
+				<td th:text="${row.reportTypeLabel}">고장</td>
+				<td th:text="${row.description}">신고 내용</td>
+				<td th:text="${#temporals.format(row.createdAt, 'yyyy-MM-dd HH:mm')}">2026-06-17 09:00</td>
+				<td><a th:href="@{/admin/reports/{id}/page(id=${row.id})}">상세 보기</a></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<form class="review-form"
+	      th:action="@{/admin/reports/{reportId}/page/review(reportId=${report.id})}"
+	      method="post">
+		<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+		<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+		<label>
+			기준 신고 ID
+			<input name="duplicateOfReportId" type="text" autocomplete="off" placeholder="중복 처리할 때 입력" th:value="${reviewForm.duplicateOfReportId}">
+		</label>
+		<!-- 버튼 위계 계약(V6-08 #2280, outline 이관 #2313): 승인 primary(대표 액션), 반려 danger(파괴적),
+		     중복 처리 outline(보조)로 화면당 filled 1개 원칙을 지킨다. -->
+		<button class="primary" type="submit" name="decision" value="ACCEPT">승인</button>
+		<details class="admin-action-confirm">
+			<summary class="danger">반려…</summary>
+			<p class="meta">이 신고를 반려할까요? 이 작업은 되돌리기 어렵습니다.</p>
+			<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
+		</details>
+		<button class="outline" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>
+	</form>
+	</div>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

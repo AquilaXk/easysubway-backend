@@ -1,0 +1,1023 @@
+package com.easysubway.route.application.service;
+
+import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
+import com.easysubway.journey.application.JourneyAlternatives;
+import com.easysubway.journey.application.JourneyCandidate;
+import com.easysubway.journey.application.JourneyExecutionResult;
+import com.easysubway.journey.application.JourneyRaptorPort;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import com.easysubway.journey.application.FacilityAvailabilityPort;
+import java.time.Clock;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+public final class JourneyRaptorAdapter implements JourneyRaptorPort {
+
+	private final RouteTimetableRaptorPlanner planner;
+	private final JourneyFacilityBlockOverlay facilityBlocks;
+
+	public JourneyRaptorAdapter() {
+		this(ScanWorkspacePool.shared(), FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this(workspacePool, FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
+	}
+
+	public JourneyRaptorAdapter(
+		ScanWorkspacePool workspacePool,
+		FacilityAvailabilityPort facilityAvailabilityPort,
+		boolean facilityStatusRequired,
+		Clock clock
+	) {
+		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+		this.facilityBlocks = new JourneyFacilityBlockOverlay(facilityAvailabilityPort, facilityStatusRequired, clock);
+	}
+
+	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired, Clock clock) {
+		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, facilityStatusRequired, clock);
+	}
+
+	@Override
+	public PlanResult plan(
+		JourneyRequest request,
+		ActiveJourneySnapshot snapshot,
+		Instant effectiveInstant,
+		RealtimeObservation realtimeOrNull,
+		JourneyRequestMeasurement requestMeasurement
+	) {
+		JourneyRequest requiredRequest = Objects.requireNonNull(request, "request");
+		ActiveJourneySnapshot requiredSnapshot = Objects.requireNonNull(snapshot, "snapshot");
+		Instant requiredEffectiveInstant = Objects.requireNonNull(effectiveInstant, "effectiveInstant");
+		JourneyRequestMeasurement requiredMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
+		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
+
+		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
+		JourneyFacilityBlockOverlay.Capture facilityCapture = facilityBlocks.captureWithStatus(
+			requiredRequest.constraintMode(), routeRuntime.compiledTimetable());
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityCapture.overlay();
+
+		if (requiredRequest.viaStationId() != null) {
+			return planChainedVia(
+				requiredRequest,
+				requiredSnapshot,
+				requiredEffectiveInstant,
+				realtimeOrNull,
+				requiredMeasurement,
+				routeRuntime,
+				facilityCapture
+			);
+		}
+
+		JourneyRaptorQuery query = JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant);
+
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay = requireRealtimeOverlay(
+			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull, query, facilityOverlay);
+		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
+			query,
+			routeRuntime.compiledTimetable(),
+			realtimeOverlay,
+			requiredMeasurement,
+			requiredRequest.requestId(),
+			requiredSnapshot.routeBundleSha256(),
+			requiredSnapshot.generation()
+		);
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = planned.itineraries();
+		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
+		if (itineraries.isEmpty()) {
+			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics(),
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+				measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+					planned.measurementObservation()));
+		}
+
+		// #469: 결과 구성은 planner가 정했다. 여정마다 대표 묶음을 붙이고 계단 없는 경로 결과를 함께 낸다.
+		List<JourneyCandidate> candidates = itineraries.stream()
+			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes())
+				.withAlternativeCategories(ordered(itinerary.alternativeCategories())))
+			.toList();
+		if (new HashSet<>(candidates.stream().map(JourneyCandidate::journeyId).toList()).size()
+			!= candidates.size()) {
+			throw new IllegalArgumentException("RAPTOR returned duplicate Journey paths");
+		}
+		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+				planned.measurementObservation()),
+			new JourneyAlternatives.StairFreeAlternative(planned.stairFreeStatus(), facilityCapture.status()));
+	}
+
+	private PlanResult planChainedVia(
+		JourneyRequest requiredRequest,
+		ActiveJourneySnapshot requiredSnapshot,
+		Instant requiredEffectiveInstant,
+		RealtimeObservation realtimeOrNull,
+		JourneyRequestMeasurement requiredMeasurement,
+		RaptorRouteBundleRuntimeView routeRuntime,
+		JourneyFacilityBlockOverlay.Capture facilityCapture
+	) {
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityCapture.overlay();
+		String viaStationId = requiredRequest.viaStationId();
+		var timetable = routeRuntime.compiledTimetable();
+
+		JourneyRequest leg1Request = new JourneyRequest(
+			requiredRequest.requestId(),
+			requiredRequest.originStationId(),
+			viaStationId,
+			null,
+			requiredRequest.departure(),
+			requiredRequest.timePolicy(),
+			requiredRequest.walkingPace(),
+			requiredRequest.mobilityProfile(),
+			requiredRequest.constraintMode(),
+			Math.min(requiredRequest.maxTransfers(), 2),
+			Math.min(requiredRequest.alternativeCount(), 2),
+			requiredRequest.cancellationSignal()
+		);
+		JourneyRaptorQuery leg1Query = JourneyRaptorQuery.from(leg1Request, requiredEffectiveInstant);
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay1 = requireRealtimeOverlay(
+			leg1Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg1Query, facilityOverlay);
+
+		RouteTimetableRaptorPlanner.JourneyPlan planned1 = planner.journeyItineraries(
+			leg1Query,
+			timetable,
+			realtimeOverlay1,
+			requiredMeasurement,
+			requiredRequest.requestId(),
+			requiredSnapshot.routeBundleSha256(),
+			requiredSnapshot.generation()
+		);
+
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries1 = planned1.itineraries();
+		if (itineraries1.isEmpty()) {
+			return new PlanResult(requiredRequest.requestId(), List.of(), planned1.scanMetrics(),
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+				measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+					planned1.measurementObservation()));
+		}
+
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> selectedLeg1 = itineraries1.stream().limit(2).toList();
+
+		int totalRoutes = planned1.scanMetrics().expandedRoutes();
+		int totalTrips = planned1.scanMetrics().expandedTrips();
+		int totalTransfers = planned1.scanMetrics().expandedTransfers();
+
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> chainedItineraries = new ArrayList<>();
+
+		int viaStation = timetable.stationIndex(viaStationId);
+
+		for (RouteTimetableRaptorPlanner.JourneyItinerary leg1 : selectedLeg1) {
+			RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1 = findLastRide(leg1);
+			int leg1RideCount = countRides(leg1);
+			int fromLine = timetable.lineIndex(lastRide1.lineId());
+			Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
+			int maxTransfers2PassThrough = requiredRequest.maxTransfers() - (leg1RideCount - 1);
+			if (maxTransfers2PassThrough >= 0) {
+				JourneyRequest passThroughRequest = new JourneyRequest(
+					requiredRequest.requestId(),
+					viaStationId,
+					requiredRequest.destinationStationId(),
+					null,
+					new JourneyRequest.Departure.Scheduled(leg1Arrival),
+					requiredRequest.timePolicy(),
+					requiredRequest.walkingPace(),
+					requiredRequest.mobilityProfile(),
+					requiredRequest.constraintMode(),
+					maxTransfers2PassThrough,
+					requiredRequest.alternativeCount(),
+					requiredRequest.cancellationSignal()
+				);
+				JourneyRaptorQuery passThroughQuery = JourneyRaptorQuery.from(passThroughRequest, leg1Arrival);
+				RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlayPassThrough = requireRealtimeOverlay(
+					passThroughRequest, requiredSnapshot, routeRuntime, realtimeOrNull, leg1.serviceDate(), facilityOverlay);
+				RouteTimetableRaptorPlanner.JourneyPlan passThroughPlan = planner.sameTripPassThroughItineraries(
+					passThroughQuery,
+					timetable,
+					leg1.serviceDate(),
+					lastRide1.tripId(),
+					lastRide1.lineId(),
+					leg1Arrival,
+					realtimeOverlayPassThrough,
+					requiredMeasurement,
+					requiredRequest.requestId(),
+					requiredSnapshot.routeBundleSha256(),
+					requiredSnapshot.generation()
+				);
+				totalRoutes += passThroughPlan.scanMetrics().expandedRoutes();
+				totalTrips += passThroughPlan.scanMetrics().expandedTrips();
+				totalTransfers += passThroughPlan.scanMetrics().expandedTransfers();
+				for (RouteTimetableRaptorPlanner.JourneyItinerary leg2 : passThroughPlan.itineraries()) {
+					RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2 = findFirstRide(leg2);
+					RouteTimetableRaptorPlanner.JourneyItinerary chained = chainLegs(
+						requiredRequest,
+						timetable,
+						leg1,
+						leg2,
+						lastRide1,
+						firstRide2,
+						realtimeOverlayPassThrough
+					);
+					if (chained != null) {
+						chainedItineraries.add(chained);
+					}
+				}
+			}
+
+			int maxTransfers2 = requiredRequest.maxTransfers() - leg1RideCount;
+			if (maxTransfers2 < 0) {
+				continue;
+			}
+			for (int readySlackSeconds : leg2ReadySlacks(
+				requiredRequest, timetable, viaStation, fromLine, facilityOverlay
+			)) {
+				Instant leg2ReadyAt = leg1Arrival.plusSeconds(readySlackSeconds);
+
+				JourneyRequest leg2Request = new JourneyRequest(
+					requiredRequest.requestId(),
+					viaStationId,
+					requiredRequest.destinationStationId(),
+					null,
+					new JourneyRequest.Departure.Scheduled(leg2ReadyAt),
+					requiredRequest.timePolicy(),
+					requiredRequest.walkingPace(),
+					requiredRequest.mobilityProfile(),
+					requiredRequest.constraintMode(),
+					maxTransfers2,
+					requiredRequest.alternativeCount(),
+					requiredRequest.cancellationSignal()
+				);
+				JourneyRaptorQuery leg2Query = JourneyRaptorQuery.from(leg2Request, leg2ReadyAt);
+				RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay2 = requireRealtimeOverlay(
+					leg2Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg2Query, facilityOverlay);
+
+				RouteTimetableRaptorPlanner.JourneyPlan planned2 = planner.journeyItineraries(
+					leg2Query,
+					timetable,
+					realtimeOverlay2,
+					requiredMeasurement,
+					requiredRequest.requestId(),
+					requiredSnapshot.routeBundleSha256(),
+					requiredSnapshot.generation()
+				);
+
+				totalRoutes += planned2.scanMetrics().expandedRoutes();
+				totalTrips += planned2.scanMetrics().expandedTrips();
+				totalTransfers += planned2.scanMetrics().expandedTransfers();
+
+				for (RouteTimetableRaptorPlanner.JourneyItinerary leg2 : planned2.itineraries()) {
+					RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2 = findFirstRide(leg2);
+					RouteTimetableRaptorPlanner.JourneyItinerary chained = chainLegs(
+						requiredRequest,
+						timetable,
+						leg1,
+						leg2,
+						lastRide1,
+						firstRide2,
+						realtimeOverlay2
+					);
+					if (chained != null) {
+						chainedItineraries.add(chained);
+					}
+				}
+			}
+		}
+
+		JourneyRaptorPort.ScanMetrics combinedScanMetrics = new JourneyRaptorPort.ScanMetrics(
+			totalRoutes, totalTrips, totalTransfers);
+
+		if (chainedItineraries.isEmpty()) {
+			return new PlanResult(requiredRequest.requestId(), List.of(), combinedScanMetrics,
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+				measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+					planned1.measurementObservation()));
+		}
+
+		Comparator<ChainedCandidate> arrivalOrder = Comparator
+			.comparing((ChainedCandidate chained) -> chained.candidate().realtimeArrivalTime() != null
+				? chained.candidate().realtimeArrivalTime()
+				: chained.candidate().plannedArrivalTime())
+			.thenComparingInt(chained -> chained.candidate().transferCount())
+			.thenComparingLong(chained -> chained.candidate().durationSeconds());
+		List<ChainedCandidate> candidates = new ArrayList<>();
+		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
+			candidates.add(new ChainedCandidate(
+				toCandidate(requiredRequest, requiredEffectiveInstant, itinerary, routeRuntime.officialFareQuotes()),
+				itinerary.unconfirmedStairFreeTransfer()));
+		}
+		candidates.sort(arrivalOrder);
+
+		Map<String, ChainedCandidate> unique = new LinkedHashMap<>();
+		for (ChainedCandidate c : candidates) {
+			unique.putIfAbsent(c.candidate().journeyId(), c);
+		}
+		// #469: 직행 검색과 같은 결과 구성 규칙으로 경유 여정을 고른다.
+		JourneyAlternatives.Selection<ChainedCandidate> selection = JourneyAlternatives.compose(
+			List.copyOf(unique.values()), requiredRequest.alternativeCount(),
+			requiredRequest.mobilityProfile() == JourneyRequest.MobilityProfile.STEP_FREE
+				&& requiredRequest.constraintMode() == JourneyRequest.ConstraintMode.NONE,
+			arrivalOrder, chained -> chained.candidate().transferCount() + 1,
+			chained -> chained.candidate().accessibility().stairFree());
+		List<JourneyCandidate> finalCandidates = new ArrayList<>(selection.items().size());
+		for (int index = 0; index < selection.items().size(); index += 1) {
+			finalCandidates.add(selection.items().get(index).candidate()
+				.withAlternativeCategories(ordered(selection.categories().get(index))));
+		}
+		JourneyAlternatives.StairFreeStatus stairFreeStatus = JourneyAlternatives.stairFreeStatus(
+			finalCandidates.stream().anyMatch(candidate -> candidate.accessibility().stairFree()),
+			selection.stairFreeOmitted(),
+			selection.items().stream().anyMatch(ChainedCandidate::unconfirmedStairFreeTransfer));
+
+		return new PlanResult(requiredRequest.requestId(), finalCandidates, combinedScanMetrics,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+				planned1.measurementObservation()),
+			new JourneyAlternatives.StairFreeAlternative(stairFreeStatus, facilityCapture.status()));
+	}
+
+	static RouteTimetableRaptorPlanner.JourneyItinerary chainLegs(
+		JourneyRequest request,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.JourneyItinerary leg1,
+		RouteTimetableRaptorPlanner.JourneyItinerary leg2,
+		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1,
+		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		String via = request.viaStationId();
+		int station = timetable.stationIndex(via);
+		Instant leg1Arrival = RouteTimetableRaptorPlanner.effectiveArrival(lastRide1);
+		Instant leg2Departure = RouteTimetableRaptorPlanner.effectiveDeparture(firstRide2);
+		long availableSlack = Duration.between(leg1Arrival, leg2Departure).getSeconds();
+
+		if (leg1.serviceDate().equals(leg2.serviceDate())
+			&& lastRide1.tripId().equals(firstRide2.tripId())
+			&& lastRide1.lineId().equals(firstRide2.lineId())
+			&& availableSlack >= 0
+			&& !firstRide2.plannedDepartureTime().isBefore(lastRide1.plannedArrivalTime())) {
+			return chainSameTripPassThrough(request, via, leg1, leg2, lastRide1, firstRide2);
+		}
+
+		int duration = 0;
+		int distance = 0;
+		boolean includesStairs = false;
+		boolean verified = true;
+		String status = "VERIFIED";
+		String transferType = null;
+		Boolean farePenaltyApplies = null;
+		Integer transferLimitMinutes = null;
+		boolean junctionUnconfirmedStairFree = false;
+		boolean junctionStairAccessUnconfirmed = false;
+
+		int fromLine = timetable.lineIndex(lastRide1.lineId());
+		int toLine = timetable.lineIndex(firstRide2.lineId());
+		if (fromLine != toLine) {
+			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
+			// #453: 같은 환승 쌍에 비검증 후보가 앞서도 검증 후보를 먼저 고른다. 검증 후보가 없으면 역 밖 보행을 보고, 그래도 없으면 버린다.
+			int transition = resolveJunctionTransition(timetable, station, fromLine, toLine, profileBit, realtimeOverlay);
+
+			if (transition < 0) {
+				return null;
+			}
+
+			distance = timetable.transitionDistanceMeters(transition);
+			duration = RouteTimetableRaptorPlanner.verifiedTransferSeconds(
+				request,
+				timetable.transitionDurationSeconds(transition),
+				distance
+			);
+			includesStairs = timetable.transitionIncludesStairs(transition);
+			verified = timetable.transitionVerified(transition);
+			status = timetable.transitionVerificationStatus(transition);
+			junctionStairAccessUnconfirmed = timetable.transitionStairAccess(transition)
+				== RouteTimetableRaptorPlanner.STAIR_ACCESS_UNCONFIRMED;
+			if (includesStairs) {
+				// #469 F1: 경유역 접속 환승의 계단 상태가 미확정이거나 근거 없는 계단 없는 동선이 있으면 확정할 수 없다.
+				junctionUnconfirmedStairFree = RouteTimetableRaptorPlanner.unconfirmedStairFreeTransfer(
+					timetable, transition, profileBit, realtimeOverlay);
+			}
+
+			if (timetable.isOutOfStationTransition(transition)) {
+				transferType = "OUT_OF_STATION";
+				int alightSeconds = ServiceDayResolver.resolve(leg1Arrival).secondsFromServiceDayStart();
+				int boardSeconds = ServiceDayResolver.resolve(leg2Departure).secondsFromServiceDayStart();
+				int elapsed = (int) availableSlack;
+				int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
+				boolean timeout = elapsed > limit;
+				farePenaltyApplies = timeout;
+				transferLimitMinutes = limit / 60;
+			}
+		}
+
+		if (availableSlack < Math.max(duration, 180)) {
+			return null;
+		}
+
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();
+		// #454: 각 구간 여정은 승차로 시작해 승차로 끝난다. 앞 구간의 마지막 승차는 환승 안내를 붙여 다시 만든다.
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
+		for (int i = 0; i < legs1.size() - 1; i++) {
+			combinedLegs.add(legs1.get(i));
+		}
+		boolean stepFree = RouteTimetableRaptorPlanner.stepFreeAlightingCarDoors(request);
+		List<RouteTimetableRaptorPlanner.AlightingCarDoor> transferHints = timetable.selectAlightingCarDoors(
+			lastRide1.toStationId(),
+			lastRide1.lineId(),
+			timetable.tripDirection(lastRide1.tripId()),
+			true,
+			stepFree
+		);
+		var resolvedRide2 = ServiceDayResolver.resolve(leg2Departure);
+		Integer nextHeadwaySeconds = timetable.nextHeadwaySeconds(
+			resolvedRide2.serviceDate(),
+			firstRide2.fromStationId(),
+			firstRide2.toStationId(),
+			firstRide2.lineId(),
+			resolvedRide2.secondsFromServiceDayStart(),
+			realtimeOverlay
+		);
+		com.easysubway.route.domain.TransferConnectionRisk connectionRisk =
+			com.easysubway.route.domain.TransferConnectionRisk.evaluate(
+				availableSlack - duration,
+				duration,
+				nextHeadwaySeconds
+			);
+		RouteTimetableRaptorPlanner.JourneyAccessProjection junctionTransfer =
+			new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+				RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
+				via,
+				via,
+				duration,
+				distance,
+				includesStairs,
+				verified,
+				status,
+				transferType,
+				farePenaltyApplies,
+				transferLimitMinutes,
+				junctionStairAccessUnconfirmed,
+				connectionRisk,
+				RouteTimetableRaptorPlanner.fastTransferCarDoorsOnly(transferHints)
+			);
+		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			lastRide1.lineId(),
+			lastRide1.tripId(),
+			lastRide1.directionStationId(),
+			lastRide1.fromStationId(),
+			lastRide1.toStationId(),
+			lastRide1.servicePattern(),
+			lastRide1.plannedDepartureTime(),
+			lastRide1.plannedArrivalTime(),
+			lastRide1.realtimeDepartureTime(),
+			lastRide1.realtimeArrivalTime(),
+			lastRide1.stops(),
+			transferHints,
+			lastRide1.boardingPlatformGaps(),
+			lastRide1.alightingPlatformGaps()
+		));
+		combinedLegs.add(junctionTransfer);
+		combinedLegs.addAll(leg2.legs());
+
+		JourneyProfileRaptorPort.ItineraryMetrics metrics =
+			RouteTimetableRaptorPlanner.itineraryMetrics(combinedLegs, 0);
+
+		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
+		return new RouteTimetableRaptorPlanner.JourneyItinerary(
+			leg1.serviceDate(),
+			leg1.plannedDepartureTime(),
+			leg2.plannedArrivalTime(),
+			realtime ? leg1.realtimeDepartureTime() : null,
+			realtime ? leg2.realtimeArrivalTime() : null,
+			metrics,
+			combinedLegs,
+			null,
+			null,
+			leg1.unconfirmedStairFreeTransfer() || leg2.unconfirmedStairFreeTransfer() || junctionUnconfirmedStairFree
+		);
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyItinerary chainSameTripPassThrough(
+		JourneyRequest request,
+		String viaStationId,
+		RouteTimetableRaptorPlanner.JourneyItinerary leg1,
+		RouteTimetableRaptorPlanner.JourneyItinerary leg2,
+		RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1,
+		RouteTimetableRaptorPlanner.JourneyRideProjection firstRide2
+	) {
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs1 = leg1.legs();
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs2 = leg2.legs();
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs =
+			new ArrayList<>(legs1.size() + legs2.size() - 1);
+		for (int i = 0; i < legs1.size() - 1; i += 1) {
+			combinedLegs.add(legs1.get(i));
+		}
+
+		List<RouteTimetableRaptorPlanner.JourneyStopProjection> stops1 = lastRide1.stops();
+		List<RouteTimetableRaptorPlanner.JourneyStopProjection> stops2 = firstRide2.stops();
+		List<RouteTimetableRaptorPlanner.JourneyStopProjection> mergedStops =
+			new ArrayList<>(stops1.size() + stops2.size() - 1);
+		for (int i = 0; i < stops1.size() - 1; i += 1) {
+			mergedStops.add(stops1.get(i));
+		}
+		RouteTimetableRaptorPlanner.JourneyStopProjection viaEnd = stops1.getLast();
+		RouteTimetableRaptorPlanner.JourneyStopProjection viaStart = stops2.getFirst();
+		mergedStops.add(new RouteTimetableRaptorPlanner.JourneyStopProjection(
+			viaStationId,
+			viaEnd.plannedArrivalTime(),
+			viaStart.plannedDepartureTime(),
+			viaEnd.realtimeArrivalTime(),
+			viaStart.realtimeDepartureTime()
+		));
+		for (int i = 1; i < stops2.size(); i += 1) {
+			mergedStops.add(stops2.get(i));
+		}
+
+		combinedLegs.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			firstRide2.lineId(),
+			firstRide2.tripId(),
+			firstRide2.directionStationId(),
+			lastRide1.fromStationId(),
+			firstRide2.toStationId(),
+			lastRide1.servicePattern(),
+			lastRide1.plannedDepartureTime(),
+			firstRide2.plannedArrivalTime(),
+			lastRide1.realtimeDepartureTime(),
+			firstRide2.realtimeArrivalTime(),
+			List.copyOf(mergedStops),
+			firstRide2.alightingCarDoors(),
+			lastRide1.boardingPlatformGaps(),
+			firstRide2.alightingPlatformGaps()
+		));
+		for (int i = 1; i < legs2.size(); i += 1) {
+			combinedLegs.add(legs2.get(i));
+		}
+
+		JourneyProfileRaptorPort.ItineraryMetrics metrics =
+			RouteTimetableRaptorPlanner.itineraryMetrics(combinedLegs, 0);
+		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
+		return new RouteTimetableRaptorPlanner.JourneyItinerary(
+			leg1.serviceDate(),
+			leg1.plannedDepartureTime(),
+			leg2.plannedArrivalTime(),
+			realtime ? leg1.realtimeDepartureTime() : null,
+			realtime ? leg2.realtimeArrivalTime() : null,
+			metrics,
+			combinedLegs,
+			null,
+			null,
+			leg1.unconfirmedStairFreeTransfer() || leg2.unconfirmedStairFreeTransfer()
+		);
+	}
+
+	private static List<JourneyAlternatives.Category> ordered(java.util.Set<JourneyAlternatives.Category> categories) {
+		return java.util.Objects.requireNonNull(categories, "categories").stream().sorted().toList();
+	}
+
+	/** #469: 경유 여정 후보와, 그 여정의 계단 환승에 근거 없는 계단 없는 동선이 있는지. */
+	private record ChainedCandidate(JourneyCandidate candidate, boolean unconfirmedStairFreeTransfer) {
+	}
+
+	private static java.util.Set<Integer> leg2ReadySlacks(
+		JourneyRequest request,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		int station,
+		int fromLine,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
+		java.util.Set<Integer> slacks = new java.util.LinkedHashSet<>();
+		int boardingSlack = RouteTimetableRaptorPlanner.boardingSlackSeconds(request);
+		slacks.add(Math.max(0, 180 - boardingSlack));
+		int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
+		int lineCount = timetable.lineCount();
+		for (int toLine = 0; toLine < lineCount; toLine++) {
+			if (toLine == fromLine) {
+				continue;
+			}
+			int transition = resolveJunctionTransition(timetable, station, fromLine, toLine, profileBit, facilityOverlay);
+			if (transition >= 0) {
+				int duration = RouteTimetableRaptorPlanner.verifiedTransferSeconds(
+					request,
+					timetable.transitionDurationSeconds(transition),
+					timetable.transitionDistanceMeters(transition)
+				);
+				slacks.add(Math.max(0, Math.max(duration, 180) - boardingSlack));
+			}
+		}
+		return slacks;
+	}
+
+	private static int resolveJunctionTransition(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		int station,
+		int fromLine,
+		int toLine,
+		int profileBit,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
+		int transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false, true, facilityOverlay);
+		if (transition < 0) {
+			transition = resolveFootpathTransition(
+				timetable.footpathsFromStation(station), fromLine, toLine, profileBit, timetable, facilityOverlay);
+		}
+		return transition;
+	}
+
+	static int resolveFootpathTransition(
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
+		int fromLine,
+		int toLine,
+		int profileBit,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable
+	) {
+		return resolveFootpathTransition(footpaths, fromLine, toLine, profileBit, timetable, null);
+	}
+
+	/** #453: 확인된 시설 고장(overlay)으로 막힌 역 밖 보행 후보는 고르지 않는다. */
+	static int resolveFootpathTransition(
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
+		int fromLine,
+		int toLine,
+		int profileBit,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
+		if (footpaths == null) {
+			return -1;
+		}
+		for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
+			if (fp.fromLine() == fromLine && fp.toLine() == toLine) {
+				int t = timetable.selectTransition(fp.candidateTransitions(), profileBit, false, true, facilityOverlay);
+				if (t >= 0) {
+					return t;
+				}
+			}
+		}
+		return -1;
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyRideProjection findLastRide(
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+	) {
+		return itinerary.legs().reversed().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst()
+			.orElseThrow();
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyRideProjection findFirstRide(
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+	) {
+		return itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst()
+			.orElseThrow();
+	}
+
+	private static int countRides(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		int count = 0;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static int accessProfileBit(
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.ConstraintMode constraintMode
+	) {
+		int index = switch (mobilityProfile) {
+			case STANDARD, NO_STAIRS -> 5;
+			case SLOW -> 0;
+			case STEP_FREE -> 2;
+		};
+		int constraint = constraintMode == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+			? 0
+			: (mobilityProfile == JourneyRequest.MobilityProfile.STEP_FREE ? 1 : 2);
+		return 1 << (index * 3 + constraint);
+	}
+
+	private static JourneyRaptorPort.RouteMeasurementReceipt measurementReceipt(
+		JourneyRequest request, ActiveJourneySnapshot snapshot, JourneyRequestMeasurement requestMeasurement,
+		JourneyRequestMeasurement.RouteObservation observation) {
+		var measurement = snapshot.measurementReceipt();
+		if (measurement.status() != ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED) {
+			requestMeasurement.markUnobservable();
+			return JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
+		}
+		var identity = measurement.identity();
+		if (!request.requestId().equals(identity.requestId())
+			|| !snapshot.routeBundleSha256().equals(identity.routeBundleSha256())
+			|| snapshot.generation() != identity.generation()) {
+			requestMeasurement.markUnobservable();
+			return JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
+		}
+		return observation == null ? JourneyRaptorPort.RouteMeasurementReceipt.unobservable()
+			: JourneyRaptorPort.RouteMeasurementReceipt.observed(observation);
+	}
+
+	private static RaptorRouteBundleRuntimeView requireRouteRuntime(ActiveJourneySnapshot snapshot) {
+		if (!(snapshot.runtimeView() instanceof RaptorRouteBundleRuntimeView runtime)) {
+			throw new IllegalArgumentException("unsupported Journey RAPTOR runtime view");
+		}
+		if (!snapshot.routeBundleSha256().equals(runtime.routeBundleSha256())
+			|| snapshot.generation() != runtime.generation()) {
+			throw new IllegalArgumentException("Journey RAPTOR runtime view does not match snapshot");
+		}
+		return runtime;
+	}
+
+	private static RouteTimetableRaptorPlanner.RealtimeOverlay requireRealtimeOverlay(
+		JourneyRequest request,
+		ActiveJourneySnapshot snapshot,
+		RaptorRouteBundleRuntimeView routeRuntime,
+		RealtimeObservation realtimeOrNull,
+		JourneyRaptorQuery query,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
+		return requireRealtimeOverlay(request, snapshot, routeRuntime, realtimeOrNull, serviceDate(query), facilityOverlay);
+	}
+
+	private static RouteTimetableRaptorPlanner.RealtimeOverlay requireRealtimeOverlay(
+		JourneyRequest request,
+		ActiveJourneySnapshot snapshot,
+		RaptorRouteBundleRuntimeView routeRuntime,
+		RealtimeObservation realtimeOrNull,
+		java.time.LocalDate serviceDate,
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
+	) {
+		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
+			if (realtimeOrNull != null) {
+				throw new IllegalArgumentException("timetable Journey request must not receive realtime");
+			}
+			return facilityOverlay;
+		}
+		if (realtimeOrNull == null
+			|| !(realtimeOrNull.runtimeView() instanceof RaptorRealtimeRuntimeView realtimeRuntime)
+			|| realtimeRuntime.routeRuntimeView() != routeRuntime
+			|| !realtimeOrNull.identity().equals(realtimeRuntime.identity())
+			|| !snapshot.routeBundleSha256().equals(realtimeRuntime.routeBundleSha256())
+			|| snapshot.generation() != realtimeRuntime.generation()) {
+			throw new IllegalArgumentException("realtime runtime view does not match captured Journey generation");
+		}
+		RouteTimetableRaptorPlanner.RealtimeOverlay trainOverlay = realtimeRuntime.realtimeOverlay(serviceDate);
+		return RouteTimetableRaptorPlanner.RealtimeOverlay.combine(trainOverlay, facilityOverlay);
+	}
+
+	private static java.time.LocalDate serviceDate(JourneyRaptorQuery query) {
+		if (!(query.temporalQuery() instanceof JourneyRaptorQuery.DepartAt departure)) {
+			throw new IllegalArgumentException("Journey realtime requires a point query");
+		}
+		return ServiceDayResolver.resolve(departure.readyAt()).serviceDate();
+	}
+
+	private static JourneyCandidate toCandidate(
+		JourneyRequest request,
+		Instant effectiveInstant,
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
+	) {
+		requireLegOrder(itinerary);
+		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
+		List<JourneyCandidate.Leg> legs = new ArrayList<>(itinerary.legs().size());
+		long walkingDistanceMeters = 0;
+		int transferCount = 0;
+		int rideCount = 0;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection projection : itinerary.legs()) {
+			if (projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access) {
+				if (!access.verified()) {
+					throw new IllegalArgumentException("Journey accessibility transition is not verified");
+				}
+				if (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+					&& access.includesStairs()) {
+					throw new IllegalArgumentException("Journey accessibility transition includes stairs");
+				}
+				walkingDistanceMeters = Math.addExact(walkingDistanceMeters, access.distanceMeters());
+				// #454: 이동 구간은 승차 사이 환승뿐이다. 진입·하차(Entry/Exit) 구간은 만들지 않는다.
+				transferCount = Math.addExact(transferCount, 1);
+				legs.add(new JourneyCandidate.Transfer(
+					access.fromStationId(),
+					access.toStationId(),
+					access.durationSeconds(),
+					access.transferType(),
+					access.farePenaltyApplies(),
+					access.transferLimitMinutes()
+				));
+				continue;
+			}
+			RouteTimetableRaptorPlanner.JourneyRideProjection ride =
+				(RouteTimetableRaptorPlanner.JourneyRideProjection) projection;
+			rideCount = Math.addExact(rideCount, 1);
+			boolean completeRealtimePair = ride.realtimeDepartureTime() != null
+				&& ride.realtimeArrivalTime() != null;
+			if (completeRealtimePair != realtime) {
+				throw new IllegalArgumentException("Journey realtime overlay is incomplete for selected ride");
+			}
+			legs.add(new JourneyCandidate.Ride(
+				ride.lineId(),
+				ride.tripId(),
+				ride.directionStationId(),
+				ride.fromStationId(),
+				ride.toStationId(),
+				ride.servicePattern(),
+				ride.plannedDepartureTime(),
+				ride.plannedArrivalTime(),
+				ride.realtimeDepartureTime(),
+				ride.realtimeArrivalTime(),
+				ride.stops().stream().map(stop -> new JourneyCandidate.Stop(
+					stop.stationId(),
+					stop.plannedArrivalTime(),
+					stop.plannedDepartureTime(),
+					stop.realtimeArrivalTime(),
+					stop.realtimeDepartureTime()
+				)).toList(),
+				ride.alightingCarDoors().stream()
+					.map(d -> new JourneyCandidate.AlightingCarDoor(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
+					.toList(),
+				ride.boardingPlatformGaps(),
+				ride.alightingPlatformGaps()
+			));
+		}
+		if (rideCount == 0 || transferCount != rideCount - 1) {
+			throw new IllegalArgumentException("Journey RAPTOR leg order is invalid");
+		}
+		if ((itinerary.realtimeDepartureTime() != null) != realtime
+			|| (itinerary.realtimeArrivalTime() != null) != realtime) {
+			throw new IllegalArgumentException("Journey realtime interval is incomplete");
+		}
+		Instant plannedDeparture = effectiveInstant;
+		Instant realtimeDeparture = realtime ? effectiveInstant : null;
+		JourneyCandidate.Fare fare = calculateFare(itinerary, fareQuotes);
+		return new JourneyCandidate(
+			journeyId(request, plannedDeparture, itinerary),
+			plannedDeparture,
+			itinerary.plannedArrivalTime(),
+			realtimeDeparture,
+			itinerary.realtimeArrivalTime(),
+			Duration.between(plannedDeparture, itinerary.plannedArrivalTime()).toSeconds(),
+			transferCount,
+			walkingDistanceMeters,
+			realtime ? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE,
+			accessibilityOf(itinerary),
+			fare,
+			legs,
+			List.of()
+		);
+	}
+
+	/** #503: 여정 환승들의 계단 접근 상태(계단 없음 확정 / 확정 계단 / 미확정)에서 stairFree와 reasonCodes를 만든다. */
+	static JourneyCandidate.Accessibility accessibilityOf(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		boolean anyStairs = false;
+		boolean anyUnconfirmed = false;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access) {
+				anyStairs |= access.includesStairs();
+				anyUnconfirmed |= access.stairAccessUnconfirmed();
+			}
+		}
+		return JourneyCandidate.Accessibility.ofStairAccess(anyStairs, anyUnconfirmed);
+	}
+
+	/**
+	 * 재승차가 없으면 첫 승차역 -> 최종 하차역 공식 O-D 운임 한 건만 조회한다(#430).
+	 * 역 밖 환승 제한 시간을 넘긴 환승(farePenaltyApplies == true)이 있으면 그 지점에서 여정을 승차 구간으로 나누고,
+	 * 구간마다 공식 O-D 운임을 조회해 합한다(#444). 어느 구간이라도 표에 없으면 여정 전체가 UNAVAILABLE이다.
+	 * point 검색과 profile 계획이 같은 planner 투영으로 이 함수를 함께 쓴다.
+	 */
+	static JourneyCandidate.Fare calculateFare(
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		Map<String, OfficialFareQuote> fareQuotes
+	) {
+		Objects.requireNonNull(fareQuotes, "fareQuotes");
+		record Section(String from, String to) {}
+		List<Section> sections = new ArrayList<>();
+		RouteTimetableRaptorPlanner.JourneyRideProjection sectionFirstRide = null;
+		RouteTimetableRaptorPlanner.JourneyRideProjection sectionLastRide = null;
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
+			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
+				if (sectionFirstRide == null) sectionFirstRide = ride;
+				sectionLastRide = ride;
+			} else if (Boolean.TRUE.equals(
+				((RouteTimetableRaptorPlanner.JourneyAccessProjection) leg).farePenaltyApplies())) {
+				// planner는 탑승 사이 TRANSFER 구간에만 재승차 여부를 싣는다.
+				if (sectionFirstRide == null) {
+					throw new IllegalArgumentException("Journey re-boarding transfer must follow a ride");
+				}
+				sections.add(new Section(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+				sectionFirstRide = null;
+			}
+		}
+		if (sectionFirstRide == null) {
+			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
+		}
+		sections.add(new Section(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+
+		int adultCard = 0;
+		int adultCash = 0;
+		int youthCard = 0;
+		int youthCash = 0;
+		int childCard = 0;
+		int childCash = 0;
+		Set<String> snapshotIds = new LinkedHashSet<>();
+		BitPackedOdFareStore bitPacked = fareQuotes instanceof BitPackedOdFareStore store ? store : null;
+		for (Section section : sections) {
+			OfficialFareQuote quote = bitPacked != null
+				? bitPacked.getQuote(section.from(), section.to())
+				: fareQuotes.get(OfficialFareQuote.fareKey(section.from(), section.to()));
+			if (quote == null) {
+				return JourneyCandidate.Fare.unavailable();
+			}
+			adultCard = Math.addExact(adultCard, quote.gnrlCardFare());
+			adultCash = Math.addExact(adultCash, quote.gnrlCashFare());
+			youthCard = Math.addExact(youthCard, quote.yungCardFare());
+			youthCash = Math.addExact(youthCash, quote.yungCashFare());
+			childCard = Math.addExact(childCard, quote.childCardFare());
+			childCash = Math.addExact(childCash, quote.childCashFare());
+			snapshotIds.add(quote.snapshotId());
+		}
+		return JourneyCandidate.Fare.available(
+			adultCard, adultCash, youthCard, youthCash, childCard, childCash, List.copyOf(snapshotIds));
+	}
+
+	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		// #454: 승차(출발역 승강장) → [환승 → 승차]* (도착역 승강장). 진입·하차 구간은 없다.
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> projections = itinerary.legs();
+		boolean expectRide = true;
+		for (var projection : projections) {
+			if (expectRide && projection instanceof RouteTimetableRaptorPlanner.JourneyRideProjection) {
+				expectRide = false;
+			} else if (!expectRide && projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection) {
+				expectRide = true;
+			} else {
+				throw new IllegalArgumentException("Journey RAPTOR leg order is invalid");
+			}
+		}
+		if (expectRide) throw new IllegalArgumentException("Journey RAPTOR leg order is invalid");
+	}
+
+	private static String journeyId(
+		JourneyRequest request,
+		Instant plannedDeparture,
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+	) {
+		StringBuilder canonical = new StringBuilder();
+		appendCanonical(canonical,
+			ServiceDayResolver.resolve(plannedDeparture).serviceDate().toString());
+		appendCanonical(canonical, request.originStationId());
+		appendCanonical(canonical, request.destinationStationId());
+		appendCanonical(canonical, plannedDeparture.toString());
+		appendCanonical(canonical, itinerary.plannedArrivalTime().toString());
+		for (RouteTimetableRaptorPlanner.JourneyLegProjection projection : itinerary.legs()) {
+			if (projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access) {
+				appendCanonical(canonical, access.kind().name());
+				appendCanonical(canonical, access.fromStationId());
+				appendCanonical(canonical, access.toStationId());
+				appendCanonical(canonical, Integer.toString(access.durationSeconds()));
+				appendCanonical(canonical, Integer.toString(access.distanceMeters()));
+			} else {
+				var ride = (RouteTimetableRaptorPlanner.JourneyRideProjection) projection;
+				appendCanonical(canonical, "RIDE");
+				appendCanonical(canonical, ride.tripId());
+				appendCanonical(canonical, ride.lineId());
+				appendCanonical(canonical, ride.directionStationId());
+				appendCanonical(canonical, ride.fromStationId());
+				appendCanonical(canonical, ride.toStationId());
+				appendCanonical(canonical, ride.plannedDepartureTime().toString());
+				appendCanonical(canonical, ride.plannedArrivalTime().toString());
+			}
+		}
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+				.digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 is unavailable", exception);
+		}
+	}
+
+	private static void appendCanonical(StringBuilder target, String value) {
+		Objects.requireNonNull(value, "canonical value");
+		target.append(value.length()).append(':').append(value);
+	}
+}

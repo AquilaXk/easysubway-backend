@@ -1,0 +1,79 @@
+package com.easysubway.quality.adapter.in.web;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest(properties = {
+	"easysubway.admin.username=admin-user",
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.user.username=basic-user",
+	"easysubway.user.password=user-test-password"
+})
+@AutoConfigureMockMvc
+@DisplayName("관리자 데이터 품질 요약 API")
+class DataQualityControllerTest {
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@TestConfiguration
+	static class FixedClockConfiguration {
+
+		@Bean
+		Clock dataQualityTestClock() {
+			return Clock.fixed(Instant.parse("2026-06-17T00:00:00Z"), ZoneId.of("Asia/Seoul"));
+		}
+	}
+
+	@Test
+	@DisplayName("관리자는 마스터 데이터 품질 요약을 조회한다")
+	void adminGetsDataQualitySummary() throws Exception {
+		mockMvc.perform(get("/admin/data-quality/summary")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			// #2095: InMemoryTransitMasterRepository에 ITX-청춘 pilot 정차역 14곳이
+			// 추가돼(모두 LEVEL_1) 역 수·품질 집계가 2에서 16으로 늘었다. exits/facilities는
+			// 기존 station-sangnoksu/station-sadang에만 연결돼 있어 그대로다.
+			.andExpect(jsonPath("$.data.totalStations").value(16))
+			.andExpect(jsonPath("$.data.totalExits").value(3))
+			.andExpect(jsonPath("$.data.totalFacilities").value(3))
+			.andExpect(jsonPath("$.data.stationQualityCounts.LEVEL_1").value(16))
+			.andExpect(jsonPath("$.data.exitConfidenceCounts.HIGH").value(2))
+			.andExpect(jsonPath("$.data.exitConfidenceCounts.MEDIUM").value(1))
+			.andExpect(jsonPath("$.data.facilityConfidenceCounts.HIGH").value(1))
+			.andExpect(jsonPath("$.data.facilityConfidenceCounts.MEDIUM").value(1))
+			.andExpect(jsonPath("$.data.facilityConfidenceCounts.NEEDS_VERIFICATION").value(1))
+			.andExpect(jsonPath("$.data.needsVerificationFacilityCount").value(1))
+			.andExpect(jsonPath("$.data.accessibilityImprovementPriorities[0].facilityId")
+				.value("facility-sangnoksu-accessible-toilet"))
+			.andExpect(jsonPath("$.data.accessibilityImprovementPriorities[0].priorityScore").value(60))
+			.andExpect(jsonPath("$.data.accessibilityImprovementPriorities[0].reasons[0]").value("확인 필요 상태"))
+			.andExpect(jsonPath("$.data.missingStationVerificationDateCount").value(0));
+	}
+
+	@Test
+	@DisplayName("데이터 품질 요약 API는 관리자만 사용할 수 있다")
+	void dataQualitySummaryRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/data-quality/summary"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/data-quality/summary")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+}

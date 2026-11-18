@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>경로 피드백 현황</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-route-feedback')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>경로 피드백 분석</h1>
+		</div>
+	</header>
+
+	<section class="admin-panel" aria-labelledby="route-feedback-metric-title">
+		<div class="admin-panel-head">
+			<h2 id="route-feedback-metric-title">경로 피드백 요약</h2>
+		</div>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>전체 피드백</span>
+				<strong class="cell-num" th:text="${summary.totalCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>도움이 됨</span>
+				<strong class="cell-num" th:text="${summary.helpfulCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>도움이 안 됨</span>
+				<strong class="cell-num" th:text="${summary.notHelpfulCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>현장 차단</span>
+				<strong class="cell-num" th:text="${summary.blockedByRealWorldCount}">0</strong>
+			</div>
+		</div>
+	</section>
+
+	<div id="route-feedback-trends" th:fragment="trends" class="dashboard-trends-section">
+		<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+			<a th:each="d : ${ {7, 30, 90} }"
+			   th:href="@{/admin/routes/feedback/page(days=${d})}"
+			   th:attr="hx-get=@{/admin/routes/feedback/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+			   hx-target="#route-feedback-trends" hx-swap="outerHTML"
+			   th:classappend="${trendDays == d} ? ' is-active'"
+			   th:text="|${d}일|">7일</a>
+		</div>
+
+		<p class="admin-export">
+			<a class="admin-export-link" th:href="@{/admin/analytics/metrics/export(keys=${exportKeys},days=${trendDays})}"
+			   download>CSV 내보내기</a>
+		</p>
+
+		<section class="admin-panel" aria-labelledby="route-feedback-comparison-title">
+			<div class="admin-panel-head">
+				<h2 id="route-feedback-comparison-title">전 기간 대비 증감</h2>
+			</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
+
+		<div class="trend-charts">
+			<section class="admin-panel trend-chart-panel">
+				<h2 th:text="|유형별 피드백 최근 ${trendDays}일 추이|">유형별 피드백 추이</h2>
+				<div class="trend-canvas-wrap">
+					<canvas id="route-feedback-trend-canvas" class="trend-canvas" role="img"
+					        th:attr="aria-label=|유형별 피드백 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
+				</div>
+				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
+			</section>
+		</div>
+	</div>
+
+	<section class="admin-panel">
+		<h2>평점별 피드백</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">평점</th>
+				<th scope="col">설명</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.ratingRows}">
+				<td th:text="${row.label}">도움이 됨</td>
+				<td th:text="${row.description}">경로 안내가 실제 이동에 도움됨</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>최근 현장 차단 신고</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">신고 시각</th>
+				<th scope="col">출발역</th>
+				<th scope="col">도착역</th>
+				<th scope="col">이동 프로필</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.recentBlockedFeedbacks}">
+				<td th:text="${row.createdAtLabel}">2026-06-17 10:00</td>
+				<td th:text="${row.originStationName}">상록수</td>
+				<td th:text="${row.destinationStationName}">사당</td>
+				<td th:text="${row.mobilityTypeLabel}">고령자</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.recentBlockedFeedbacks)}">
+				<td colspan="4"><div th:replace="~{admin/fragments/empty-state :: panel('최근 현장 차단 신고가 없습니다.', '현장 차단 신고가 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>도착 예정 보정 구간</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">이동 프로필</th>
+				<th scope="col">제약</th>
+				<th scope="col">ETA 출처</th>
+				<th scope="col">보정 구간</th>
+				<th scope="col">검토 작업</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.etaCalibrationBuckets}">
+				<td th:text="${row.mobilityTypeLabel}">고령자</td>
+				<td th:text="${row.constraintMode}">PREFER_STEP_FREE</td>
+				<td th:text="${row.etaSource}">PLANNED</td>
+				<td th:text="${row.etaOffsetBucket}">LATE_1_TO_3_MINUTES</td>
+				<td th:text="${row.reviewAction}">board/transfer slack 기본값 변경은 별도 검토 PR로 반영</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.etaCalibrationBuckets)}">
+				<td colspan="6"><div th:replace="~{admin/fragments/empty-state :: panel('수집 동의(opt-in) ETA 보정 피드백이 없습니다.', '수집 동의(opt-in) 피드백이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: chartScripts}"></th:block>
+<script th:src="@{/js/admin/dashboard-charts.js}" defer></script>
+</body>
+</html>

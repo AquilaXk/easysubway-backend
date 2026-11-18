@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<title>관리자 표 영역</title>
+</head>
+<body>
+<!--
+  표 영역 공통 계약(V6-06 #2278): #2071 admin-table-scroll wrapper를 단일 contract로 소비한다.
+  - wrapper(.admin-table-scroll)만 가로 overflow를 소유한다(body·section·card는 overflow-x를 갖지 않는다).
+  - 첫 식별자 열(td/th:first-child)과 필요한 action 열(.cell-sticky-action)만 sticky다. sticky 규칙은
+    admin-components.css(첫 열)와 admin-data.css(action 열)가 소유하고 이 fragment는 마크업만 제공한다.
+  - 화면은 이 fragment에 caption(접근성 이름)·head(thead 행)·rows(tbody 행) 마크업을 넘겨 표를 구성한다.
+    JS/no-JS 모두 동일 마크업이라 진화형 향상과 무관하게 동작한다.
+  aria-label은 admin 표 접근성 가드(AdminDesignGuardTest)가 요구하는 표준 문구로 고정한다.
+-->
+<div class="admin-table-scroll" tabindex="0" role="group"
+     aria-label="가로로 스크롤 가능한 데이터 표" th:fragment="region(caption, head, rows)">
+<table>
+	<caption class="sr-only" th:text="${caption}">데이터 표</caption>
+	<thead th:insert="${head}">
+	<tr>
+		<th scope="col">식별자</th>
+	</tr>
+	</thead>
+	<tbody th:insert="${rows}">
+	<tr>
+		<td>행</td>
+	</tr>
+	</tbody>
+</table>
+</div>
+</body>
+</html>

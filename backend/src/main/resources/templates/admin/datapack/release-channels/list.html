@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>배포 채널</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-release-channels')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>배포 채널</h1>
+			<p>앱이 채택할 데이터팩 manifest pointer와 rollback 가능 상태를 확인하고, 확인 단계를 거쳐 승격·rollback합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/release-channels/page}"
+		      role="search" aria-label="배포 채널 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="채널·후보·사유 검색" aria-label="배포 채널 검색" autocomplete="off">
+			<select name="status" aria-label="상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="production" th:selected="${filter.selectedStatus('production')}">프로덕션</option>
+				<option value="staging" th:selected="${filter.selectedStatus('staging')}">스테이징</option>
+				<option value="dev" th:selected="${filter.selectedStatus('dev')}">개발</option>
+				<option value="ROLLBACK_AVAILABLE" th:selected="${filter.selectedStatus('ROLLBACK_AVAILABLE')}">rollback 가능</option>
+				<option value="PROMOTE" th:selected="${filter.selectedStatus('PROMOTE')}">승격</option>
+				<option value="ROLLBACK" th:selected="${filter.selectedStatus('ROLLBACK')}">롤백</option>
+				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">통과</option>
+				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">실패</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">대기</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${filter.selectedSort('')}">채널 우선순</option>
+				<option value="candidate" th:selected="${filter.selectedSort('candidate')}">후보 ID순</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<button type="submit" class="outline">검색</button>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/release-channels/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate()}" th:text="${filter.contextLabel()}">후보</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 배포 채널 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">채널</th>
+				<th scope="col">현재</th>
+				<th scope="col">매니페스트</th>
+				<th scope="col">롤백 대상</th>
+				<th scope="col">롤백</th>
+				<th scope="col">최근 작업</th>
+				<th scope="col">승인</th>
+				<th scope="col">갱신</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${channels.isEmpty()}">
+				<td colspan="8">
+					<div th:replace="~{admin/fragments/empty-state :: panel('배포 채널 row가 없습니다.', '검색어·후보·상태 필터를 조정해 보세요.')}"></div>
+				</td>
+			</tr>
+			<tr th:each="channel : ${channels}">
+				<td th:text="${channel.channel == 'production' ? '프로덕션' : (channel.channel == 'staging' ? '스테이징' : (channel.channel == 'dev' ? '개발' : channel.channel))}">프로덕션</td>
+				<td>
+					<span th:text="${channel.candidateId}">candidate</span>
+					<span th:text="${channel.candidateVersion}">version</span>
+				</td>
+				<td>
+					<span th:text="${channel.manifestUrl}">manifest</span>
+					<span th:title="${channel.manifestSha256}" th:text="${#strings.abbreviate(channel.manifestSha256, 11)}">sha</span>
+				</td>
+				<td>
+					<span th:insert="~{admin/fragments/missing-value :: value(${channel.previousStableCandidateId}, '미상')}">previous candidate</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${channel.previousStableCandidateVersion}, '미상')}">previous version</span>
+					<span th:title="${channel.previousManifestSha256}" th:insert="~{admin/fragments/missing-value :: value(${#strings.abbreviate(channel.previousManifestSha256, 11)}, '미상')}">previous sha</span>
+				</td>
+				<td th:text="${channel.rollbackLabel}">rollback 가능</td>
+				<td>
+					<span th:text="${channel.lastOperationType}">PROMOTE</span>
+					<span th:text="${channel.lastOperationStatus == 'PASS' ? '통과' : (channel.lastOperationStatus == 'FAIL' ? '실패' : channel.lastOperationStatus)}">통과</span>
+					<span th:text="${channel.idempotencyKey}">idempotency</span>
+					<details class="admin-promote-confirm">
+						<summary th:text="${'승격 승인 (' + channel.channel + ')'}">승격 승인</summary>
+						<p class="meta"
+						   th:text="${'대상 채널 ' + channel.channel + ' · 현재 후보 ' + channel.candidateId + '. 확인하면 승격 요청이 접수됩니다(게시 워크플로 자동 트리거는 #1694 범위).'}">영향</p>
+						<form class="admin-form" method="post" th:action="@{/admin/datapack/release-channels/{channel}/promote(channel=${channel.channel})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
+						<input type="hidden" name="previousManifestSha256" th:value="${channel.manifestSha256}">
+						<label>
+							다음 후보
+							<input name="nextCandidateId" required>
+						</label>
+						<label>
+							다음 매니페스트 sha256
+							<input name="nextManifestSha256" minlength="64" maxlength="64" required>
+						</label>
+						<label th:if="${channel.channel == 'production'}">
+							증거 번들 sha256
+							<input name="evidenceBundleSha256" minlength="64" maxlength="64" required>
+						</label>
+						<label>
+							요청자
+							<input name="requestedBy" required>
+						</label>
+						<label>
+							사유
+							<input name="reason" required>
+						</label>
+						<label>
+							멱등 키
+							<input name="idempotencyKey" required>
+						</label>
+						<label>
+							워크플로 실행 URL
+							<input name="workflowRunUrl" type="url" required>
+						</label>
+						<button type="submit" class="primary"
+						        th:text="${channel.channel == 'production' ? '프로덕션 승인' : '승격 승인'}">승격 승인</button>
+						</form>
+					</details>
+					<details class="admin-promote-confirm" th:if="${channel.previousStableCandidateId != '—'}">
+						<summary th:text="${'rollback (' + channel.channel + ')'}">rollback</summary>
+						<p class="meta"
+						   th:text="${'대상 채널 ' + channel.channel + ' · rollback 대상 ' + channel.previousStableCandidateId + '. rollback을 실행할까요? 이 작업은 되돌리기 어렵습니다.'}">영향</p>
+						<form class="admin-form" method="post" th:action="@{/admin/datapack/release-channels/{channel}/rollback(channel=${channel.channel})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
+						<input type="hidden" name="nextCandidateId" th:value="${channel.previousStableCandidateId}">
+						<input type="hidden" name="previousManifestSha256" th:value="${channel.manifestSha256}">
+						<input type="hidden" name="nextManifestSha256" th:value="${channel.previousManifestSha256}">
+						<label>
+							requested by
+							<input name="requestedBy" required>
+						</label>
+						<label>
+							reason
+							<input name="reason" required>
+						</label>
+						<label>
+							idempotency key
+							<input name="idempotencyKey" required>
+						</label>
+						<label>
+							workflow run URL
+							<input name="workflowRunUrl" type="url" required>
+						</label>
+						<button type="submit" class="danger">rollback 실행</button>
+						</form>
+					</details>
+				</td>
+				<td>
+					<span th:text="${channel.requestedBy}">requested</span>
+					<span th:text="${channel.approvedBy}">approved</span>
+					<span th:text="${channel.reason}">reason</span>
+				</td>
+				<td th:text="${channel.updatedAt}">2026-06-29T03:10</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>git 원본 발행 관측</h2>
+		<p class="meta">발행 완료 알림이 마지막으로 기록한 채널별 발행 상태입니다. 읽기 전용이며 운영 채널은 공개 목록의 발행 번호와 비교합니다.</p>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 git 원본 발행 관측 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">채널</th>
+				<th scope="col">발행 번호</th>
+				<th scope="col">목록 지문</th>
+				<th scope="col">요청 번호</th>
+				<th scope="col">관측 시각</th>
+				<th scope="col">실행 기록</th>
+				<th scope="col">공개 목록 비교</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="observation : ${observations}" th:attr="data-observation-state=${observation.state}">
+				<th scope="row" th:text="${observation.channelLabel}">프로덕션</th>
+				<td th:text="${observation.observedSequence != null ? observation.observedSequence : '관측 없음'}">126</td>
+				<td>
+					<span th:if="${observation.manifestSha256 != null}" th:title="${observation.manifestSha256}"
+					      th:text="${#strings.abbreviate(observation.manifestSha256, 11)}">sha</span>
+					<span th:if="${observation.manifestSha256 == null}">관측 없음</span>
+				</td>
+				<td th:text="${observation.releaseRequestId != null ? observation.releaseRequestId : '관측 없음'}">request</td>
+				<td th:text="${observation.observedAtText != null ? observation.observedAtText : '관측 없음'}">2026-10-03 18:30</td>
+				<td>
+					<span th:if="${observation.workflowRunUrl != null}" th:text="${observation.workflowRunUrl}">run</span>
+					<span th:if="${observation.workflowRunUrl == null}">관측 없음</span>
+				</td>
+				<td>
+					<strong th:if="${observation.warning}" role="status" th:text="${observation.message}">경고</strong>
+					<span th:unless="${observation.warning}" th:text="${observation.message}">일치</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>채널 이벤트</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 채널 이벤트 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">이벤트</th>
+				<th scope="col">채널</th>
+				<th scope="col">후보</th>
+				<th scope="col">작업</th>
+				<th scope="col">승인</th>
+				<th scope="col">워크플로</th>
+				<th scope="col">생성</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${events.isEmpty()}">
+				<td colspan="7">
+					<div th:replace="~{admin/fragments/empty-state :: panel('채널 이벤트 row가 없습니다.', '검색어·후보·상태 필터를 조정해 보세요.')}"></div>
+				</td>
+			</tr>
+			<tr th:each="event : ${events}">
+				<td th:text="${event.id}">event</td>
+				<td th:text="${event.channel == 'production' ? '프로덕션' : (event.channel == 'staging' ? '스테이징' : (event.channel == 'dev' ? '개발' : event.channel))}">프로덕션</td>
+				<td>
+					<span th:text="${event.previousCandidateId}">previous</span>
+					<span th:text="${event.nextCandidateId}">next</span>
+					<span th:title="${event.nextManifestSha256}" th:text="${#strings.abbreviate(event.nextManifestSha256, 11)}">sha</span>
+				</td>
+				<td>
+					<span th:text="${event.operationType}">PROMOTE</span>
+					<span th:text="${event.operationStatus == 'PASS' ? '통과' : (event.operationStatus == 'FAIL' ? '실패' : event.operationStatus)}">통과</span>
+					<span th:text="${event.idempotencyKey}">idempotency</span>
+				</td>
+				<td>
+					<span th:text="${event.requestedBy}">requested</span>
+					<span th:text="${event.approvedBy}">approved</span>
+					<span th:text="${event.reason}">reason</span>
+				</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${event.workflowRunUrl}, '미상')}">workflow</td>
+				<td th:text="${event.createdAt}">2026-06-29T03:10</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

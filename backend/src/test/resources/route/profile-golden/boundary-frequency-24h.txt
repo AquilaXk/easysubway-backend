@@ -1,0 +1,28 @@
+POINT readyAt=87000
+  ITINERARY
+    LEG RIDE trip=scheduled line=line from=station-a to=station-b dep=2026-07-02T00:10:00Z arr=2026-07-02T00:20:00Z
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+POINT readyAt=86910
+  ITINERARY
+    LEG RIDE trip=overnight line=line from=station-a to=station-b dep=2026-07-01T15:10:00Z arr=2026-07-01T15:20:00Z
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+POINT readyAt=34110
+  ITINERARY
+    LEG RIDE trip=frequency line=line from=station-a to=station-b dep=2026-07-01T00:30:00Z arr=2026-07-01T00:40:00Z
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+POINT readyAt=33510
+  ITINERARY
+    LEG RIDE trip=frequency line=line from=station-a to=station-b dep=2026-07-01T00:20:00Z arr=2026-07-01T00:30:00Z
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+POINT readyAt=32910
+  ITINERARY
+    LEG RIDE trip=scheduled line=line from=station-a to=station-b dep=2026-07-01T00:10:00Z arr=2026-07-01T00:20:00Z
+    METRICS transfers=0 moveSec=0 dist=0 burden=0 slack=NoTransfer
+OBSERVATIONS
+  FAIL_CLOSED_FRONTIER_CAPACITY_V1=0
+  FORWARD_DESTINATION_DOMINANCE_V1=0
+  FORWARD_STATE_DOMINANCE_V1=11
+  FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1=0
+  HARD_TRANSFER_ACCESS_ELIGIBILITY_V1=0
+  PROFILE_ALTERNATIVE_WINDOW_V1=10
+  PROFILE_TRANSFER_BUDGET_V1=0

@@ -1,0 +1,28 @@
+{
+  "candidateId": "seoul-topis-realtime-train-position",
+  "observedUrl": "http://swopenapi.seoul.go.kr/api/subway/[서비스키값]/json/realtimePosition/0/5/1호선",
+  "receivedAt": "2026-06-25T09:00:30+09:00",
+  "payload": {
+    "errorMessage": {
+      "status": 200,
+      "code": "INFO-000",
+      "message": "정상 처리되었습니다."
+    },
+    "realtimePositionList": [
+      {
+        "subwayId": "1001",
+        "subwayNm": "1호선",
+        "statnId": "1001000133",
+        "statnNm": "서울",
+        "statnTid": "1001000134",
+        "statnTnm": "시청",
+        "trainNo": "0000",
+        "trainSttus": "0",
+        "updnLine": "상행",
+        "directAt": "0",
+        "lastRecptnDt": "2026-06-25 08:59:30",
+        "recptnDt": "2026-06-25 09:00:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>결측값 표시 fragment</title>
+</head>
+<body>
+<!--
+  결측값 표시 fragment(#2349 PR⑩b). "—"(em-dash) 단독 셀은 스크린리더가 대시 문자로만 읽어 의미가
+  전달되지 않는다. raw가 null이거나 결측 sentinel 문자열 "—"이거나 빈/공백 문자열이면(도메인 계층이 미리
+  "—"로 치환해 넘기는 케이스 포함) 시각은 기존과 동일하게 "—"를 보여주되 aria-hidden="true"로 감추고,
+  실제 접근 가능한 텍스트는 .sr-only로 병기한다. raw가 실값이면 그대로 텍스트로 렌더한다.
+  raw는 문자열 외 Integer 등도 넘어올 수 있다(추이 표 등) — #strings.trim/#strings.isEmpty는 Object를
+  내부적으로 toString() 후 처리하므로(Thymeleaf 3.1.5 Strings#trim(Object)/#isEmpty(Object) 확인) 비문자열
+  raw에도 안전하다.
+  th:insert로 호출해 호스트 태그(td/dd/span 등)와 그 속성(class·th:if 등)은 그대로 유지한다.
+  사용: <td th:insert="~{admin/fragments/missing-value :: value(${x}, '미상')}">—</td>
+        <td th:insert="~{admin/fragments/missing-value :: value(${x}, '없음')}">—</td>
+-->
+<!-- 렌더 결과에 불필요한 개행/공백이 섞이지 않도록(HTML 스모크 테스트의 정확 문자열 매칭 대상) 분기를 한 줄로 붙여 쓴다. -->
+<th:block th:fragment="value(raw, srText)" th:with="present=${raw != null and raw != '—' and !#strings.isEmpty(#strings.trim(raw))}"><th:block th:if="${present}" th:text="${raw}">값</th:block><th:block th:unless="${present}"><span aria-hidden="true">—</span><span class="sr-only" th:text="${srText}">미상</span></th:block></th:block>
+</body>
+</html>

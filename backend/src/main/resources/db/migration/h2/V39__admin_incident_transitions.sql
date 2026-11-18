@@ -1,0 +1,41 @@
+CREATE TABLE admin_incident_transitions (
+	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	incident_id VARCHAR(40) NOT NULL,
+	from_status VARCHAR(40),
+	to_status VARCHAR(40) NOT NULL,
+	changed_at TIMESTAMP NOT NULL,
+	changed_by VARCHAR(120) NOT NULL,
+	note VARCHAR(500),
+	CONSTRAINT fk_admin_incident_transitions_incident
+		FOREIGN KEY (incident_id) REFERENCES admin_incidents(incident_id)
+		ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX idx_admin_incident_transitions_incident ON admin_incident_transitions (incident_id, changed_at);
+
+-- 레거시 OPEN 장애를 접수(RECEIVED)로 무손실 이관한다. RESOLVED는 그대로 유지된다.
+UPDATE admin_incidents SET status = 'RECEIVED', updated_at = CURRENT_TIMESTAMP WHERE status = 'OPEN';
+
+-- 기존 장애 타임라인 재구성: 접수 시점 초기 전이 (from_status NULL = 최초 접수)
+INSERT INTO admin_incident_transitions (incident_id, from_status, to_status, changed_at, changed_by, note)
+SELECT incident_id, NULL, 'RECEIVED', opened_at, owner, '이관(접수)'
+FROM admin_incidents;
+
+-- 종결된 장애는 종결 전이도 재구성한다.
+INSERT INTO admin_incident_transitions (incident_id, from_status, to_status, changed_at, changed_by, note)
+SELECT incident_id, 'RECEIVED', 'RESOLVED', resolved_at, owner, '이관(종결)'
+FROM admin_incidents
+WHERE status = 'RESOLVED' AND resolved_at IS NOT NULL;
+
+-- 공통코드 INCIDENT_STATUS를 접수/조치 중/모니터링/종결 4상태로 갱신한다.
+DELETE FROM admin_common_codes WHERE group_code = 'INCIDENT_STATUS' AND code = 'OPEN';
+
+UPDATE admin_common_codes
+SET display_name = '종결', description = '해결·종료됨', sort_order = 40, updated_at = CURRENT_TIMESTAMP
+WHERE group_code = 'INCIDENT_STATUS' AND code = 'RESOLVED';
+
+INSERT INTO admin_common_codes (group_code, code, display_name, description, sort_order, enabled, created_at, updated_at)
+VALUES
+	('INCIDENT_STATUS', 'RECEIVED', '접수', '접수됨, 조치 대기', 10, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+	('INCIDENT_STATUS', 'IN_PROGRESS', '조치 중', '원인 파악·복구 진행', 20, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+	('INCIDENT_STATUS', 'MONITORING', '모니터링', '복구 후 관찰', 30, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);

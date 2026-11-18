@@ -1,0 +1,8 @@
+package com.easysubway.common.error;
+
+public class ResourceNotFoundException extends RuntimeException {
+
+	public ResourceNotFoundException(String message) {
+		super(message);
+	}
+}

@@ -1,0 +1,648 @@
+package com.easysubway.datapack.adapter.in.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest(properties = {
+	"easysubway.admin.username=admin-user",
+	"easysubway.admin.password=admin-test-password"
+})
+@AutoConfigureMockMvc
+@Import(DatapackReleaseBlockerSummaryAdminPageTest.FixedClockConfig.class)
+@DisplayName("관리자 데이터팩 release blocker 요약")
+class DatapackReleaseBlockerSummaryAdminPageTest {
+
+	private static final String SOURCE_ID = "kric-station-convenience-standard";
+
+	private static final String SHA_A = "a".repeat(64);
+	private static final String SHA_B = "b".repeat(64);
+	private static final String SHA_C = "c".repeat(64);
+	private static final String SHA_D = "d".repeat(64);
+	private static final String SHA_E = "e".repeat(64);
+	private static final String SHA_F = "f".repeat(64);
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private DatapackReleaseBlockerSummaryUseCase blockerSummaryUseCase;
+
+	@BeforeEach
+	void setUp() {
+		clearDatapackTables();
+		insertSourceSnapshot();
+		insertPreviousCandidate();
+		insertCandidate();
+		insertCandidateInput();
+		insertEvidenceBundle();
+		insertProductionChannel();
+		insertAliasQuarantineOverride();
+		insertEvidenceBlockers();
+	}
+
+	@Test
+	@DisplayName("통합 대시보드는 데이터팩 release blocker 요약을 보여준다")
+	void dashboardShowsDatapackReleaseBlockerSummary() throws Exception {
+		String html = getAdminHtml("/admin/dashboard/page");
+
+		assertThat(html)
+			.contains("데이터팩 출시 준비")
+			.contains("FAIL")
+			.contains("candidate-release-blocked")
+			.contains(SHA_A)
+			.contains("https://github.com/AquilaXk/easysubway/actions/runs/1164?redacted")
+			.contains("candidate-previous-stable")
+			.contains("프로덕션 반영 차단: 차단 요인 9건")
+			.contains("전체 차단 요인 9건")
+			.contains("<dt>별칭</dt><dd>1</dd>")
+			.contains("<dt>격리</dt><dd>1</dd>")
+			.contains("<dt>수동 오버라이드</dt><dd>1</dd>")
+			.contains("<dt>경로 게이트</dt><dd>1</dd>")
+			.contains("매니페스트 서명")
+			.doesNotContain("name=\"commandToken\"")
+			.doesNotContain("serviceKey");
+	}
+
+	@Test
+	@DisplayName("evidence bundle 상태가 실패하면 candidate gate가 PASS여도 production promote를 차단한다")
+	void dashboardBlocksProductionPromoteWhenEvidenceBundleStatusFails() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PASS',
+				route_regression_status = 'PASS',
+				android_evidence_status = 'PASS'
+			WHERE id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("""
+			UPDATE datapack_release_evidence_bundles
+			SET route_regression_status = 'FAIL',
+				manifest_signature_status = 'PASS'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM manual_overrides");
+		jdbcTemplate.update("DELETE FROM facility_evidence");
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
+
+		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
+		String qualityHtml = getAdminHtml("/admin/data-quality/page");
+
+		assertThat(dashboardHtml)
+			.contains("프로덕션 반영 차단: 차단 요인 1건")
+			.contains("전체 차단 요인 1건")
+			.doesNotContain("프로덕션 반영 가능")
+			.doesNotContain("READY");
+		assertThat(qualityHtml)
+			.contains("경로 게이트")
+			.contains("ENTRY/EXIT/TRANSFER 및 생성된 커넥터 게이트");
+	}
+
+	@Test
+	@DisplayName("production promote 가능 상태는 성공 badge로 보여준다")
+	void dashboardShowsReadyStatusAsGoodBadge() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PASS',
+				route_regression_status = 'PASS',
+				android_evidence_status = 'PASS'
+			WHERE id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("""
+			UPDATE datapack_release_evidence_bundles
+			SET manifest_signature_status = 'PASS'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM manual_overrides");
+		jdbcTemplate.update("DELETE FROM facility_evidence");
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
+
+		String html = getAdminHtml("/admin/dashboard/page");
+
+		assertThat(html)
+			.contains("프로덕션 반영 가능")
+			.contains("class=\"admin-status  good\"")
+			.contains(">READY</span>");
+	}
+
+	@Test
+	@DisplayName("미확정 production callback은 rollout readiness를 차단한다")
+	void pendingCallbackBlocksReadiness() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256,
+			 channel, candidate_id, payload_sha256, signature_sha256, state, attempts,
+			 next_attempt_at, reconcile_deadline, dead_letter_deadline, created_at, updated_at)
+			VALUES (?, 'request-blocked', 42, ?, 'production', 'candidate-release-blocked',
+			 ?, ?, 'RECONCILIATION_REQUIRED', 4, '2026-07-06 03:00:00',
+			 '2026-07-06 03:00:00', '2026-07-06 04:00:00',
+			 '2026-07-06 02:50:00', '2026-07-06 03:00:00')
+			""", "request-blocked:42:" + SHA_A, SHA_A, SHA_B, SHA_C);
+
+		var callback = blockerSummaryUseCase.summarize().readinessRows().stream()
+			.filter(row -> "콜백 정합성 확인".equals(row.label()))
+			.findFirst().orElseThrow();
+		assertThat(callback.blockerCount()).isEqualTo(1);
+		assertThat(callback.note()).isEqualTo("CALLBACK_RECONCILIATION_REQUIRED");
+		assertThat(callback.status()).isEqualTo("FAIL");
+	}
+
+	@Test
+	@DisplayName("후속 release로 해소된 stale dead-letter는 readiness를 차단하지 않는다")
+	void supersededStaleCallbackDoesNotBlockReadiness() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256,
+			 channel, candidate_id, payload_sha256, signature_sha256, state, attempts,
+			 reconcile_deadline, dead_letter_deadline, http_class, sanitized_detail,
+			 created_at, updated_at)
+			VALUES (?, 'request-superseded', 41, ?, 'production', 'candidate-release-blocked',
+			 ?, ?, 'DEAD_LETTER', 1, '2026-07-06 03:00:00', '2026-07-06 04:00:00',
+			 'STALE', 'CURRENT_RELEASE_ADVANCED', '2026-07-06 02:50:00', '2026-07-06 03:00:00')
+			""", "request-superseded:41:" + SHA_A, SHA_A, SHA_B, SHA_C);
+
+		var callback = blockerSummaryUseCase.summarize().readinessRows().stream()
+			.filter(row -> "콜백 정합성 확인".equals(row.label()))
+			.findFirst().orElseThrow();
+
+		assertThat(callback.blockerCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("기한이 지난 production request에 delivery 행이 없으면 rollout readiness를 차단한다")
+	void missingCallbackDeliveryBlocksReadiness() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_request (
+			 approval_id, candidate_id, scope_id, target_channel,
+			 build_spec_sha256, source_snapshot_set_hash, approved_ledger_hash,
+			 requested_by, approved_by, status, dispatch_idempotency_key, workflow_run_url,
+			 created_at, approved_at, updated_at, promote_outcome, promote_detail)
+			VALUES ('request-without-delivery', 'candidate-release-blocked', 'capital_pilot_android_v1',
+			 'production', ?, ?, ?, 'requester', 'approver', 'DISPATCHED', 'dispatch-2057',
+			 'https://github.com/AquilaXk/easysubway/actions/runs/2057',
+			 '2026-07-06 02:00:00', '2026-07-06 02:00:00', '2026-07-06 02:00:00', NULL, NULL)
+			""", SHA_A, SHA_B, SHA_C);
+
+		var callback = blockerSummaryUseCase.summarize().readinessRows().stream()
+			.filter(row -> "콜백 정합성 확인".equals(row.label()))
+			.findFirst().orElseThrow();
+
+		assertThat(callback.blockerCount()).isEqualTo(1);
+		assertThat(callback.note()).isEqualTo("CALLBACK_RECONCILIATION_REQUIRED");
+	}
+
+	@Test
+	@DisplayName("datapack read 권한이 없으면 통합 대시보드 release blocker 요약을 숨긴다")
+	void dashboardHidesDatapackReleaseBlockerSummaryWithoutDatapackRead() throws Exception {
+		String html = getAdminHtmlWithoutDatapackRead("/admin/dashboard/page");
+
+		assertThat(html)
+			.doesNotContain("데이터팩 출시 준비")
+			.doesNotContain("candidate-release-blocked")
+			.doesNotContain("전체 차단 요인 9건");
+	}
+
+	@Test
+	@DisplayName("datapack read 권한이 없으면 데이터 품질 release readiness matrix를 숨긴다")
+	void qualityDashboardHidesReleaseReadinessWithoutDatapackRead() throws Exception {
+		String html = getAdminHtmlWithoutDatapackRead("/admin/data-quality/page");
+
+		assertThat(html)
+			.doesNotContain("데이터팩 출시 준비도")
+			.doesNotContain("candidate-release-blocked")
+			.doesNotContain("매니페스트 서명");
+	}
+
+	@Test
+	@DisplayName("datapack read 권한이 없으면 역 상세 release readiness를 숨긴다")
+	void stationDetailHidesReleaseReadinessWithoutDatapackRead() throws Exception {
+		String html = getAdminHtmlWithoutDatapackRead("/admin/stations/station-sangnoksu/page");
+
+		assertThat(html)
+			.doesNotContain("출시 준비도")
+			.doesNotContain("상록수역 릴리스 차단 요인")
+			.doesNotContain("확인 필요 2건");
+	}
+
+	@Test
+	@DisplayName("데이터팩 근거가 없으면 release readiness는 집계 전 상태를 보여준다")
+	void releaseReadinessFallsBackWhenDatapackEvidenceIsEmpty() throws Exception {
+		clearDatapackTables();
+		var summary = blockerSummaryUseCase.summarize();
+		var sourceFreshness = summary.readinessRows().stream()
+			.filter(row -> "소스 최신성".equals(row.label()))
+			.findFirst()
+			.orElseThrow();
+
+		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
+		String qualityHtml = getAdminHtml("/admin/data-quality/page");
+		String stationHtml = getAdminHtml("/admin/stations/station-sangnoksu/page");
+
+		assertThat(dashboardHtml)
+			.contains("데이터팩 출시 준비")
+			.contains("확인 필요")
+			.contains("전체 차단 요인 1건")
+			.doesNotContain("FAIL")
+			.doesNotContain("PASS");
+		assertThat(qualityHtml)
+			.contains("데이터팩 출시 준비도")
+			.contains("소스 커버리지")
+			.contains("확인 필요");
+		assertThat(stationHtml)
+			.contains("출시 준비도")
+			.contains("상록수역 릴리스 차단 요인")
+			.contains("확인 필요 0건")
+			.contains("집계 전")
+			.doesNotContain("PASS 0건");
+		assertThat(sourceFreshness.status()).isEqualTo("확인 필요");
+		assertThat(sourceFreshness.note()).isEqualTo("source snapshot 없음");
+	}
+
+	@Test
+	@DisplayName("대체된 manual override 이력은 release blocker로 집계하지 않는다")
+	void supersededManualOverrideHistoryIsNotReleaseBlocker() throws Exception {
+		insertSupersededManualOverrideHistory();
+
+		String html = getAdminHtml("/admin/dashboard/page");
+
+		assertThat(html)
+			.contains("전체 차단 요인 9건")
+			.contains("<dt>수동 오버라이드</dt><dd>1</dd>")
+			.doesNotContain("전체 차단 요인 10건")
+			.doesNotContain("<dt>수동 오버라이드</dt><dd>2</dd>");
+	}
+
+	@Test
+	@DisplayName("데이터 품질 화면은 release readiness matrix를 보여준다")
+	void qualityDashboardShowsReleaseReadinessMatrix() throws Exception {
+		String html = getAdminHtml("/admin/data-quality/page");
+
+		assertThat(html)
+			.contains("데이터팩 출시 준비도")
+			.contains("소스 커버리지")
+			.contains("검증기")
+			.contains("시설 근거")
+			.contains("경로 게이트")
+			.contains("Android 증거")
+			.contains("매니페스트 서명")
+			.contains("수동 오버라이드")
+			.contains("실패")
+			.contains("확인 필요");
+	}
+
+	@Test
+	@DisplayName("source snapshot이 평가 시각에 만료되면 저장 상태와 무관하게 release를 차단한다")
+	void sourceSnapshotExpiryBoundaryBlocksRelease() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE data_source_snapshots
+			SET freshness_expires_at = '2026-07-06 03:00:00'
+			WHERE snapshot_id = 'snapshot-release-blocked'
+			""");
+
+		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
+		String qualityHtml = getAdminHtml("/admin/data-quality/page");
+		String pipelineHtml = getAdminHtml("/admin/datapack/pipeline/page");
+
+		assertThat(dashboardHtml)
+			.contains("프로덕션 반영 차단: 차단 요인 10건")
+			.contains("전체 차단 요인 10건")
+			.doesNotContain("프로덕션 반영 가능")
+			.doesNotContain(">READY</span>");
+		assertThat(qualityHtml)
+			.contains("소스 최신성")
+			.contains("SOURCE_SNAPSHOT_EXPIRED")
+			.contains("실패");
+		assertThat(pipelineHtml)
+			.contains("원천 스냅샷")
+			.contains("차단 요인 1건");
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("latest candidate 입력이 아닌 만료 snapshot은 release freshness blocker에서 제외한다")
+	void unrelatedExpiredSnapshotDoesNotBlockLatestCandidate() {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				row_count, coverage_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
+				schema_fingerprint, snapshot_status, schema_status, license_status,
+				fetch_status, redistribution_allowed, credential_redacted,
+				freshness_expires_at, raw_retention_expires_at
+			)
+			VALUES (
+				'snapshot-unrelated-realtime', 'topis-arrival', 'TOPIS',
+				'2026-07-06 02:00:00', '2026-07-06 02:00:00', 10, 10, ?, 's3://raw/unrelated',
+				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', FALSE, TRUE,
+				'2026-07-06 02:01:30', '2026-07-07 02:00:00'
+			)
+			""", SHA_D, SHA_E, SHA_F);
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isZero();
+	}
+
+	@Test
+	@DisplayName("latest candidate가 존재하지 않는 snapshot을 참조하면 freshness를 fail closed한다")
+	void missingCandidateSnapshotBlocksRelease() {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidate_inputs
+			SET source_snapshot_ids = 'snapshot-missing'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("latest candidate 입력 row가 없으면 freshness를 fail closed한다")
+	void missingCandidateInputBlocksRelease() {
+		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs WHERE candidate_id = 'candidate-release-blocked'");
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("latest candidate의 snapshot ID가 비어 있으면 freshness를 fail closed한다")
+	void emptyCandidateSnapshotIdsBlockRelease() {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidate_inputs
+			SET source_snapshot_ids = ''
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("역 상세 화면은 역 단위 release readiness를 보여준다")
+	void stationDetailShowsStationReleaseReadiness() throws Exception {
+		String html = getAdminHtml("/admin/stations/station-sangnoksu/page");
+
+		assertThat(html)
+			.contains("출시 준비도")
+			.contains("상록수역 릴리스 차단 요인")
+			.contains("시설 근거")
+			.contains("경로 게이트")
+			.contains("확인 필요 2건");
+	}
+
+	private String getAdminHtml(String path) throws Exception {
+		return mockMvc.perform(get(path)
+				.with(user("viewer").authorities(
+					new SimpleGrantedAuthority("admin.view"),
+					new SimpleGrantedAuthority("admin.datapack.read")
+				)))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private String getAdminHtmlWithoutDatapackRead(String path) throws Exception {
+		return mockMvc.perform(get(path)
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private void clearDatapackTables() {
+		jdbcTemplate.update("DELETE FROM datapack_release_deliveries");
+		jdbcTemplate.update("DELETE FROM datapack_release_request");
+		jdbcTemplate.update("DELETE FROM datapack_release_channel_events");
+		jdbcTemplate.update("DELETE FROM datapack_release_channels");
+		jdbcTemplate.update("DELETE FROM datapack_release_evidence_bundles");
+		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs");
+		jdbcTemplate.update("DELETE FROM datapack_candidates");
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
+		jdbcTemplate.update("DELETE FROM facility_evidence");
+		jdbcTemplate.update("DELETE FROM manual_overrides");
+		jdbcTemplate.update("DELETE FROM source_quarantine_resolutions");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM data_source_snapshots");
+	}
+
+	private void insertSourceSnapshot() {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				row_count, coverage_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
+				schema_fingerprint, snapshot_status, schema_status, license_status,
+				fetch_status, redistribution_allowed, credential_redacted,
+				freshness_expires_at, raw_retention_expires_at
+			)
+			VALUES (
+				'snapshot-release-blocked', '%1$s', 'KRIC',
+				'2026-06-29 03:00:00', '2026-06-28 03:00:00', 10, 10, ?, 's3://raw/snapshot',
+				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
+				'2026-07-07 03:00:00', '2026-09-29 03:00:00'
+			)
+			""".formatted(SOURCE_ID), SHA_A, SHA_B, SHA_C);
+	}
+
+	private void insertCandidate() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_candidates (
+				id, scope_id, artifact_kind, version, source_snapshot_set_hash,
+				override_set_hash, build_spec_sha256, source_inventory_sha256,
+				sqlite_sha256, gzip_sha256, manifest_sha256, coverage_status,
+				validator_status, route_regression_status, android_evidence_status,
+				approval_status, created_at
+			)
+			VALUES ('candidate-release-blocked', 'capital_pilot_android_v1', 'DATAPACK',
+				'2026.06.30-cand.blocked', ?, ?, ?, ?, ?, ?, ?,
+				'FAIL', 'PASS', 'FAIL', 'PENDING', 'READY_FOR_APPROVAL',
+				'2026-06-29 03:30:00')
+			""", SHA_A, SHA_B, SHA_C, SHA_D, SHA_E, SHA_F, "1".repeat(64));
+	}
+
+	private void insertCandidateInput() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_candidate_inputs (
+				id, candidate_id, source_snapshot_ids, approved_alias_ledger_hash,
+				facility_evidence_ledger_hash, route_evidence_ledger_hash,
+				approved_override_set_hash, created_at
+			)
+			VALUES ('candidate-input-release-blocked', 'candidate-release-blocked',
+				'snapshot-release-blocked', ?, ?, ?, ?, '2026-06-29 03:31:00')
+			""", SHA_A, SHA_B, SHA_C, SHA_D);
+	}
+
+	private void insertPreviousCandidate() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_candidates (
+				id, scope_id, artifact_kind, version, source_snapshot_set_hash,
+				override_set_hash, build_spec_sha256, source_inventory_sha256,
+				sqlite_sha256, gzip_sha256, manifest_sha256, coverage_status,
+				validator_status, route_regression_status, android_evidence_status,
+				approval_status, created_at
+			)
+			VALUES ('candidate-previous-stable', 'capital_pilot_android_v1', 'DATAPACK',
+				'2026.06.29-cand.previous', ?, ?, ?, ?, ?, ?, ?,
+				'PASS', 'PASS', 'PASS', 'PASS', 'PROMOTED',
+				'2026-06-29 02:30:00')
+			""", SHA_A, SHA_B, SHA_C, SHA_D, SHA_E, SHA_F, "2".repeat(64));
+	}
+
+	private void insertEvidenceBundle() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_evidence_bundles (
+				id, candidate_id, evidence_bundle_sha256, workflow_run_url,
+				validator_status, route_regression_status, manifest_signature_status,
+				android_evidence_status, created_at
+			)
+			VALUES ('evidence-bundle-blocked', 'candidate-release-blocked', ?,
+				'https://github.com/AquilaXk/easysubway/actions/runs/1164?serviceKey=secret',
+				'PASS', 'PASS', 'FAIL', 'PASS', '2026-06-29 03:36:00')
+			""", "3".repeat(64));
+	}
+
+	private void insertProductionChannel() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_channels (
+				channel, candidate_id, manifest_url, manifest_sha256,
+				previous_stable_candidate_id, previous_manifest_sha256,
+				rollback_available, last_operation_type, last_operation_status,
+				requested_by, approved_by, reason, idempotency_key, updated_at
+			)
+			VALUES ('production', 'candidate-release-blocked',
+				'https://datapack.example.com/production/current.json', ?,
+				'candidate-previous-stable', ?, TRUE, 'PROMOTE', 'PENDING',
+				'data-operator', 'release-approver', 'release readiness blocked',
+				'idempotency-readiness-1164', '2026-06-29 03:37:00')
+			""", "1".repeat(64), "2".repeat(64));
+	}
+
+	private void insertAliasQuarantineOverride() {
+		jdbcTemplate.update("""
+			INSERT INTO external_alias_approvals (
+				id, source_id, source_snapshot_id, provider_entity_type,
+				provider_entity_id, canonical_entity_type, canonical_entity_id,
+				confidence, match_method, approval_status, requested_by,
+				evidence_hash, created_at
+			)
+			VALUES ('alias-pending', '%1$s', 'snapshot-release-blocked',
+				'STATION', 'provider-station', 'STATION', 'station-sangnoksu',
+				73, 'AUTO', 'PENDING', 'data-operator', ?, '2026-06-29 03:31:00')
+			""".formatted(SOURCE_ID), SHA_D);
+		jdbcTemplate.update("""
+			INSERT INTO source_quarantine_records (
+				id, source_id, source_snapshot_id, provider_record_hash, reason_code,
+				severity, redacted_excerpt, resolution_status, created_at
+			)
+			VALUES ('quarantine-open', '%1$s', 'snapshot-release-blocked',
+				?, 'MISSING_FIELD', 'HIGH', 'station redacted', 'OPEN',
+				'2026-06-29 03:32:00')
+			""".formatted(SOURCE_ID), SHA_E);
+		jdbcTemplate.update("""
+			INSERT INTO manual_overrides (
+				id, entity_type, entity_id, field_name, before_value, after_value,
+				reason_code, reason, evidence_uri, evidence_hash, requested_by,
+				approval_status, conflict_status, strict_route_eligible,
+				effective_from, expires_at, created_at
+			)
+			VALUES ('override-pending', 'FACILITY', 'facility-sangnoksu-elevator-1',
+				'operational_status', 'UNKNOWN', 'AVAILABLE', 'FIELD_CHECK',
+				'현장 확인 필요', 's3://evidence/override', ?, 'data-operator',
+				'PENDING', 'NONE', FALSE, '2026-06-29 03:33:00',
+				'2026-07-06 03:33:00', '2026-06-29 03:33:00')
+			""", SHA_F);
+	}
+
+	private void insertSupersededManualOverrideHistory() {
+		jdbcTemplate.update("""
+			INSERT INTO manual_overrides (
+				id, entity_type, entity_id, field_name, before_value, after_value,
+				reason_code, reason, evidence_uri, evidence_hash, requested_by,
+				approved_by, approved_at, approval_status, conflict_status,
+				strict_route_eligible, effective_from, expires_at, created_at
+			)
+			VALUES ('override-replacement', 'FACILITY', 'facility-superseded',
+				'operational_status', 'UNKNOWN', 'AVAILABLE', 'FIELD_CHECK',
+				'대체 override 승인', 's3://evidence/replacement', ?, 'data-operator',
+				'release-approver', '2026-06-29 03:40:00', 'APPROVED', 'NONE',
+				FALSE, '2026-06-29 03:40:00', '2026-07-06 03:40:00',
+				'2026-06-29 03:40:00')
+			""", SHA_A);
+		jdbcTemplate.update("""
+			INSERT INTO manual_overrides (
+				id, entity_type, entity_id, field_name, before_value, after_value,
+				reason_code, reason, evidence_uri, evidence_hash, requested_by,
+				approval_status, conflict_status, strict_route_eligible,
+				effective_from, expires_at, superseded_by, created_at
+			)
+			VALUES ('override-superseded-history', 'FACILITY', 'facility-superseded',
+				'operational_status', 'UNKNOWN', 'AVAILABLE', 'FIELD_CHECK',
+				'대체된 override 이력', 's3://evidence/superseded', ?, 'data-operator',
+				'SUPERSEDED', 'UNRESOLVED', TRUE, '2026-06-29 03:39:00',
+				'2026-07-06 03:39:00', 'override-replacement',
+				'2026-06-29 03:39:00')
+			""", SHA_B);
+	}
+
+	private void insertEvidenceBlockers() {
+		jdbcTemplate.update("""
+			INSERT INTO facility_evidence (
+				id, station_id, line_id, facility_type, evidence_kind, source_id,
+				source_snapshot_id, provider_record_hash, status_meaning,
+				installation_status, operational_status, verified_at, retrieved_at,
+				freshness_expires_at, confidence, strict_route_eligible,
+				strict_route_eligible_reason, conflict_status, created_at
+			)
+			VALUES ('facility-blocker', 'station-sangnoksu', 'line-4',
+				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', '%1$s',
+				'snapshot-release-blocked', ?, 'STATIC_LOCATION', 'UNKNOWN',
+				'UNKNOWN', '2026-06-29 03:34:00', '2026-06-29 03:34:00',
+				'2026-07-07 03:34:00', 40, FALSE, 'UNKNOWN_PENDING_REVIEW',
+				'NONE', '2026-06-29 03:34:00')
+			""".formatted(SOURCE_ID), SHA_A);
+		jdbcTemplate.update("""
+			INSERT INTO route_edge_evidence (
+				id, station_id, line_id, edge_id, edge_type, source_id,
+				source_snapshot_id, provenance_kind, verification_status,
+				last_verified_at, evidence_hash, strict_route_eligible,
+				blocker_reason, created_at
+			)
+			VALUES ('route-blocker', 'station-sangnoksu', 'line-4', 'edge-generated',
+				'GENERATED_CONNECTOR', '%1$s', 'snapshot-release-blocked',
+				'GENERATED', 'GENERATED', '2026-06-29 03:35:00', ?, FALSE,
+				'GENERATED_CONNECTOR', '2026-06-29 03:35:00')
+			""".formatted(SOURCE_ID), SHA_B);
+	}
+
+	@TestConfiguration
+	static class FixedClockConfig {
+
+		@Bean
+		@Primary
+		Clock datapackFreshnessTestClock() {
+			return Clock.fixed(Instant.parse("2026-07-06T03:00:00Z"), ZoneOffset.UTC);
+		}
+	}
+}

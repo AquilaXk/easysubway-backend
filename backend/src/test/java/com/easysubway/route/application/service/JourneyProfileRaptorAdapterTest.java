@@ -1,0 +1,1096 @@
+package com.easysubway.route.application.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.FacilityAvailabilityView;
+import com.easysubway.journey.application.FacilityStatusUnavailableException;
+import com.easysubway.journey.application.JourneyFrontierPolicyV1.ObjectiveTag;
+import com.easysubway.journey.application.JourneyProfileCandidateProjectionV1;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.journey.bundle.JourneyProfileMeasurementInputs;
+import com.easysubway.journey.bundle.RouteBundleIdentity;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+class JourneyProfileRaptorAdapterTest {
+
+	private static final String REQUEST_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
+	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 1);
+	private static final int STANDARD_BOARDING_SLACK_SECONDS = 60;
+	private final JourneyProfileRaptorAdapter adapter = new JourneyProfileRaptorAdapter();
+
+	@Test
+	void runsAllSixMeasurementClassesAgainstOneSmallMorningTimetable() throws Exception {
+		var base = timetable();
+		var source = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(),
+			base.transitRoutes(), base.transitTrips(),
+			List.of(stop("direct", 1, "station-a", 4 * 3_600), stop("direct", 2, "station-b", 4 * 3_600 + 600)),
+			base.transitFrequencies(), List.of(), null, accessData());
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot(source).runtimeView();
+		var formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+		var identity = new RouteBundleIdentity(
+			1, "server-route-bundle", "fixture-bundle", 1,
+			ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA,
+			ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, "Asia/Seoul",
+			SERVICE_DATE.atStartOfDay(ServiceDayResolver.ZONE).format(formatter),
+			SERVICE_DATE.plusDays(1).atStartOfDay(ServiceDayResolver.ZONE).format(formatter),
+			new RouteBundleIdentity.SchemaCompatibility(3, 3), "fixture-key",
+			new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "fixture"));
+		var compiled = new JourneyProfileMeasurementInputs.CompiledMeasurementInputs(
+			runtime, identity, source);
+		var scope = new JourneyProfileMeasurementInputs.Scope("fixture", ROUTE_BUNDLE_SHA,
+			List.of(new JourneyProfileMeasurementInputs.Line("fixture-region", "operator", "line")));
+
+		var result = JourneyProfileFullCorpusRunner.run(compiled, scope, List.of("fixture-region"), policy(),
+			new JourneyProfileFullCorpusRunner.OracleLimits(100_000, 10, 10), STANDARD_BOARDING_SLACK_SECONDS);
+
+		assertThat(result.rows()).extracting(row -> row.get("queryClass")).containsExactly(
+			"POINT", "DEPARTURE_PROFILE", "ARRIVE_BY", "LAST_CONNECTION", "CUTOFF", "TYPED_FAILURE");
+		assertThat(result.rows()).allSatisfy(row -> {
+			assertThat(row).containsEntry("oracleParity", true).containsEntry("requiredRepresentativeLoss", 0);
+			assertThat(((Number) row.get("durationNanos")).longValue()).isGreaterThanOrEqualTo(0);
+			assertThat(((Number) row.get("allocatedBytes")).longValue()).isGreaterThanOrEqualTo(0);
+		});
+		assertThat(result.corpus().get("regionIds")).isEqualTo(List.of("fixture-region"));
+	}
+
+	@Test
+	void measuresOnePointPlannerExecutionWithoutServingObservation() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var request = query(new JourneyRaptorQuery.DepartAt(instantAt(30_000)));
+		var clockIndex = new java.util.concurrent.atomic.AtomicInteger();
+		var allocationIndex = new java.util.concurrent.atomic.AtomicInteger();
+		long[] clock = {100, 117};
+		long[] allocations = {200, 232};
+
+		var measurement = JourneyProfileMeasuredExecution.capturePoint(request, runtime,
+			() -> clock[clockIndex.getAndIncrement()], () -> allocations[allocationIndex.getAndIncrement()]);
+
+		assertThat(measurement.requestId()).isEqualTo(REQUEST_ID);
+		assertThat(measurement.routeBundleSha256()).isEqualTo(runtime.routeBundleSha256());
+		assertThat(measurement.generation()).isEqualTo(runtime.generation());
+		assertThat(measurement.durationNanos()).isEqualTo(17);
+		assertThat(measurement.allocatedBytes()).isEqualTo(32);
+		assertThat(measurement.result().itineraries()).isNotEmpty();
+		assertThat(measurement.result().scanMetrics().expandedRoutes()).isPositive();
+		assertThat(measurement.result().measurementObservation()).isNull();
+		var expected = new JourneyProfileExactOracle().solvePoint(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_000),
+			request.maxTransfers(), STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		assertThat(expected).hasSize(1);
+		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(30_000));
+		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_600));
+		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected,
+			measurement.result().itineraries().stream().map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList())).isTrue();
+		assertThat(JourneyProfileOracleComparison.requiredObjectiveLoss(expected,
+			measurement.result().itineraries().stream().map(itinerary -> JourneyProfileRaptorAdapter.itinerary(itinerary, Map.of())).toList())).isZero();
+		var row = JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement, expected);
+		assertThat(row.keySet()).containsExactlyInAnyOrder("regionId", "queryClass", "expandedRoutes",
+			"expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes",
+			"requiredRepresentativeLoss", "oracleParity", "profileMetrics");
+		assertThat(row).containsEntry("durationNanos", 17L).containsEntry("allocatedBytes", 32L)
+			.containsEntry("expandedRoutes", measurement.result().scanMetrics().expandedRoutes())
+			.containsEntry("expandedTrips", measurement.result().scanMetrics().expandedTrips())
+			.containsEntry("expandedTransfers", measurement.result().scanMetrics().expandedTransfers())
+			.containsEntry("oracleParity", true).containsEntry("requiredRepresentativeLoss", 0)
+			.containsEntry("profileMetrics", Map.of("status", "NOT_APPLICABLE"));
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement, List.of()))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement,
+			List.of(expected.getFirst(), expected.getFirst())))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capturePoint(
+			query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))), runtime,
+			() -> 0, () -> { throw new AssertionError("profile mode must be rejected before scan"); }))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("DepartAt");
+	}
+
+	@Test
+	void measurementCapturesOneCalculationAndRejectsUnavailableCounters() {
+		var captured = snapshot();
+		var runtime = (RaptorRouteBundleRuntimeView) captured.runtimeView();
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var calls = new java.util.concurrent.atomic.AtomicInteger();
+		var clockIndex = new java.util.concurrent.atomic.AtomicInteger();
+		var allocationIndex = new java.util.concurrent.atomic.AtomicInteger();
+		long[] clock = {100, 117};
+		long[] allocations = {200, 232};
+		var measurement = JourneyProfileMeasuredExecution.capture(request, runtime, () -> {
+			calls.incrementAndGet();
+			return adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits());
+		}, () -> clock[clockIndex.getAndIncrement()], () -> allocations[allocationIndex.getAndIncrement()]);
+		assertThat(calls.get()).isEqualTo(1);
+		assertThat(measurement.requestId()).isEqualTo(REQUEST_ID);
+		assertThat(measurement.routeBundleSha256()).isEqualTo(runtime.routeBundleSha256());
+		assertThat(measurement.generation()).isEqualTo(runtime.generation());
+		assertThat(measurement.durationNanos()).isEqualTo(17);
+		assertThat(measurement.allocatedBytes()).isEqualTo(32);
+		assertThat(measurement.result().planningMetrics().workConsumed()).isPositive();
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capture(request, runtime,
+			() -> { throw new AssertionError("calculation must not start without allocation observation"); },
+			() -> 0, () -> -1))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		allocationIndex.set(0);
+		long[] decreasing = {200, 199};
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capture(request, runtime,
+			measurement::result, () -> 0, () -> decreasing[allocationIndex.getAndIncrement()]))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+	}
+
+	@Test
+	void measurementRuntimeAndServingEntryUseTheSameProfileCalculation() {
+		var captured = snapshot();
+		var runtime = (RaptorRouteBundleRuntimeView) captured.runtimeView();
+		List<JourneyRaptorQuery.TemporalQuery> modes = List.of(
+			new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)),
+			new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)),
+			new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
+		for (var mode : modes) {
+			var request = query(mode);
+			assertThat(adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()))
+				.isEqualTo(adapter.plan(request, captured, null, policy().profilePlanningLimits()));
+		}
+	}
+
+	@Test
+	void projectsMeasuredReverseResultsOnlyAfterIndependentOracleParity() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var expected = new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
+			"station-a", "station-b", instantAt(30_000), instantAt(37_000), 0,
+			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), JourneyRequest.MobilityProfile.STANDARD,
+				JourneyRequest.ConstraintMode.NONE, JourneyRequest.WalkingPace.STANDARD.speedMetersPerHour(), 10));
+		for (var mode : List.of(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)),
+			new JourneyRaptorQuery.LastConnection(SERVICE_DATE))) {
+			var request = query(mode);
+			var observation = JourneyProfileMeasuredExecution.capture(request, runtime,
+				() -> adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+			var row = JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation, expected);
+			assertThat(row.keySet()).containsExactlyInAnyOrder("regionId", "queryClass", "observedWork",
+				"observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos",
+				"allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity");
+			assertThat(row).containsEntry("queryClass", mode instanceof JourneyRaptorQuery.ArriveBy ? "ARRIVE_BY" : "LAST_CONNECTION")
+				.containsEntry("observedWork", observation.result().planningMetrics().workConsumed())
+				.containsEntry("observedStateLabels", observation.result().planningMetrics().peakStateLabels())
+				.containsEntry("observedDestinationLabels", observation.result().planningMetrics().peakDestinationLabels())
+				.containsEntry("observedBreakpoints", observation.result().planningMetrics().reservedProfileBreakpoints())
+				.containsEntry("durationNanos", observation.durationNanos())
+				.containsEntry("allocatedBytes", observation.allocatedBytes())
+				.containsEntry("saturatedStates", observation.result().countSnapshot().countsByRuleId()
+					.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1"))
+				.containsEntry("requiredRepresentativeLoss", 0).containsEntry("oracleParity", true);
+			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation, List.of()))
+				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.cutoffRow("fixture-region", observation, expected))
+				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation,
+				java.util.stream.Stream.concat(expected.stream(), expected.stream()).toList()))
+				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		}
+	}
+
+	@Test
+	void projectsMeasuredDepartureRowsOnlyAfterIndependentBreakpointOracleParity() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var request = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(31_000)));
+		var expected = new JourneyProfileExactOracle().solvePointArrivalWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(31_000), instantAt(37_000),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		var observation = JourneyProfileMeasuredExecution.capture(request, runtime,
+			() -> adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		var expectedByBreakpoint = Map.of(instantAt(31_000), expected);
+
+		var row = JourneyProfileMeasuredExecution.departureRow("fixture-region", observation, expectedByBreakpoint);
+
+		assertThat(row.keySet()).containsExactlyInAnyOrder("regionId", "queryClass", "observedWork",
+			"observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos",
+			"allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity");
+		assertThat(row).containsEntry("queryClass", "DEPARTURE_PROFILE")
+			.containsEntry("observedWork", observation.result().planningMetrics().workConsumed())
+			.containsEntry("observedStateLabels", observation.result().planningMetrics().peakStateLabels())
+			.containsEntry("observedDestinationLabels", observation.result().planningMetrics().peakDestinationLabels())
+			.containsEntry("observedBreakpoints", observation.result().planningMetrics().reservedProfileBreakpoints())
+			.containsEntry("durationNanos", observation.durationNanos())
+			.containsEntry("allocatedBytes", observation.allocatedBytes())
+			.containsEntry("saturatedStates", observation.result().countSnapshot().countsByRuleId()
+				.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1"))
+			.containsEntry("requiredRepresentativeLoss", 0).containsEntry("oracleParity", true);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.departureRow("fixture-region", observation,
+			Map.of(instantAt(30_000), expected))).isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.departureRow("fixture-region", observation,
+			Map.of(instantAt(31_000), List.of()))).isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+	}
+
+	@Test
+	void measuresADeadlineFailureOnlyWhenIndependentOracleFindsNoConnection() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(36_000)));
+		var rides = JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10);
+		var accesses = JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(),
+			request.constraintMode(), request.walkingPace().speedMetersPerHour(), 10);
+		var oracle = new JourneyProfileExactOracle();
+		var expected = oracle.solve(new JourneyProfileExactOracle.Query(request.originStationId(),
+			request.destinationStationId(), instantAt(30_000), instantAt(36_000), request.maxTransfers(),
+			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), rides, accesses);
+		assertThat(expected).isEmpty();
+		var measured = JourneyProfileMeasuredExecution.capture(request, runtime,
+			() -> adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		var row = JourneyProfileMeasuredExecution.deadlineFailureRow("fixture-region", measured, expected);
+		assertThat(row).containsEntry("queryClass", "TYPED_FAILURE")
+			.containsEntry("oracleParity", true).containsEntry("requiredRepresentativeLoss", 0)
+			.containsEntry("observedWork", measured.result().planningMetrics().workConsumed());
+		var feasible = oracle.solve(new JourneyProfileExactOracle.Query(request.originStationId(),
+			request.destinationStationId(), instantAt(30_000), instantAt(37_000), request.maxTransfers(),
+			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), rides, accesses);
+		assertThat(feasible).isNotEmpty();
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.deadlineFailureRow("fixture-region", measured, feasible))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		var successQuery = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var success = JourneyProfileMeasuredExecution.capture(successQuery, runtime,
+			() -> adapter.planRuntime(successQuery, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.deadlineFailureRow("fixture-region", success, expected))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+	}
+
+	@Test
+	void matchesRawExactFrequencyOracleForArriveBy() {
+		var source = timetable(List.of(new LoadRouteTimetablePort.TransitFrequency(
+			"direct", 36_000, 36_600, 300, true)));
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_050)));
+		var expected = new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_050),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		assertThat(expected).hasSize(2);
+		assertThat(expected).extracting(JourneyProfileExactOracle.Candidate::arrivalAtDestination)
+			.containsExactlyInAnyOrder(instantAt(36_600), instantAt(36_900));
+		var result = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
+			request, snapshot(source), null, policy().profilePlanningLimits());
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan) result.temporalPlan();
+		var found = (JourneyProfileRaptorPort.ReversePlan.Found) plan.result();
+		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, found.itineraries())).isTrue();
+	}
+
+	@Test
+	void retainsWaitingForTheFirstTrainAfterTheDepartureWindow() {
+		var request = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(31_000)));
+		var expected = new JourneyProfileExactOracle().solvePointArrivalWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(31_000), instantAt(37_000),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		assertThat(expected).hasSize(1);
+		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(31_000));
+		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_600));
+		var result = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
+			request, snapshot(), null, policy().profilePlanningLimits());
+		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) result.temporalPlan();
+		assertThat(plan.points()).singleElement().satisfies(point -> {
+			assertThat(point.readyAt()).isEqualTo(instantAt(31_000));
+			assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, point.itineraries())).isTrue();
+		});
+		var exhausted = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
+			query(new JourneyRaptorQuery.DepartBetween(instantAt(37_000), instantAt(38_000))),
+			snapshot(), null, policy().profilePlanningLimits());
+		assertThat(((JourneyProfileRaptorPort.DepartureWindowPlan) exhausted.temporalPlan()).points()).isEmpty();
+	}
+
+	@Test
+	void dispatchesDepartureWindowAgainstTheCapturedRuntimeWithoutPointFallback() {
+		var result = adapter.plan(query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
+			snapshot(), null, policy().profilePlanningLimits());
+		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
+		assertThat(planResult.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+		assertThat(planResult.countSnapshot().algorithmIdentity())
+			.isEqualTo(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
+		assertThat(planResult.countSnapshot().countsByRuleId().keySet())
+			.containsExactlyInAnyOrderElementsOf(
+				JourneyRaptorPruningInventoryV1.activeRuleIds(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR));
+		assertThat(planResult.planningMetrics().workConsumed()).isPositive();
+		assertThat(planResult.planningMetrics().peakStateLabels()).isPositive();
+		assertThat(planResult.planningMetrics().reservedProfileBreakpoints()).isPositive();
+
+		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.DepartureWindowPlan.class, plan -> {
+			assertThat(plan.points()).singleElement().satisfies(point -> {
+				assertThat(point.serviceDate()).isEqualTo(SERVICE_DATE);
+				assertThat(point.itineraries()).singleElement().satisfies(itinerary -> {
+					// #454: 번들의 ENTRY/EXIT 간선은 무시되고 승강장 기준 직행 승차만 남는다.
+					assertThat(itinerary.metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+						0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()));
+					assertThat(itinerary.legs()).singleElement().isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
+						ride -> assertThat(ride.tripId()).isEqualTo("direct"));
+				});
+			});
+		});
+	}
+
+	@Test
+	void dispatchesArriveByToTheNativeReversePrimitive() {
+		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))),
+			snapshot(), null, policy().profilePlanningLimits());
+		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
+		assertThat(planResult.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+		assertThat(planResult.countSnapshot().algorithmIdentity())
+			.isEqualTo(JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR);
+		assertThat(planResult.planningMetrics().workConsumed()).isPositive();
+		assertThat(planResult.planningMetrics().reservedProfileBreakpoints()).isZero();
+
+		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
+			assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
+				found -> {
+					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
+						assertThat(itinerary.metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+							0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()));
+						assertThat(itinerary.legs()).anySatisfy(leg -> assertThat(leg)
+							.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
+								ride -> assertThat(ride.tripId()).isEqualTo("direct")));
+					});
+				}));
+	}
+
+	@Test
+	void dispatchesArriveByAcrossTheServiceDayCutoffWithoutDroppingA27HourTrip() {
+		var source = crossCutoffTimetable();
+		var captured = snapshot(source);
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(96_000), instantAt(98_043)));
+		var measurement = JourneyProfileMeasuredExecution.capture(request,
+			(RaptorRouteBundleRuntimeView) captured.runtimeView(),
+			() -> adapter.plan(request, captured, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		var result = measurement.result();
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.Planned.class, planned ->
+			assertThat(planned.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
+				assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class, found ->
+					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
+						// 27:00 출발 - 승차 여유 60초, 27:10 승강장 도착(#454: 진입·하차 시간 없음).
+						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:59:00Z"));
+						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:10:00Z"));
+					}))));
+		var expected = new JourneyProfileExactOracle().solveLatestReadyWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(96_000), instantAt(98_043),
+			request.maxTransfers(), STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(source.routeAccessData(), request.mobilityProfile(),
+				request.constraintMode(), request.walkingPace().speedMetersPerHour(), 10));
+		var row = JourneyProfileMeasuredExecution.cutoffRow("fixture-region", measurement, expected);
+		assertThat(row).containsEntry("queryClass", "CUTOFF").containsEntry("oracleParity", true)
+			.containsEntry("requiredRepresentativeLoss", 0)
+			.containsEntry("observedWork", result.planningMetrics().workConsumed());
+	}
+
+	@Test
+	void mapsReverseWorkAdmissionWithoutReturningAPartialFrontier() {
+		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))),
+			snapshot(), null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.AdmissionRejected.class,
+			rejected -> {
+				assertThat(rejected.observed()).isEqualTo(2);
+				assertThat(rejected.max()).isEqualTo(1);
+				assertThat(rejected.planningMetrics().workConsumed()).isEqualTo(rejected.observed());
+				assertThat(rejected.planningMetrics().reservedProfileBreakpoints()).isZero();
+			});
+	}
+
+	@Test
+	void keepsPlanningMetricsIsolatedBetweenRequestsOnTheSameAdapter() {
+		var captured = snapshot();
+		var first = adapter.plan(
+			query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
+			captured, null, policy().profilePlanningLimits());
+		var firstMetrics = first.planningMetrics();
+		assertThat(firstMetrics.reservedProfileBreakpoints()).isPositive();
+		var secondQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAW", "station-a", "station-b",
+			new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		var second = adapter.plan(secondQuery, captured, null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
+
+		assertThat(second).isInstanceOf(JourneyProfileRaptorPort.PlanningResult.AdmissionRejected.class);
+		assertThat(second.countSnapshot().requestId()).isEqualTo(secondQuery.requestId());
+		assertThat(second.planningMetrics().workConsumed()).isEqualTo(2);
+		assertThat(second.planningMetrics().reservedProfileBreakpoints()).isZero();
+		assertThat(first.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+		assertThat(first.planningMetrics()).isEqualTo(firstMetrics);
+	}
+
+	@Test
+	void preservesTheRealForwardCapacityObservationWithoutReturningAPartialSuccess() {
+		var result = adapter.plan(
+			threePathQuery(new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001))),
+			snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.CapacityExceeded.class,
+			exceeded -> {
+				assertThat(exceeded.dimension())
+					.isEqualTo(JourneyProfileRaptorPort.PlanningCapacity.MAX_DESTINATION_PROFILE_LABELS);
+				assertThat(exceeded.observed()).isEqualTo(threePathFacts().size());
+				assertThat(exceeded.max()).isEqualTo(1);
+				assertThat(exceeded.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+				assertThat(exceeded.countSnapshot().algorithmIdentity())
+					.isEqualTo(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
+				assertThat(exceeded.countSnapshot().countsByRuleId()
+					.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
+				assertThat(exceeded.planningMetrics().workConsumed()).isPositive();
+				assertThat(exceeded.planningMetrics().peakDestinationLabels()).isEqualTo(threePathFacts().size());
+			});
+	}
+
+	@Test
+	void unconfirmedStairStatePathwayCountsAsStairBurdenInProfiles() {
+		// #469 F1(#480): 프로필 응답의 stairFree와 계단 부담도 계단 없음이 확정된 동선만 계단 없음으로 본다.
+		var timetable = RouteTimetableRaptorPlannerAccessibleAlternativesTest.unconfirmedStairStateTimetable("UNKNOWN");
+		var ready = RouteTimetableRaptorPlannerAccessibleAlternativesTest.READY_AT;
+		var query = new JourneyRaptorQuery(REQUEST_ID, RouteTimetableRaptorPlannerAccessibleAlternativesTest.ORIGIN,
+			RouteTimetableRaptorPlannerAccessibleAlternativesTest.DESTINATION,
+			new JourneyRaptorQuery.DepartBetween(ready, ready.plusSeconds(600)), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			1, 3, () -> false);
+
+		var result = adapter.planRuntime(query, RaptorRouteBundleRuntimeView.compile("c".repeat(64), 1, timetable), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+
+		var points = ((JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan()).points();
+		assertThat(points).isNotEmpty().allSatisfy(point -> assertThat(point.itineraries()).isNotEmpty()
+			.allSatisfy(itinerary -> {
+				assertThat(itinerary.metrics().accessibilityBurden()).isEqualTo(1);
+				assertThat(itinerary.legs()).filteredOn(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
+					.allSatisfy(leg -> {
+						assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).includesStairs()).isTrue();
+						// #503: 미확정 상태가 프로필 응답 단계까지 전달돼야 reasonCodes가 UNDETERMINED가 된다.
+						assertThat(((JourneyProfileRaptorPort.AccessLeg) leg).stairAccessUnconfirmed()).isTrue();
+					});
+			}));
+	}
+
+	@Test
+	void preservesThreeIndependentDirectFactsAndEveryRequiredDepartureRepresentative() {
+		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001));
+		var result = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan();
+		assertThat(plan.points()).singleElement().satisfies(point -> assertThat(point.readyAt()).isEqualTo(instantAt(35_000)));
+		var itineraries = plan.points().getFirst().itineraries();
+		List<ExpectedFact> actualFacts = normalize(itineraries);
+		assertThat(actualFacts).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertReadinessAlignment(threePathFacts());
+
+		var projected = JourneyProfileCandidateProjectionV1.projectDepartureWindow(threePathQuery(temporal), plan, 3);
+		assertThat(projected).isInstanceOf(JourneyProfileCandidateProjectionV1.Projected.class);
+		var projection = ((JourneyProfileCandidateProjectionV1.Projected) projected).projection();
+		Map<String, String> candidateIdsByPath = candidateIdsByPath(projection.candidates());
+		assertThat(candidateIdsByPath.keySet()).containsExactlyInAnyOrder("fast", "walk", "accessible");
+		var oracle = independentFrontier(threePathFacts(), candidateIdsByPath);
+		var actualOracle = independentFrontier(actualFacts, candidateIdsByPath);
+		assertThat(oracle.frontier()).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertThat(actualOracle.frontier()).containsExactlyInAnyOrderElementsOf(oracle.frontier());
+		assertThat(actualOracle.representatives()).isEqualTo(oracle.representatives());
+		assertThat(oracle.representatives().keySet()).containsExactlyInAnyOrder(ObjectiveTag.values());
+		assertThat(Set.copyOf(oracle.representatives().values())).hasSize(3);
+		Map<String, String> pathsByCandidateId = candidateIdsByPath.entrySet().stream()
+			.collect(java.util.stream.Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+		var actualRepresentatives = new EnumMap<ObjectiveTag, String>(ObjectiveTag.class);
+		for (JourneyProfileCandidateProjectionV1.Candidate candidate : projection.candidates()) {
+			for (ObjectiveTag tag : candidate.objectiveTags()) {
+				actualRepresentatives.put(tag, pathsByCandidateId.get(candidate.candidateId()));
+			}
+		}
+		assertThat(actualRepresentatives).isEqualTo(oracle.representatives());
+		assertThat(projection.summary().earliestArrivalJourneyId())
+			.isEqualTo(candidateIdsByPath.get(oracle.representatives().get(ObjectiveTag.FASTEST_ARRIVAL)));
+		assertThat(projection.summary().latestDepartureJourneyId())
+			.isEqualTo(candidateIdsByPath.get(oracle.representatives().get(ObjectiveTag.LATEST_DEPARTURE)));
+
+		var exceeded = JourneyProfileCandidateProjectionV1.projectDepartureWindow(threePathQuery(temporal), plan, 2);
+		assertThat(exceeded).isInstanceOf(JourneyProfileCandidateProjectionV1.CapacityExceeded.class);
+		assertThat(((JourneyProfileCandidateProjectionV1.CapacityExceeded) exceeded).observed()).isEqualTo(3);
+		assertThat(((JourneyProfileCandidateProjectionV1.CapacityExceeded) exceeded).max()).isEqualTo(2);
+	}
+
+	@Test
+	void preservesThreeIndependentReverseFactsAndFailsClosedAtTheDestinationCapacity() {
+		var temporal = new JourneyRaptorQuery.ArriveBy(instantAt(35_000), instantAt(36_300));
+		var result = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan();
+		var itineraries = ((JourneyProfileRaptorPort.ReversePlan.Found) plan.result()).itineraries();
+		List<ExpectedFact> actualFacts = normalize(itineraries);
+		assertThat(actualFacts).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertReadinessAlignment(threePathFacts());
+		Map<String, String> canonicalPathIds = threePathFacts().stream()
+			.collect(java.util.stream.Collectors.toMap(ExpectedFact::pathId, ExpectedFact::pathId));
+		var oracle = independentFrontier(threePathFacts(), canonicalPathIds);
+		var actualOracle = independentFrontier(actualFacts, canonicalPathIds);
+		assertThat(oracle.frontier()).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertThat(actualOracle.representatives()).isEqualTo(oracle.representatives());
+		assertThat(actualOracle.representatives().keySet()).containsExactlyInAnyOrder(ObjectiveTag.values());
+
+		var exceeded = adapter.plan(threePathQuery(temporal), snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 2, 32));
+		assertThat(exceeded).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.CapacityExceeded.class,
+			failure -> {
+				assertThat(failure.dimension()).isEqualTo(JourneyProfileRaptorPort.PlanningCapacity.MAX_DESTINATION_PROFILE_LABELS);
+				assertThat(failure.observed()).isEqualTo(3);
+				assertThat(failure.max()).isEqualTo(2);
+				assertThat(failure.countSnapshot().countsByRuleId().get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
+			});
+	}
+
+	@Test
+	void derivesTransferSlackAndAccessBurdenFromThePlannerNativeLegs() {
+		Instant base = instantAt(0);
+		// #454: 이동 구간은 승차 사이 환승뿐이다(진입·하차 없음).
+		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
+			ride("first", base.plusSeconds(500), base.plusSeconds(1_000)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 180, 30, true),
+			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)));
+
+		assertThat(RouteTimetableRaptorPlanner.itineraryMetrics(legs, 60))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+				1, 180, 30, 1, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)));
+	}
+
+	@Test
+	void preservesTheSmallestSlackAcrossSuccessiveTransfers() {
+		Instant base = instantAt(0);
+		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
+			ride("first", base.plusSeconds(500), base.plusSeconds(1_000)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 180, 30, false),
+			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 120, 20, false),
+			ride("third", base.plusSeconds(1_800), base.plusSeconds(2_000)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 120, 20, false),
+			ride("fourth", base.plusSeconds(2_300), base.plusSeconds(2_600)));
+
+		// 환승 여유 60·20·120초 중 최솟값을 보존한다. 마지막 값으로 덮어쓰지 않는다.
+		assertThat(RouteTimetableRaptorPlanner.itineraryMetrics(legs, 60))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+				3, 420, 70, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(20)));
+	}
+
+	@Test
+	void dispatchesLastConnectionToTheNativeTerminalEventPrimitive() {
+		var result = adapter.plan(query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE)), snapshot(), null,
+			policy().profilePlanningLimits());
+		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
+
+		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPlan.class, plan ->
+			assertThat(plan.result()).isInstanceOf(JourneyProfileRaptorPort.ReversePlan.Found.class));
+	}
+
+	@Test
+	void preparesTheNativeExtendedServiceDayTerminalWithoutRunningLastConnectionRouting() {
+		var result = adapter.prepareLastConnection(query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE)),
+			snapshot(crossCutoffTimetable()), policy().profilePlanningLimits());
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.Prepared.class,
+			prepared -> {
+				assertThat(prepared.terminal()).isInstanceOf(JourneyProfileRaptorPort.Terminal.Found.class);
+				// 27:10 승강장 도착: 03:00이나 자정으로 절단하지 않는다(#454: 하차 시간 없음).
+				assertThat(prepared.terminalArrivalAtDestination()).isEqualTo(instantAt(97_800));
+			});
+	}
+
+	@Test
+	void rejectsNativeLastConnectionPreparationAtItsWorkBudget() {
+		var request = query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
+		var result = adapter.prepareLastConnection(request, snapshot(),
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.AdmissionRejected.class,
+			rejected -> {
+				assertThat(rejected.max()).isEqualTo(1);
+				assertThat(rejected.observed()).isGreaterThan(rejected.max());
+				assertThat(rejected.planningMetrics().workConsumed()).isEqualTo(rejected.observed());
+				assertThat(rejected.countSnapshot().requestId()).isEqualTo(request.requestId());
+				assertThat(rejected.planningMetrics().reservedProfileBreakpoints()).isZero();
+			});
+	}
+
+	@Test
+	void preservesNoActiveServiceWithoutInventingALastConnectionTerminal() {
+		var request = query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE.plusDays(1)));
+		var result = adapter.prepareLastConnection(request, snapshot(), policy().profilePlanningLimits());
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.Prepared.class,
+			prepared -> {
+				assertThat(prepared.terminal()).isEqualTo(new JourneyProfileRaptorPort.Terminal.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.NO_ACTIVE_SERVICE));
+				assertThat(prepared.terminalArrivalAtDestination()).isNull();
+				assertThat(prepared.countSnapshot().requestId()).isEqualTo(request.requestId());
+			});
+	}
+
+	@Test
+	void rejectsRealtimeProfileInsteadOfUsingTimetableAsFallback() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.LastConnection(SERVICE_DATE), JourneyRequest.TimePolicy.REALTIME_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		assertThatThrownBy(() -> adapter.plan(query, snapshot(), null, policy().profilePlanningLimits()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("TIMETABLE_REQUIRED");
+	}
+
+	// 대체 환승 픽스처: 기본 선택은 최단 검증 거리 "transfer"(100m), 차단 시 "transfer-alt"(200m).
+	private static final Clock FACILITY_CLOCK = Clock.fixed(Instant.parse("2026-07-01T00:00:00Z"), ZoneOffset.UTC);
+
+	@Test
+	void profileQueriesAvoidAFreshlyBlockedTransferTransition() {
+		var captured = snapshot(alternateTransferTimetable());
+		var blocked = facilityAdapter(FacilityAvailabilityView.blocked(
+			FACILITY_CLOCK.instant().minusSeconds(60), Set.of("transfer")), false);
+		var unblocked = facilityAdapter(FacilityAvailabilityView.empty(FACILITY_CLOCK.instant()), false);
+		var arriveBy = transferQuery(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var departBetween = transferQuery(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)));
+
+		// STANDARD 4,500 m/h: 100m=80초(여유 36,000-35,600-80-60=260), 차단 시 200m=160초(여유 180).
+		assertThat(singleArriveByMetrics(unblocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(1, 80, 100, 0,
+				new JourneyProfileRaptorPort.MinimumTransferSeconds(260)));
+		assertThat(singleArriveByMetrics(blocked.plan(arriveBy, captured, null, policy().profilePlanningLimits())))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(1, 160, 200, 0,
+				new JourneyProfileRaptorPort.MinimumTransferSeconds(180)));
+		var window = (JourneyProfileRaptorPort.DepartureWindowPlan)
+			((JourneyProfileRaptorPort.PlanningResult.Planned) blocked.plan(
+				departBetween, captured, null, policy().profilePlanningLimits())).temporalPlan();
+		assertThat(window.points()).isNotEmpty().allSatisfy(point -> assertThat(point.itineraries())
+			.isNotEmpty().allSatisfy(itinerary -> assertThat(itinerary.legs().get(1)).isEqualTo(
+				new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER,
+					"station-x", "station-x", 160, 200, false, true, "VERIFIED"))));
+	}
+
+	@Test
+	void requiredStepFreeProfileWithStaleFacilityStatusFailsExplicitly() {
+		var stale = facilityAdapter(FacilityAvailabilityView.blocked(
+			FACILITY_CLOCK.instant().minus(Duration.ofMinutes(6)), Set.of("entry")), true);
+		var stepFree = stepFreeQuery(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var lastConnection = stepFreeQuery(new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
+
+		assertThatThrownBy(() -> stale.plan(stepFree, snapshot(timetable()), null,
+			policy().profilePlanningLimits()))
+			.isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE");
+		assertThatThrownBy(() -> stale.plan(lastConnection, snapshot(timetable()), null,
+			policy().profilePlanningLimits()))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+		assertThatThrownBy(() -> stale.prepareLastConnection(lastConnection, snapshot(timetable()),
+			policy().profilePlanningLimits()))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	@Test
+	void requiredStaleFacilityStatusLeavesNonStepFreeProfileUnblocked() {
+		var stale = facilityAdapter(FacilityAvailabilityView.blocked(
+			FACILITY_CLOCK.instant().minus(Duration.ofMinutes(6)), Set.of("entry")), true);
+		var arriveBy = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+
+		assertThat(singleArriveByMetrics(stale.plan(arriveBy, snapshot(timetable()), null,
+			policy().profilePlanningLimits())))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()));
+	}
+
+	private static JourneyProfileRaptorAdapter facilityAdapter(FacilityAvailabilityView view, boolean required) {
+		return new JourneyProfileRaptorAdapter(
+			RouteTimetableRaptorPlanner.ScanWorkspacePool.shared(), () -> view, required, FACILITY_CLOCK);
+	}
+
+	private static JourneyProfileRaptorPort.ItineraryMetrics singleArriveByMetrics(
+		JourneyProfileRaptorPort.PlanningResult result
+	) {
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan)
+			((JourneyProfileRaptorPort.PlanningResult.Planned) result).temporalPlan();
+		var found = (JourneyProfileRaptorPort.ReversePlan.Found) plan.result();
+		assertThat(found.itineraries()).hasSize(1);
+		return found.itineraries().getFirst().metrics();
+	}
+
+	private static JourneyRaptorQuery stepFreeQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 0, 1, () -> false);
+	}
+
+	private static RouteTimetable alternateTransferTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var first = new LoadRouteTimetablePort.TransitRoute("route-1", "line-1", "1", "One", "Terminal", "Asia/Seoul");
+		var second = new LoadRouteTimetablePort.TransitRoute("route-2", "line-2", "2", "Two", "Terminal", "Asia/Seoul");
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(first, second), List.of(
+				new LoadRouteTimetablePort.TransitTrip("first", "route-1", "daily", "Terminal", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("second", "route-2", "daily", "Terminal", "0", "LOCAL", 0)),
+			List.of(stop("first", 1, "station-a", "line-1", 35_000), stop("first", 2, "station-x", "line-1", 35_600),
+				stop("second", 1, "station-x", "line-2", 36_000), stop("second", 2, "station-b", "line-2", 36_600)),
+			List.of(), List.of(), null, transferAccessData(List.of(
+				new TransferFixture("x", "line-1", "line-2", "transfer", 120, 100, false),
+				new TransferFixture("x", "line-1", "line-2", "transfer-alt", 240, 200, false))));
+	}
+
+	private static JourneyRaptorQuery transferQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
+	}
+
+	private record TransferFixture(
+		String station, String fromLine, String toLine, String edgeId, int seconds, int distance, boolean stairs
+	) {
+	}
+
+	/** 같은 역 승강장 사이의 검증 환승들(#454: 출발·도착은 승강장이라 진입·하차 간선이 없다). */
+	private static LoadRouteTimetablePort.RouteAccessData transferAccessData(List<TransferFixture> transfers) {
+		var nodes = new java.util.LinkedHashMap<String, LoadRouteTimetablePort.PathwayNode>();
+		var edges = new java.util.ArrayList<LoadRouteTimetablePort.PathwayEdge>();
+		var rules = new java.util.ArrayList<LoadRouteTimetablePort.TransferRule>();
+		var evidence = new java.util.ArrayList<LoadRouteTimetablePort.RouteEdgeEvidence>();
+		for (TransferFixture transfer : transfers) {
+			String stationId = "station-" + transfer.station();
+			String from = transfer.station() + "-" + transfer.fromLine();
+			String to = transfer.station() + "-" + transfer.toLine();
+			nodes.putIfAbsent(from, new LoadRouteTimetablePort.PathwayNode(from, stationId, transfer.fromLine(), "PLATFORM"));
+			nodes.putIfAbsent(to, new LoadRouteTimetablePort.PathwayNode(to, stationId, transfer.toLine(), "PLATFORM"));
+			edges.add(edge(transfer.edgeId(), from, to, transfer.seconds(), transfer.distance(), transfer.stairs()));
+			rules.add(new LoadRouteTimetablePort.TransferRule(transfer.edgeId() + "-rule", stationId, transfer.fromLine(),
+				stationId, transfer.toLine(), "IN_STATION", transfer.seconds(), transfer.edgeId(),
+				transfer.stairs() ? null : transfer.edgeId(), "VERIFIED"));
+			evidence.add(evidence(transfer.edgeId() + "-evidence", stationId, transfer.toLine(), transfer.edgeId(), "TRANSFER"));
+		}
+		return new LoadRouteTimetablePort.RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);
+	}
+
+	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return profileQuery(temporalQuery, 1);
+	}
+
+	private static JourneyRaptorQuery profileQuery(JourneyRaptorQuery.TemporalQuery temporalQuery, int alternativeCount) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, alternativeCount, () -> false);
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot() {
+		return snapshot(timetable());
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(RouteTimetable timetable) {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, 1, timetable);
+		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot", "bundle", ROUTE_BUNDLE_SHA, "timetable", "accessibility", 1, runtime,
+			Instant.parse("2026-07-03T00:00:00Z"), true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+	}
+
+	private static Instant instantAt(int seconds) {
+		return SERVICE_DATE.atStartOfDay().plusSeconds(seconds).atOffset(ZoneOffset.ofHours(9)).toInstant();
+	}
+
+	private static JourneyProfileResourcePolicy policy() {
+		return new JourneyProfileResourcePolicy(
+			new JourneyProfileResourcePolicy.Identity("test-profile", "1.0.0", "b".repeat(64)),
+			Duration.ofHours(2), 2, 100_000L, 32, 32, 32,
+			Duration.ofMinutes(5), Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(1),
+			1, 1, 1, 1, 4);
+	}
+
+	private static RouteTimetable timetable() {
+		return timetable(List.of());
+	}
+
+	private static RouteTimetable timetable(List<LoadRouteTimetablePort.TransitFrequency> frequencies) {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var route = new LoadRouteTimetablePort.TransitRoute(
+			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
+		var trip = new LoadRouteTimetablePort.TransitTrip("direct", "route", "daily", "Terminal", "0", "LOCAL", 0);
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(route), List.of(trip),
+			List.of(stop("direct", 1, "station-a", 36_000), stop("direct", 2, "station-b", 36_600)),
+			frequencies, List.of(), null, accessData());
+	}
+
+	private static RouteTimetable crossCutoffTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), "Asia/Seoul");
+		var route = new LoadRouteTimetablePort.TransitRoute(
+			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
+		var trip = new LoadRouteTimetablePort.TransitTrip("late", "route", "daily", "Terminal", "0", "LOCAL", 0);
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(route), List.of(trip),
+			List.of(stop("late", 1, "station-a", 97_200), stop("late", 2, "station-b", 97_800)),
+			List.of(), List.of(), null, accessData());
+	}
+
+	/**
+	 * #454: 세 경로는 같은 시각(35,060)에 출발역 승강장에서 타고 서로 다른 역에서 한 번 환승한다.
+	 * fast는 가장 일찍 도착하고, walk는 걷는 거리가 가장 짧고, accessible만 계단이 없다. 세 환승 여유는 모두 20초다.
+	 */
+	private static RouteTimetable threePathTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var routes = new java.util.ArrayList<LoadRouteTimetablePort.TransitRoute>();
+		var trips = new java.util.ArrayList<LoadRouteTimetablePort.TransitTrip>();
+		for (String path : List.of("fast", "walk", "accessible")) {
+			for (String leg : List.of("1", "2")) {
+				routes.add(new LoadRouteTimetablePort.TransitRoute(
+					"route-" + path + "-" + leg, "line-" + path + "-" + leg, path, path, "Terminal", "Asia/Seoul"));
+				trips.add(new LoadRouteTimetablePort.TransitTrip(
+					path + (leg.equals("1") ? "" : "-second"), "route-" + path + "-" + leg, "daily", "Terminal", "0", "LOCAL", 0));
+			}
+		}
+		return new RouteTimetable(
+			List.of(calendar), List.of(), routes, trips,
+			List.of(
+				stop("fast", 1, "station-a", "line-fast-1", 35_060), stop("fast", 2, "station-fx", "line-fast-1", 35_400),
+				stop("fast-second", 1, "station-fx", "line-fast-2", 35_600), stop("fast-second", 2, "station-b", "line-fast-2", 36_000),
+				stop("walk", 1, "station-a", "line-walk-1", 35_060), stop("walk", 2, "station-wx", "line-walk-1", 35_400),
+				stop("walk-second", 1, "station-wx", "line-walk-2", 35_520), stop("walk-second", 2, "station-b", "line-walk-2", 36_100),
+				stop("accessible", 1, "station-a", "line-accessible-1", 35_060),
+				stop("accessible", 2, "station-ax", "line-accessible-1", 35_400),
+				stop("accessible-second", 1, "station-ax", "line-accessible-2", 35_560),
+				stop("accessible-second", 2, "station-b", "line-accessible-2", 36_200)),
+			List.of(), List.of(), null, transferAccessData(List.of(
+				new TransferFixture("fx", "line-fast-1", "line-fast-2", "fast-transfer", 120, 150, true),
+				new TransferFixture("wx", "line-walk-1", "line-walk-2", "walk-transfer", 40, 50, true),
+				new TransferFixture("ax", "line-accessible-1", "line-accessible-2", "accessible-transfer", 80, 100, false))));
+	}
+
+	private static JourneyRaptorQuery threePathQuery(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
+	}
+
+	private static LoadRouteTimetablePort.TransitStopTime stop(String tripId, int sequence, String station, int seconds) {
+		return stop(tripId, sequence, station, "line", seconds);
+	}
+
+	private static LoadRouteTimetablePort.TransitStopTime stop(
+		String tripId, int sequence, String station, String lineId, int seconds
+	) {
+		return new LoadRouteTimetablePort.TransitStopTime(
+			tripId, sequence, station, lineId, seconds, seconds, 0, 0);
+	}
+
+	// STANDARD 4,500 m/h: 150m=120초, 50m=40초, 100m=80초. 승강장에서 시작·종료하므로 준비 = 첫 승차 - 승차 여유,
+	// 도착 = 마지막 승강장 도착이다(#454).
+	private static List<ExpectedFact> threePathFacts() {
+		return List.of(
+			new ExpectedFact("fast", 35_000, 35_060, 36_000, 36_000, 1, 120, 150, 1, false),
+			new ExpectedFact("walk", 35_000, 35_060, 36_100, 36_100, 1, 40, 50, 1, false),
+			new ExpectedFact("accessible", 35_000, 35_060, 36_200, 36_200, 1, 80, 100, 0, false));
+	}
+
+	private static void assertReadinessAlignment(List<ExpectedFact> facts) {
+		assertThat(facts).allSatisfy(fact -> {
+			assertThat(fact.firstBoardingSeconds()).isEqualTo(fact.readySeconds() + STANDARD_BOARDING_SLACK_SECONDS);
+			assertThat(fact.destinationArrivalSeconds()).isEqualTo(fact.finalPlatformArrivalSeconds());
+		});
+	}
+
+	private static List<ExpectedFact> normalize(List<JourneyProfileRaptorPort.Itinerary> itineraries) {
+		return itineraries.stream().map(itinerary -> {
+			List<JourneyProfileRaptorPort.RideLeg> rides = itinerary.legs().stream()
+				.filter(JourneyProfileRaptorPort.RideLeg.class::isInstance).map(JourneyProfileRaptorPort.RideLeg.class::cast).toList();
+			String tripId = rides.getFirst().tripId();
+			var metrics = itinerary.metrics();
+			int readySeconds = secondsAt(itinerary.plannedReadyAt());
+			return new ExpectedFact(tripId, readySeconds,
+				secondsAt(rides.getFirst().plannedDepartureTime()), secondsAt(rides.getLast().plannedArrivalTime()),
+				secondsAt(itinerary.plannedArrivalAtDestination()),
+				metrics.transfersUsed(), metrics.accessMovementSeconds(), metrics.accessDistanceMeters(), metrics.accessibilityBurden(),
+				metrics.connectionSlack() instanceof JourneyProfileRaptorPort.NoTransfer);
+		}).sorted(Comparator.comparing(ExpectedFact::pathId)).toList();
+	}
+
+	private static Map<String, String> candidateIdsByPath(
+		List<JourneyProfileCandidateProjectionV1.Candidate> candidates
+	) {
+		Map<String, String> ids = new LinkedHashMap<>();
+		for (JourneyProfileCandidateProjectionV1.Candidate candidate : candidates) {
+			String pathId = candidate.itinerary().legs().stream().filter(JourneyProfileRaptorPort.RideLeg.class::isInstance)
+				.map(JourneyProfileRaptorPort.RideLeg.class::cast).map(JourneyProfileRaptorPort.RideLeg::tripId)
+				.findFirst().orElseThrow();
+			if (ids.putIfAbsent(pathId, candidate.candidateId()) != null) {
+				throw new IllegalArgumentException("duplicate fixture path: " + pathId);
+			}
+		}
+		return Map.copyOf(ids);
+	}
+
+	private static IndependentFrontier independentFrontier(List<ExpectedFact> facts, Map<String, String> canonicalKeys) {
+		List<ExpectedFact> frontier = facts.stream().filter(candidate -> facts.stream()
+			.noneMatch(other -> other != candidate && dominates(other, candidate))).toList();
+		var representatives = new EnumMap<ObjectiveTag, String>(ObjectiveTag.class);
+		for (ObjectiveTag tag : ObjectiveTag.values()) {
+			ExpectedFact selected = frontier.stream().min((left, right) -> compareFor(tag, left, right, canonicalKeys)).orElseThrow();
+			representatives.put(tag, selected.pathId());
+		}
+		return new IndependentFrontier(frontier, Map.copyOf(representatives));
+	}
+
+	private static boolean dominates(ExpectedFact left, ExpectedFact right) {
+		return left.readySeconds() >= right.readySeconds()
+			&& left.destinationArrivalSeconds() <= right.destinationArrivalSeconds()
+			&& left.transfers() <= right.transfers()
+			&& left.accessSeconds() <= right.accessSeconds()
+			&& left.accessMeters() <= right.accessMeters()
+			&& left.stairBurden() <= right.stairBurden()
+			&& (left.noTransfer() || !right.noTransfer())
+			&& (left.readySeconds() > right.readySeconds()
+				|| left.destinationArrivalSeconds() < right.destinationArrivalSeconds()
+				|| left.transfers() < right.transfers()
+				|| left.accessSeconds() < right.accessSeconds()
+				|| left.accessMeters() < right.accessMeters()
+				|| left.stairBurden() < right.stairBurden()
+				|| left.noTransfer() && !right.noTransfer());
+	}
+
+	private static int compareFor(
+		ObjectiveTag tag, ExpectedFact left, ExpectedFact right, Map<String, String> canonicalKeys
+	) {
+		int comparison = switch (tag) {
+			case FASTEST_ARRIVAL -> Integer.compare(left.destinationArrivalSeconds(), right.destinationArrivalSeconds());
+			case LATEST_DEPARTURE -> Integer.compare(right.readySeconds(), left.readySeconds());
+			case FEWEST_TRANSFERS -> Integer.compare(left.transfers(), right.transfers());
+			case LOWEST_WALKING_BURDEN -> left.compareWalking(right);
+			case BEST_ACCESSIBILITY -> Long.compare(left.stairBurden(), right.stairBurden());
+			// #469: 환승 여유는 10분 상한까지만 비교하고 같으면 더 이른 도착이다. 이 픽스처의 세 경로는 환승 여유가
+			// 모두 20초로 같아(35,400 도착 + 보행 + 승차 여유 60초 = 다음 열차 출발 - 20초) 도착 시각으로 정해진다.
+			case SAFEST_CONNECTION -> {
+				int safety = Boolean.compare(right.noTransfer(), left.noTransfer());
+				yield safety != 0 ? safety
+					: Integer.compare(left.destinationArrivalSeconds(), right.destinationArrivalSeconds());
+			}
+		};
+		return comparison != 0 ? comparison : canonicalKeys.get(left.pathId()).compareTo(canonicalKeys.get(right.pathId()));
+	}
+
+	private static int secondsAt(Instant instant) {
+		return Math.toIntExact(Duration.between(SERVICE_DATE.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).toInstant(), instant).toSeconds());
+	}
+
+	private record ExpectedFact(
+		String pathId,
+		int readySeconds,
+		int firstBoardingSeconds,
+		int finalPlatformArrivalSeconds,
+		int destinationArrivalSeconds,
+		int transfers,
+		long accessSeconds,
+		long accessMeters,
+		long stairBurden,
+		boolean noTransfer
+	) {
+		private int compareWalking(ExpectedFact other) {
+			int comparison = Long.compare(accessSeconds, other.accessSeconds);
+			return comparison != 0 ? comparison : Long.compare(accessMeters, other.accessMeters);
+		}
+	}
+
+	private record IndependentFrontier(List<ExpectedFact> frontier, Map<ObjectiveTag, String> representatives) {
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData accessData() {
+		return new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new LoadRouteTimetablePort.PathwayNode("entry-from", "station-a", null, "ENTRANCE"),
+				new LoadRouteTimetablePort.PathwayNode("entry-to", "station-a", "line", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-from", "station-b", "line", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-to", "station-b", null, "EXIT")),
+			List.of(edge("entry", "entry-from", "entry-to", 300), edge("exit", "exit-from", "exit-to", 120)),
+			List.of(),
+			List.of(
+				evidence("entry-evidence", "station-a", "entry", "ENTRY"),
+				evidence("exit-evidence", "station-b", "exit", "EXIT")));
+	}
+
+	private static LoadRouteTimetablePort.PathwayEdge edge(String id, String from, String to, int seconds) {
+		return new LoadRouteTimetablePort.PathwayEdge(
+			id, from, to, seconds, 50, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE");
+	}
+
+	private static LoadRouteTimetablePort.PathwayEdge edge(
+		String id, String from, String to, int seconds, int distance, boolean stairs
+	) {
+		return new LoadRouteTimetablePort.PathwayEdge(
+			id, from, to, seconds, distance, false, stairs, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState((stairs) ? "STAIR_ONLY" : "STEP_FREE");
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(
+		RouteTimetableRaptorPlanner.JourneyAccessKind kind, int duration, int distance, boolean stairs
+	) {
+		return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+			kind, "station", "station", duration, distance, stairs, true, "VERIFIED");
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyRideProjection ride(
+		String tripId, Instant departure, Instant arrival
+	) {
+		return TestProjectionRides.projectionRide(
+			"line", tripId, "terminal", "station", "station",
+			departure, arrival, null, null);
+	}
+
+	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
+		String id, String stationId, String edgeId, String edgeType
+	) {
+		return evidence(id, stationId, "line", edgeId, edgeType);
+	}
+
+	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
+		String id, String stationId, String lineId, String edgeId, String edgeType
+	) {
+		return new LoadRouteTimetablePort.RouteEdgeEvidence(
+			id, stationId, lineId, edgeId, edgeType, "OFFICIAL_SOURCE", "VERIFIED", true, null);
+	}
+}

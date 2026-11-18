@@ -1,0 +1,310 @@
+package com.easysubway.journey.adapter.in.web;
+
+import com.easysubway.journey.analytics.JourneySearchKind;
+import com.easysubway.journey.analytics.JourneySearchLatencyMetrics;
+import com.easysubway.journey.analytics.JourneySearchRecorder;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Completed;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Outcome;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
+import com.easysubway.journey.application.JourneyExecutionDisposition;
+import com.easysubway.journey.application.JourneyExecutionFailure;
+import com.easysubway.journey.application.JourneyExecutionResult;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneySessionException;
+import com.easysubway.journey.application.JourneySessionService;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.io.InputStream;
+import java.time.OffsetDateTime;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
+import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+final class JourneySearchController {
+
+	private static final ObjectMapper REQUEST_JSON = new ObjectMapper(JsonFactory.builder()
+		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+	private static final Pattern SESSION_TOKEN = Pattern.compile("^[A-Za-z0-9_-]+$");
+	private static final BooleanSupplier NOT_CANCELLED = () -> false;
+	private static final Set<String> REQUIRED_FIELDS = Set.of(
+		"requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
+		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
+	);
+	private static final Set<String> ALLOWED_FIELDS = Set.of(
+		"requestId", "originStationId", "destinationStationId", "viaStationId", "departure", "timePolicy",
+		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
+	);
+
+	public static final int DEFAULT_MAX_REQUEST_BYTES = 65_536;
+
+	private final JourneySessionService sessionService;
+	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
+	private final JourneyProfileResourcePolicy resourcePolicy;
+	private final JourneySearchRecorder recorder;
+	private final JourneySearchLatencyMetrics latency;
+	private final int maxRequestBytes;
+
+	JourneySearchController(
+		JourneySessionService sessionService,
+		JourneyApplicationDeadlineExecutor deadlineExecutor,
+		JourneyProfileResourcePolicy resourcePolicy,
+		JourneySearchRecorder recorder,
+		JourneySearchLatencyMetrics latency
+	) {
+		this(sessionService, deadlineExecutor, resourcePolicy, DEFAULT_MAX_REQUEST_BYTES, recorder, latency);
+	}
+
+	@Autowired
+	JourneySearchController(
+		JourneySessionService sessionService,
+		JourneyApplicationDeadlineExecutor deadlineExecutor,
+		JourneyProfileResourcePolicy resourcePolicy,
+		@Value("${easysubway.journey.search.max-request-bytes:65536}") int maxRequestBytes,
+		JourneySearchRecorder recorder,
+		JourneySearchLatencyMetrics latency
+	) {
+		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
+		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
+		this.resourcePolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
+		this.recorder = Objects.requireNonNull(recorder, "recorder");
+		this.latency = Objects.requireNonNull(latency, "latency");
+		if (maxRequestBytes <= 0) throw new IllegalArgumentException("maxRequestBytes must be positive");
+		this.maxRequestBytes = maxRequestBytes;
+	}
+
+	@PostMapping("/api/v3/journeys/search")
+	ResponseEntity<JourneySearchResponseMapper.JourneySearchResponse> search(
+		@RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+		HttpServletRequest servletRequest
+	) {
+		long startedNanos = latency.start();
+		sessionService.authorize(requireBearerToken(authorization), resourcePolicy.pointSearchCostUnits());
+		JourneyRequest request = decodeRequest(readRequest(servletRequest));
+		Outcome outcome = null;
+		try {
+			outcome = deadlineExecutor.execute(request);
+		} catch (RuntimeException exception) {
+			// 실행 실패와 null 결과는 같은 503으로 닫고 같은 방식으로 기록한다.
+		}
+		if (outcome == null) throw recorded(request, startedNanos, serviceUnavailable(request.requestId()));
+
+		try {
+			return respond(request, outcome, startedNanos);
+		} catch (RuntimeException exception) {
+			// recorded()가 던진 실패는 이미 기록했다. 그 밖의 예상하지 못한 예외는 error로 한 번만 센다.
+			if (!(exception instanceof JourneySearchWebException)) {
+				latency.recordError(JourneySearchKind.DEPART_AT, startedNanos);
+			}
+			throw exception;
+		}
+	}
+
+	private ResponseEntity<JourneySearchResponseMapper.JourneySearchResponse> respond(
+		JourneyRequest request, Outcome outcome, long startedNanos
+	) {
+		JourneyExecutionResult result = switch (outcome) {
+			case Completed completed -> completed.result();
+			case TimedOut ignored -> throw recorded(request, startedNanos, timeout(request.requestId()));
+		};
+
+		return switch (result) {
+			case JourneyExecutionResult.Success success -> {
+				var response = ResponseEntity.ok()
+					.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+					.body(JourneySearchResponseMapper.map(success));
+				latency.recordSuccess(JourneySearchKind.DEPART_AT, startedNanos);
+				recorder.recordPointSuccess(request, success);
+				yield response;
+			}
+			case JourneyExecutionFailure failure -> throw recorded(request, startedNanos, publicFailure(request.requestId(), failure));
+		};
+	}
+
+	private JourneySearchWebException recorded(
+		JourneyRequest request, long startedNanos, JourneySearchWebException exception
+	) {
+		latency.recordFailure(JourneySearchKind.DEPART_AT, startedNanos, exception.httpStatus(), exception.machineCode());
+		recorder.recordPointFailure(request, exception.httpStatus(), exception.machineCode());
+		return exception;
+	}
+
+	static String requireBearerToken(String authorization) {
+		if (authorization == null) {
+			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
+		}
+		int separator = authorization.indexOf(' ');
+		if (separator < 1 || !authorization.substring(0, separator).equalsIgnoreCase("Bearer")) {
+			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
+		}
+		int tokenStart = separator;
+		while (tokenStart < authorization.length() && authorization.charAt(tokenStart) == ' ') tokenStart++;
+		String token = authorization.substring(tokenStart);
+		if (!SESSION_TOKEN.matcher(token).matches()) {
+			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
+		}
+		return token;
+	}
+
+	private byte[] readRequest(HttpServletRequest request) {
+		long contentLength = request.getContentLengthLong();
+		if (contentLength > maxRequestBytes) {
+			throw invalidRequest();
+		}
+		try (InputStream input = request.getInputStream()) {
+			byte[] bytes = input.readNBytes(maxRequestBytes);
+			if (input.read() != -1) {
+				throw invalidRequest();
+			}
+			return bytes;
+		} catch (IOException exception) {
+			throw invalidRequest();
+		}
+	}
+
+	private static JourneyRequest decodeRequest(byte[] requestBytes) {
+		try {
+			JsonNode request = REQUEST_JSON.readTree(requestBytes);
+			Set<String> expectedFields = request.has("viaStationId") ? ALLOWED_FIELDS : REQUIRED_FIELDS;
+			if (!hasExactFields(request, expectedFields)
+				|| !request.path("requestId").isTextual()
+				|| !request.path("originStationId").isTextual()
+				|| !request.path("destinationStationId").isTextual()
+				|| !request.path("timePolicy").isTextual()
+				|| !request.path("walkingPace").isTextual()
+				|| !request.path("mobilityProfile").isTextual()
+				|| !request.path("constraintMode").isTextual()
+				|| !request.path("maxTransfers").isInt()
+				|| !request.path("alternativeCount").isInt()) {
+				throw invalidRequest();
+			}
+			String origin = request.path("originStationId").textValue();
+			String destination = request.path("destinationStationId").textValue();
+			String viaStationId = null;
+			if (request.has("viaStationId")) {
+				JsonNode viaNode = request.path("viaStationId");
+				if (!viaNode.isTextual() || viaNode.textValue().isBlank()) {
+					throw invalidRequest();
+				}
+				viaStationId = viaNode.textValue();
+				if (viaStationId.equals(origin) || viaStationId.equals(destination)) {
+					throw invalidRequest();
+				}
+			}
+			return new JourneyRequest(
+				request.path("requestId").textValue(),
+				origin,
+				destination,
+				viaStationId,
+				decodeDeparture(request.path("departure")),
+				JourneyRequest.TimePolicy.valueOf(request.path("timePolicy").textValue()),
+				JourneyRequest.WalkingPace.valueOf(request.path("walkingPace").textValue()),
+				JourneyRequest.MobilityProfile.valueOf(request.path("mobilityProfile").textValue()),
+				JourneyRequest.ConstraintMode.valueOf(request.path("constraintMode").textValue()),
+				request.path("maxTransfers").intValue(),
+				request.path("alternativeCount").intValue(),
+				NOT_CANCELLED
+			);
+		} catch (JourneySearchWebException exception) {
+			throw exception;
+		} catch (IOException | RuntimeException exception) {
+			throw invalidRequest();
+		}
+	}
+
+	private static JourneyRequest.Departure decodeDeparture(JsonNode departure) {
+		if (departure == null || !departure.isObject() || !departure.path("mode").isTextual()) {
+			throw invalidRequest();
+		}
+		return switch (departure.path("mode").textValue()) {
+			case "NOW" -> {
+				if (!hasExactFields(departure, Set.of("mode"))) throw invalidRequest();
+				yield new JourneyRequest.Departure.Now();
+			}
+			case "SCHEDULED" -> {
+				if (!hasExactFields(departure, Set.of("mode", "requestedAt"))
+					|| !departure.path("requestedAt").isTextual()) {
+					throw invalidRequest();
+				}
+				yield new JourneyRequest.Departure.Scheduled(
+					OffsetDateTime.parse(departure.path("requestedAt").textValue()).toInstant()
+				);
+			}
+			default -> throw invalidRequest();
+		};
+	}
+
+	private static boolean hasExactFields(JsonNode value, Set<String> expected) {
+		if (value == null || !value.isObject() || value.size() != expected.size()) return false;
+		var actual = new java.util.HashSet<String>();
+		value.fieldNames().forEachRemaining(actual::add);
+		return actual.equals(expected);
+	}
+
+	private static JourneySearchWebException publicFailure(String requestId, JourneyExecutionFailure failure) {
+		JourneyExecutionDisposition disposition = JourneyExecutionDisposition.from(failure);
+		return switch (disposition) {
+			case JourneyExecutionDisposition.PublicFailure publicFailure -> new JourneySearchWebException(
+				requestId,
+				publicFailure.httpStatus(),
+				publicFailure.machineCode().name()
+			);
+			case JourneyExecutionDisposition.Cancelled ignored -> serviceUnavailable(requestId);
+		};
+	}
+
+	private static JourneySearchWebException invalidRequest() {
+		return new JourneySearchWebException(null, 400, "INVALID_JOURNEY_REQUEST");
+	}
+
+	private static JourneySearchWebException serviceUnavailable(String requestId) {
+		return new JourneySearchWebException(requestId, 503, "ROUTE_SERVICE_UNAVAILABLE");
+	}
+
+	private static JourneySearchWebException timeout(String requestId) {
+		return new JourneySearchWebException(requestId, 504, "JOURNEY_SEARCH_TIMEOUT");
+	}
+
+	static final class JourneySearchWebException extends RuntimeException {
+		private final String requestId;
+		private final int httpStatus;
+		private final String machineCode;
+
+		JourneySearchWebException(String requestId, int httpStatus, String machineCode) {
+			super(Objects.requireNonNull(machineCode, "machineCode"));
+			this.requestId = requestId;
+			this.httpStatus = httpStatus;
+			this.machineCode = machineCode;
+		}
+
+		String requestId() {
+			return requestId;
+		}
+
+		int httpStatus() {
+			return httpStatus;
+		}
+
+		String machineCode() {
+			return machineCode;
+		}
+	}
+}

@@ -1,0 +1,38 @@
+{
+  "contractVersion": "LEGACY_FLYWAY_BASELINE_V1",
+  "evidenceSchema": "LEGACY_FLYWAY_BASELINE_EVIDENCE_V1",
+  "postgresMajor": 16,
+  "targetSchema": "public",
+  "baselineVersion": "1",
+  "allowedEnvironments": [
+    "prod",
+    "staging",
+    "release",
+    "prod-like"
+  ],
+  "action": "BASELINE_REVIEWED_LEGACY_V1",
+  "approvalUrl": "https://github.com/AquilaXk/easysubway-backend/issues/8",
+  "approval": "APPROVED_BY_ISSUE_8",
+  "reason": "REVIEWED_LEGACY_V1_SCHEMA",
+  "schemaFingerprintSha256": "077beae456593c54ea6c8b99a2f41f7c263623812aab17ff4ae018ce8c68290c",
+  "migrationInventorySha256": "ae2661c5797779257bb8123ad61869a275e641133bbf2c17823fe37c4ca1587d",
+  "migrationDdlPolicySha256": "08e3536b7cffed4511b18b3e9c90aed56d384d5b87f643345ef26a6c7f1cbb3a",
+  "productionConfigSha256": "0aeaffbf8048f1665499197c9c9e39d3fdb379e47f5b8e78138929d29dc97cdd",
+  "advisoryLockKey": 4960703508659600721,
+  "resultReasons": [
+    "BASELINED",
+    "INVALID_ARGUMENTS",
+    "INVALID_INPUT",
+    "POLICY_INVALID",
+    "RESOURCE_DRIFT",
+    "DATABASE_CONNECTION_FAILED",
+    "POSTGRES_MAJOR_MISMATCH",
+    "TARGET_IDENTITY_MISMATCH",
+    "HISTORY_PRESENT",
+    "SCHEMA_FINGERPRINT_MISMATCH",
+    "CONCURRENT_TRANSITION",
+    "INTERRUPTED",
+    "BASELINE_VERIFICATION_FAILED",
+    "INTERNAL_FAILURE"
+  ]
+}

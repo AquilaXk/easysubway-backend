@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "v1",
+  "cases": [
+    {
+      "id": "capital-sangnoksu-to-sadang-weekday",
+      "originStationId": "station-sangnoksu",
+      "destinationStationId": "station-sadang",
+      "serviceDay": "WEEKDAY",
+      "departureLocalTime": "08:00"
+    },
+    {
+      "id": "capital-sadang-to-sangnoksu-weekend",
+      "originStationId": "station-sadang",
+      "destinationStationId": "station-sangnoksu",
+      "serviceDay": "WEEKEND",
+      "departureLocalTime": "14:30"
+    }
+  ]
+}

@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>경로 검색 현황</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-route-searches')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>경로 검색 분석</h1>
+		</div>
+	</header>
+
+	<section class="admin-panel" aria-labelledby="route-search-metric-title">
+		<div class="admin-panel-head">
+			<h2 id="route-search-metric-title">경로 검색 요약</h2>
+		</div>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>전체 검색</span>
+				<strong class="cell-num" th:text="${summary.totalCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>경로 찾음</span>
+				<strong class="cell-num" th:text="${summary.foundCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>경로 차단</span>
+				<strong class="cell-num" th:text="${summary.blockedCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>경로 차단률</span>
+				<strong class="cell-num" th:text="${summary.blockedRateLabel}">0.0%</strong>
+				<em>전체 검색 중 차단 비율</em>
+			</div>
+			<div class="metric metric-cell">
+				<span>경로 미탐색률 <code>route_not_found_rate</code></span>
+				<strong class="cell-num" th:text="${summary.routeNotFoundRateLabel}">0.0%</strong>
+				<em>경로 그래프·엄격 접근성 조건에 따른 차단 비율</em>
+			</div>
+		</div>
+	</section>
+
+	<div class="alert" th:classappend="${summary.blockedAlertClass}">
+		<strong>운영 상태: <span th:text="${summary.blockedAlertLabel}">정상</span></strong>
+		<p th:text="${summary.blockedAlertDescription}">차단된 경로 검색 없이 처리되고 있습니다.</p>
+	</div>
+
+	<div id="route-search-trends" th:fragment="trends" class="dashboard-trends-section">
+		<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+			<a th:each="d : ${ {7, 30, 90} }"
+			   th:href="@{/admin/routes/searches/page(days=${d})}"
+			   th:attr="hx-get=@{/admin/routes/searches/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+			   hx-target="#route-search-trends" hx-swap="outerHTML"
+			   th:classappend="${trendDays == d} ? ' is-active'"
+			   th:text="|${d}일|">7일</a>
+		</div>
+
+		<p class="admin-export">
+			<a class="admin-export-link" th:href="@{/admin/analytics/metrics/export(keys=${exportKeys},days=${trendDays})}"
+			   download>CSV 내보내기</a>
+		</p>
+
+		<section class="admin-panel" aria-labelledby="route-search-comparison-title">
+			<div class="admin-panel-head">
+				<h2 id="route-search-comparison-title">전 기간 대비 증감</h2>
+			</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
+
+		<div class="trend-charts">
+			<section class="admin-panel trend-chart-panel">
+				<h2 th:text="|검색량·차단률 최근 ${trendDays}일 추이|">검색량·차단률 추이</h2>
+				<div class="trend-canvas-wrap">
+					<canvas id="route-search-trend-canvas" class="trend-canvas" role="img"
+					        th:attr="aria-label=|경로 검색 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
+				</div>
+				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
+			</section>
+		</div>
+
+		<section class="admin-panel" aria-labelledby="journey-analytics-title">
+			<div class="admin-panel-head">
+				<h2 id="journey-analytics-title" th:text="|경로 탐색 종류별 결과 (최근 ${journeyAnalytics.periodDays}일)|">경로 탐색 종류별 결과</h2>
+			</div>
+			<div class="metric-grid">
+				<div class="metric metric-cell">
+					<span>기록된 탐색</span>
+					<strong class="cell-num" th:text="${journeyAnalytics.totalCount}">0</strong>
+				</div>
+				<div class="metric metric-cell">
+					<span>기록 실패(서버 시작 이후)</span>
+					<strong class="cell-num" th:text="${journeyAnalytics.recordFailureCount}">0</strong>
+				</div>
+			</div>
+
+			<h3>탐색 종류별 결과 분류</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 탐색 종류별 결과 분류 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">탐색 종류</th>
+					<th scope="col">전체</th>
+					<th scope="col" th:each="column : ${journeyAnalytics.columns}" th:text="${column.label}">결과 있음</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.kindRows}">
+					<th scope="row" th:text="${row.label}">출발 시각</th>
+					<td th:text="${row.total}">0</td>
+					<td th:each="count : ${row.counts}" th:text="${count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.kindRows)}">
+					<td th:colspan="${#lists.size(journeyAnalytics.columns) + 2}"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 기록된 경로 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>일별 추이</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 일별 탐색 결과 추이 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">날짜</th>
+					<th scope="col">전체</th>
+					<th scope="col" th:each="column : ${journeyAnalytics.columns}" th:text="${column.label}">결과 있음</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.dayRows}">
+					<th scope="row" th:text="${row.day}">2026-10-01</th>
+					<td th:if="${row.recorded}" th:text="${row.total}">0</td>
+					<td th:if="${row.recorded}" th:each="count : ${row.counts}" th:text="${count}">0</td>
+					<td th:unless="${row.recorded}" th:colspan="${#lists.size(journeyAnalytics.columns) + 1}">기록 없음</td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>경로 계산기 버전별 건수</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 경로 계산기 버전별 건수 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">버전</th>
+					<th scope="col">건수</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.engineRows}">
+					<th scope="row" th:text="${row.label}" th:attr="title=${row.detail}">버전 2.0.0</th>
+					<td th:text="${row.count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.engineRows)}">
+					<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 기록된 경로 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>대표 대안 분류별 건수</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 대표 대안 분류별 건수 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">대표 분류</th>
+					<th scope="col">건수</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.categoryRows}">
+					<th scope="row" th:text="${row.label}">빠른 경로</th>
+					<td th:text="${row.count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.categoryRows)}">
+					<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 대표 분류가 기록된 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<h3>계단 없는 경로 판정별 건수</h3>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 계단 없는 경로 판정별 건수 표">
+			<table class="static-table">
+				<thead>
+				<tr>
+					<th scope="col">판정</th>
+					<th scope="col">건수</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="row : ${journeyAnalytics.stairFreeRows}">
+					<th scope="row" th:text="${row.label}">계단 없는 경로 포함</th>
+					<td th:text="${row.count}">0</td>
+				</tr>
+				<tr th:if="${#lists.isEmpty(journeyAnalytics.stairFreeRows)}">
+					<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('기록 없음', '선택한 기간에 기록된 경로 탐색이 없습니다.')}"></div></td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+		</section>
+	</div>
+
+	<section class="admin-panel">
+		<h2>차단 상위 역</h2>
+		<p>차단된 경로 검색에 가장 많이 얽힌 역입니다. 최다 차단 역은 강조됩니다. 역을 눌러 허브로 이동합니다.</p>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">순위</th>
+				<th scope="col">역</th>
+				<th scope="col">차단 검색 수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${blockedStationRankings}" th:classappend="${row.highlight} ? ' is-blocked-surge'">
+				<td th:text="${row.rank}">1</td>
+				<td><a th:href="@{${row.hubUrl}}" th:text="${row.stationName}">상록수</a></td>
+				<td th:text="${row.blockedCount}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(blockedStationRankings)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('차단된 경로 검색이 없습니다.', '경로 검색이 차단되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>이동 프로필별 검색</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">이동 프로필</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.mobilityTypeRows}">
+				<td th:text="${row.label}">고령자</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.mobilityTypeRows)}">
+				<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('이동 프로필별 검색 집계가 없습니다.', '경로 검색이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>지역별 사용량</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">지역</th>
+				<th scope="col">출발 검색</th>
+				<th scope="col">도착 검색</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.regionUsageRows}">
+				<td th:text="${row.region}">수도권</td>
+				<td th:text="${row.originCount}">0</td>
+				<td th:text="${row.destinationCount}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.regionUsageRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('지역별 사용량 집계가 없습니다.', '경로 검색이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>차단 사유별 현황</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">차단 사유</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.blockedReasonRows}">
+				<td th:text="${row.reason}">계단 없는 역 접근 경로를 확인할 수 없습니다.</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.blockedReasonRows)}">
+				<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('차단 사유별 집계가 없습니다.', '경로 검색이 차단되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>도착 예정 출처 현황</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">도착 예정 출처</th>
+				<th scope="col">설명</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.etaSourceRows}">
+				<td th:text="${row.code}">PLANNED</td>
+				<td th:text="${row.label}">시간표 기준</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.etaSourceRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('도착 예정 출처 집계가 없습니다.', '경로 검색이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>대체 경로 사유별 현황</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">대체 경로 사유</th>
+				<th scope="col">설명</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.fallbackReasonRows}">
+				<td th:text="${row.reason}">PROVIDER_OUTAGE_OR_STALE_REALTIME</td>
+				<td th:text="${row.label}">provider 장애 또는 stale realtime</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.fallbackReasonRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('대체 경로 사유별 집계가 없습니다.', '경로 검색에 대체 경로가 적용되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>품질 신호 구분</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">신호</th>
+				<th scope="col">구분</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.routeQualitySignalRows}">
+				<td th:text="${row.signal}">ROUTE_GRAPH_DATA_QUALITY</td>
+				<td th:text="${row.label}">route graph/data quality</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.routeQualitySignalRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('품질 신호 집계가 없습니다.', '경로 품질 신호가 발생하면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>알림 기준</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">지표</th>
+				<th scope="col">기준</th>
+				<th scope="col">대응</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.alertThresholdRows}">
+				<td><span th:text="${row.metricLabel}">경로 미탐색률</span> <code th:text="${row.metric}">route_not_found_rate</code></td>
+				<td th:text="${row.threshold}">&gt;= 2.0%</td>
+				<td th:text="${row.action}">경로 그래프·엄격 접근성 데이터 소스 검수</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: chartScripts}"></th:block>
+<script th:src="@{/js/admin/dashboard-charts.js}" defer></script>
+</body>
+</html>

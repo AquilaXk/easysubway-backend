@@ -1,0 +1,126 @@
+/*
+ * admin-tokens.css — V6-04 CSS 책임 분리(#2276)의 token 레이어. import 순서상 가장 먼저 로드된다
+ * (admin-v3.css: tokens → foundation → shell → components → data, operator-v3.css도 이 파일만 공유 import).
+ * 아래 `--admin-*` 이름은 admin/operator 콘솔의 모든 consumer가 참조하는 compatibility alias다 —
+ * 모든 화면 이관이 끝나기 전에는 어떤 이름도 제거하지 않는다(#2276 §7·§8). 값·이름 변경은 소비자 회귀를
+ * 유발할 수 있으므로, 새 semantic token은 추가하되 기존 이름은 alias로 보존한다.
+ */
+:root {
+	/* JSON v1 primitive token */
+	--es-brand-50: #F8F9FF;
+	--es-brand-100: #F0F2FE;
+	--es-brand-200: #E2E5FD;
+	--es-brand-300: #CCD2FC;
+	--es-brand-400: #B4BCFB;
+	--es-brand-500: #949FE8;
+	--es-brand-600: #7480D2;
+	--es-brand-700: #5C6BC0;
+	--es-brand-800: #4A58A9;
+	--es-brand-900: #3B4890;
+	--es-brand-950: #1F2340;
+	--es-neutral-white: #FFFFFF;
+	--es-neutral-scaffold: #F7F8FC;
+	--es-neutral-subtle: #F0F2F7;
+	--es-neutral-border: #E1E4EE;
+	--es-ink-secondary: #4D536B;
+	--es-ink-muted: #697089;
+	--es-status-success: #0A705A;
+	--es-status-warning: #9A5600;
+	--es-status-danger: #B42318;
+	--es-status-info: #215EA8;
+	--es-status-success-soft: #F0FBF7;
+	--es-status-warning-soft: #FFF0D1;
+	--es-status-danger-soft: #FFE8E6;
+	--es-status-info-soft: #EEF5FF;
+
+	/* JSON v1 semantic token */
+	--es-surface-default: var(--es-neutral-white);
+	--es-surface-scaffold: var(--es-neutral-scaffold);
+	--es-surface-subtle: var(--es-neutral-subtle);
+	--es-surface-brand-chrome: var(--es-brand-50);
+	--es-surface-brand: var(--es-brand-100);
+	--es-surface-brand-strong: var(--es-brand-200);
+	--es-surface-signature: var(--es-brand-400);
+	--es-border-subtle: var(--es-neutral-border);
+	--es-content-primary: var(--es-brand-950);
+	--es-content-secondary: var(--es-ink-secondary);
+	--es-content-muted: var(--es-ink-muted);
+	--es-interaction-primary: var(--es-brand-700);
+	--es-interaction-primary-pressed: var(--es-brand-800);
+	--es-interaction-on-primary: var(--es-neutral-white);
+	--es-interaction-secondary-surface: var(--es-brand-100);
+	--es-interaction-secondary-border: var(--es-brand-600);
+	--es-interaction-secondary-pressed-surface: var(--es-brand-200);
+	--es-interaction-secondary-pressed-border: var(--es-brand-700);
+	--es-interaction-on-signature-border: var(--es-brand-900);
+	--es-interaction-on-brand: var(--es-brand-900);
+	--es-focus-default: var(--es-brand-700);
+	--es-focus-on-signature: var(--es-brand-900);
+	--es-decorative-divider: var(--es-brand-300);
+	--es-status-success-content: var(--es-status-success);
+	--es-status-success-surface: var(--es-status-success-soft);
+	--es-status-warning-content: var(--es-status-warning);
+	--es-status-warning-surface: var(--es-status-warning-soft);
+	--es-status-danger-content: var(--es-status-danger);
+	--es-status-danger-surface: var(--es-status-danger-soft);
+	--es-status-info-content: var(--es-status-info);
+	--es-status-info-surface: var(--es-status-info-soft);
+
+	/* 표면 — 플랫한 중립 배경, 카드는 얇은 테두리만(그림자 0) */
+	--admin-bg: var(--es-surface-scaffold);
+	--admin-surface: var(--es-surface-default);
+	--admin-border: var(--es-border-subtle);
+	--admin-border-strong: var(--es-interaction-secondary-border);
+	--admin-header-bg: var(--es-surface-brand-chrome);
+
+	/* 텍스트 — 중립 그레이 위계 */
+	--admin-ink: var(--es-content-primary);
+	--admin-ink-2: var(--es-content-secondary);
+	--admin-ink-3: var(--es-content-muted);
+
+	/* 브랜드 액센트 1계열 + 의미 상태색 */
+	--admin-accent: var(--es-interaction-primary);
+	--admin-accent-soft: var(--es-interaction-secondary-surface);
+	/* accent-soft 배경 위 텍스트는 대비가 검증된 interaction.onBrand semantic pair를 쓴다. */
+	--admin-accent-ink: var(--es-interaction-on-brand);
+	--admin-sidebar-bg: var(--es-surface-default);
+	--admin-sidebar-accent: var(--es-surface-signature);
+	--admin-sidebar-accent-border: var(--es-interaction-on-signature-border);
+	--admin-primary: var(--es-interaction-primary);
+	--admin-primary-hover: var(--es-interaction-primary-pressed);
+	--admin-on-primary: var(--es-interaction-on-primary);
+	--admin-focus: var(--es-focus-default);
+	--admin-focus-on-signature: var(--es-focus-on-signature);
+	--admin-danger-hover: color-mix(in srgb, var(--admin-danger) 85%, #000);
+	--admin-good: var(--es-status-success-content);
+	--admin-warn: var(--es-status-warning-content);
+	--admin-danger: var(--es-status-danger-content);
+	--admin-info: var(--es-status-info-content);
+	--admin-good-soft: var(--es-status-success-surface);
+	--admin-warn-soft: var(--es-status-warning-surface);
+	--admin-danger-soft: var(--es-status-danger-surface);
+	--admin-info-soft: var(--es-status-info-surface);
+	--admin-chart-series: #2F6F9F; /* 차트 보조 시리즈색(상태 의미 없음) */
+
+	/* radius — 2단계 토큰(컨트롤/카드) + 뱃지·칩 전용 */
+	--admin-radius-control: 6px;
+	--admin-radius-card: 8px;
+	--admin-radius-badge: 4px;
+
+	/* 그림자 — 카드·플로팅 요소용 multi-layer 소프트 그림자 */
+	--admin-shadow-card: 0 1px 3px rgba(31, 35, 64, 0.04), 0 6px 16px rgba(31, 35, 64, 0.04);
+
+	/* 타이포 위계 — 관리자 productive UI의 역할 기반 고정 scale */
+	--admin-fs-page: 28px;
+	--admin-fs-section: 20px;
+	--admin-fs-body: 16px;
+	--admin-fs-control: 14px;
+	--admin-fs-meta: 12px;
+	--admin-fs-h1: var(--admin-fs-page);
+	--admin-fs-h2: var(--admin-fs-section);
+	--admin-fs-caption: var(--admin-fs-meta);
+	--admin-w-body: 400;
+	--admin-w-medium: 600;
+	--admin-w-strong: 600;
+	--admin-w-title: 600;
+}

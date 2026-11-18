@@ -1,0 +1,824 @@
+package com.easysubway.common.security;
+
+import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.authorization.AdminRbacRole;
+import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
+import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
+import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
+import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
+import com.easysubway.admin.identity.domain.AdminIdentity;
+import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
+import com.easysubway.admin.identity.domain.AdminIdentityRole;
+import com.easysubway.admin.identity.domain.AdminIdentityStatus;
+import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
+import com.easysubway.common.time.BusinessTime;
+import com.easysubway.common.web.TrustedClientIpResolver;
+import jakarta.servlet.DispatcherType;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.RememberMeServices;
+import org.springframework.security.web.authentication.rememberme.TokenBasedRememberMeServices;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+public class SecurityConfig {
+
+	// RBAC 권한이 배선되지 않은 편의 오버로드(테스트 지원 경로)를 위한 명시적 no-op 구현.
+	// port가 조회뿐 아니라 seed/revoke 쓰기까지 포함하므로 단일 함수 람다로 대체할 수 없다.
+	private static final AdminRbacAuthorityRepository NO_ADMIN_RBAC_AUTHORITIES =
+		new AdminRbacAuthorityRepository() {
+			@Override
+			public Set<String> findPermissionAuthorities(String loginId) {
+				return Set.of();
+			}
+
+			@Override
+			public void seedRole(String loginId, AdminRbacRole role) {
+			}
+
+			@Override
+			public void revokeStaleBootstrapRoles(Set<String> activeBootstrapLoginIds) {
+			}
+		};
+
+	// 인증 진입점·로그아웃 요청 matcher용 PathPattern builder. 컨텍스트 경로 기준으로 대소문자를 구분해 매칭한다.
+	private static final PathPatternRequestMatcher.Builder PATH_PATTERNS = PathPatternRequestMatcher.withDefaults();
+
+	// 여러 경로를 한 규칙으로 묶는 목록. 경계 테스트가 목록의 모든 항목에 대응하는 행이 있는지 검사하므로
+	// (SecurityConfigPathBoundaryTest) 항목을 추가하거나 빼면 그 테스트 표도 함께 바꿔야 한다.
+	static final String[] DATAPACK_WORKFLOW_CHAIN_PATHS = {
+		"/admin/api/datapack/release-requests/**",
+		"/admin/api/datapack/rollback-approvals/**",
+		"/admin/api/datapack/release-callbacks",
+		"/admin/api/datapack/automation-status"
+	};
+	static final String[] DATAPACK_WORKFLOW_PATHS = {
+		"/admin/api/datapack/release-requests/**",
+		"/admin/api/datapack/rollback-approvals/**",
+		"/admin/api/datapack/release-callbacks"
+	};
+	static final String[] ADMIN_REPORT_PHOTO_PATHS = {
+		"/admin/reports/*/photo/thumbnail",
+		"/admin/reports/*/photo/original"
+	};
+	static final String[] ADMIN_MASTER_EDIT_READ_PATHS = {
+		"/admin/facilities/editor/page",
+		"/admin/stations/*/layouts/page",
+		"/admin/stations/*/layout-sources",
+		"/admin/stations/*/layouts",
+		"/admin/stations/*/route-nodes",
+		"/admin/stations/*/route-edges"
+	};
+	static final String[] ADMIN_MASTER_EDIT_WRITE_PATHS = {
+		"/admin/facilities/**",
+		"/admin/stations/**"
+	};
+	static final String[] ADMIN_DATA_OPERATE_PATHS = {
+		"/admin/data-collections/**",
+		"/admin/data-sources/**",
+		"/admin/notifications/**"
+	};
+	// "/x/**"는 "/x" 자체도 일치하므로 같은 경로를 따로 적지 않는다.
+	static final String[] ADMIN_DATAPACK_SOURCE_SNAPSHOT_PATHS = {
+		"/admin/datapack/source-snapshots/**"
+	};
+	static final String[] ADMIN_DATAPACK_REVIEW_POST_PATHS = {
+		"/admin/datapack/alias-approvals/**",
+		"/admin/datapack/quarantine-records/**",
+		"/admin/datapack/facility-evidence/**",
+		"/admin/datapack/manual-overrides/**",
+		"/admin/datapack/candidates/**"
+	};
+	static final String[] ADMIN_OPERATIONS_PATHS = {
+		"/admin/codes/**",
+		"/admin/incidents/**",
+		"/admin/notices/**",
+		"/admin/ads/**"
+	};
+	static final String[] ADMIN_ERROR_PATHS = {
+		"/admin/api/errors/**",
+		"/admin/errors/**"
+	};
+	static final String[] ADMIN_SECURITY_AUDIT_PATHS = {
+		"/admin/system/**",
+		"/admin/usage/**"
+	};
+	// {변수}는 빈 구간을 매칭하지 않는다. 와일드카드(*)는 /reports/ 같은 빈 구간까지 이 체인으로 끌어와 공개했다.
+	static final String[] REPORT_CHAIN_PATHS = {
+		"/api/v1/report-uploads",
+		"/api/v1/report-uploads/{uploadId}",
+		"/api/v1/reports",
+		"/api/v1/reports/{reportId}",
+		"/api/v1/reports/{reportId}/confirm"
+	};
+	static final String[] PUBLIC_TRAIN_PATHS = {
+		"/api/v1/trains/stations",
+		"/api/v1/trains/search"
+	};
+	static final String[] PUBLIC_ROOT_PATHS = {
+		"/",
+		"/index.html"
+	};
+	static final String[] PUBLIC_OPEN_PATHS = {
+		"/api/health",
+		"/actuator/health",
+		"/actuator/health/liveness",
+		"/actuator/health/readiness",
+		"/privacy",
+		"/easysubway/privacy",
+		"/terms",
+		"/easysubway/terms",
+		"/location-terms",
+		"/easysubway/location-terms",
+		"/api/v1/realtime/**",
+		"/api/notices/active",
+		"/api/ads/active",
+		"/favicon.ico",
+		"/css/**",
+		"/js/**",
+		"/vendor/**",
+		"/images/**",
+		"/icons/**",
+		"/webjars/**"
+	};
+
+	// 관리자·operator 콘솔 CSP: 모든 스크립트·스타일은 self-host(static/vendor·static/css)만 허용한다.
+	// Alpine는 CSP 빌드라 'unsafe-eval' 불필요, 인라인 스크립트·핸들러는 전면 금지(진화형 향상 원칙).
+	// img data:는 Chart.js가 canvas를 toDataURL로 내보낼 때만 쓰이며 신고 사진은 same-origin 엔드포인트('self')로 제공된다.
+	private static final String ADMIN_CONTENT_SECURITY_POLICY =
+		"default-src 'self'; "
+			+ "script-src 'self'; "
+			+ "style-src 'self'; "
+			+ "img-src 'self' data:; "
+			+ "font-src 'self'; "
+			+ "connect-src 'self'; "
+			+ "object-src 'none'; "
+			+ "base-uri 'self'; "
+			+ "form-action 'self'; "
+			+ "frame-ancestors 'none'";
+
+	// /actuator/prometheus는 공개하지 않는다. docker compose 내부 DNS로 접근하는 Prometheus scrape(#2376의
+	// backend_app_metrics job)만 통과시키기 위해 사설망(RFC1918) 출처 remoteAddr에 한해 허용하고, 그 밖의
+	// 출처(공개·미상)는 계속 거부한다. nginx 공개 경로에서 /actuator/* 를 이미 차단하므로 외부 트래픽은 이
+	// 체인에 닿기 전에 걸러지고, 이 IP 게이트는 내부 네트워크 우회 접근까지 막는 심층 방어로 둔다.
+	private static final List<IpAddressMatcher> INTERNAL_NETWORK_MATCHERS = List.of(
+		new IpAddressMatcher("10.0.0.0/8"),
+		new IpAddressMatcher("172.16.0.0/12"),
+		new IpAddressMatcher("192.168.0.0/16")
+	);
+
+	private static AuthorizationManager<RequestAuthorizationContext> internalNetworkOnly() {
+		return (authentication, context) -> {
+			String remoteAddr = context.getRequest().getRemoteAddr();
+			boolean internal = remoteAddr != null
+				&& INTERNAL_NETWORK_MATCHERS.stream().anyMatch(matcher -> matcher.matches(remoteAddr));
+			return new AuthorizationDecision(internal);
+		};
+	}
+
+	@Bean
+	AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler() {
+		return new AdminHtmlAccessDeniedHandler();
+	}
+
+	@Bean
+	LoginNoticeFlash loginNoticeFlash() {
+		return new LoginNoticeFlash();
+	}
+
+	@Bean
+	@Order(0)
+	SecurityFilterChain datapackWorkflowApiSecurityFilterChain(
+		HttpSecurity http,
+		@Value("${easysubway.datapack.workflow-token:}") String workflowToken,
+		@Value("${easysubway.datapack.automation-status-token:}") String automationStatusToken
+	) throws Exception {
+		// 워크플로 전용 조회/콜백 API는 admin(/admin/** @Order 1)보다 먼저 평가되도록 @Order(0).
+		// 서비스 토큰(Bearer)만 인증하고 stateless·CSRF off. 토큰 미설정이면 인증이 주입되지
+		// 않아 전면 거부(자동화 dormant = 안전 기본값). admin 세션은 이 체인에 닿지 못한다.
+		// data#1084/backend#500/backend#502: 자동화 상태 snapshot 게시 경로는 전용 서비스 토큰
+		// (ROLE_DATAPACK_AUTOMATION_STATUS)과 릴리스 워크플로 토큰(ROLE_DATAPACK_WORKFLOW)을 상호 분리한다.
+		return http
+			.securityMatcher(DATAPACK_WORKFLOW_CHAIN_PATHS)
+			.csrf(csrf -> csrf.disable())
+			.sessionManagement(sm -> sm.sessionCreationPolicy(
+				org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
+			.authorizeHttpRequests(authorize -> authorize
+				.requestMatchers(HttpMethod.POST, "/admin/api/datapack/automation-status")
+				.hasRole("DATAPACK_AUTOMATION_STATUS")
+				.requestMatchers(DATAPACK_WORKFLOW_PATHS)
+				.hasRole("DATAPACK_WORKFLOW")
+				.anyRequest().denyAll()
+			)
+			.addFilterBefore(
+				new com.easysubway.datapack.adapter.in.web.WorkflowServiceTokenFilter(
+					workflowToken,
+					automationStatusToken
+				),
+				org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+			.build();
+	}
+
+	@Bean
+	@Order(1)
+	SecurityFilterChain adminSecurityFilterChain(
+		HttpSecurity http,
+		AdminOperatorAuditFilter auditFilter,
+		AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler,
+		LoginNoticeFlash loginNoticeFlash,
+		RememberMeServices adminRememberMeServices,
+		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
+	) throws Exception {
+		// 관리자 확인 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
+		HttpSecurity configured = http
+			.securityMatcher("/admin/**")
+			.headers(headers -> headers
+				.contentSecurityPolicy(csp -> csp.policyDirectives(ADMIN_CONTENT_SECURITY_POLICY)))
+			.authorizeHttpRequests(authorize -> authorize
+				.requestMatchers("/admin/login").permitAll()
+				.requestMatchers("/admin/error/page").permitAll()
+				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
+				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
+				.requestMatchers(HttpMethod.GET, ADMIN_REPORT_PHOTO_PATHS)
+				.hasAuthority(AdminPermission.REPORT_PHOTO_READ.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
+				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
+				.requestMatchers(HttpMethod.GET, ADMIN_MASTER_EDIT_READ_PATHS)
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.POST, ADMIN_MASTER_EDIT_WRITE_PATHS)
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.PUT, ADMIN_MASTER_EDIT_WRITE_PATHS)
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.PATCH, ADMIN_MASTER_EDIT_WRITE_PATHS)
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/field-verifications/**")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
+				.requestMatchers(HttpMethod.PATCH, "/admin/field-verifications/**")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/field-verifications/**")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
+				.requestMatchers(HttpMethod.POST, ADMIN_DATA_OPERATE_PATHS)
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers(HttpMethod.GET, ADMIN_DATA_OPERATE_PATHS)
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/batches/*/run")
+				.hasAuthority(AdminPermission.BATCH_RUN.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/batches/**")
+				.hasAuthority(AdminPermission.BATCH_RETRY.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/batches/**")
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/datapack/**")
+				.hasAuthority(AdminPermission.DATAPACK_READ.authority())
+				.requestMatchers(HttpMethod.POST, ADMIN_DATAPACK_SOURCE_SNAPSHOT_PATHS)
+				.hasAuthority(AdminPermission.DATAPACK_SOURCE_RUN.authority())
+				.requestMatchers(HttpMethod.POST, ADMIN_DATAPACK_REVIEW_POST_PATHS)
+				.hasAnyAuthority(
+					AdminPermission.DATAPACK_ALIAS_REVIEW.authority(),
+					AdminPermission.DATAPACK_QUARANTINE_REVIEW.authority(),
+					AdminPermission.DATAPACK_EVIDENCE_REVIEW.authority(),
+					AdminPermission.DATAPACK_OVERRIDE_REQUEST.authority(),
+					AdminPermission.DATAPACK_OVERRIDE_APPROVE.authority(),
+					AdminPermission.DATAPACK_CANDIDATE_BUILD.authority()
+				)
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-requests")
+				.hasAuthority(AdminPermission.DATAPACK_STAGING_PROMOTE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-requests/*/approve")
+				.hasAuthority(AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-deliveries/*/repair")
+				.hasAuthority(AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-channels/**")
+				.hasAnyAuthority(
+					AdminPermission.DATAPACK_STAGING_PROMOTE.authority(),
+					AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority(),
+					AdminPermission.DATAPACK_ROLLBACK.authority()
+				)
+				.requestMatchers(ADMIN_OPERATIONS_PATHS)
+				.hasAuthority(AdminPermission.OPERATIONS_MANAGE.authority())
+				.requestMatchers("/admin/audits/privacy/**")
+				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())
+				.requestMatchers("/admin/audits/**")
+				.hasAuthority(AdminPermission.AUDIT_READ.authority())
+				.requestMatchers(ADMIN_ERROR_PATHS)
+				.hasAuthority(AdminPermission.ERROR_READ.authority())
+				.requestMatchers(ADMIN_SECURITY_AUDIT_PATHS)
+				.hasAuthority(AdminPermission.SECURITY_AUDIT.authority())
+				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())
+			)
+			.exceptionHandling(exception -> exception
+				.accessDeniedHandler(adminHtmlAccessDeniedHandler)
+				.defaultAuthenticationEntryPointFor(
+					new HtmxRefreshAuthenticationEntryPoint(),
+					HtmxRefreshAuthenticationEntryPoint::matches
+				)
+				.defaultAuthenticationEntryPointFor(
+					new LoginUrlAuthenticationEntryPoint("/admin/login"),
+					request -> {
+						String accept = request.getHeader("Accept");
+						return accept != null && accept.contains("text/html");
+					}
+				)
+				.defaultAuthenticationEntryPointFor(
+					new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+					PATH_PATTERNS.matcher("/admin/**")
+				)
+			)
+			.formLogin(form -> form
+				.loginPage("/admin/login")
+				.failureHandler(loginNoticeFlash)
+				.defaultSuccessUrl("/admin/dashboard/page", true)
+				.permitAll()
+			)
+			.rememberMe(remember -> remember.rememberMeServices(adminRememberMeServices))
+			.logout(logout -> logout
+				.logoutUrl("/admin/logout")
+				.logoutSuccessHandler((request, response, authentication) ->
+					response.sendRedirect(request.getContextPath() + "/admin/login?logout"))
+				.permitAll()
+			)
+			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class);
+		configureBasicAuth(configured, basicAuthEnabled);
+		return configured.build();
+	}
+
+	@Bean
+	@Order(2)
+	SecurityFilterChain operatorSecurityFilterChain(
+		HttpSecurity http,
+		AdminOperatorAuditFilter auditFilter,
+		LoginNoticeFlash loginNoticeFlash,
+		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
+	) throws Exception {
+		// 운영기관 전용 화면은 전역 관리자와 별도 역할로 분리해 이후 기관별 범위 제한을 붙일 수 있게 한다.
+		HttpSecurity configured = http
+			.securityMatcher("/operator/**")
+			.headers(headers -> headers
+				.contentSecurityPolicy(csp -> csp.policyDirectives(ADMIN_CONTENT_SECURITY_POLICY)))
+			.authorizeHttpRequests(authorize -> authorize
+				.requestMatchers("/operator/login").permitAll()
+				.anyRequest().hasRole("OPERATOR_ADMIN")
+			)
+			.exceptionHandling(exception -> exception
+				.defaultAuthenticationEntryPointFor(
+					new HtmxRefreshAuthenticationEntryPoint(),
+					HtmxRefreshAuthenticationEntryPoint::matches
+				)
+				.defaultAuthenticationEntryPointFor(
+					new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+					PATH_PATTERNS.matcher("/operator/api/**")
+				)
+				.defaultAuthenticationEntryPointFor(
+					new LoginUrlAuthenticationEntryPoint("/operator/login"),
+					PATH_PATTERNS.matcher("/operator/**")
+				)
+			)
+			.formLogin(form -> form
+				.loginPage("/operator/login")
+				.failureHandler(loginNoticeFlash)
+				.defaultSuccessUrl("/operator/accessibility-report/page", true)
+				.permitAll()
+			)
+			// 로그아웃은 POST(CSRF 토큰 필수)만 받는다. GET을 받으면 다른 사이트가 사용자를 강제 로그아웃시킨다.
+			.logout(logout -> logout
+				.logoutRequestMatcher(PATH_PATTERNS.matcher(HttpMethod.POST, "/operator/logout"))
+				.logoutSuccessHandler((request, response, authentication) ->
+					response.sendRedirect(request.getContextPath() + "/operator/login?logout"))
+				.permitAll()
+			)
+			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class);
+		configureBasicAuth(configured, basicAuthEnabled);
+		return configured.build();
+	}
+
+	@Bean
+	@Order(3)
+	SecurityFilterChain reportSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 신고 접수와 상태 조회는 신고별 receipt token 흐름을 사용한다.
+		return http
+			.securityMatcher(REPORT_CHAIN_PATHS)
+			.csrf(AbstractHttpConfigurer::disable)
+			.authorizeHttpRequests(authorize -> authorize
+				.anyRequest().permitAll()
+			)
+			.build();
+	}
+
+
+	@Bean
+	@Order(5)
+	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 신고/관리자/운영 matcher 밖의 새 경로가 실수로 공개되지 않도록 기본 차단한다.
+		return http
+			.csrf(AbstractHttpConfigurer::disable)
+			.authorizeHttpRequests(authorize -> authorize
+				// 컨테이너의 ERROR dispatch만 허용한다(경로 /error를 REQUEST로 여는 것이 아니다).
+				// permitAll인 정적/공개 경로가 리소스 부재로 404를 내면(예: 파비콘 자산 미제공
+				// /favicon.ico) 컨테이너가 /error로 ERROR dispatch를 forward하는데, Spring Security 6는
+				// 이 dispatch도 필터링하므로 원래 404가 이 체인의 anyRequest().denyAll()에 걸려 403으로
+				// 뒤바뀌었다(#2349). DispatcherType.ERROR를 허용해 원래 상태코드(404 등)가 그대로 렌더되게
+				// 한다. 직접 외부 GET /error(REQUEST dispatch)는 이 matcher에 걸리지 않아 여전히
+				// denyAll(403)에 남으므로 /error가 공개 조회 표면이 되지 않는다. 보호 경로도 여전히 각
+				// 요청이 AuthorizationFilter의 denyAll에서 먼저 차단돼 handler·/error에 닿지 못한다.
+				.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+				.requestMatchers(
+					HttpMethod.POST,
+					"/api/ads/events"
+				).permitAll()
+				.requestMatchers(HttpMethod.GET, PUBLIC_TRAIN_PATHS).permitAll()
+				.requestMatchers(HttpMethod.HEAD, PUBLIC_TRAIN_PATHS).permitAll()
+				.requestMatchers(HttpMethod.GET, PUBLIC_ROOT_PATHS).permitAll()
+				.requestMatchers(PUBLIC_OPEN_PATHS).permitAll()
+				.requestMatchers(HttpMethod.GET, "/actuator/prometheus")
+				.access(internalNetworkOnly())
+				.anyRequest().denyAll()
+			)
+			.build();
+	}
+
+	@Bean
+	UserDetailsService userDetailsService(
+		@Value("${easysubway.admin.username:}") String adminUsername,
+		@Value("${easysubway.admin.password:}") String adminPassword,
+		@Value("${easysubway.operator.username:}") String operatorUsername,
+		@Value("${easysubway.operator.password:}") String operatorPassword,
+		@Value("${easysubway.user.username:}") String userUsername,
+		@Value("${easysubway.user.password:}") String userPassword,
+		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled,
+		@Value("${easysubway.admin.basic-auth.exception-owner:}") String basicAuthExceptionOwner,
+		@Value("${easysubway.admin.basic-auth.exception-expires-at:}") String basicAuthExceptionExpiresAt,
+		AdminIdentityRepository adminIdentityRepository,
+		AdminRbacAuthorityRepository adminRbacAuthorityRepository,
+		PasswordEncoder passwordEncoder,
+		Environment environment
+	) {
+		validateProdAdminCredentials(adminUsername, adminPassword, environment);
+		validateAdminCredentials(adminUsername, adminPassword);
+		validateProdBasicAuthPolicy(
+			basicAuthEnabled,
+			basicAuthExceptionOwner,
+			basicAuthExceptionExpiresAt,
+			environment,
+			Clock.systemUTC()
+		);
+		validateOperatorCredentials(operatorUsername, operatorPassword);
+		validateDistinctAdminLoginIds(adminUsername, operatorUsername, userUsername);
+		validateBreakGlassBootstrapCollision(
+			adminUsername,
+			operatorUsername,
+			adminIdentityRepository
+		);
+
+		LocalDateTime now = LocalDateTime.now(Clock.systemUTC());
+		Set<String> activeBootstrapLoginIds = new LinkedHashSet<>();
+		if (!adminUsername.isBlank() && !adminPassword.isBlank()) {
+			String adminLoginId = normalizeLoginId(adminUsername);
+			activeBootstrapLoginIds.add(adminLoginId);
+			bootstrapIdentity(adminIdentityRepository, passwordEncoder, adminPassword, localIdentity(
+				adminUsername,
+				"관리자",
+				passwordEncoder.encode(adminPassword),
+				AdminIdentityRole.ADMIN,
+				now
+			), now);
+			// env로 지정된 관리자 계정은 이미 영속돼 있어도(비밀번호 동일 no-op 경로 포함)
+			// RBAC SUPER_ADMIN role 할당을 보증해 미배정 403을 해소한다. 멱등 seed다.
+			adminRbacAuthorityRepository.seedRole(adminLoginId, AdminRbacRole.SUPER_ADMIN);
+		}
+		if (!operatorUsername.isBlank() && !operatorPassword.isBlank()) {
+			activeBootstrapLoginIds.add(normalizeLoginId(operatorUsername));
+			bootstrapIdentity(adminIdentityRepository, passwordEncoder, operatorPassword, localIdentity(
+				operatorUsername,
+				"운영기관 관리자",
+				passwordEncoder.encode(operatorPassword),
+				AdminIdentityRole.OPERATOR_ADMIN,
+				now
+			), now);
+		}
+		adminIdentityRepository.disableStaleBootstrapIdentities(activeBootstrapLoginIds, now);
+		// disableStale와 대칭으로, active bootstrap 계정 목록에 없는 bootstrap-seeded RBAC role을
+		// 회수한다. 수동 부여 role은 보존한다(provenance로 구분).
+		adminRbacAuthorityRepository.revokeStaleBootstrapRoles(activeBootstrapLoginIds);
+		var users = new ConcurrentUserDetailsManager();
+		if (!userUsername.isBlank() && !userPassword.isBlank()) {
+			users.createUser(User.withUsername(userUsername)
+				.password(passwordEncoder.encode(userPassword))
+				.roles("USER")
+				.build());
+		}
+		return new AdminIdentityUserDetailsService(
+			adminIdentityRepository,
+			adminRbacAuthorityRepository,
+			users,
+			Clock.systemUTC()
+		);
+	}
+
+	UserDetailsService userDetailsService(
+		String adminUsername,
+		String adminPassword,
+		String operatorUsername,
+		String operatorPassword,
+		String userUsername,
+		String userPassword,
+		boolean basicAuthEnabled,
+		String basicAuthExceptionOwner,
+		String basicAuthExceptionExpiresAt,
+		AdminIdentityRepository adminIdentityRepository,
+		PasswordEncoder passwordEncoder,
+		Environment environment
+	) {
+		return userDetailsService(
+			adminUsername,
+			adminPassword,
+			operatorUsername,
+			operatorPassword,
+			userUsername,
+			userPassword,
+			basicAuthEnabled,
+			basicAuthExceptionOwner,
+			basicAuthExceptionExpiresAt,
+			adminIdentityRepository,
+			NO_ADMIN_RBAC_AUTHORITIES,
+			passwordEncoder,
+			environment
+		);
+	}
+
+	@Bean
+	AuthenticationProvider adminOperatorLockoutAuthenticationProvider(
+		UserDetailsService userDetailsService,
+		PasswordEncoder passwordEncoder,
+		AdminIdentityRepository adminIdentityRepository,
+		@Value("${easysubway.admin.lockout.max-failures:5}") int maxFailures,
+		@Value("${easysubway.admin.lockout.duration:PT15M}") String lockoutDuration
+	) {
+		return new AdminOperatorLockoutAuthenticationProvider(
+			userDetailsService,
+			passwordEncoder,
+			adminIdentityRepository,
+			maxFailures,
+			Duration.parse(lockoutDuration),
+			Clock.systemUTC()
+		);
+	}
+
+	@Bean
+	PasswordEncoder passwordEncoder() {
+		return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+	}
+
+	@Bean
+	RememberMeServices adminRememberMeServices(
+		UserDetailsService userDetailsService,
+		@Value("${easysubway.admin.remember-me.key:}") String key,
+		@Value("${easysubway.admin.password:}") String adminPassword,
+		Environment environment
+	) {
+		boolean production = Arrays.asList(environment.getActiveProfiles()).contains("prod");
+		var services = new TokenBasedRememberMeServices(
+			resolveRememberMeKey(key, adminPassword, production),
+			userDetailsService
+		);
+		services.setCookieName("admin-remember-me");
+		services.setTokenValiditySeconds(7 * 24 * 60 * 60);
+		services.setCookieCustomizer(cookie -> cookie.setAttribute("SameSite", "Lax"));
+		if (production) {
+			services.setUseSecureCookie(true);
+		}
+		return services;
+	}
+
+	static String resolveRememberMeKey(String configuredKey, String fallbackSecret, boolean production) {
+		if (production) {
+			if (configuredKey == null || configuredKey.isBlank() || configuredKey.length() < 32) {
+				throw new IllegalStateException("운영 관리자 로그인 유지 서명 키는 32자 이상이어야 합니다.");
+			}
+			return configuredKey;
+		}
+		if (configuredKey != null && !configuredKey.isBlank()) {
+			return configuredKey;
+		}
+		String secret = (fallbackSecret == null || fallbackSecret.isBlank())
+			? UUID.randomUUID().toString()
+			: fallbackSecret;
+		return deriveRememberMeKey(secret);
+	}
+
+	static String deriveRememberMeKey(String secret) {
+		try {
+			MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+			byte[] digest = sha256.digest(
+				("easysubway-admin-remember-me:" + secret).getBytes(StandardCharsets.UTF_8)
+			);
+			return HexFormat.of().formatHex(digest);
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 unavailable", exception);
+		}
+	}
+
+	@Bean
+	TrustedClientIpResolver trustedClientIpResolver(Environment environment) {
+		return TrustedClientIpResolver.fromCidrs(
+			environment.getProperty("easysubway.auth.client-ip.trusted-proxies", "")
+		);
+	}
+
+	@Bean
+	AdminOperatorAuditFilter adminOperatorAuditFilter(
+		AdminAuditEventRepository auditEventRepository,
+		TrustedClientIpResolver trustedClientIpResolver
+	) {
+		return new AdminOperatorAuditFilter(auditEventRepository, Clock.systemUTC(), trustedClientIpResolver);
+	}
+
+	private void configureBasicAuth(HttpSecurity http, boolean basicAuthEnabled) throws Exception {
+		if (basicAuthEnabled) {
+			http.httpBasic(Customizer.withDefaults());
+			return;
+		}
+		http.httpBasic(AbstractHttpConfigurer::disable);
+	}
+
+	private void bootstrapIdentity(
+		AdminIdentityRepository adminIdentityRepository,
+		PasswordEncoder passwordEncoder,
+		String rawPassword,
+		AdminIdentity bootstrap,
+		LocalDateTime now
+	) {
+		var current = adminIdentityRepository.findByLoginId(bootstrap.loginId());
+		if (current.isEmpty()) {
+			adminIdentityRepository.upsertBootstrap(bootstrap);
+			return;
+		}
+		AdminIdentity existing = current.orElseThrow();
+		if (sameBootstrapSecret(existing, bootstrap, rawPassword, passwordEncoder)) {
+			return;
+		}
+		adminIdentityRepository.save(existing.refreshBootstrap(bootstrap, now));
+	}
+
+	private boolean sameBootstrapSecret(
+		AdminIdentity existing,
+		AdminIdentity bootstrap,
+		String rawPassword,
+		PasswordEncoder passwordEncoder
+	) {
+		return existing.authMethod() == bootstrap.authMethod()
+			&& existing.role() == bootstrap.role()
+			&& existing.status() == bootstrap.status()
+			&& Objects.equals(existing.displayName(), bootstrap.displayName())
+			&& Objects.equals(existing.email(), bootstrap.email())
+			&& Objects.equals(existing.breakGlassReason(), bootstrap.breakGlassReason())
+			&& existing.bootstrapManaged() == bootstrap.bootstrapManaged()
+			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
+	}
+
+	private AdminIdentity localIdentity(
+		String loginId,
+		String displayName,
+		String passwordHash,
+		AdminIdentityRole role,
+		LocalDateTime now
+	) {
+		return new AdminIdentity(
+			loginId,
+			displayName,
+			null,
+			passwordHash,
+			AdminIdentityAuthMethod.LOCAL,
+			role,
+			AdminIdentityStatus.ACTIVE,
+			0,
+			null,
+			now,
+			null,
+			false,
+			null,
+			true,
+			now,
+			now
+		);
+	}
+
+	private void validateProdAdminCredentials(String adminUsername, String adminPassword, Environment environment) {
+		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")
+			&& (adminUsername.isBlank() || adminPassword.isBlank())) {
+			throw new IllegalStateException("운영 관리자 계정 설정이 필요합니다.");
+		}
+	}
+
+	private void validateAdminCredentials(String adminUsername, String adminPassword) {
+		if (adminUsername.isBlank() != adminPassword.isBlank()) {
+			throw new IllegalStateException("관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
+		}
+	}
+
+	private void validateOperatorCredentials(String operatorUsername, String operatorPassword) {
+		if (operatorUsername.isBlank() != operatorPassword.isBlank()) {
+			throw new IllegalStateException("운영기관 관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
+		}
+	}
+
+	private void validateDistinctAdminLoginIds(
+		String adminUsername,
+		String operatorUsername,
+		String userUsername
+	) {
+		String admin = normalizeLoginId(adminUsername);
+		String operator = normalizeLoginId(operatorUsername);
+		String user = normalizeLoginId(userUsername);
+		if ((!admin.isBlank() && admin.equals(operator))
+			|| (!admin.isBlank() && admin.equals(user))
+			|| (!operator.isBlank() && operator.equals(user))) {
+			throw new IllegalStateException("관리자, 운영기관, 일반 사용자 계정 ID는 서로 달라야 합니다.");
+		}
+	}
+
+	private void validateBreakGlassBootstrapCollision(
+		String adminUsername,
+		String operatorUsername,
+		AdminIdentityRepository adminIdentityRepository
+	) {
+		for (String bootstrapLoginId : List.of(adminUsername, operatorUsername)) {
+			if (bootstrapLoginId.isBlank()) {
+				continue;
+			}
+			boolean breakGlassIdentity = adminIdentityRepository
+				.findByLoginId(normalizeLoginId(bootstrapLoginId))
+				.filter(identity -> identity.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS)
+				.isPresent();
+			if (breakGlassIdentity) {
+				throw new IllegalStateException(
+					"break-glass identity와 bootstrap 계정 ID가 충돌합니다."
+				);
+			}
+		}
+	}
+
+	private String normalizeLoginId(String loginId) {
+		return loginId.trim().toLowerCase(Locale.ROOT);
+	}
+
+	// 만료일은 운영자가 입력하는 한국 달력 날짜다. UTC 날짜와 비교하면 한국 자정 이후 최대 9시간 더 유효해지므로
+	// 보안 만료는 업무 시간대(한국) 날짜로 비교해 만료일 다음 날 한국 자정에 닫힌다.
+	static void validateProdBasicAuthPolicy(
+		boolean basicAuthEnabled,
+		String exceptionOwner,
+		String exceptionExpiresAt,
+		Environment environment,
+		Clock clock
+	) {
+		if (!Arrays.asList(environment.getActiveProfiles()).contains("prod") || !basicAuthEnabled) {
+			return;
+		}
+		if (exceptionOwner.isBlank() || exceptionExpiresAt.isBlank()) {
+			throw new IllegalStateException("운영 Basic auth 예외는 owner와 만료일이 필요합니다.");
+		}
+		LocalDate expiresAt = LocalDate.parse(exceptionExpiresAt);
+		if (expiresAt.isBefore(BusinessTime.today(clock))) {
+			throw new IllegalStateException("운영 Basic auth 예외 만료일이 지났습니다.");
+		}
+	}
+}

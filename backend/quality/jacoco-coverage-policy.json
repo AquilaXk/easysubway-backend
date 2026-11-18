@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "backend-critical-coverage-policy-v1",
+  "policyId": "backend-critical-coverage",
+  "issue": {
+    "number": 32,
+    "url": "https://github.com/AquilaXk/easysubway-backend/issues/32"
+  },
+  "repository": "AquilaXk/easysubway-backend",
+  "phase": "ENFORCED_DECREASE_ONLY",
+  "toolchain": {
+    "gradleVersion": "8.14.5",
+    "javaVendor": "ADOPTIUM",
+    "javaLanguageVersion": 21,
+    "jacocoVersion": "0.8.13",
+    "testTask": "test",
+    "reportTask": "jacocoTestReport",
+    "reportPath": "backend/build/reports/jacoco/test/jacocoTestReport.xml"
+  },
+  "scopeRules": [
+    {
+      "id": "JOURNEY_ROUTE",
+      "prefixes": [
+        "journey/",
+        "route/",
+        "profile/",
+        "transit/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "Journey request, planner, accessibility profile and transit domain identity"
+    },
+    {
+      "id": "ARTIFACT_RELEASE",
+      "prefixes": [
+        "datapack/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "catalog, signature, admission, release evidence and promotion boundaries"
+    },
+    {
+      "id": "AUTH_SECURITY",
+      "prefixes": [
+        "common/security/",
+        "admin/authorization/",
+        "admin/audit/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "authentication, privileged authorization and audit"
+    },
+    {
+      "id": "FACILITY_REPORT",
+      "prefixes": [
+        "report/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "receipt, upload, abuse control, privacy and review lifecycle"
+    },
+    {
+      "id": "REALTIME_STRICT",
+      "prefixes": [
+        "realtime/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "provider, freshness and cache strict boundary"
+    },
+    {
+      "id": "ACCESSIBILITY_QUALITY",
+      "prefixes": [
+        "quality/",
+        "operator/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "accessibility data quality and operator-facing truthfulness"
+    },
+    {
+      "id": "HEALTH_READINESS",
+      "prefixes": [
+        "health/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "component and readiness evidence"
+    },
+    {
+      "id": "USER_PRIVACY",
+      "prefixes": [
+        "user/"
+      ],
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "reason": "user-data deletion and anonymization boundary"
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "SPRING_BOOT_ENTRYPOINT",
+      "classFile": "com/easysubway/EasySubwayBackendApplication.class",
+      "sourcePath": "backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java",
+      "reason": "Spring Boot entrypoint contains no critical business behavior and is covered by startup/context contracts.",
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "removalCondition": "Remove when the entrypoint is admitted to critical executable coverage without synthetic startup behavior.",
+      "reviewTriggers": [
+        "SOURCE_BYTES_CHANGE",
+        "CLASS_PATH_CHANGE",
+        "STARTUP_CONTRACT_CHANGE"
+      ]
+    }
+  ],
+  "comparison": {
+    "counters": [
+      "LINE",
+      "BRANCH"
+    ],
+    "zeroDenominatorBasisPoints": null,
+    "line": {
+      "missed": "NON_INCREASING",
+      "basisPoints": "NON_DECREASING"
+    },
+    "branch": {
+      "missed": "NON_INCREASING",
+      "basisPoints": "NON_DECREASING"
+    },
+    "newSource": "REVIEW_REQUIRED",
+    "removedSource": "TERMINAL_DISPOSITION_REQUIRED",
+    "changedMissingSource": "FAIL",
+    "unchangedReviewedMissingSource": "ALLOW_EXACT_PATH_SHA_ONLY",
+    "rename": "EXACT_REVIEWED_OLD_NEW_SAME_SHA_ONLY",
+    "baselineRewrite": "EXPLICIT_REVIEWED_PR_ONLY"
+  },
+  "resultContract": {
+    "schemaVersion": 1,
+    "artifactKind": "backend-critical-coverage-result-v1",
+    "resultFile": "backend-critical-coverage-result.json",
+    "summaryFile": "backend-critical-coverage-summary.md",
+    "digestFile": "backend-critical-coverage.sha256",
+    "reasonOrder": [
+      "BASELINE_UNREVIEWED",
+      "PRODUCER_DRIFT",
+      "EXCLUSION_DRIFT",
+      "MISSING_REPORT_SOURCE",
+      "NEWLY_MEASURABLE_SOURCE",
+      "CHANGED_REVIEWED_MISSING_SOURCE",
+      "NEW_CRITICAL_SOURCE",
+      "REMOVED_CRITICAL_SOURCE",
+      "SOURCE_RENAME_UNREVIEWED",
+      "LINE_MISSED_INCREASE",
+      "LINE_RATIO_DECREASE",
+      "NEWLY_MEASURABLE_BRANCH",
+      "BRANCH_MISSED_INCREASE",
+      "BRANCH_RATIO_DECREASE",
+      "BOUNDARY_LINE_DECREASE",
+      "BOUNDARY_BRANCH_DECREASE"
+    ]
+  },
+  "artifactContract": {
+    "directoryName": "backend-critical-coverage",
+    "files": [
+      "jacocoTestReport.xml",
+      "backend-critical-coverage-baseline.json",
+      "backend-critical-coverage-result.json",
+      "backend-critical-coverage-summary.md",
+      "backend-critical-coverage.sha256"
+    ],
+    "uploadNamePrefix": "backend-critical-coverage-",
+    "retentionDays": 5,
+    "ifNoFilesFound": "error"
+  }
+}

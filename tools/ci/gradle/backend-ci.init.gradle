@@ -1,0 +1,74 @@
+// Backend CI 전용 Gradle init script (Backend #416). 로컬 기본 빌드는 바꾸지 않는다.
+//
+// -PbackendTestShardIndex=<1..N> -PbackendTestShardCount=<N>
+//   test 태스크 후보 클래스 파일을 shard로 나눈다. 최상위 binary 이름(중첩 클래스는 `$` 앞부분)을
+//   UTF-8 SHA-256으로 해시해 앞 8자리 16진수 % N + 1이 shard 번호다.
+//   tools/ci/backend-test-shards.mjs의 shardOf와 같은 규칙이며, 집계 job이 실제 실행 결과로 대조한다.
+// -PbackendJacocoExecutionDataDir=<dir>
+//   jacocoTestReport의 실행 데이터를 해당 디렉터리의 *.exec 전체(모든 shard)로 바꾼다.
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+
+def property = { String name ->
+	def value = gradle.startParameter.projectProperties[name]
+	return value == null ? null : value.trim()
+}
+def shardIndexText = property('backendTestShardIndex')
+def shardCountText = property('backendTestShardCount')
+def executionDataDir = property('backendJacocoExecutionDataDir')
+
+if ((shardIndexText == null) != (shardCountText == null)) {
+	throw new GradleException('backendTestShardIndex and backendTestShardCount must be set together')
+}
+if (shardIndexText != null && executionDataDir != null) {
+	throw new GradleException('test sharding and merged JaCoCo reporting are separate invocations')
+}
+
+def backendTestShardOf = { String relativeClassPath, int shardCount ->
+	def binaryName = relativeClassPath.substring(0, relativeClassPath.length() - '.class'.length()).replace('/', '.')
+	def topLevel = binaryName.split('\\$', 2)[0]
+	def hex = MessageDigest.getInstance('SHA-256').digest(topLevel.getBytes(StandardCharsets.UTF_8)).encodeHex().toString()
+	return (Long.parseLong(hex.substring(0, 8), 16) % shardCount) + 1
+}
+
+gradle.allprojects { project ->
+	project.plugins.withId('java') {
+		if (shardIndexText != null) {
+			if (!(shardCountText ==~ /[1-9][0-9]?/) || !(shardIndexText ==~ /[1-9][0-9]?/)) {
+				throw new GradleException('backend test shard properties must be positive integers')
+			}
+			int shardCount = shardCountText as int
+			int shardIndex = shardIndexText as int
+			if (shardCount < 2 || shardIndex > shardCount) {
+				throw new GradleException("backend test shard ${shardIndex}/${shardCount} is invalid")
+			}
+			project.tasks.named('test', Test).configure { Test test ->
+				test.inputs.property('backendTestShardIndex', shardIndex)
+				test.inputs.property('backendTestShardCount', shardCount)
+				test.exclude { FileTreeElement element ->
+					!element.directory && element.name.endsWith('.class') &&
+						backendTestShardOf(element.relativePath.pathString, shardCount) != shardIndex
+				}
+			}
+		}
+	}
+	project.plugins.withId('jacoco') {
+		if (executionDataDir != null) {
+			def directory = new File(executionDataDir)
+			if (!directory.isAbsolute() || !directory.isDirectory()) {
+				throw new GradleException("backendJacocoExecutionDataDir must be an absolute directory: ${executionDataDir}")
+			}
+			project.tasks.named('jacocoTestReport', JacocoReport).configure { JacocoReport report ->
+				def executionFiles = project.fileTree(directory) { include '*.exec' }
+				report.executionData.setFrom(executionFiles)
+				// -x test로 병합할 때도 보고서가 방금 컴파일한 main 클래스·리소스를 입력으로 쓰게 한다.
+				report.dependsOn(project.tasks.named('classes'))
+				report.doFirst {
+					if (executionFiles.files.isEmpty()) {
+						throw new GradleException("no JaCoCo execution data in ${directory}")
+					}
+				}
+			}
+		}
+	}
+}

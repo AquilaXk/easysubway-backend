@@ -1,0 +1,1927 @@
+openapi: 3.0.3
+info:
+  title: EasySubway Journey V3 API
+  version: 3.0.0
+paths:
+  /api/v3/journeys/session:
+    post:
+      operationId: issueJourneySession
+      summary: Issue an Android Play Integrity backed Journey session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JourneySessionRequest"
+      responses:
+        "200":
+          description: Short-lived Journey route session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneySessionResponse"
+        "400":
+          description: Invalid or malformed Journey session request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                invalidSessionRequest:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: INVALID_JOURNEY_SESSION_REQUEST
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "403":
+          description: Play Integrity verdict or request binding rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                attestationRejected:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SESSION_ATTESTATION_REJECTED
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "503":
+          description: Play Integrity provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                attestationUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SESSION_ATTESTATION_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+  /api/v3/journeys/search:
+    post:
+      operationId: searchJourneys
+      summary: Search server-authoritative subway journeys
+      security:
+        - JourneySessionBearer: []
+      x-easysubway-time-policy-contract:
+        TIMETABLE_REQUIRED: realtime-fields-null
+        REALTIME_REQUIRED: realtime-fields-required-non-null
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JourneySearchRequest"
+      responses:
+        "200":
+          description: Ordered verified Journey candidates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneySearchSuccess"
+        "400":
+          description: Invalid or unsupported Journey request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                invalidRequest:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: INVALID_JOURNEY_REQUEST
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "404":
+          description: Canonical station identity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                stationNotFound:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: STATION_NOT_FOUND
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "422":
+          description: No route satisfies the exact request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                routeNotFound:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_NOT_FOUND
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                accessibilityUnsatisfied:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ACCESSIBILITY_CONSTRAINT_UNSATISFIED
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "503":
+          description: Required fresh and compatible route data or service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                routeBundleUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTING_BUNDLE_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                routeBundleStale:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTING_BUNDLE_STALE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                timetableUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                timetableStale:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_STALE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                realtimeUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: REALTIME_REQUIRED_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                routingIdentityMismatch:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTING_IDENTITY_MISMATCH
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                facilityStatusUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: FACILITY_STATUS_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+                routeServiceUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SERVICE_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "504":
+          description: Journey computation exceeded the server deadline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                searchTimeout:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: JOURNEY_SEARCH_TIMEOUT
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "401":
+          description: Missing, expired, or invalid Journey route session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                sessionRequired:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SESSION_REQUIRED
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+        "429":
+          description: Journey request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                rateLimited:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_RATE_LIMITED
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
+  /api/v3/journeys/profile:
+    post:
+      operationId: profileJourneys
+      summary: Search identity-bound temporal Journey profiles
+      description: >-
+        Returns only compressed profile breakpoints. Journeys start at an origin-station
+        platform and end at a destination-station platform; a destination arrival is the
+        final ride arrival at the destination platform. LAST_CONNECTION is the latest feasible
+        O/D departure under the request walking, accessibility, transfer, and active
+        service-day constraints.
+      security:
+        - JourneySessionBearer: []
+      x-easysubway-cache-control: private, no-store
+      x-easysubway-time-policy-contract:
+        TIMETABLE_REQUIRED: realtime-fields-null
+        REALTIME_REQUIRED: realtime-fields-required-non-null
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JourneyProfileRequest"
+      responses:
+        "200":
+          description: Compressed verified temporal Journey profile
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum: ["private, no-store"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyProfileSuccess"
+        "400":
+          description: Invalid or unbounded temporal query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                invalidTemporalQuery:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: INVALID_TEMPORAL_QUERY
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                temporalWindowTooLarge:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TEMPORAL_WINDOW_TOO_LARGE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+        "404":
+          description: Canonical station identity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                stationNotFound:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: STATION_NOT_FOUND
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+        "422":
+          description: The bounded temporal query cannot yield a verified journey profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                noService:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: NO_SERVICE_IN_DEPARTURE_WINDOW
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                deadlineMiss:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: NO_ROUTE_ARRIVING_BY_DEADLINE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                noLastConnection:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: NO_LAST_CONNECTION
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                realtimeNotApplicable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                queryTooComplex:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TEMPORAL_QUERY_TOO_COMPLEX
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+        "503":
+          description: Required profile data, identity, frontier capacity, or service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                realtimeUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: REALTIME_REQUIRED_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                routeBundleUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTING_BUNDLE_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                routeBundleStale:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTING_BUNDLE_STALE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                identityMismatch:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTING_IDENTITY_MISMATCH
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                facilityStatusUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: FACILITY_STATUS_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+                frontierCapacityExceeded:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: RAPTOR_FRONTIER_CAPACITY_EXCEEDED
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+        "504":
+          description: Journey profile computation exceeded the server deadline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                profileTimeout:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: JOURNEY_PROFILE_TIMEOUT
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+        "401":
+          description: Missing, expired, or invalid Journey route session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                sessionRequired:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SESSION_REQUIRED
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+        "429":
+          description: Journey profile request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                rateLimited:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_RATE_LIMITED
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
+  /api/v3/station-timetables/search:
+    post:
+      operationId: searchStationTimetables
+      summary: Read server-authoritative station timetable departures
+      security:
+        - JourneySessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StationTimetableSearchRequest"
+      responses:
+        "200":
+          description: Ordered departures from the active server route bundle timetable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationTimetableSearchSuccess"
+        "400":
+          description: Invalid station timetable request or selector
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                invalidRequest:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: INVALID_JOURNEY_REQUEST
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "404":
+          description: Canonical station-line or active timetable coverage is absent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                stationLineNotFound:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: STATION_LINE_NOT_FOUND
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+                timetableNotCovered:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_NOT_COVERED
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "503":
+          description: Active timetable snapshot is unavailable, stale, or incompatible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                unavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+                stale:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_STALE
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+                identityMismatch:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_IDENTITY_MISMATCH
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "401":
+          description: Missing, expired, or invalid Journey route session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                sessionRequired:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SESSION_REQUIRED
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "429":
+          description: Journey request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                rateLimited:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_RATE_LIMITED
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+components:
+  securitySchemes:
+    JourneySessionBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-route-session
+  schemas:
+    JourneySessionRequest:
+      type: object
+      additionalProperties: false
+      required: [integrityToken, clientNonce]
+      properties:
+        integrityToken:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        clientNonce:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{22}$"
+    JourneySessionResponse:
+      type: object
+      additionalProperties: false
+      required: [token, scope, issuedAt, expiresAt]
+      properties:
+        token:
+          type: string
+          minLength: 1
+        scope:
+          type: string
+          enum: [journey:v3]
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    JourneySearchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - originStationId
+        - destinationStationId
+        - departure
+        - timePolicy
+        - walkingPace
+        - mobilityProfile
+        - constraintMode
+        - maxTransfers
+        - alternativeCount
+      properties:
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        originStationId:
+          type: string
+          minLength: 1
+        destinationStationId:
+          type: string
+          minLength: 1
+        viaStationId:
+          type: string
+          minLength: 1
+          description: "선택적 경유 역사 식별자. originStationId 및 destinationStationId와 중복 불가."
+        departure:
+          $ref: "#/components/schemas/JourneyDeparture"
+        timePolicy:
+          $ref: "#/components/schemas/TimePolicy"
+        walkingPace:
+          $ref: "#/components/schemas/WalkingPace"
+        mobilityProfile:
+          $ref: "#/components/schemas/MobilityProfile"
+        constraintMode:
+          $ref: "#/components/schemas/ConstraintMode"
+        maxTransfers:
+          type: integer
+          minimum: 0
+          maximum: 3
+        alternativeCount:
+          type: integer
+          minimum: 1
+          maximum: 3
+      not:
+        required: [mobilityProfile, constraintMode]
+        properties:
+          mobilityProfile:
+            enum: [NO_STAIRS]
+          constraintMode:
+            enum: [NONE]
+    JourneyDeparture:
+      oneOf:
+        - $ref: "#/components/schemas/JourneyDepartureNow"
+        - $ref: "#/components/schemas/JourneyDepartureScheduled"
+    JourneyDepartureNow:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [NOW]
+    JourneyDepartureScheduled:
+      type: object
+      additionalProperties: false
+      description: Retained wire alias for the canonical DEPART_AT product mode.
+      required: [mode, requestedAt]
+      properties:
+        mode:
+          type: string
+          enum: [SCHEDULED]
+        requestedAt:
+          type: string
+          format: date-time
+    TimePolicy:
+      type: string
+      enum: [TIMETABLE_REQUIRED, REALTIME_REQUIRED]
+    WalkingPace:
+      type: string
+      enum: [SLOW, STANDARD, FAST]
+    MobilityProfile:
+      type: string
+      enum: [STANDARD, SLOW, NO_STAIRS, STEP_FREE]
+    ConstraintMode:
+      type: string
+      description: >-
+        REQUIRE_STEP_FREE uses only confirmed stair-free transfer pathways (source stair access state STEP_FREE and
+        no stairs flag); a route that needs a transfer with unconfirmed stair state is not returned.
+      enum: [NONE, REQUIRE_STEP_FREE]
+    JourneyProfileRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Closed JSON input; implementations reject duplicate keys, unknown fields, and
+        trailing tokens before temporal semantic validation.
+      required:
+        - requestId
+        - originStationId
+        - destinationStationId
+        - temporalQuery
+        - timePolicy
+        - walkingPace
+        - mobilityProfile
+        - constraintMode
+        - maxTransfers
+        - alternativeCount
+      properties:
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        originStationId:
+          type: string
+          minLength: 1
+        destinationStationId:
+          type: string
+          minLength: 1
+        temporalQuery:
+          $ref: "#/components/schemas/JourneyTemporalQuery"
+        timePolicy:
+          $ref: "#/components/schemas/TimePolicy"
+        walkingPace:
+          $ref: "#/components/schemas/WalkingPace"
+        mobilityProfile:
+          $ref: "#/components/schemas/MobilityProfile"
+        constraintMode:
+          $ref: "#/components/schemas/ConstraintMode"
+        maxTransfers:
+          type: integer
+          minimum: 0
+          maximum: 3
+        alternativeCount:
+          type: integer
+          minimum: 1
+          maximum: 3
+      not:
+        required: [mobilityProfile, constraintMode]
+        properties:
+          mobilityProfile:
+            enum: [NO_STAIRS]
+          constraintMode:
+            enum: [NONE]
+    JourneyTemporalQuery:
+      oneOf:
+        - $ref: "#/components/schemas/JourneyDepartBetweenQuery"
+        - $ref: "#/components/schemas/JourneyArriveByQuery"
+        - $ref: "#/components/schemas/JourneyLastConnectionQuery"
+    JourneyDepartBetweenQuery:
+      type: object
+      additionalProperties: false
+      description: >-
+        A bounded ordered whole-second ready-time interval. Both bounds are inclusive;
+        the final compressed segment ends at latestReadyAt plus one second as an
+        exclusive bound. The server rejects equal or reversed bounds and intervals
+        above the active temporal resource-policy limit.
+      required: [kind, earliestReadyAt, latestReadyAt]
+      properties:
+        kind:
+          type: string
+          enum: [DEPART_BETWEEN]
+        earliestReadyAt:
+          type: string
+          format: date-time
+        latestReadyAt:
+          type: string
+          format: date-time
+          description: >-
+            Inclusive whole-second terminal readiness; the final compressed segment
+            ends one second later as an exclusive bound.
+    JourneyArriveByQuery:
+      type: object
+      additionalProperties: false
+      description: >-
+        A bounded ordered ready-time and destination-arrival deadline interval. The
+        deadline applies to the final ride arrival at the destination platform.
+      required: [kind, earliestReadyAt, arrivalDeadline]
+      properties:
+        kind:
+          type: string
+          enum: [ARRIVE_BY]
+        earliestReadyAt:
+          type: string
+          format: date-time
+        arrivalDeadline:
+          type: string
+          format: date-time
+    JourneyLastConnectionQuery:
+      type: object
+      additionalProperties: false
+      description: >-
+        Finds the latest feasible O/D departure for the requested active service day;
+        service-day cutoff is a day boundary, not a synthesized final-event anchor.
+      required: [kind, serviceDate]
+      properties:
+        kind:
+          type: string
+          enum: [LAST_CONNECTION]
+        serviceDate:
+          type: string
+          format: date
+    StationTimetableSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [stationId, lineId, selector]
+      properties:
+        stationId:
+          type: string
+          minLength: 1
+        lineId:
+          type: string
+          minLength: 1
+        selector:
+          $ref: "#/components/schemas/StationTimetableSelector"
+    StationTimetableSelector:
+      oneOf:
+        - $ref: "#/components/schemas/StationTimetableServiceDateSelector"
+        - $ref: "#/components/schemas/StationTimetableDayTypeSelector"
+        - $ref: "#/components/schemas/StationTimetableNextDeparturesSelector"
+    StationTimetableServiceDateSelector:
+      type: object
+      additionalProperties: false
+      required: [kind, serviceDate]
+      properties:
+        kind:
+          type: string
+          enum: [SERVICE_DATE]
+        serviceDate:
+          type: string
+          format: date
+    StationTimetableDayTypeSelector:
+      type: object
+      additionalProperties: false
+      required: [kind, dayType, referenceDate]
+      properties:
+        kind:
+          type: string
+          enum: [DAY_TYPE]
+        dayType:
+          type: string
+          enum: [WEEKDAY, SATURDAY, SUNDAY_HOLIDAY]
+        referenceDate:
+          type: string
+          format: date
+    StationTimetableNextDeparturesSelector:
+      type: object
+      additionalProperties: false
+      required: [kind, asOf, horizonDays]
+      properties:
+        kind:
+          type: string
+          enum: [NEXT_DEPARTURES]
+        asOf:
+          type: string
+          format: date-time
+        horizonDays:
+          type: integer
+          minimum: 1
+          maximum: 8
+    StationTimetableSearchSuccess:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, stationId, lineId, selector, resolvedDayType, serviceTimezone, directionGroups, sourceIdentity]
+      properties:
+        contractVersion:
+          type: string
+          enum: [STATION_TIMETABLE_SEARCH_V3]
+        stationId:
+          type: string
+          minLength: 1
+        lineId:
+          type: string
+          minLength: 1
+        selector:
+          $ref: "#/components/schemas/StationTimetableSelector"
+        resolvedDayType:
+          type: string
+          enum: [WEEKDAY, SATURDAY, SUNDAY_HOLIDAY]
+          description: >-
+            Kind of calendar the requested station-line actually runs on the (reference) service date. Agencies
+            without a Saturday timetable run their holiday calendar on Saturdays, so their Saturdays report
+            SUNDAY_HOLIDAY. When other agencies' calendars mark the date as a holiday but this station-line's
+            calendars carry no exception for it, the search fails as TIMETABLE_NOT_COVERED instead of serving a
+            weekday or Saturday timetable.
+        serviceTimezone:
+          type: string
+          enum: [Asia/Seoul]
+        directionGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/StationTimetableDirectionGroup"
+        sourceIdentity:
+          $ref: "#/components/schemas/StationTimetableSourceIdentity"
+    StationTimetableDirectionGroup:
+      type: object
+      additionalProperties: false
+      description: >-
+        Departures grouped by the next stopping station after the requested station on the requested line.
+        Clients label the group with the next station name ("<name> 방면"). Departures whose trip ends at the
+        requested station are not listed.
+      required: [nextStationId, directionName, departures]
+      properties:
+        nextStationId:
+          type: string
+          minLength: 1
+        directionName:
+          type: string
+          minLength: 1
+          nullable: true
+          description: >-
+            Official direction name from the timetable source. Non-null only when every departure in the group
+            carries the same source value; null when none carries one. A group mixing named and unnamed or
+            differently named departures is rejected as TIMETABLE_IDENTITY_MISMATCH. Never synthesized.
+        departures:
+          type: array
+          items:
+            $ref: "#/components/schemas/StationTimetableDeparture"
+    StationTimetableDeparture:
+      type: object
+      additionalProperties: false
+      required: [serviceDate, secondsFromServiceDayStart, departureAt, servicePattern, serviceClass, terminalStationId]
+      properties:
+        serviceDate:
+          type: string
+          format: date
+        secondsFromServiceDayStart:
+          type: integer
+          minimum: 0
+          maximum: 107999
+        departureAt:
+          type: string
+          format: date-time
+        servicePattern:
+          type: string
+          enum: [LOCAL, EXPRESS]
+        serviceClass:
+          type: string
+          enum: [SUBWAY, ITX_CHEONGCHUN]
+        terminalStationId:
+          type: string
+          minLength: 1
+          description: Station where this trip ends (its last stop).
+    StationTimetableSourceIdentity:
+      type: object
+      additionalProperties: false
+      required: [timetableArtifactId, timetableSnapshotSha256, canonicalStationVersion, canonicalStationSetSha256, sourceLineageSha256, evidenceHash, freshUntil]
+      properties:
+        timetableArtifactId:
+          type: string
+          minLength: 1
+        timetableSnapshotSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        canonicalStationVersion:
+          type: string
+          minLength: 1
+        canonicalStationSetSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        sourceLineageSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        evidenceHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        freshUntil:
+          type: string
+          format: date-time
+    JourneySearchSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - requestId
+        - queryId
+        - calculatedAt
+        - validUntil
+        - effectiveDepartureTime
+        - serviceDate
+        - serviceTimezone
+        - serviceDayCutoff
+        - sourceIdentity
+        - requestPolicy
+        - journeys
+        - stairFreeAlternative
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_SEARCH_V3]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        queryId:
+          type: string
+          minLength: 1
+        calculatedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        effectiveDepartureTime:
+          type: string
+          format: date-time
+        serviceDate:
+          type: string
+          format: date
+        serviceTimezone:
+          type: string
+          enum: [Asia/Seoul]
+        serviceDayCutoff:
+          type: string
+          enum: ["03:00"]
+        sourceIdentity:
+          $ref: "#/components/schemas/JourneySourceIdentity"
+        requestPolicy:
+          $ref: "#/components/schemas/JourneyRequestPolicy"
+        journeys:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: >-
+            At most requestPolicy.alternativeCount journeys chosen from the Pareto set over
+            destination arrival, transfer count, and (unless constraintMode is REQUIRE_STEP_FREE)
+            whether every transfer uses a confirmed stair-free pathway (a pathway with stairs or with
+            unconfirmed stair state counts as not stair-free). Selection order is the fastest
+            journey, then the journey with the fewest transfers, then the earliest journey whose
+            accessibility.stairFree is true (for mobilityProfile STEP_FREE the stair-free journey comes
+            before the fewest-transfer journey). Duplicates are skipped, remaining slots are filled
+            with the other Pareto journeys in arrival order, and no stair-free journey is reported when
+            none exists. The array is ordered by arrival, then transfer count, so the first journey is
+            the fastest. Each journey names the groups it represents in alternativeCategories.
+          items:
+            $ref: "#/components/schemas/Journey"
+        stairFreeAlternative:
+          $ref: "#/components/schemas/JourneyStairFreeAlternative"
+    JourneyStairFreeAlternative:
+      type: object
+      additionalProperties: false
+      description: >-
+        Outcome of the stair-free group for this search. A transfer pathway is confirmed stair-free only when its
+        source stair access state is STEP_FREE and it carries no stairs flag; STAIR_ONLY or a stairs flag is
+        confirmed stairs. A pathway whose stair access state is UNKNOWN or missing is unconfirmed and is never
+        stair-free. A journey is stair-free only when every transfer uses a confirmed stair-free pathway; a journey
+        without transfers is stair-free because journeys run platform to platform and station entrances are out of
+        scope. INCLUDED does not confirm the current operation of elevators on that journey unless facilityStatus is
+        APPLIED.
+      required: [status, facilityStatus]
+      properties:
+        status:
+          type: string
+          enum: [INCLUDED, OMITTED, NOT_FOUND, UNDETERMINED]
+          description: >-
+            INCLUDED: journeys contain a journey whose accessibility.stairFree is true.
+            OMITTED: a stair-free journey was found but alternativeCount slots went to the fastest and
+            fewest-transfer journeys. UNDETERMINED: no stair-free journey was found and at least one transfer of the
+            returned journeys uses a pathway with unconfirmed stair state, or uses a confirmed stairs pathway while
+            the same transfer has another available pathway that is not confirmed stairs and is not both confirmed
+            stair-free and verified, so a stair-free trip cannot be confirmed. NOT_FOUND: no stair-free journey was
+            found and every transfer of the returned journeys uses a confirmed stairs pathway with no such
+            alternative.
+        facilityStatus:
+          type: string
+          enum: [APPLIED, UNOBSERVED]
+          description: >-
+            APPLIED: a fresh facility operating view was applied and out-of-service pathways were excluded.
+            UNOBSERVED: no fresh facility operating view was available, so the current operation of elevators on
+            stair-free journeys is not confirmed.
+    JourneyProfileSuccess:
+      oneOf:
+        - $ref: "#/components/schemas/DepartureProfileSuccess"
+        - $ref: "#/components/schemas/ArriveByProfileSuccess"
+        - $ref: "#/components/schemas/LastConnectionProfileSuccess"
+    DepartureProfileSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - requestId
+        - queryId
+        - calculatedAt
+        - validUntil
+        - temporalQuery
+        - serviceDays
+        - sourceIdentity
+        - algorithmIdentity
+        - frontierPolicyIdentity
+        - resourcePolicyIdentity
+        - journeys
+        - profileSegments
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_PROFILE_V1]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        queryId:
+          type: string
+          minLength: 1
+        calculatedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        temporalQuery:
+          $ref: "#/components/schemas/JourneyDepartBetweenQuery"
+        serviceDays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileServiceDayIdentity"
+        sourceIdentity:
+          $ref: "#/components/schemas/JourneyProfileSourceIdentity"
+        algorithmIdentity:
+          $ref: "#/components/schemas/JourneyAlgorithmIdentity"
+        frontierPolicyIdentity:
+          $ref: "#/components/schemas/JourneyFrontierPolicyIdentity"
+        resourcePolicyIdentity:
+          $ref: "#/components/schemas/JourneyProfileResourcePolicyIdentity"
+        journeys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileJourneyCandidate"
+        profileSegments:
+          type: array
+          minItems: 1
+          description: >-
+            Adjacent segments are compressed; a boundary exists only when the applicable
+            journey-id set changes. Every journeyId must resolve in this response.
+          items:
+            $ref: "#/components/schemas/JourneyProfileSegment"
+        summary:
+          $ref: "#/components/schemas/JourneyDepartureProfileSummary"
+    ArriveByProfileSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - requestId
+        - queryId
+        - calculatedAt
+        - validUntil
+        - temporalQuery
+        - serviceDays
+        - sourceIdentity
+        - algorithmIdentity
+        - frontierPolicyIdentity
+        - resourcePolicyIdentity
+        - journeys
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_PROFILE_V1]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        queryId:
+          type: string
+          minLength: 1
+        calculatedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        temporalQuery:
+          $ref: "#/components/schemas/JourneyArriveByQuery"
+        serviceDays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileServiceDayIdentity"
+        sourceIdentity:
+          $ref: "#/components/schemas/JourneyProfileSourceIdentity"
+        algorithmIdentity:
+          $ref: "#/components/schemas/JourneyAlgorithmIdentity"
+        frontierPolicyIdentity:
+          $ref: "#/components/schemas/JourneyFrontierPolicyIdentity"
+        resourcePolicyIdentity:
+          $ref: "#/components/schemas/JourneyProfileResourcePolicyIdentity"
+        journeys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileJourneyCandidate"
+        summary:
+          $ref: "#/components/schemas/JourneyArriveByProfileSummary"
+    LastConnectionProfileSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - requestId
+        - queryId
+        - calculatedAt
+        - validUntil
+        - temporalQuery
+        - serviceDays
+        - sourceIdentity
+        - algorithmIdentity
+        - frontierPolicyIdentity
+        - resourcePolicyIdentity
+        - journeys
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_PROFILE_V1]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        queryId:
+          type: string
+          minLength: 1
+        calculatedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        temporalQuery:
+          $ref: "#/components/schemas/JourneyLastConnectionQuery"
+        serviceDays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileServiceDayIdentity"
+        sourceIdentity:
+          $ref: "#/components/schemas/JourneyProfileSourceIdentity"
+        algorithmIdentity:
+          $ref: "#/components/schemas/JourneyAlgorithmIdentity"
+        frontierPolicyIdentity:
+          $ref: "#/components/schemas/JourneyFrontierPolicyIdentity"
+        resourcePolicyIdentity:
+          $ref: "#/components/schemas/JourneyProfileResourcePolicyIdentity"
+        journeys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileJourneyCandidate"
+        summary:
+          $ref: "#/components/schemas/JourneyLastConnectionProfileSummary"
+    JourneyProfileServiceDayIdentity:
+      type: object
+      additionalProperties: false
+      required: [serviceDate, serviceTimezone, serviceDayCutoff]
+      properties:
+        serviceDate:
+          type: string
+          format: date
+        serviceTimezone:
+          type: string
+          enum: [Asia/Seoul]
+        serviceDayCutoff:
+          type: string
+          enum: ["03:00"]
+    JourneyProfileSourceIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - routeBundleId
+        - routeBundleGeneration
+        - routeBundleSha256
+        - timetableSnapshotId
+        - accessibilitySnapshotId
+        - realtimeSnapshotId
+      properties:
+        routeBundleId:
+          type: string
+          minLength: 1
+        routeBundleGeneration:
+          type: string
+          minLength: 1
+        routeBundleSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        timetableSnapshotId:
+          type: string
+          minLength: 1
+        accessibilitySnapshotId:
+          type: string
+          minLength: 1
+        realtimeSnapshotId:
+          type: string
+          minLength: 1
+          nullable: true
+    JourneyAlgorithmIdentity:
+      type: object
+      additionalProperties: false
+      required: [algorithmSuiteId, queryAlgorithmId, semanticVersion]
+      properties:
+        algorithmSuiteId:
+          type: string
+          minLength: 1
+        queryAlgorithmId:
+          type: string
+          minLength: 1
+        semanticVersion:
+          type: string
+          minLength: 1
+    JourneyFrontierPolicyIdentity:
+      type: object
+      additionalProperties: false
+      required: [frontierPolicyId, semanticVersion]
+      properties:
+        frontierPolicyId:
+          type: string
+          minLength: 1
+        semanticVersion:
+          type: string
+          minLength: 1
+    JourneyProfileResourcePolicyIdentity:
+      type: object
+      additionalProperties: false
+      required: [resourcePolicyId, semanticVersion, resourcePolicySha256]
+      properties:
+        resourcePolicyId:
+          type: string
+          minLength: 1
+        semanticVersion:
+          type: string
+          minLength: 1
+        resourcePolicySha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    JourneyProfileJourneyCandidate:
+      type: object
+      additionalProperties: false
+      description: >-
+        readyAt is when the passenger is ready to board at the origin platform; journeyStartTime
+        equals readyAt; firstBoardingTime is the first ride departure; arrivalAtPlatform is the
+        final ride arrival; arrivalAtDestination equals arrivalAtPlatform because journeys end at
+        the destination platform.
+      required:
+        - journeyId
+        - readyAt
+        - journeyStartTime
+        - firstBoardingTime
+        - arrivalAtPlatform
+        - arrivalAtDestination
+        - objectiveTags
+        - journey
+      properties:
+        journeyId:
+          type: string
+          minLength: 1
+        readyAt:
+          type: string
+          format: date-time
+          description: >-
+            Readiness instant bound to this candidate. For DEPART_BETWEEN this is the
+            latest representative breakpoint; an earlier containing segment means the
+            passenger waits until this instant. For ARRIVE_BY and LAST_CONNECTION this
+            is the native planned entry readiness and does not imply a readiness segment.
+        journeyStartTime:
+          type: string
+          format: date-time
+        firstBoardingTime:
+          type: string
+          format: date-time
+        arrivalAtPlatform:
+          type: string
+          format: date-time
+        arrivalAtDestination:
+          type: string
+          format: date-time
+        objectiveTags:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: >-
+            Representative roles of this candidate. Since frontier policy 1.1.0, SAFEST_CONNECTION
+            ranks a direct journey first and otherwise credits the minimum transfer slack only up to
+            600 seconds, breaking ties by earlier destination arrival; the last-connection safer
+            alternative uses the same capped comparison. The 600-second cap is the epic #457 default;
+            a matching commercial subway service rule could not be confirmed from public sources and is
+            not confirmed. BEST_ACCESSIBILITY counts every transfer that is not confirmed stair-free.
+          items:
+            type: string
+            enum: [FASTEST_ARRIVAL, LATEST_DEPARTURE, FEWEST_TRANSFERS, LOWEST_WALKING_BURDEN, BEST_ACCESSIBILITY, SAFEST_CONNECTION]
+        journey:
+          $ref: "#/components/schemas/Journey"
+    JourneyProfileSegment:
+      type: object
+      additionalProperties: false
+      required: [readyFromInclusive, readyUntilExclusive, journeyIds]
+      properties:
+        readyFromInclusive:
+          type: string
+          format: date-time
+        readyUntilExclusive:
+          type: string
+          format: date-time
+        journeyIds:
+          type: array
+          description: >-
+            Ordered candidate references for this readiness interval. An empty array
+            represents a partial no-service interval; if every segment is empty the
+            operation fails with NO_SERVICE_IN_DEPARTURE_WINDOW. Every nonempty id
+            resolves in the response journey inventory.
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+    JourneyDepartureProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [kind, earliestArrivalJourneyId, latestDepartureJourneyId, recommendedJourneyIds]
+      properties:
+        kind:
+          type: string
+          enum: [DEPART_BETWEEN]
+        earliestArrivalJourneyId:
+          type: string
+          minLength: 1
+        latestDepartureJourneyId:
+          type: string
+          minLength: 1
+        recommendedJourneyIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+    JourneyArriveByProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [kind, arrivalDeadline, latestFeasibleDeparture, primaryJourneyId, recommendedJourneyIds]
+      properties:
+        kind:
+          type: string
+          enum: [ARRIVE_BY]
+        arrivalDeadline:
+          type: string
+          format: date-time
+        latestFeasibleDeparture:
+          type: string
+          format: date-time
+        primaryJourneyId:
+          type: string
+          minLength: 1
+        recommendedJourneyIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+    JourneyLastConnectionProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [kind, latestFeasibleDeparture, lastConnectionJourneyId, saferAlternativeJourneyIds, recommendedJourneyIds]
+      properties:
+        kind:
+          type: string
+          enum: [LAST_CONNECTION]
+        latestFeasibleDeparture:
+          type: string
+          format: date-time
+        lastConnectionJourneyId:
+          type: string
+          minLength: 1
+        saferAlternativeJourneyIds:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+        recommendedJourneyIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+    JourneySourceIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - routeBundleId
+        - routeBundleSha256
+        - timetableSnapshotId
+        - accessibilitySnapshotId
+        - realtimeSnapshotId
+      properties:
+        routeBundleId:
+          type: string
+          minLength: 1
+        routeBundleSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        timetableSnapshotId:
+          type: string
+          minLength: 1
+        accessibilitySnapshotId:
+          type: string
+          minLength: 1
+        realtimeSnapshotId:
+          type: string
+          minLength: 1
+          nullable: true
+    JourneyRequestPolicy:
+      type: object
+      additionalProperties: false
+      required: [timePolicy, walkingPace, mobilityProfile, constraintMode, maxTransfers, alternativeCount]
+      properties:
+        timePolicy:
+          $ref: "#/components/schemas/TimePolicy"
+        walkingPace:
+          $ref: "#/components/schemas/WalkingPace"
+        mobilityProfile:
+          $ref: "#/components/schemas/MobilityProfile"
+        constraintMode:
+          $ref: "#/components/schemas/ConstraintMode"
+        maxTransfers:
+          type: integer
+          minimum: 0
+          maximum: 3
+        alternativeCount:
+          type: integer
+          minimum: 1
+          maximum: 3
+    Journey:
+      type: object
+      additionalProperties: false
+      required:
+        - journeyId
+        - status
+        - planSource
+        - plannedDepartureTime
+        - plannedArrivalTime
+        - realtimeDepartureTime
+        - realtimeArrivalTime
+        - durationSeconds
+        - transferCount
+        - walkingDistanceMeters
+        - timeSource
+        - accessibility
+        - fare
+        - legs
+      properties:
+        journeyId:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [FOUND]
+        planSource:
+          type: string
+          enum: [SERVER_TIMETABLE_RAPTOR]
+        plannedDepartureTime:
+          type: string
+          format: date-time
+        plannedArrivalTime:
+          type: string
+          format: date-time
+        realtimeDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        durationSeconds:
+          type: integer
+          minimum: 0
+        transferCount:
+          type: integer
+          minimum: 0
+          maximum: 3
+        walkingDistanceMeters:
+          type: integer
+          minimum: 0
+        timeSource:
+          type: string
+          enum: [TIMETABLE, REALTIME]
+        accessibility:
+          $ref: "#/components/schemas/JourneyAccessibility"
+        fare:
+          $ref: "#/components/schemas/JourneyFare"
+        legs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyLeg"
+        alternativeCategories:
+          type: array
+          uniqueItems: true
+          maxItems: 3
+          description: >-
+            Search responses only (absent in profile responses, which use objectiveTags). Groups this journey
+            represents among the found Pareto journeys: FASTEST (earliest arrival), FEWEST_TRANSFERS (fewest
+            transfers, then earliest arrival), STAIR_FREE (earliest journey whose transfers all use confirmed
+            stair-free pathways; see JourneyStairFreeAlternative). Exactly one
+            journey carries FASTEST; each group appears on at most one journey; an empty array marks a journey that
+            fills a remaining slot.
+          items:
+            type: string
+            enum: [FASTEST, FEWEST_TRANSFERS, STAIR_FREE]
+    JourneyFare:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - sourceSnapshotIds
+      properties:
+        status:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE]
+        adultCardWon:
+          type: integer
+          minimum: 0
+        adultCashWon:
+          type: integer
+          minimum: 0
+        youthCardWon:
+          type: integer
+          minimum: 0
+        youthCashWon:
+          type: integer
+          minimum: 0
+        childCardWon:
+          type: integer
+          minimum: 0
+        childCashWon:
+          type: integer
+          minimum: 0
+        sourceSnapshotIds:
+          type: array
+          items:
+            type: string
+    JourneyAccessibility:
+      type: object
+      additionalProperties: false
+      description: >-
+        result is the closed response-envelope evaluation status ([VERIFIED]): the server evaluated this journey against
+        the active accessibility snapshot and passed response-generation verification. Actual stair presence and
+        confirmation state are expressed by stairFree and reasonCodes, not by result.
+
+        stairFree is true only when every transfer of the journey uses a confirmed stair-free pathway (source
+        stair access state STEP_FREE and no stairs flag). A pathway whose stair access state is UNKNOWN or missing
+        makes stairFree false; it is never assumed stair-free.
+
+        reasonCodes carries exactly one stair-access reason per journey. ACCESSIBILITY_VERIFIED: every transfer is
+        confirmed stair-free (a journey without transfers is included). ACCESSIBILITY_STAIRS_INCLUDED: no transfer is
+        unconfirmed and at least one transfer is confirmed to include stairs. ACCESSIBILITY_UNDETERMINED: at least one
+        transfer has an unconfirmed stair access state (UNKNOWN or missing). Consumers must treat reasonCodes as an open
+        set and must not reject values they do not recognize.
+      required: [result, stairFree, reasonCodes]
+      properties:
+        result:
+          type: string
+          enum: [VERIFIED]
+          description: >-
+            Closed response-envelope evaluation status confirming that the server evaluated the journey against the
+            active accessibility snapshot and passed response-generation verification. Does not indicate whether the
+            journey is stair-free or confirmed; clients must read stairFree and reasonCodes for stair-access judgment.
+        stairFree:
+          type: boolean
+        reasonCodes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+    JourneyLeg:
+      oneOf:
+        - $ref: "#/components/schemas/JourneyEntryLeg"
+        - $ref: "#/components/schemas/JourneyRideLeg"
+        - $ref: "#/components/schemas/JourneyTransferLeg"
+        - $ref: "#/components/schemas/JourneyExitLeg"
+    JourneyEntryLeg:
+      type: object
+      additionalProperties: false
+      deprecated: true
+      description: >-
+        Not emitted. Journeys start at the origin platform, so responses contain no ENTRY leg.
+        The schema stays until clients stop decoding it.
+      required: [type, fromStationId, durationSeconds]
+      properties:
+        type:
+          type: string
+          enum: [ENTRY]
+        fromStationId:
+          type: string
+          minLength: 1
+        durationSeconds:
+          type: integer
+          minimum: 0
+    JourneyRideLeg:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - lineId
+        - tripId
+        - directionStationId
+        - fromStationId
+        - toStationId
+        - servicePattern
+        - plannedDepartureTime
+        - plannedArrivalTime
+        - realtimeDepartureTime
+        - realtimeArrivalTime
+        - stops
+      properties:
+        type:
+          type: string
+          enum: [RIDE]
+        lineId:
+          type: string
+          minLength: 1
+        tripId:
+          type: string
+          minLength: 1
+        directionStationId:
+          type: string
+          minLength: 1
+        fromStationId:
+          type: string
+          minLength: 1
+        toStationId:
+          type: string
+          minLength: 1
+        servicePattern:
+          type: string
+          enum: [LOCAL, EXPRESS]
+        plannedDepartureTime:
+          type: string
+          format: date-time
+        plannedArrivalTime:
+          type: string
+          format: date-time
+        realtimeDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/JourneyRideStop"
+        alightingCarDoors:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyAlightingCarDoor"
+        boardingPlatformGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyPlatformGap"
+        alightingPlatformGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/JourneyPlatformGap"
+    JourneyPlatformGap:
+      type: object
+      additionalProperties: false
+      required:
+        - platformPosition
+        - gapGrade
+        - heightDiffGrade
+        - curved
+      properties:
+        platformPosition:
+          type: string
+          minLength: 1
+        carNumber:
+          type: integer
+          minimum: 1
+        doorNumber:
+          type: integer
+          minimum: 1
+        gapGrade:
+          type: string
+          enum: [WIDE, NORMAL, NARROW]
+        heightDiffGrade:
+          type: string
+          enum: [HIGH, NORMAL, LOW]
+        curved:
+          type: boolean
+    JourneyRideStop:
+      type: object
+      additionalProperties: false
+      required:
+        - stationId
+        - plannedArrivalTime
+        - plannedDepartureTime
+        - realtimeArrivalTime
+        - realtimeDepartureTime
+      properties:
+        stationId:
+          type: string
+          minLength: 1
+        plannedArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        plannedDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        realtimeDepartureTime:
+          type: string
+          format: date-time
+          nullable: true
+    JourneyAlightingCarDoor:
+      type: object
+      additionalProperties: false
+      required:
+        - carNumber
+        - doorNumber
+        - targetFacilityType
+      properties:
+        carNumber:
+          type: integer
+          minimum: 1
+          maximum: 10
+        doorNumber:
+          type: integer
+          minimum: 1
+          maximum: 4
+        targetFacilityType:
+          type: string
+          enum: [TRANSFER, ELEVATOR, ESCALATOR, STAIR, WHEELCHAIR_LIFT]
+    JourneyTransferLeg:
+      type: object
+      additionalProperties: false
+      required: [type, fromStationId, toStationId, durationSeconds]
+      properties:
+        type:
+          type: string
+          enum: [TRANSFER]
+        fromStationId:
+          type: string
+          minLength: 1
+        toStationId:
+          type: string
+          minLength: 1
+        durationSeconds:
+          type: integer
+          minimum: 0
+        transferType:
+          type: string
+          enum: [IN_STATION, OUT_OF_STATION]
+        farePenaltyApplies:
+          type: boolean
+          default: false
+        transferLimitMinutes:
+          type: integer
+          minimum: 0
+    JourneyExitLeg:
+      type: object
+      additionalProperties: false
+      deprecated: true
+      description: >-
+        Not emitted. Journeys end at the destination platform, so responses contain no EXIT leg.
+        The schema stays until clients stop decoding it.
+      required: [type, fromStationId, durationSeconds]
+      properties:
+        type:
+          type: string
+          enum: [EXIT]
+        fromStationId:
+          type: string
+          minLength: 1
+        durationSeconds:
+          type: integer
+          minimum: 0
+    JourneyErrorCode:
+      type: string
+      enum:
+        - INVALID_JOURNEY_REQUEST
+        - STATION_NOT_FOUND
+        - ROUTE_NOT_FOUND
+        - ACCESSIBILITY_CONSTRAINT_UNSATISFIED
+        - ROUTING_BUNDLE_UNAVAILABLE
+        - ROUTING_BUNDLE_STALE
+        - TIMETABLE_UNAVAILABLE
+        - TIMETABLE_STALE
+        - REALTIME_REQUIRED_UNAVAILABLE
+        - ROUTING_IDENTITY_MISMATCH
+        - FACILITY_STATUS_UNAVAILABLE
+        - ROUTE_SERVICE_UNAVAILABLE
+        - JOURNEY_SEARCH_TIMEOUT
+        - STATION_LINE_NOT_FOUND
+        - TIMETABLE_NOT_COVERED
+        - TIMETABLE_IDENTITY_MISMATCH
+        - INVALID_TEMPORAL_QUERY
+        - TEMPORAL_WINDOW_TOO_LARGE
+        - NO_SERVICE_IN_DEPARTURE_WINDOW
+        - NO_ROUTE_ARRIVING_BY_DEADLINE
+        - NO_LAST_CONNECTION
+        - REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY
+        - TEMPORAL_QUERY_TOO_COMPLEX
+        - RAPTOR_FRONTIER_CAPACITY_EXCEEDED
+        - JOURNEY_PROFILE_TIMEOUT
+        - ROUTE_SESSION_REQUIRED
+        - ROUTE_RATE_LIMITED
+        - INVALID_JOURNEY_SESSION_REQUEST
+        - ROUTE_SESSION_ATTESTATION_REJECTED
+        - ROUTE_SESSION_ATTESTATION_UNAVAILABLE
+    JourneyError:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, requestId, code, retryable, occurredAt]
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_ERROR_V1]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        code:
+          $ref: "#/components/schemas/JourneyErrorCode"
+        retryable:
+          type: boolean
+        occurredAt:
+          type: string
+          format: date-time

@@ -1,0 +1,405 @@
+package com.easysubway.datapack.adapter.out.catalog;
+
+import com.easysubway.common.http.BoundedResponseBody;
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.cfg.JsonNodeFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.MessageDigest;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.StreamSupport;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+@Component
+public final class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalogPort {
+	static final int MAX_TRUSTED_SIGNING_KEYS = 8;
+	static final int MAX_SIGNATURE_BASE64_CHARS = 1_368;
+	static final int MAX_PUBLIC_KEY_PEM_CHARS = 8_192;
+	private static final long BASE64_URL_LO = (((1L << 10) - 1L) << '0') | (1L << '-');
+	private static final long BASE64_URL_HI = (((1L << 26) - 1L) << ('A' - 64))
+		| (((1L << 26) - 1L) << ('a' - 64))
+		| (1L << ('_' - 64));
+
+	public record TrustedSigningKey(String keyId, String publicKeyPem) {}
+
+	// 정준 문자열은 리터럴의 정확한 십진 값에 결속된다. 계약 테스트가 같은 파서
+	// 설정으로 fixture 리터럴을 읽어야 하므로 package-private으로 노출한다.
+	static final ObjectMapper JSON = JsonMapper.builder()
+		.enable(JsonNodeFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+		.disable(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
+		.build();
+	private static final Duration TIMEOUT = Duration.ofSeconds(10);
+	private static final int MAX_CATALOG_BYTES = 1024 * 1024;
+	private static final BigDecimal MAX_SAFE_CANONICAL_NUMBER = new BigDecimal("9007199254740991");
+	private static final BigDecimal MIN_SAFE_CANONICAL_NUMBER = MAX_SAFE_CANONICAL_NUMBER.negate();
+
+	private final HttpClient httpClient;
+	private final String baseUrl;
+	private final Map<String, PublicKey> trustedKeysById;
+	private final Duration timeout;
+
+	@org.springframework.beans.factory.annotation.Autowired
+	public HttpDatapackReleaseCatalogAdapter(
+		@Value("${easysubway.datapack.catalog-base-url:}") String baseUrl,
+		@Value("${easysubway.datapack.signing-public-key-pem:}") String publicKeyPem,
+		@Value("${easysubway.datapack.signing-key-id:production-v1}") String keyId,
+		@Value("${easysubway.datapack.next-signing-public-key-pem:}") String nextPublicKeyPem,
+		@Value("${easysubway.datapack.next-signing-key-id:}") String nextKeyId) {
+		this(
+			HttpClient.newBuilder().connectTimeout(TIMEOUT).build(),
+			baseUrl,
+			configuredTrustedKeys(publicKeyPem, keyId, nextPublicKeyPem, nextKeyId),
+			TIMEOUT);
+	}
+
+	public HttpDatapackReleaseCatalogAdapter(String baseUrl, String publicKeyPem, String keyId) {
+		this(baseUrl, publicKeyPem, keyId, "", "");
+	}
+
+	HttpDatapackReleaseCatalogAdapter(HttpClient httpClient, String baseUrl, String publicKeyPem, String keyId) {
+		this(httpClient, baseUrl, publicKeyPem, keyId, TIMEOUT);
+	}
+
+	HttpDatapackReleaseCatalogAdapter(
+		HttpClient httpClient,
+		String baseUrl,
+		String publicKeyPem,
+		String keyId,
+		Duration timeout) {
+		this(
+			httpClient,
+			baseUrl,
+			configuredTrustedKeys(publicKeyPem, keyId, "", ""),
+			timeout);
+	}
+
+	HttpDatapackReleaseCatalogAdapter(
+		HttpClient httpClient,
+		String baseUrl,
+		List<TrustedSigningKey> trustedKeys,
+		Duration timeout) {
+		this.httpClient = httpClient;
+		this.baseUrl = baseUrl == null ? "" : baseUrl.replaceFirst("/+$", "");
+		this.trustedKeysById = buildTrustedKeysById(trustedKeys);
+		this.timeout = timeout == null ? TIMEOUT : timeout;
+	}
+
+	private static List<TrustedSigningKey> configuredTrustedKeys(
+		String publicKeyPem,
+		String keyId,
+		String nextPublicKeyPem,
+		String nextKeyId) {
+		boolean nextPemBlank = isBlank(nextPublicKeyPem);
+		boolean nextIdBlank = isBlank(nextKeyId);
+		if (nextPemBlank != nextIdBlank) {
+			return List.of();
+		}
+		var primary = new TrustedSigningKey(keyId, publicKeyPem);
+		return nextPemBlank
+			? List.of(primary)
+			: List.of(primary, new TrustedSigningKey(nextKeyId, nextPublicKeyPem));
+	}
+
+	private static Map<String, PublicKey> buildTrustedKeysById(List<TrustedSigningKey> trustedKeys) {
+		if (trustedKeys == null
+			|| trustedKeys.isEmpty()
+			|| trustedKeys.size() > MAX_TRUSTED_SIGNING_KEYS) {
+			return Map.of();
+		}
+		var keys = new LinkedHashMap<String, PublicKey>(trustedKeys.size());
+		for (TrustedSigningKey candidate : trustedKeys) {
+			if (candidate == null) {
+				return Map.of();
+			}
+			String id = candidate.keyId();
+			String pem = candidate.publicKeyPem();
+			if (isBlank(id) || !id.equals(id.trim()) || isBlank(pem)) {
+				return Map.of();
+			}
+			PublicKey parsed = parsePublicKey(pem.trim());
+			if (parsed == null || keys.putIfAbsent(id, parsed) != null) {
+				return Map.of();
+			}
+		}
+		return Collections.unmodifiableMap(keys);
+	}
+
+	private static boolean isBlank(String value) {
+		return value == null || value.isBlank();
+	}
+
+	@Override
+	public CatalogIdentity fetch(String channel, long releaseSequence) {
+		return fetchPath("/catalog/releases/" + releaseSequence + ".json");
+	}
+
+	@Override
+	public CatalogIdentity fetchCurrent(String channel) {
+		return fetchPath("/catalog/current.json");
+	}
+
+	@Override
+	public Optional<CatalogIdentity> findByRequest(String channel, String releaseRequestId) {
+		try {
+			byte[] bytes = fetchBytes("/catalog/release-requests/"
+				+ sha256(releaseRequestId.getBytes(StandardCharsets.UTF_8)) + ".json");
+			JsonNode binding = JSON.readTree(bytes);
+			String signatureValue = binding.path("signature").path("value").asText("");
+			PublicKey verifyingKey = trustedKeysById.get(binding.path("keyId").asText(""));
+			boolean signatureValid = "rsa-sha256-release-request-v1".equals(
+				binding.path("signature").path("algorithm").asText())
+				&& binding.path("schemaVersion").asInt(-1) == 1
+				&& "datapack-release-request-binding".equals(binding.path("artifactKind").asText())
+				&& verifyingKey != null
+				&& verify(binding, verifyingKey, signatureValue);
+			long sequence = binding.path("releaseSequence").asLong(-1);
+			String boundChannel = binding.path("channel").asText("");
+				String boundRequestId = binding.path("releaseRequestId").asText("");
+				String boundManifestSha256 = binding.path("manifestSha256").asText("");
+				String releaseOutcome = binding.path("releaseOutcome").asText("");
+				if (!signatureValid || sequence < 1 || !channel.equals(boundChannel)
+					|| !releaseRequestId.equals(boundRequestId)
+					|| !boundManifestSha256.matches("[a-f0-9]{64}")
+					|| !("PUBLISHED_AND_VERIFIED".equals(releaseOutcome)
+						|| "NO_CHANGE_VALID".equals(releaseOutcome))) throw new Unavailable();
+			var manifest = fetch(channel, sequence);
+			if (!manifest.signatureValid() || manifest.releaseSequence() != sequence
+				|| !channel.equals(manifest.channel())
+				|| !boundManifestSha256.equals(manifest.manifestSha256())) throw new Unavailable();
+				return Optional.of(new CatalogIdentity(
+					sequence, boundManifestSha256, channel, releaseRequestId, true,
+					sha256(signatureValue.getBytes(StandardCharsets.UTF_8)),
+					"NO_CHANGE_VALID".equals(releaseOutcome)));
+		} catch (NotFound missing) {
+			return Optional.empty();
+		} catch (IOException | RuntimeException exception) {
+			if (exception instanceof Unavailable unavailable) throw unavailable;
+			throw new Unavailable();
+		}
+	}
+
+	private CatalogIdentity fetchPath(String path) {
+		try {
+			byte[] bytes = fetchBytes(path);
+			JsonNode manifest = JSON.readTree(bytes);
+			String signatureValue = manifest.path("signature").path("value").asText("");
+			PublicKey verifyingKey = trustedKeysById.get(manifest.path("keyId").asText(""));
+			boolean signatureValid = "rsa-sha256-manifest-v2".equals(
+				manifest.path("signature").path("algorithm").asText())
+				&& manifest.path("manifestVersion").asInt(-1) == 2
+				&& verifyingKey != null
+				&& verify(manifest, verifyingKey, signatureValue);
+			if (!signatureValid) throw new Unavailable();
+			long actualSequence = manifest.path("releaseSequence").asLong(-1);
+			String actualChannel = manifest.path("channel").asText("");
+			return new CatalogIdentity(
+				actualSequence, sha256(bytes), actualChannel,
+				"", signatureValid,
+				sha256(signatureValue.getBytes(StandardCharsets.UTF_8)));
+		} catch (IOException | RuntimeException exception) {
+			if (exception instanceof Unavailable unavailable) throw unavailable;
+			throw new Unavailable();
+		}
+	}
+
+	private byte[] fetchBytes(String path) {
+		if (baseUrl.isBlank() || trustedKeysById.isEmpty()) throw new Unavailable();
+		try {
+			var request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+				.timeout(timeout).GET().build();
+			var response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+			try (var body = response.body()) {
+				if (response.statusCode() == 404) throw new NotFound();
+				if (response.statusCode() < 200 || response.statusCode() >= 300) throw new Unavailable();
+				return BoundedResponseBody.read(body, MAX_CATALOG_BYTES, timeout, Unavailable::new);
+			}
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new Unavailable();
+		} catch (IOException | RuntimeException exception) {
+			if (exception instanceof Unavailable unavailable) throw unavailable;
+			throw new Unavailable();
+		}
+	}
+
+	private static PublicKey parsePublicKey(String pem) {
+		try {
+			return KeyFactory.getInstance("RSA").generatePublic(
+				new X509EncodedKeySpec(pemBytes(pem)));
+		} catch (java.security.GeneralSecurityException | IllegalArgumentException exception) {
+			return null;
+		}
+	}
+
+	private static boolean verify(JsonNode manifest, PublicKey publicKey, String signatureValue) {
+		if (!isValidSignatureBase64Url(signatureValue)) {
+			return false;
+		}
+		try {
+			var verifier = Signature.getInstance("SHA256withRSA");
+			verifier.initVerify(publicKey);
+			var unsigned = (ObjectNode) manifest.deepCopy();
+			unsigned.remove("signature");
+			verifier.update(canonical(unsigned));
+			return verifier.verify(Base64.getUrlDecoder().decode(signatureValue));
+		} catch (java.security.GeneralSecurityException | IllegalArgumentException exception) {
+			return false;
+		}
+	}
+
+	static boolean isValidSignatureBase64Url(String value) {
+		if (value == null) {
+			return false;
+		}
+		int len = value.length();
+		if (len == 0 || len > MAX_SIGNATURE_BASE64_CHARS || (len & 3) == 1) {
+			return false;
+		}
+		int padCount = 0;
+		for (int i = 0; i < len; i++) {
+			char ch = value.charAt(i);
+			if (ch == '=') {
+				if ((len & 3) != 0 || ++padCount > 2) {
+					return false;
+				}
+			} else if (padCount > 0 || !isBase64UrlChar(ch)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isBase64UrlChar(char ch) {
+		if (ch < 64) {
+			return ((BASE64_URL_LO >>> ch) & 1L) != 0L;
+		}
+		return ch < 128 && ((BASE64_URL_HI >>> (ch - 64)) & 1L) != 0L;
+	}
+
+	static byte[] canonical(JsonNode value) {
+		return canonicalText(value).getBytes(StandardCharsets.UTF_8);
+	}
+
+	private static String canonicalText(JsonNode value) {
+		if (value.isObject()) {
+			return "{" + StreamSupport.stream(
+				java.util.Spliterators.spliteratorUnknownSize(value.fieldNames(), 0), false)
+				.sorted()
+				.map(name -> quoted(name) + ":" + canonicalText(value.get(name)))
+				.collect(java.util.stream.Collectors.joining(",")) + "}";
+		}
+		if (value.isArray()) {
+			return "[" + StreamSupport.stream(value.spliterator(), false)
+				.map(HttpDatapackReleaseCatalogAdapter::canonicalText)
+				.collect(java.util.stream.Collectors.joining(",")) + "]";
+		}
+		if (value.isTextual()) return quoted(value.textValue());
+		if (value.isNumber()) return canonicalNumber(value);
+		return value.toString();
+	}
+
+	/**
+	 * 정준 숫자 표기 계약: contracts/datapack/canonical-number-contract.json
+	 * Node·Dart는 JSON 숫자를 IEEE-754 배정도로 파싱하므로 정준 문자열이 언제나 그 배정도의
+	 * 최단 왕복 십진 표기다. 이 어댑터는 USE_BIG_DECIMAL_FOR_FLOATS로 리터럴의 정확한 십진
+	 * 값을 유지하므로, 리터럴이 자기 배정도의 최단 왕복 표기가 아니면 혼자 다른 정준 문자열을
+	 * 만든다(1e-400·4e-324·비최단 소수). 세 축을 모두 fail closed로 닫는다.
+	 * 유한성(배정도 오버플로·언더플로 아님) / 안전 정수 범위 / 최단 왕복 표기.
+	 */
+	private static String canonicalNumber(JsonNode value) {
+		// USE_BIG_DECIMAL_FOR_FLOATS 때문에 파싱 경로는 DecimalNode를 만든다. 이 가드는
+		// 코드로 조립한 DoubleNode/FloatNode(NaN·Infinity)를 막고, 파싱 경로의 오버플로는
+		// 아래 decimalValue()의 배정도 변환이 잡는다.
+		if ((value.isDouble() || value.isFloat()) && !Double.isFinite(value.doubleValue())) {
+			throw new IllegalArgumentException("manifest canonical number must be finite");
+		}
+		var decimal = value.decimalValue();
+		var binary = decimal.doubleValue();
+		if (!Double.isFinite(binary)) {
+			throw new IllegalArgumentException("manifest canonical number must be finite");
+		}
+		if (decimal.compareTo(MAX_SAFE_CANONICAL_NUMBER) > 0
+			|| decimal.compareTo(MIN_SAFE_CANONICAL_NUMBER) < 0) {
+			throw new IllegalArgumentException(
+				"manifest canonical number must be within the safe integer range");
+		}
+		if (shortestRoundTripDecimal(binary).compareTo(decimal) != 0) {
+			throw new IllegalArgumentException(
+				"manifest canonical number must be the shortest round-trip decimal of its double");
+		}
+		return ecmascriptNumber(decimal);
+	}
+
+	/**
+	 * ECMAScript Number::toString이 고르는 십진 표기 — 배정도로 왕복하는 것 중 유효 자릿수가
+	 * 가장 적고, 같은 자릿수 안에서는 정확한 이진 값에 가장 가까운 값(동률은 짝수). Java
+	 * Double.toString은 가수에 소수점 이하 한 자리를 강제해 최단형이 아니므로(MIN_VALUE →
+	 * 4.9E-324, ECMAScript는 5e-324) 쓸 수 없다.
+	 */
+	private static BigDecimal shortestRoundTripDecimal(double value) {
+		if (value == 0) return BigDecimal.ZERO;
+		var exact = new BigDecimal(value);
+		for (int precision = 1; precision <= 17; precision += 1) {
+			var candidate = exact.round(new MathContext(precision, RoundingMode.HALF_EVEN));
+			if (candidate.doubleValue() == value) return candidate;
+		}
+		return exact;
+	}
+
+	static String ecmascriptNumber(BigDecimal value) {
+		if (value.signum() == 0) return "0";
+		var decimal = value.stripTrailingZeros();
+		var absolute = decimal.abs();
+		if (absolute.compareTo(new BigDecimal("0.000001")) >= 0
+			&& absolute.compareTo(new BigDecimal("1e21")) < 0) return decimal.toPlainString();
+		return decimal.toString().replace('E', 'e');
+	}
+
+	private static String quoted(String value) {
+		try {
+			return JSON.writeValueAsString(value);
+		} catch (IOException impossible) {
+			throw new IllegalStateException(impossible);
+		}
+	}
+
+	static byte[] pemBytes(String pem) {
+		if (pem == null || pem.length() > MAX_PUBLIC_KEY_PEM_CHARS) {
+			throw new IllegalArgumentException("public key PEM exceeds bounds");
+		}
+		return Base64.getMimeDecoder().decode(pem.replace("\\n", "\n")
+			.replace("-----BEGIN PUBLIC KEY-----", "")
+			.replace("-----END PUBLIC KEY-----", ""));
+	}
+
+	private static String sha256(byte[] value) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+		} catch (java.security.GeneralSecurityException impossible) {
+			throw new IllegalStateException(impossible);
+		}
+	}
+}

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title th:text="${snapshot.snapshotId + ' Source Snapshot'}">Source Snapshot</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-source-snapshots')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1 th:text="${snapshot.snapshotId}">snapshot-id</h1>
+			<p>raw 전문은 노출하지 않고 source snapshot metadata와 evidence 위치만 표시합니다.</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn plain" th:href="@{/admin/datapack/source-snapshots/page}">목록</a>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<h2>기본 정보</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<tbody>
+			<tr><th scope="row">출처 ID</th><td th:text="${snapshot.sourceId}">source-id</td></tr>
+			<tr><th scope="row">제공자</th><td th:text="${snapshot.provider}">provider</td></tr>
+			<tr><th scope="row">수집 시각</th><td th:text="${snapshot.retrievedAt}">2026-06-29T03:00</td></tr>
+			<tr><th scope="row">출처 갱신 시각</th><td th:text="${snapshot.sourceUpdatedAt}">2026-06-28T00:00</td></tr>
+			<tr><th scope="row">신선도 기준 시각</th><td th:text="${snapshot.freshnessBasisAt}">2026-06-28T00:00</td></tr>
+			<tr><th scope="row">제공자 유효 기한</th><td th:text="${snapshot.providerValidUntil}">2026-07-28T00:00</td></tr>
+			<tr><th scope="row">행 수</th><td th:text="${snapshot.rowCount}">0</td></tr>
+			<tr><th scope="row">커버리지 수</th><td th:text="${snapshot.coverageCount}">0</td></tr>
+			<tr><th scope="row">이전 스냅샷</th><td th:insert="~{admin/fragments/missing-value :: value(${snapshot.previousSnapshotId}, '미상')}">—</td></tr>
+			<tr><th scope="row">차이 요약</th><td th:insert="~{admin/fragments/missing-value :: value(${snapshot.diffSummary}, '미상')}">—</td></tr>
+			<tr><th scope="row">차이 요약 JSON</th><td th:insert="~{admin/fragments/missing-value :: value(${snapshot.diffSummaryJson}, '미상')}">—</td></tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>상태</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<tbody>
+			<tr><th scope="row">스냅샷 상태</th><td th:text="${snapshot.snapshotStatus}">LOCKED</td></tr>
+			<tr><th scope="row">스키마 상태</th><td th:text="${snapshot.schemaStatus == 'PASS' ? '통과' : (snapshot.schemaStatus == 'FAIL' ? '실패' : snapshot.schemaStatus)}">통과</td></tr>
+			<tr><th scope="row">라이선스 상태</th><td th:text="${snapshot.licenseStatus == 'PASS' ? '통과' : (snapshot.licenseStatus == 'FAIL' ? '실패' : snapshot.licenseStatus)}">통과</td></tr>
+			<tr><th scope="row">수집 상태</th><td th:text="${snapshot.fetchStatus}">SUCCESS</td></tr>
+			<tr><th scope="row">재배포</th><td th:text="${snapshot.redistributionLabel()}">허용</td></tr>
+			<tr><th scope="row">자격증명 마스킹</th><td th:text="${snapshot.credentialRedacted ? '마스킹됨' : '마스킹 필요'}">마스킹됨</td></tr>
+			<tr><th scope="row">신선도 만료</th><td th:text="${snapshot.freshnessExpiresAt}">2026-07-06T03:00</td></tr>
+			<tr><th scope="row">원본 보존 기한</th><td th:text="${snapshot.rawRetentionExpiresAt}">2026-09-29T03:00</td></tr>
+			<tr><th scope="row">거버넌스 정책 버전</th><td th:insert="~{admin/fragments/missing-value :: value(${snapshot.governancePolicyVersion}, '미상')}">—</td></tr>
+			<tr><th scope="row">거버넌스 정책 sha256</th><td th:insert="~{admin/fragments/missing-value :: value(${snapshot.governancePolicySha256}, '미상')}">—</td></tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>근거</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<tbody>
+			<tr><th scope="row">raw sha256</th><td th:text="${snapshot.rawSha256}">sha256</td></tr>
+			<tr><th scope="row">원본 객체 URI</th><td th:text="${snapshot.rawObjectUri}">s3://bucket/object.json</td></tr>
+			<tr><th scope="row">요청 지문</th><td th:text="${snapshot.redactedRequestFingerprint}">sha256</td></tr>
+			<tr><th scope="row">스키마 지문</th><td th:text="${snapshot.schemaFingerprint}">sha256</td></tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>잠금 스냅샷 저장</h2>
+		<form class="admin-form" method="post" th:action="@{/admin/datapack/source-snapshots}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<div class="admin-form-section">
+				<h3 class="admin-form-section-title">스냅샷 식별</h3>
+				<label>
+					스냅샷 ID
+					<input name="snapshotId" required>
+				</label>
+				<label>
+					출처 ID
+					<input name="sourceId" th:value="${snapshot.sourceId}" required>
+				</label>
+				<label>
+					제공자
+					<input name="provider" th:value="${snapshot.provider}" required>
+				</label>
+			</div>
+			<div class="admin-form-section">
+				<h3 class="admin-form-section-title">수집 시각</h3>
+				<label>
+					수집 시각
+					<input name="retrievedAt" type="datetime-local" required>
+				</label>
+				<label>
+					출처 갱신 시각
+					<input name="sourceUpdatedAt" type="datetime-local">
+				</label>
+				<label>
+					신선도 기준 시각 (수집 시각 이외 기준만 입력)
+					<input name="freshnessBasisAt" type="datetime-local">
+				</label>
+				<label>
+					제공자 유효 기한 (정책 필수 출처만 입력)
+					<input name="providerValidUntil" type="datetime-local">
+				</label>
+				<label>
+					행 수
+					<input name="rowCount" type="number" min="0" required>
+				</label>
+				<label>
+					커버리지 수
+					<input name="coverageCount" type="number" min="0" required>
+				</label>
+			</div>
+			<div class="admin-form-section">
+				<h3 class="admin-form-section-title">무결성 근거</h3>
+				<label>
+					raw sha256
+					<input name="rawSha256" minlength="64" maxlength="64" required>
+				</label>
+				<label>
+					원본 객체 URI
+					<input name="rawObjectUri" required>
+				</label>
+				<label>
+					요청 지문
+					<input name="redactedRequestFingerprint" minlength="64" maxlength="64" required>
+				</label>
+				<label>
+					스키마 지문
+					<input name="schemaFingerprint" minlength="64" maxlength="64" required>
+				</label>
+			</div>
+			<div class="admin-form-section">
+				<h3 class="admin-form-section-title">상태</h3>
+				<label>
+					스키마 상태
+					<input name="schemaStatus" value="PASS" required>
+				</label>
+				<label>
+					라이선스 상태
+					<input name="licenseStatus" value="PASS" required>
+				</label>
+				<label>
+					수집 상태
+					<input name="fetchStatus" value="SUCCESS" required>
+				</label>
+				<div class="admin-form-row-2">
+					<label>
+						재배포 허용
+						<select name="redistributionAllowed" required>
+							<option value="true">허용</option>
+							<option value="false">비허용</option>
+						</select>
+					</label>
+					<label>
+						자격증명 마스킹
+						<select name="credentialRedacted" required>
+							<option value="true">마스킹됨</option>
+							<option value="false">마스킹 안 됨</option>
+						</select>
+					</label>
+				</div>
+			</div>
+			<div class="admin-form-section">
+				<h3 class="admin-form-section-title">보존·후속</h3>
+				<label>
+					이전 스냅샷 ID
+					<input name="previousSnapshotId" th:value="${snapshot.snapshotId}">
+				</label>
+				<label>
+					차이 요약
+					<input name="diffSummary">
+				</label>
+				<label>
+					차이 요약 JSON
+					<textarea name="diffSummaryJson"></textarea>
+				</label>
+				<label>
+					신선도 만료 시각
+					<input name="freshnessExpiresAt" type="datetime-local" required>
+				</label>
+				<label>
+					원본 보존 만료 시각
+					<input name="rawRetentionExpiresAt" type="datetime-local" required>
+				</label>
+				<label>
+					거버넌스 정책 버전
+					<input name="governancePolicyVersion" required>
+				</label>
+				<label>
+					거버넌스 정책 sha256
+					<input name="governancePolicySha256" minlength="64" maxlength="64" required>
+				</label>
+				<label>
+					사유
+					<input name="reason" required>
+				</label>
+				<label>
+					멱등 키
+					<input name="idempotencyKey" required>
+				</label>
+			</div>
+			<button type="submit" class="primary">잠금 스냅샷 저장</button>
+		</form>
+	</section>
+
+	<section class="admin-panel">
+		<h2>정규화 실행 요청</h2>
+		<form class="admin-form" method="post" th:action="@{'/admin/datapack/source-snapshots/' + ${snapshot.snapshotId} + '/normalization-runs'}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<label>
+				실행 ID
+				<input name="runId" required>
+			</label>
+			<label>
+				스키마 차이 sha256
+				<input name="schemaDiffSha256" minlength="64" maxlength="64" required>
+			</label>
+			<label>
+				스키마 차이 요약
+				<input name="schemaDiffSummary" required>
+			</label>
+			<label>
+				사유
+				<input name="reason" required>
+			</label>
+			<label>
+				멱등 키
+				<input name="idempotencyKey" required>
+			</label>
+			<button type="submit" class="outline">정규화 실행 요청</button>
+		</form>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

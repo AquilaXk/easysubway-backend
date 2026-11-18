@@ -1,0 +1,21 @@
+origin_station_id,destination_station_id,departure_time,mobility_type,constraint_mode,expected_transfer_count,max_eta_error_seconds,observed_eta_error_seconds,use_realtime,notes
+station-sangnoksu,station-sadang,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:03:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:06:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:09:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:12:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:15:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:18:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:21:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:24:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:27:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:30:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:33:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:36:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:39:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:42:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:45:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:48:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:51:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sangnoksu,station-sadang,2026-06-30T09:54:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,single ride fixture
+station-sadang,station-sangnoksu,2026-06-30T09:57:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,single ride fixture

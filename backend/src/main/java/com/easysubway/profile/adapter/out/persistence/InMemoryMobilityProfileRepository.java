@@ -1,0 +1,37 @@
+package com.easysubway.profile.adapter.out.persistence;
+
+import com.easysubway.profile.application.port.out.LoadMobilityProfilePort;
+import com.easysubway.profile.application.port.out.SaveMobilityProfilePort;
+import com.easysubway.profile.domain.MobilityProfile;
+import com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Repository;
+
+@Repository
+@Profile("!prod & !staging & !release & !prod-like")
+public class InMemoryMobilityProfileRepository implements
+	LoadMobilityProfilePort,
+	SaveMobilityProfilePort,
+	DeleteUserMobilityProfilePort {
+
+	private final ConcurrentMap<String, MobilityProfile> profiles = new ConcurrentHashMap<>();
+
+	@Override
+	public Optional<MobilityProfile> loadProfile(String userId) {
+		return Optional.ofNullable(profiles.get(userId));
+	}
+
+	@Override
+	public MobilityProfile saveProfile(MobilityProfile profile) {
+		profiles.put(profile.userId(), profile);
+		return profile;
+	}
+
+	@Override
+	public boolean deleteMobilityProfile(String userId) {
+		return profiles.remove(userId) != null;
+	}
+}

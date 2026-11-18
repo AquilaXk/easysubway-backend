@@ -1,0 +1,783 @@
+@import url("/css/admin-tokens.css");
+/*
+ * operator-v3.css — operator 콘솔 전용 스타일. V6-04(#2276)에서 admin CSS가 4책임(foundation/shell/
+ * components/data)으로 분리됐지만, operator는 그중 어떤 레이어도 공유하지 않고 token 레이어(admin-tokens.css)
+ * 만 공유 import한다. 이 shared import 계약은 유지한다(자체 토큰 변수 선언 금지 — OperatorUiV4ContractTest).
+ */
+
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+	background: var(--admin-bg);
+	color: var(--admin-ink);
+	font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+
+button,
+input {
+	font: inherit;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 3px;
+}
+
+.desktop-frame {
+	min-height: 100vh;
+	display: grid;
+	grid-template-columns: 252px minmax(0, 1fr);
+	background: var(--admin-bg);
+}
+
+.desktop-sidebar {
+	background: var(--admin-sidebar-bg);
+	color: var(--admin-ink-2);
+	padding: 20px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+}
+
+.desktop-brand,
+.desktop-user {
+	display: flex;
+	align-items: center;
+	gap: 11px;
+}
+
+.desktop-brand strong,
+.desktop-user strong {
+	display: block;
+	color: var(--admin-ink);
+	font-size: 15px;
+	font-weight: var(--admin-w-title);
+}
+
+.desktop-brand span,
+.desktop-user span {
+	display: block;
+	margin-top: 3px;
+	color: var(--admin-ink-3);
+	font-size: 11px;
+	font-weight: var(--admin-w-medium);
+}
+
+.desktop-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.nav-group {
+	margin: 8px 12px 4px;
+	color: var(--admin-ink-3);
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	letter-spacing: .04em;
+}
+
+.nav-link {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 38px;
+	border-left: 3px solid transparent;
+	border-radius: 0;
+	padding: 0 12px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+}
+
+.nav-link:hover {
+	border-radius: 0;
+	border-left-color: var(--admin-sidebar-accent-border);
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-ink);
+}
+
+.nav-link.active {
+	border-radius: 0;
+	border-left-color: var(--admin-sidebar-accent-border);
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-accent-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.nav-link:hover:focus-visible {
+	outline-color: var(--admin-focus-on-signature);
+}
+
+.nav-link.active:focus-visible {
+	outline-color: var(--admin-focus-on-signature);
+}
+
+.desktop-user {
+	margin-top: auto;
+	border-top: 1px solid var(--admin-border);
+	padding-top: 14px;
+}
+
+.avatar {
+	width: 35px;
+	height: 35px;
+	border-radius: var(--admin-radius-control);
+	display: grid;
+	place-items: center;
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-ink);
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+}
+
+.operator-logout-btn {
+	display: inline-flex;
+	align-items: center;
+	text-decoration: none;
+	background: transparent;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-strong);
+	padding: 4px 8px;
+	cursor: pointer;
+	line-height: 1.2;
+}
+
+.operator-logout-form {
+	margin: 0 0 0 auto;
+}
+
+.operator-logout-btn:hover {
+	color: var(--admin-ink);
+	border-color: var(--admin-border-strong);
+}
+
+.operator-logout-btn:focus-visible {
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 1px;
+}
+
+.desktop-workspace {
+	min-width: 0;
+}
+
+.desktop-topbar {
+	min-height: 72px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18px;
+	padding: 14px 22px;
+	background: var(--admin-surface);
+	border-bottom: 1px solid var(--admin-border);
+}
+
+.desktop-breadcrumb {
+	color: var(--admin-ink-2);
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	letter-spacing: .04em;
+}
+
+.desktop-page-name {
+	margin-top: 3px;
+	font-size: 22px;
+	font-weight: var(--admin-w-title);
+	letter-spacing: -.02em;
+}
+
+.topbar-note {
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	padding: 10px 12px;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	white-space: nowrap;
+}
+
+.desktop-content {
+	padding: 18px 22px 42px;
+}
+
+.page-head {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 14px;
+}
+
+.page-head h1 {
+	margin: 0;
+	font-size: 24px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.2;
+	letter-spacing: -.02em;
+}
+
+.page-head p {
+	margin: 6px 0 0;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.55;
+}
+
+.desk-btn {
+	min-height: 36px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink-2);
+	padding: 0 12px;
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+}
+
+.desk-btn.primary {
+	border-color: var(--admin-accent);
+	background: var(--admin-accent);
+	color: var(--admin-on-primary);
+}
+
+/* auto-fit(#2349 PR⑩e 리뷰 반영): 4개 카드 화면은 4열을 채우고, 5개 카드 화면(접근성 현황)은
+   4+1로 어색하게 랩되는 대신 5열로 정렬된다(빈 트랙은 collapse되어 4개 카드 화면 폭에 영향 없음).
+   하한을 180px로 두면 사이드바(252px)가 보이는 981~1059px 구간에서 4카드 화면조차 3열까지만
+   들어가 3+1로 랩됐다(실측: metric-grid-fixture + playwright, 981px에서 auto-fit 열폭 220px로
+   3열만 배치). 하한을 160px로 낮춰 981px(사이드바 표시 최소 폭)에서도 4열이 들어가도록 한다
+   (981px 콘텐츠 가용폭 685px 기준 4×160+3×12=676px ≤ 685px). 5카드 화면은 이 하한에서도
+   1144px 미만에서는 여전히 랩된다 — 요구사항대로 5카드 랩은 허용. */
+.metric-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.metric {
+	min-height: 104px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: var(--admin-shadow-card);
+	padding: 16px;
+}
+
+.metric span {
+	display: block;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	line-height: 1.4;
+}
+
+.metric strong {
+	display: block;
+	margin-top: 10px;
+	font-size: 26px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.1;
+	letter-spacing: -.02em;
+}
+
+.desktop-grid-2 {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+
+/* #2282 V6-10: panel은 더 이상 가로 overflow를 소유하지 않는다. 표는 operator-table-scroll
+   wrapper만 소유한다(admin #2071과 동일 원칙 — 이중 scroll container 금지). */
+.panel {
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: var(--admin-shadow-card);
+}
+
+.panel + .panel,
+.stack-gap {
+	margin-top: 12px;
+}
+
+.panel-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px 10px;
+}
+
+.panel-title h2 {
+	margin: 0;
+	font-size: 15px;
+	font-weight: var(--admin-w-strong);
+	letter-spacing: -.01em;
+}
+
+.panel-title p {
+	margin: 4px 0 0;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.45;
+}
+
+.alert-banner {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	border: 1px solid var(--admin-border);
+	border-left: 3px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	margin-bottom: 12px;
+	padding: 13px 15px;
+	color: var(--admin-ink);
+}
+
+.alert-banner.good,
+.alert-banner.ok {
+	border-left-color: var(--admin-good);
+}
+
+.alert-banner.bad,
+.alert-banner.stale {
+	border-left-color: var(--admin-danger);
+}
+
+.alert-banner strong {
+	display: block;
+	font-size: 14px;
+	font-weight: var(--admin-w-strong);
+}
+
+.alert-banner span,
+.alert-banner p {
+	display: block;
+	margin: 3px 0 0;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.45;
+}
+
+.data-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+	border-top: 1px solid var(--admin-border);
+	padding: 12px 14px;
+	text-align: left;
+	vertical-align: top;
+	font-size: 13px;
+	line-height: 1.45;
+	/* 한글 어절 단위 줄바꿈(#2349 PR⑩a, admin-components.css와 동일 원칙) — 좁은 컬럼에서 지역·역명이
+	   낱글자 단위로 세로 줄바꿈("강원/권", "남춘/천")되는 것을 막는다. keep-all로 줄바꿈 불가능한 공백 없는 긴 값은 overflow-wrap: anywhere가 끊는다. */
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+}
+
+.data-table th {
+	background: var(--admin-header-bg);
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+	white-space: nowrap;
+}
+
+.data-table td {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-body);
+}
+
+.data-table td:last-child,
+.data-table th:last-child,
+.numeric {
+	text-align: right;
+	font-weight: var(--admin-w-strong);
+}
+
+/* 지역별 데이터 품질 표 지역 열 어절 유지(#2349 PR⑩g finding 3): keep-all + overflow-wrap: anywhere만으로는
+   1024 폭에서 지역 열이 좁아지면 "강원권" 같은 공백 없는 3자 지역명도 anywhere가 글자 단위로 끊는다("강원/권").
+   지역명은 모두 "OO권" 형태로 짧아 nowrap으로 어절을 통째로 유지해도 열 폭 부담이 없다. 다른 표에는 영향 없게
+   이 표에만 붙는 .region-quality-table로 스코프를 좁힌다. */
+.region-quality-table td:first-child {
+	white-space: nowrap;
+}
+
+/* 지역별 데이터 품질 표 숫자 열 낱자리 줄바꿈 방지(#2349 PR⑩g addendum): 8열이 절반 폭 패널(desktop-grid-2)에
+   빽빽이 들어차면 헤더("역", "노선" 등)가 white-space: nowrap이어도 auto 표 레이아웃이 overflow-wrap: anywhere를
+   가진 숫자 값을 열 최소폭 계산에 사용해 "456" 같은 정수를 "4/5/6"으로 세로로 쪼갠다(1024 폭 실측). 지역 열을
+   제외한 숫자 값 열은 모두 정수라 nowrap으로 통째로 유지해도 열 폭 부담이 없다. 다른 operator 5화면 표는 실측 결과
+   동일 증상이 재현되지 않아 이 표에만 스코프를 좁힌다. */
+.region-quality-table td:not(:first-child) {
+	white-space: nowrap;
+}
+
+/* 역별 접근성 점수 표 역·지역 열 어절 유지(#2349 PR⑩j, region-quality-table과 동일 원칙): keep-all +
+   overflow-wrap: anywhere만으로는 1024 폭에서 역·지역 열이 좁아지면 "상록수"·"강원권" 같은 공백 없는 짧은
+   고유명사도 anywhere가 글자 단위로 끊는다("상록/수", "강원/권"). 보강 사유 열은 자유 텍스트라 줄바꿈을
+   유지해야 하므로 역(첫 열)·지역(둘째 열)에만 nowrap을 좁혀 적용한다. 다른 표에는 영향 없게 이 표에만
+   붙는 .station-score-table로 스코프를 좁힌다. */
+.station-score-table td:first-child,
+.station-score-table td:nth-child(2) {
+	white-space: nowrap;
+}
+
+/* 접근성 개선 우선순위 표 역·시설 열 어절 유지(#2349 PR⑩j, region-quality-table과 동일 원칙): 좁아진 열에서
+   "상록수"·"장애인 화장실" 같은 역명·시설명이 글자 단위로 끊긴다("상록/수", "장/애/인/화/장/실"). 개선 사유
+   열은 자유 텍스트라 줄바꿈을 유지해야 하므로 역(첫 열)·시설(둘째 열)에만 nowrap을 좁혀 적용한다. 다른
+   표에는 영향 없게 이 표에만 붙는 .priority-table로 스코프를 좁힌다. */
+.priority-table td:first-child,
+.priority-table td:nth-child(2) {
+	white-space: nowrap;
+}
+
+/* 빈 상태 표준화(#2349 PR⑩e, admin td.empty와 동일 원칙): colspan 메시지 셀이 last-child 우측 정렬을
+   상속해 붕괴하는 것을 막고 admin/fragments 빈 상태 문법(.empty-state)과 정렬을 맞춘다. */
+.data-table td.empty {
+	padding: 28px 16px;
+	border-top: 1px solid var(--admin-border);
+	text-align: center;
+	font-weight: var(--admin-w-body);
+}
+
+/* 표준 빈 상태(#2349 PR⑩e, admin/fragments/empty-state.html 문법 이관). message는 상황 설명,
+   hint는 다음 행동 안내(선택). */
+.empty-state {
+	padding: 24px 8px;
+	text-align: center;
+}
+
+.empty-state-message {
+	color: var(--admin-ink);
+	margin: 0;
+}
+
+.empty-state-hint {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	margin: 6px 0 0;
+}
+
+/* 표 scroll wrapper(#2282 V6-10, admin #2071과 동일 원칙): wrapper만 가로 overflow를 소유하고
+   첫 식별자 열과 thead를 sticky로 고정한다. panel·section은 overflow를 갖지 않는다. */
+.operator-table-scroll {
+	max-width: 100%;
+	max-block-size: min(70vh, 640px);
+	overflow: auto;
+	overscroll-behavior-inline: contain;
+	scrollbar-gutter: stable;
+	isolation: isolate;
+}
+
+.operator-table-scroll:focus-visible {
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 3px;
+}
+
+.operator-table-scroll thead th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
+.operator-table-scroll th:first-child,
+.operator-table-scroll td:first-child:not([colspan]) {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	background: var(--admin-surface);
+}
+
+.operator-table-scroll thead th:first-child {
+	z-index: 3;
+	background: var(--admin-header-bg);
+}
+
+.status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-strong);
+}
+
+.status::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.status.good {
+	color: var(--admin-good);
+}
+
+.status.warn {
+	color: var(--admin-warn);
+}
+
+.status.bad {
+	color: var(--admin-danger);
+}
+
+.source-note {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--admin-border);
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.55;
+}
+
+.table-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: 10px;
+	margin: 0 0 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: var(--admin-shadow-card);
+	padding: 12px;
+}
+
+.table-toolbar label {
+	display: grid;
+	gap: 5px;
+	min-width: 160px;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+}
+
+.table-toolbar input {
+	min-height: 38px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	padding: 0 10px;
+	color: var(--admin-ink);
+}
+
+/* 포커스 시에만 액센트 테두리 — 기본 테두리는 무채색(admin #1982와 동일 원칙) */
+.table-toolbar input:focus,
+.table-toolbar input:focus-visible {
+	border-color: var(--admin-border-strong);
+}
+
+.table-toolbar button {
+	min-height: 38px;
+	border: 1px solid var(--admin-accent);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-accent);
+	color: var(--admin-on-primary);
+	padding: 0 12px;
+	font-weight: var(--admin-w-strong);
+}
+
+.data-table th[aria-sort] a {
+	color: var(--admin-ink);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.data-table th[aria-sort="ascending"] a::after {
+	content: " ↑";
+}
+
+.data-table th[aria-sort="descending"] a::after {
+	content: " ↓";
+}
+
+.chart-panel {
+	margin-bottom: 12px;
+}
+
+.operator-chart-frame {
+	height: 220px;
+	padding: 0 16px 12px;
+}
+
+.operator-chart-canvas {
+	width: 100%;
+	height: 100%;
+}
+
+.chart-data {
+	padding: 0 16px 16px;
+}
+
+.chart-data summary {
+	cursor: pointer;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+}
+
+.login-screen {
+	min-height: 100vh;
+	display: grid;
+	place-items: center;
+	background: var(--admin-bg);
+	padding: 24px;
+}
+
+.login-card {
+	width: min(390px, 100%);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	padding: 32px;
+	box-shadow: var(--admin-shadow-card);
+}
+
+.login-card .desktop-brand strong {
+	color: var(--admin-ink);
+}
+
+.login-card .desktop-brand span {
+	color: var(--admin-ink-2);
+}
+
+.login-card h1 {
+	margin: 24px 0 6px;
+	font-size: 22px;
+	font-weight: var(--admin-w-title);
+	letter-spacing: -.02em;
+}
+
+.login-card p {
+	margin: 0 0 20px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.5;
+}
+
+.login-field {
+	margin-bottom: 12px;
+}
+
+.login-field label {
+	display: block;
+	margin: 0 0 6px 2px;
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+}
+
+.login-field input {
+	width: 100%;
+	height: 44px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	padding: 0 12px;
+}
+
+/* 포커스 시에만 액센트 테두리 — 기본 테두리는 무채색(admin #1982와 동일 원칙) */
+.login-field input:focus,
+.login-field input:focus-visible {
+	border-color: var(--admin-border-strong);
+}
+
+.login-submit {
+	width: 100%;
+	height: 44px;
+	border: 0;
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-primary);
+	color: var(--admin-on-primary);
+	font-weight: var(--admin-w-strong);
+}
+
+/* 결측값 스크린리더 텍스트(#2349 PR⑩b): admin-components.css .sr-only와 동일 정의. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* retry warning(#2349 PR⑨): admin 로그인과 동일한 warn 톤 정합(NONE/RETRY_WARNING parity 계약). */
+.login-note {
+	margin-top: 18px;
+	padding-top: 16px;
+	border-top: 1px solid var(--admin-warn);
+	color: var(--admin-warn);
+	font-size: 12px;
+	font-weight: var(--admin-w-strong);
+	line-height: 1.5;
+}
+
+.login-note.info {
+	border-top-color: var(--admin-primary);
+	color: var(--admin-ink);
+}
+
+@media (max-width: 980px) {
+	.desktop-frame {
+		grid-template-columns: 1fr;
+	}
+
+	.desktop-sidebar {
+		position: static;
+	}
+
+	.desktop-nav {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.nav-group,
+	.desktop-user {
+		display: none;
+	}
+
+	.metric-grid,
+	.desktop-grid-2 {
+		grid-template-columns: 1fr;
+	}
+
+	.page-head,
+	.desktop-topbar {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.topbar-note {
+		white-space: normal;
+	}
+}

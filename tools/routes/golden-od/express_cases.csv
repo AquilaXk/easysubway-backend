@@ -1,0 +1,16 @@
+origin_station_id,destination_station_id,departure_time,mobility_type,constraint_mode,expected_transfer_count,max_eta_error_seconds,observed_eta_error_seconds,use_realtime,notes
+station-sangnoksu,station-sadang,2026-06-30T12:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:04:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:08:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:12:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,true,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:16:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,true,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:20:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:24:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:28:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:32:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,45,false,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:36:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,45,false,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:40:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,90,false,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:44:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,90,false,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:48:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,90,false,express fixture
+station-sadang,station-sangnoksu,2026-06-30T12:52:00+09:00,STROLLER,STRICT_STEP_FREE,0,180,90,false,express fixture
+station-sangnoksu,station-sadang,2026-06-30T12:56:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,0,180,90,false,express fixture

@@ -1,0 +1,295 @@
+package com.easysubway.admin.audit.application.service;
+
+import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEvent;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.error.CorrelationId;
+import com.easysubway.common.web.TrustedClientIpResolver;
+import jakarta.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AdminAuditWriter {
+
+	private final AdminAuditEventRepository auditEventRepository;
+	private final Clock clock;
+	private final boolean enabled;
+	private final Supplier<TrustedClientIpResolver> clientIpResolverSupplier;
+	private final AtomicReference<TrustedClientIpResolver> clientIpResolver = new AtomicReference<>();
+
+	public AdminAuditWriter(AdminAuditEventRepository auditEventRepository) {
+		this(auditEventRepository, Clock.systemUTC(), true, TrustedClientIpResolver::directOnly);
+	}
+
+	public AdminAuditWriter(
+		AdminAuditEventRepository auditEventRepository,
+		TrustedClientIpResolver clientIpResolver
+	) {
+		this(
+			auditEventRepository,
+			Clock.systemUTC(),
+			true,
+			() -> clientIpResolver == null ? TrustedClientIpResolver.directOnly() : clientIpResolver
+		);
+	}
+
+	@Autowired
+	public AdminAuditWriter(
+		AdminAuditEventRepository auditEventRepository,
+		ObjectProvider<TrustedClientIpResolver> clientIpResolverProvider
+	) {
+		this(
+			auditEventRepository,
+			Clock.systemUTC(),
+			true,
+			clientIpResolverProvider == null
+				? TrustedClientIpResolver::directOnly
+				: () -> clientIpResolverProvider.getIfAvailable(TrustedClientIpResolver::directOnly)
+		);
+	}
+
+	private AdminAuditWriter(
+		AdminAuditEventRepository auditEventRepository,
+		Clock clock,
+		boolean enabled,
+		Supplier<TrustedClientIpResolver> clientIpResolverSupplier
+	) {
+		this.auditEventRepository = auditEventRepository;
+		this.clock = clock;
+		this.enabled = enabled;
+		this.clientIpResolverSupplier = clientIpResolverSupplier;
+	}
+
+	public static AdminAuditWriter noop() {
+		return new AdminAuditWriter(null, Clock.systemUTC(), false, TrustedClientIpResolver::directOnly);
+	}
+
+	public void privacyRead(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetType,
+		String targetId,
+		String action,
+		String reason
+	) {
+		writeAudit(
+			authentication,
+			request,
+			AdminAuditEventType.PRIVACY_READ,
+			targetType,
+			targetId,
+			action,
+			AdminAuditOutcome.SUCCESS,
+			reason
+		);
+	}
+
+	public void batchOperation(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetType,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(
+			authentication,
+			request,
+			AdminAuditEventType.BATCH_OPERATION,
+			targetType,
+			targetId,
+			action,
+			outcome,
+			reason
+		);
+	}
+
+	public void commonCodeChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.COMMON_CODE_CHANGE, "COMMON_CODE", targetId, action, outcome, reason);
+	}
+
+	public void incidentChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.INCIDENT_CHANGE, "INCIDENT", targetId, action, outcome, reason);
+	}
+
+	public void adminAction(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetType,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, targetType, targetId, action, outcome, reason);
+	}
+
+	public void savedViewChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "ADMIN_SAVED_VIEW", targetId, action, outcome, reason);
+	}
+
+	public void noticeChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "SERVICE_NOTICE", targetId, action, outcome, reason);
+	}
+
+	public void pushResend(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "PUSH_NOTIFICATION_RESEND", targetId, action, outcome, reason);
+	}
+
+	public void analyticsExport(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "ANALYTICS_EXPORT", targetId, action, outcome, reason);
+	}
+
+	public void auditExport(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "AUDIT_EXPORT", targetId, action, outcome, reason);
+	}
+
+	private void writeAudit(
+		Authentication authentication,
+		HttpServletRequest request,
+		AdminAuditEventType eventType,
+		String targetType,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		if (!enabled || !isAuthenticated(authentication)) {
+			return;
+		}
+		auditEventRepository.save(new AdminAuditEvent(
+			null,
+			eventType,
+			authentication.getName(),
+			authorities(authentication),
+			correlationId(request),
+			clientIp(request),
+			userAgent(request),
+			targetType,
+			targetId,
+			action,
+			outcome,
+			reason,
+			LocalDateTime.now(clock)
+		));
+	}
+
+	public String sha256TargetId(String value) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+				.digest(value.getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
+		}
+	}
+
+	private static boolean isAuthenticated(Authentication authentication) {
+		return authentication != null
+			&& authentication.isAuthenticated()
+			&& !(authentication instanceof AnonymousAuthenticationToken);
+	}
+
+	private static String authorities(Authentication authentication) {
+		return authentication.getAuthorities()
+			.stream()
+			.map(authority -> authority.getAuthority())
+			.sorted(Comparator.naturalOrder())
+			.collect(Collectors.joining(","));
+	}
+
+	private static String correlationId(HttpServletRequest request) {
+		Object attribute = request.getAttribute(CorrelationId.ATTRIBUTE);
+		String value = attribute instanceof String attr && !attr.isBlank()
+			? attr
+			: request.getHeader(CorrelationId.HEADER);
+		if (value == null || value.isBlank()) {
+			return "missing";
+		}
+		String trimmed = value.trim();
+		if (!trimmed.matches("[A-Za-z0-9._-]{1,64}")) {
+			return "invalid";
+		}
+		return trimmed;
+	}
+
+	private String clientIp(HttpServletRequest request) {
+		TrustedClientIpResolver resolver = clientIpResolver.get();
+		if (resolver == null) {
+			resolver = clientIpResolverSupplier.get();
+			if (resolver == null) {
+				resolver = TrustedClientIpResolver.directOnly();
+			}
+			clientIpResolver.compareAndSet(null, resolver);
+		}
+		return resolver.resolve(request);
+	}
+
+	private static String userAgent(HttpServletRequest request) {
+		return TrustedClientIpResolver.sanitizeUserAgent(request.getHeader("User-Agent"));
+	}
+}

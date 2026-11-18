@@ -1,0 +1,138 @@
+package com.easysubway.route.adapter.in.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
+import com.easysubway.route.domain.RouteFeedbackRating;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest(properties = {
+	"easysubway.admin.username=admin-user",
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.user.username=anonymous-user-1",
+	"easysubway.user.password=user-test-password"
+})
+@AutoConfigureMockMvc
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
+@DisplayName("관리자 경로 피드백 현황 페이지")
+class RouteFeedbackAdminPageControllerTest {
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Autowired
+	private RouteSearchUseCase routeSearchUseCase;
+
+	@Test
+	@DisplayName("관리자는 경로 피드백의 전체와 평점별 건수를 확인한다")
+	void adminGetsRouteFeedbackDashboardPage() throws Exception {
+		String routeSearchId = createRouteSearch();
+		submitRouteFeedback(routeSearchId, "HELPFUL", "안내가 도움이 됐어요");
+		submitRouteFeedback(routeSearchId, "NOT_HELPFUL", "실제 이동 상황과 달랐어요");
+		submitRouteFeedback(routeSearchId, "BLOCKED_BY_REAL_WORLD", "엘리베이터가 막혀 있었어요");
+
+		String html = mockMvc.perform(get("/admin/routes/feedback/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("경로 피드백 현황")
+			.contains("전체 피드백")
+			.contains(">3<")
+			.contains("도움이 됨")
+			.contains("도움이 안 됨")
+			.contains("현장 차단")
+			.contains("경로 안내가 실제 이동에 도움됨")
+			.contains("경로 안내가 실제 이동과 맞지 않음")
+			.contains("엘리베이터 고장, 공사, 폐쇄 등으로 이동 불가")
+			.contains("최근 현장 차단 신고")
+			.contains("상록수")
+			.contains("사당")
+			.contains("고령자")
+			.doesNotContain("anonymous-user-1")
+			.doesNotContain(routeSearchId)
+			.doesNotContain("엘리베이터가 막혀 있었어요");
+	}
+
+	@Test
+	@DisplayName("경로 피드백 화면은 유형별 추이 차트·증감 카드·기간 버튼을 렌더링한다")
+	void routeFeedbackPageRendersTrendChart() throws Exception {
+		String html = mockMvc.perform(get("/admin/routes/feedback/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("id=\"route-feedback-trends\"")
+			.contains("추이 기간 선택")
+			.contains("/admin/routes/feedback/trends")
+			.contains("전 기간 대비 증감")
+			.contains("route-feedback-trend-canvas")
+			.contains("현장 차단 신고")
+			.contains("/js/admin/dashboard-charts.js");
+	}
+
+	@Test
+	@DisplayName("기간 추이 fragment는 셸 없이 추이 영역만 반환한다")
+	void routeFeedbackTrendsFragmentReturnsSectionOnly() throws Exception {
+		String fragment = mockMvc.perform(get("/admin/routes/feedback/trends")
+				.param("days", "30")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(fragment)
+			.contains("id=\"route-feedback-trends\"")
+			.contains("최근 30일 추이")
+			.doesNotContain("admin-shell")
+			.doesNotContain("평점별 피드백");
+	}
+
+	@Test
+	@DisplayName("경로 피드백 현황 페이지는 관리자 인증을 요구한다")
+	void routeFeedbackDashboardRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/routes/feedback/page"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/routes/feedback/page")
+				.with(httpBasic("anonymous-user-1", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	private String createRouteSearch() {
+		return routeSearchUseCase.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.SENIOR
+		)).routeSearchId();
+	}
+
+	private void submitRouteFeedback(String routeSearchId, String rating, String comment) {
+		routeSearchUseCase.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			routeSearchId,
+			"anonymous-user-1",
+			RouteFeedbackRating.valueOf(rating),
+			comment
+		));
+	}
+}

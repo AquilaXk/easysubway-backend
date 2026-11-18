@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "journey-contract-publication-trust",
+  "producer": {
+    "repository": "AquilaXk/easysubway-backend",
+    "gitSha": "5f183ec268ea24c96d8234afab588a37472212d5"
+  },
+  "artifact": {
+    "repository": "ghcr.io/aquilaxk/easysubway-backend-contracts",
+    "manifestDigest": "sha256:2d010a7a627b9367246be806236ad314a03094e59f230be0c09895cdc9592866",
+    "artifactType": "application/vnd.easysubway.journey.contract-bundle.v2"
+  },
+  "payload": {
+    "fileName": "journey-v3-contract-bundle-v2.json",
+    "mediaType": "application/vnd.easysubway.journey.contract-bundle.v2+json",
+    "sha256": "64e6d2035fb153d350ede4706471213973519d60518b841f733581862cefc7f3"
+  },
+  "artifactInventory": [
+    "evidence-ledger.sha256",
+    "journey-contract-prepublication-run-metadata.json",
+    "journey-v3-contract-bundle-v2-descriptor.json",
+    "journey-v3-contract-bundle-v2-manifest.json",
+    "journey-v3-contract-bundle-v2-receipt.json",
+    "journey-v3-contract-bundle-v2.json"
+  ],
+  "artifactTrustAnchors": {
+    "evidence-ledger.sha256": "5ba2abee7f7c29f33236913ffbec82d09ee22da7b6f508dcae3e1288fac0547d",
+    "journey-contract-prepublication-run-metadata.json": "62ee6ae32fdd1849cedb71ff737e60e9a04a5774e2852f4b5454e4dc00b7195a",
+    "journey-v3-contract-bundle-v2-descriptor.json": "93af7b45ff39f4421d86011f63516ec10ed4ba42de247cc1bd9ab77a65051e24",
+    "journey-v3-contract-bundle-v2-manifest.json": "2d010a7a627b9367246be806236ad314a03094e59f230be0c09895cdc9592866",
+    "journey-v3-contract-bundle-v2-receipt.json": "744ce104885ac10e41fab9c340f617c2ae6512b26294ab4dd2a19715fc22a15c",
+    "journey-v3-contract-bundle-v2.json": "64e6d2035fb153d350ede4706471213973519d60518b841f733581862cefc7f3"
+  }
+}

@@ -1,0 +1,14 @@
+package com.easysubway.admin.audit.domain;
+
+public enum AdminAuditEventType {
+	LOGIN,
+	LOGIN_FAILURE,
+	LOGOUT,
+	ADMIN_ACTION,
+	PRIVACY_READ,
+	SYSTEM_CHANGE,
+	BATCH_OPERATION,
+	COMMON_CODE_CHANGE,
+	INCIDENT_CHANGE,
+	MASTER_DATA_CHANGE
+}

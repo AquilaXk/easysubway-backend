@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "primitives": {
+    "brand.50": "#F8F9FF",
+    "brand.100": "#F0F2FE",
+    "brand.200": "#E2E5FD",
+    "brand.300": "#CCD2FC",
+    "brand.400": "#B4BCFB",
+    "brand.500": "#949FE8",
+    "brand.600": "#7480D2",
+    "brand.700": "#5C6BC0",
+    "brand.800": "#4A58A9",
+    "brand.900": "#3B4890",
+    "brand.950": "#1F2340",
+    "neutral.white": "#FFFFFF",
+    "neutral.scaffold": "#F7F8FC",
+    "neutral.subtle": "#F0F2F7",
+    "neutral.border": "#E1E4EE",
+    "ink.secondary": "#4D536B",
+    "ink.muted": "#697089",
+    "status.success": "#0A705A",
+    "status.warning": "#9A5600",
+    "status.danger": "#B42318",
+    "status.info": "#215EA8",
+    "status.successSoft": "#F0FBF7",
+    "status.warningSoft": "#FFF0D1",
+    "status.dangerSoft": "#FFE8E6",
+    "status.infoSoft": "#EEF5FF"
+  },
+  "semantic": {
+    "surface.default": "neutral.white",
+    "surface.scaffold": "neutral.scaffold",
+    "surface.subtle": "neutral.subtle",
+    "surface.brandChrome": "brand.50",
+    "surface.brand": "brand.100",
+    "surface.brandStrong": "brand.200",
+    "surface.signature": "brand.400",
+    "border.subtle": "neutral.border",
+    "content.primary": "brand.950",
+    "content.secondary": "ink.secondary",
+    "content.muted": "ink.muted",
+    "interaction.primary": "brand.700",
+    "interaction.primaryPressed": "brand.800",
+    "interaction.onPrimary": "neutral.white",
+    "interaction.secondarySurface": "brand.100",
+    "interaction.secondaryBorder": "brand.600",
+    "interaction.secondaryPressedSurface": "brand.200",
+    "interaction.secondaryPressedBorder": "brand.700",
+    "interaction.onSignatureBorder": "brand.900",
+    "interaction.onBrand": "brand.900",
+    "focus.default": "brand.700",
+    "focus.onSignature": "brand.900",
+    "decorative.divider": "brand.300",
+    "status.successContent": "status.success",
+    "status.successSurface": "status.successSoft",
+    "status.warningContent": "status.warning",
+    "status.warningSurface": "status.warningSoft",
+    "status.dangerContent": "status.danger",
+    "status.dangerSurface": "status.dangerSoft",
+    "status.infoContent": "status.info",
+    "status.infoSurface": "status.infoSoft"
+  },
+  "roleRestrictions": {
+    "brand.300": {
+      "allow": ["decorative.divider"],
+      "deny": ["control.requiredBoundary", "focus.ring", "selection.soleVisualIndicator"]
+    },
+    "brand.400": {
+      "allow": ["surface.signature", "indicator.background"],
+      "deny": ["focus.ring", "selection.soleVisualIndicator", "control.requiredBoundary"]
+    },
+    "brand.500": {
+      "allow": ["brand.graphic"],
+      "deny": ["control.requiredBoundary", "status.soleIcon"]
+    },
+    "brand.600": {
+      "allow": ["interaction.secondaryBorder"],
+      "deny": ["surface.brandStrong.requiredBoundary", "surface.signature.requiredBoundary"]
+    },
+    "content.muted": {
+      "allow": ["surface.default", "surface.scaffold", "surface.brandChrome"],
+      "deny": ["surface.brand", "surface.brandStrong", "surface.signature"]
+    }
+  },
+  "contrastPairs": [
+    {
+      "id": "primary-action-content",
+      "foregroundSemantic": "interaction.onPrimary",
+      "backgroundSemantic": "interaction.primary",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "primary-action-pressed-content",
+      "foregroundSemantic": "interaction.onPrimary",
+      "backgroundSemantic": "interaction.primaryPressed",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "secondary-content",
+      "foregroundSemantic": "interaction.onBrand",
+      "backgroundSemantic": "interaction.secondarySurface",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "secondary-pressed-content",
+      "foregroundSemantic": "interaction.onBrand",
+      "backgroundSemantic": "interaction.secondaryPressedSurface",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "secondary-border",
+      "foregroundSemantic": "interaction.secondaryBorder",
+      "backgroundSemantic": "interaction.secondarySurface",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "secondary-pressed-border",
+      "foregroundSemantic": "interaction.secondaryPressedBorder",
+      "backgroundSemantic": "interaction.secondaryPressedSurface",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "secondary-on-signature-border",
+      "foregroundSemantic": "interaction.onSignatureBorder",
+      "backgroundSemantic": "surface.signature",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "focus-on-default",
+      "foregroundSemantic": "focus.default",
+      "backgroundSemantic": "surface.default",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "focus-on-brand-chrome",
+      "foregroundSemantic": "focus.default",
+      "backgroundSemantic": "surface.brandChrome",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "focus-on-brand",
+      "foregroundSemantic": "focus.default",
+      "backgroundSemantic": "surface.brand",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "focus-on-brand-strong",
+      "foregroundSemantic": "focus.default",
+      "backgroundSemantic": "surface.brandStrong",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "focus-on-signature",
+      "foregroundSemantic": "focus.onSignature",
+      "backgroundSemantic": "surface.signature",
+      "minimum": 3,
+      "kind": "nonText"
+    },
+    {
+      "id": "active-label-on-signature",
+      "foregroundSemantic": "interaction.onBrand",
+      "backgroundSemantic": "surface.signature",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "destructive-on-default",
+      "foregroundSemantic": "status.dangerContent",
+      "backgroundSemantic": "surface.default",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "success-content-on-success-surface",
+      "foregroundSemantic": "status.successContent",
+      "backgroundSemantic": "status.successSurface",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "warning-content-on-warning-surface",
+      "foregroundSemantic": "status.warningContent",
+      "backgroundSemantic": "status.warningSurface",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "danger-content-on-danger-surface",
+      "foregroundSemantic": "status.dangerContent",
+      "backgroundSemantic": "status.dangerSurface",
+      "minimum": 4.5,
+      "kind": "text"
+    },
+    {
+      "id": "info-content-on-info-surface",
+      "foregroundSemantic": "status.infoContent",
+      "backgroundSemantic": "status.infoSurface",
+      "minimum": 4.5,
+      "kind": "text"
+    }
+  ]
+}

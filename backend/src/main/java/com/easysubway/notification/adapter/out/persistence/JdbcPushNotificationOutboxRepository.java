@@ -1,0 +1,634 @@
+package com.easysubway.notification.adapter.out.persistence;
+
+import com.easysubway.common.time.BusinessTime;
+import com.easysubway.notification.application.port.in.PushNotificationHistoryQuery;
+import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SearchPushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SummarizePushNotificationOutboxPort;
+import com.easysubway.notification.domain.DevicePlatform;
+import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.notification.domain.PushNotificationDashboardSummary;
+import com.easysubway.notification.domain.PushNotificationFailureReasonCount;
+import com.easysubway.notification.domain.PushNotificationStatus;
+import com.easysubway.notification.domain.PushNotificationType;
+import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+@Profile("prod | staging | release | prod-like")
+public class JdbcPushNotificationOutboxRepository implements
+	LoadPushNotificationOutboxPort,
+	LoadPendingPushNotificationOutboxPort,
+	SavePushNotificationOutboxPort,
+	SearchPushNotificationOutboxPort,
+	SummarizePushNotificationOutboxPort,
+	DeleteUserPushNotificationPort {
+
+	private static final Duration PROCESSING_CLAIM_TIMEOUT = Duration.ofMinutes(5);
+
+	private final JdbcTemplate jdbcTemplate;
+	private final DatabaseDialect databaseDialect;
+
+	@Autowired
+	public JdbcPushNotificationOutboxRepository(DataSource dataSource) {
+		this(new JdbcTemplate(dataSource));
+	}
+
+	JdbcPushNotificationOutboxRepository(JdbcTemplate jdbcTemplate) {
+		this.jdbcTemplate = jdbcTemplate;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
+	}
+
+	@Override
+	public List<PushNotification> loadPushNotifications(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				FROM push_notification_outbox
+				WHERE user_id = ?
+				ORDER BY created_at ASC, notification_id ASC
+				""",
+			this::mapPushNotification,
+			userId
+		);
+	}
+
+	@Override
+	public List<PushNotification> loadPendingPushNotifications(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				FROM push_notification_outbox
+				WHERE user_id = ?
+					AND (
+						status = ?
+						OR (
+							status = ?
+							AND processing_claimed_at < ?
+						)
+					)
+				ORDER BY created_at ASC, notification_id ASC
+				FOR UPDATE SKIP LOCKED
+				""",
+			this::mapPushNotification,
+			userId,
+			PushNotificationStatus.PENDING.name(),
+			PushNotificationStatus.PROCESSING.name(),
+			processingClaimExpiresBefore()
+		);
+	}
+
+	@Override
+	public List<String> loadPendingPushNotificationUserIds() {
+		return jdbcTemplate.query(
+			"""
+				SELECT user_id
+				FROM push_notification_outbox
+				WHERE status = ?
+					OR (
+						status = ?
+						AND processing_claimed_at < ?
+					)
+				GROUP BY user_id
+				ORDER BY MIN(created_at) ASC, user_id ASC
+				""",
+			(resultSet, rowNumber) -> resultSet.getString("user_id"),
+			PushNotificationStatus.PENDING.name(),
+			PushNotificationStatus.PROCESSING.name(),
+			processingClaimExpiresBefore()
+		);
+	}
+
+	@Override
+	public PushNotification savePushNotification(PushNotification notification) {
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			upsertPushNotificationWithPostgresql(notification);
+			return notification;
+		}
+		if (updatePushNotification(notification) == 0) {
+			try {
+				insertPushNotification(notification);
+			} catch (DuplicateKeyException exception) {
+				updatePushNotification(notification);
+			}
+		}
+		return notification;
+	}
+
+	private void upsertPushNotificationWithPostgresql(PushNotification notification) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					processing_claimed_at,
+					created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (notification_id) DO UPDATE SET
+					user_id = EXCLUDED.user_id,
+					platform = EXCLUDED.platform,
+					device_token = EXCLUDED.device_token,
+					notification_type = EXCLUDED.notification_type,
+					title = EXCLUDED.title,
+					body = EXCLUDED.body,
+					status = EXCLUDED.status,
+					failure_reason = EXCLUDED.failure_reason,
+					processing_claimed_at = EXCLUDED.processing_claimed_at,
+					created_at = EXCLUDED.created_at
+				""",
+			pushNotificationParameters(notification)
+		);
+	}
+
+	@Override
+	public PushNotification savePendingPushNotificationIfAbsent(PushNotification notification) {
+		if (insertPendingPushNotificationIfAbsent(notification) > 0) {
+			return notification;
+		}
+		return loadPushNotification(notification.notificationId())
+			.orElse(notification);
+	}
+
+	@Override
+	public boolean claimPendingPushNotification(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE push_notification_outbox
+				SET status = ?,
+					failure_reason = NULL,
+					processing_claimed_at = ?
+				WHERE notification_id = ?
+					AND (
+						status = ?
+						OR (
+							status = ?
+							AND processing_claimed_at < ?
+						)
+					)
+				""",
+			PushNotificationStatus.PROCESSING.name(),
+			LocalDateTime.now(ZoneOffset.UTC),
+			notification.notificationId(),
+			PushNotificationStatus.PENDING.name(),
+			PushNotificationStatus.PROCESSING.name(),
+			processingClaimExpiresBefore()
+		) == 1;
+	}
+
+	@Override
+	public PushNotificationDashboardSummary summarizePushNotificationOutbox() {
+		List<StatusCountRow> statusCounts = jdbcTemplate.query(
+			"""
+				SELECT status,
+					COUNT(*) AS count
+				FROM push_notification_outbox
+				GROUP BY status
+				""",
+			(resultSet, rowNumber) -> new StatusCountRow(
+				PushNotificationStatus.valueOf(resultSet.getString("status")),
+				resultSet.getLong("count")
+			)
+		);
+		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING) +
+			countByStatus(statusCounts, PushNotificationStatus.PROCESSING);
+		long sentCount = countByStatus(statusCounts, PushNotificationStatus.SENT);
+		long failedCount = countByStatus(statusCounts, PushNotificationStatus.FAILED);
+		String latestFailureReason = latestFailureReason();
+		return new PushNotificationDashboardSummary(
+			pendingCount + sentCount + failedCount,
+			pendingCount,
+			sentCount,
+			failedCount,
+			latestFailureReason
+		);
+	}
+
+	@Override
+	public List<PushNotification> searchPushNotifications(PushNotificationHistoryQuery query) {
+		List<Object> arguments = new ArrayList<>();
+		String whereClause = buildHistoryWhere(query, arguments);
+		arguments.add(query.size());
+		arguments.add(query.offset());
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				FROM push_notification_outbox
+				"""
+				+ whereClause
+				+ " ORDER BY created_at DESC, notification_id DESC LIMIT ? OFFSET ?",
+			this::mapPushNotification,
+			arguments.toArray()
+		);
+	}
+
+	@Override
+	public long countPushNotifications(PushNotificationHistoryQuery query) {
+		List<Object> arguments = new ArrayList<>();
+		String whereClause = buildHistoryWhere(query, arguments);
+		Long count = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM push_notification_outbox" + whereClause,
+			Long.class,
+			arguments.toArray()
+		);
+		return count == null ? 0L : count;
+	}
+
+	@Override
+	public List<PushNotification> loadPushNotificationsByIds(List<String> notificationIds) {
+		if (notificationIds == null || notificationIds.isEmpty()) {
+			return List.of();
+		}
+		String placeholders = String.join(", ", java.util.Collections.nCopies(notificationIds.size(), "?"));
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				FROM push_notification_outbox
+				WHERE notification_id IN (""" + placeholders + ")",
+			this::mapPushNotification,
+			notificationIds.toArray()
+		);
+	}
+
+	// 이력 필터를 화이트리스트 컬럼으로만 조립한다. 키워드는 제목·본문만 매칭하고(수신자 식별자는 제외)
+	// LIKE 메타문자를 이스케이프한다. 기간은 created_at 기준(종료일 포함).
+	private String buildHistoryWhere(PushNotificationHistoryQuery query, List<Object> arguments) {
+		List<String> conditions = new ArrayList<>();
+		if (query.hasStatus()) {
+			conditions.add("status = ?");
+			arguments.add(query.status().name());
+		}
+		if (query.hasType()) {
+			conditions.add("notification_type = ?");
+			arguments.add(query.type().name());
+		}
+		if (query.hasKeyword()) {
+			conditions.add("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(body) LIKE ? ESCAPE '\\')");
+			String pattern = "%" + escapeLike(query.keyword().toLowerCase(java.util.Locale.ROOT)) + "%";
+			arguments.add(pattern);
+			arguments.add(pattern);
+		}
+		if (query.hasFailureReason()) {
+			conditions.add("failure_reason = ?");
+			arguments.add(query.failureReason());
+		}
+		if (query.createdFrom() != null) {
+			conditions.add("created_at >= ?");
+			arguments.add(BusinessTime.startOfDayUtcLocal(query.createdFrom()));
+		}
+		if (query.createdTo() != null) {
+			conditions.add("created_at < ?");
+			arguments.add(BusinessTime.startOfNextDayUtcLocal(query.createdTo()));
+		}
+		if (conditions.isEmpty()) {
+			return "";
+		}
+		return " WHERE " + String.join(" AND ", conditions);
+	}
+
+	@Override
+	public List<PushNotificationFailureReasonCount> countFailureReasons(PushNotificationHistoryQuery query) {
+		// 분해는 항상 실패 전체를 사유별로 본다: status=FAILED 강제, 사유 드릴다운은 제외하고 기간·유형·검색만 반영.
+		List<Object> arguments = new ArrayList<>();
+		String whereClause = buildFailureBreakdownWhere(query, arguments);
+		return jdbcTemplate.query(
+			"SELECT failure_reason, COUNT(*) AS count FROM push_notification_outbox"
+				+ whereClause
+				+ " GROUP BY failure_reason ORDER BY count DESC, failure_reason ASC",
+			(resultSet, rowNumber) -> new PushNotificationFailureReasonCount(
+				resultSet.getString("failure_reason"),
+				resultSet.getLong("count")
+			),
+			arguments.toArray()
+		);
+	}
+
+	// 실패 분해 WHERE: status=FAILED 고정 + 유형·검색·기간(사유 드릴다운·상태 필터는 무시).
+	private String buildFailureBreakdownWhere(PushNotificationHistoryQuery query, List<Object> arguments) {
+		List<String> conditions = new ArrayList<>();
+		conditions.add("status = ?");
+		arguments.add(PushNotificationStatus.FAILED.name());
+		conditions.add("failure_reason IS NOT NULL");
+		if (query.hasType()) {
+			conditions.add("notification_type = ?");
+			arguments.add(query.type().name());
+		}
+		if (query.hasKeyword()) {
+			conditions.add("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(body) LIKE ? ESCAPE '\\')");
+			String pattern = "%" + escapeLike(query.keyword().toLowerCase(java.util.Locale.ROOT)) + "%";
+			arguments.add(pattern);
+			arguments.add(pattern);
+		}
+		if (query.createdFrom() != null) {
+			conditions.add("created_at >= ?");
+			arguments.add(BusinessTime.startOfDayUtcLocal(query.createdFrom()));
+		}
+		if (query.createdTo() != null) {
+			conditions.add("created_at < ?");
+			arguments.add(BusinessTime.startOfNextDayUtcLocal(query.createdTo()));
+		}
+		return " WHERE " + String.join(" AND ", conditions);
+	}
+
+	private static String escapeLike(String value) {
+		return value
+			.replace("\\", "\\\\")
+			.replace("%", "\\%")
+			.replace("_", "\\_");
+	}
+
+	@Override
+	public int deletePushNotifications(String userId) {
+		return jdbcTemplate.update(
+			"""
+				DELETE FROM push_notification_outbox
+				WHERE user_id = ?
+				""",
+			userId
+		);
+	}
+
+	private long countByStatus(List<StatusCountRow> rows, PushNotificationStatus status) {
+		return rows.stream()
+			.filter(row -> row.status() == status)
+			.mapToLong(StatusCountRow::count)
+			.sum();
+	}
+
+	private int updatePushNotification(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE push_notification_outbox
+				SET user_id = ?,
+					platform = ?,
+					device_token = ?,
+					notification_type = ?,
+					title = ?,
+					body = ?,
+					status = ?,
+					failure_reason = ?,
+					processing_claimed_at = ?,
+					created_at = ?
+				WHERE notification_id = ?
+				""",
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.failureReason(),
+			null,
+			notification.createdAt(),
+			notification.notificationId()
+		);
+	}
+
+	private void insertPushNotification(PushNotification notification) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					processing_claimed_at,
+					created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+			notification.notificationId(),
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.failureReason(),
+			null,
+			notification.createdAt()
+		);
+	}
+
+	private int insertPendingPushNotificationIfAbsent(PushNotification notification) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			return insertPendingPushNotificationIfAbsentWithH2(notification);
+		}
+		return jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					processing_claimed_at,
+					created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (notification_id) DO NOTHING
+				""",
+			pushNotificationParameters(notification)
+		);
+	}
+
+	private int insertPendingPushNotificationIfAbsentWithH2(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					processing_claimed_at,
+					created_at
+				)
+				SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM push_notification_outbox
+					WHERE notification_id = ?
+				)
+				""",
+			notification.notificationId(),
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.failureReason(),
+			null,
+			notification.createdAt(),
+			notification.notificationId()
+		);
+	}
+
+	private Object[] pushNotificationParameters(PushNotification notification) {
+		return new Object[] {
+			notification.notificationId(),
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.failureReason(),
+			null,
+			notification.createdAt()
+		};
+	}
+
+	private LocalDateTime processingClaimExpiresBefore() {
+		return LocalDateTime.now(ZoneOffset.UTC).minus(PROCESSING_CLAIM_TIMEOUT);
+	}
+
+	private PushNotification mapPushNotification(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new PushNotification(
+			resultSet.getString("notification_id"),
+			resultSet.getString("user_id"),
+			DevicePlatform.valueOf(resultSet.getString("platform")),
+			resultSet.getString("device_token"),
+			PushNotificationType.valueOf(resultSet.getString("notification_type")),
+			resultSet.getString("title"),
+			resultSet.getString("body"),
+			PushNotificationStatus.valueOf(resultSet.getString("status")),
+			resultSet.getString("failure_reason"),
+			resultSet.getObject("created_at", LocalDateTime.class)
+		);
+	}
+
+	private Optional<PushNotification> loadPushNotification(String notificationId) {
+		return jdbcTemplate.query(
+				"""
+					SELECT notification_id,
+						user_id,
+						platform,
+						device_token,
+						notification_type,
+						title,
+						body,
+						status,
+						failure_reason,
+						created_at
+					FROM push_notification_outbox
+					WHERE notification_id = ?
+					""",
+				this::mapPushNotification,
+				notificationId
+			)
+			.stream()
+			.findFirst();
+	}
+
+	private String latestFailureReason() {
+		return jdbcTemplate.query(
+				"""
+					SELECT failure_reason
+					FROM push_notification_outbox
+					WHERE status = ?
+						AND failure_reason IS NOT NULL
+					ORDER BY created_at DESC, notification_id DESC
+					LIMIT 1
+					""",
+				(resultSet, rowNumber) -> resultSet.getString("failure_reason"),
+				PushNotificationStatus.FAILED.name()
+			)
+			.stream()
+			.findFirst()
+			.orElse(null);
+	}
+
+	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private record StatusCountRow(PushNotificationStatus status, long count) {
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
+	}
+}

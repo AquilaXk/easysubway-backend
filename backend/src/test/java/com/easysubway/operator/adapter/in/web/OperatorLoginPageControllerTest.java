@@ -1,0 +1,99 @@
+package com.easysubway.operator.adapter.in.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest(properties = {
+	"easysubway.admin.username=admin-user",
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.operator.username=operator-user",
+	"easysubway.operator.password=operator-test-password"
+})
+@AutoConfigureMockMvc
+@DisplayName("운영기관 로그인 화면")
+class OperatorLoginPageControllerTest {
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Test
+	@DisplayName("운영기관 로그인 화면은 공개로 렌더링된다")
+	void operatorLoginPageRenders() throws Exception {
+		String html = mockMvc.perform(get("/operator/login"))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("운영기관 로그인")
+			.contains("운영기관 포털")
+			.contains("아이디")
+			.contains("비밀번호")
+			.contains(">로그인</button>")
+			.contains("name=\"_csrf\"")
+			.doesNotContain("안전하게 로그인")
+			.doesNotContain("기관 담당자에게 발급된 계정으로 접근성 보고서를 확인하세요.");
+	}
+
+	@Test
+	@DisplayName("운영기관 계정은 로그인 후 접근성 보고서로 이동한다")
+	void operatorLoginRedirectsToAccessibilityReport() throws Exception {
+		mockMvc.perform(post("/operator/login")
+				.with(csrf())
+				.param("username", "operator-user")
+				.param("password", "operator-test-password"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/operator/accessibility-report/page"));
+	}
+
+	@Test
+	@DisplayName("운영기관 로그아웃은 CSRF 토큰이 있는 POST만 세션을 파기하고 로그인 화면으로 리다이렉트한다")
+	void operatorLogoutRedirectsToLoginWithNotice() throws Exception {
+		mockMvc.perform(post("/operator/logout").with(csrf()))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/operator/login?logout"));
+
+		String html = mockMvc.perform(get("/operator/login").param("logout", ""))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html).contains("로그아웃되었습니다.");
+	}
+
+	@Test
+	@DisplayName("운영기관 로그아웃은 GET이나 CSRF 토큰 없는 POST로는 동작하지 않는다")
+	void operatorLogoutRejectsGetAndPostWithoutCsrfToken() throws Exception {
+		mockMvc.perform(get("/operator/logout"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
+
+		mockMvc.perform(post("/operator/logout"))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("인증된 운영기관 계정의 GET 로그아웃 요청은 로그아웃하지 않고 없는 리소스로 응답한다")
+	void authenticatedGetLogoutIsNotFoundAndDoesNotLogOut() throws Exception {
+		mockMvc.perform(get("/operator/logout")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(redirectedUrl(null))
+			.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+	}
+}

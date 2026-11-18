@@ -1,0 +1,369 @@
+package com.easysubway.journey.adapter.in.web;
+
+import com.easysubway.journey.application.JourneyCandidate;
+import com.easysubway.journey.application.JourneyExecutionResult;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
+
+final class JourneySearchResponseMapper {
+
+	private JourneySearchResponseMapper() {
+	}
+
+	static JourneySearchResponse map(JourneyExecutionResult.Success success) {
+		Objects.requireNonNull(success, "success");
+		return new JourneySearchResponse(
+			success.contractVersion(),
+			success.requestId(),
+			success.queryId(),
+			success.calculatedAt().toString(),
+			success.validUntil().toString(),
+			success.effectiveDepartureTime().toString(),
+			success.serviceDate().toString(),
+			success.serviceDayIdentity().timezone(),
+			success.serviceDayIdentity().cutoffLocalTime(),
+			mapSourceIdentity(success.sourceIdentity()),
+			mapRequestPolicy(success.requestPolicy()),
+			success.journeys().stream().map(journey -> mapJourney(journey, true)).toList(),
+			new StairFreeAlternativeResponse(
+				success.stairFreeAlternative().status().name(),
+				success.stairFreeAlternative().facilityStatus().name())
+		);
+	}
+
+	private static SourceIdentityResponse mapSourceIdentity(JourneyExecutionResult.SourceIdentity source) {
+		return new SourceIdentityResponse(
+			source.routeBundleId(),
+			source.routeBundleSha256(),
+			source.timetableSnapshotId(),
+			source.accessibilitySnapshotId(),
+			source.realtimeSnapshotId()
+		);
+	}
+
+	private static RequestPolicyResponse mapRequestPolicy(JourneyExecutionResult.RequestPolicy policy) {
+		return new RequestPolicyResponse(
+			wire(policy.timePolicy()),
+			wire(policy.walkingPace()),
+			wire(policy.mobilityProfile()),
+			wire(policy.constraintMode()),
+			policy.maxTransfers(),
+			policy.alternativeCount()
+		);
+	}
+
+	/** #469: 프로필 응답 여정은 대표 묶음 대신 objectiveTags를 쓰므로 alternativeCategories 키를 내지 않는다. */
+	static JourneyResponse mapProfileJourney(JourneyCandidate journey) {
+		return mapJourney(journey, false);
+	}
+
+	static JourneyResponse mapJourney(JourneyCandidate journey, boolean searchJourney) {
+		return new JourneyResponse(
+			journey.journeyId(),
+			wire(journey.status()),
+			wire(journey.planSource()),
+			journey.plannedDepartureTime().toString(),
+			journey.plannedArrivalTime().toString(),
+			wire(journey.realtimeDepartureTime()),
+			wire(journey.realtimeArrivalTime()),
+			journey.durationSeconds(),
+			journey.transferCount(),
+			journey.walkingDistanceMeters(),
+			wire(journey.timeSource()),
+			new AccessibilityResponse(
+				wire(journey.accessibility().result()),
+				journey.accessibility().stairFree(),
+				List.copyOf(journey.accessibility().reasonCodes())
+			),
+			mapFare(journey.fare()),
+			journey.legs().stream().map(JourneySearchResponseMapper::mapLeg).toList(),
+			searchJourney ? journey.alternativeCategories().stream().map(Enum::name).toList() : null
+		);
+	}
+
+	private static FareResponse mapFare(JourneyCandidate.Fare fare) {
+		return new FareResponse(
+			fare.status().name(),
+			fare.adultCardWon(),
+			fare.adultCashWon(),
+			fare.youthCardWon(),
+			fare.youthCashWon(),
+			fare.childCardWon(),
+			fare.childCashWon(),
+			List.copyOf(fare.sourceSnapshotIds())
+		);
+	}
+
+	private static LegResponse mapLeg(JourneyCandidate.Leg leg) {
+		return switch (leg) {
+			case JourneyCandidate.Entry entry -> new EntryLegResponse(
+				"ENTRY",
+				entry.fromStationId(),
+				entry.durationSeconds()
+			);
+			case JourneyCandidate.Ride ride -> new RideLegResponse(
+				"RIDE",
+				ride.lineId(),
+				ride.tripId(),
+				ride.directionStationId(),
+				ride.fromStationId(),
+				ride.toStationId(),
+				ride.servicePattern(),
+				ride.plannedDepartureTime().toString(),
+				ride.plannedArrivalTime().toString(),
+				wire(ride.realtimeDepartureTime()),
+				wire(ride.realtimeArrivalTime()),
+				ride.stops().stream().map(stop -> new RideStopResponse(
+					stop.stationId(),
+					wire(stop.plannedArrivalTime()),
+					wire(stop.plannedDepartureTime()),
+					wire(stop.realtimeArrivalTime()),
+					wire(stop.realtimeDepartureTime())
+				)).toList(),
+				ride.alightingCarDoors().stream()
+					.map(d -> new AlightingCarDoorResponse(d.carNumber(), d.doorNumber(), d.targetFacilityType()))
+					.toList(),
+				platformGaps(ride.boardingPlatformGaps()),
+				platformGaps(ride.alightingPlatformGaps())
+			);
+			case JourneyCandidate.Transfer transfer -> new TransferLegResponse(
+				"TRANSFER",
+				transfer.fromStationId(),
+				transfer.toStationId(),
+				transfer.durationSeconds(),
+				transfer.transferType(),
+				transfer.farePenaltyApplies(),
+				transfer.transferLimitMinutes()
+			);
+			case JourneyCandidate.Exit exit -> new ExitLegResponse(
+				"EXIT",
+				exit.fromStationId(),
+				exit.durationSeconds()
+			);
+		};
+	}
+
+	private static String wire(Instant value) {
+		return value == null ? null : value.toString();
+	}
+
+	private static String wire(JourneyRequest.TimePolicy value) {
+		return switch (value) {
+			case TIMETABLE_REQUIRED -> "TIMETABLE_REQUIRED";
+			case REALTIME_REQUIRED -> "REALTIME_REQUIRED";
+		};
+	}
+
+	private static String wire(JourneyRequest.MobilityProfile value) {
+		return switch (value) {
+			case STANDARD -> "STANDARD";
+			case SLOW -> "SLOW";
+			case NO_STAIRS -> "NO_STAIRS";
+			case STEP_FREE -> "STEP_FREE";
+		};
+	}
+
+	private static String wire(JourneyRequest.WalkingPace value) {
+		return switch (value) {
+			case SLOW -> "SLOW";
+			case STANDARD -> "STANDARD";
+			case FAST -> "FAST";
+		};
+	}
+
+	private static String wire(JourneyRequest.ConstraintMode value) {
+		return switch (value) {
+			case NONE -> "NONE";
+			case REQUIRE_STEP_FREE -> "REQUIRE_STEP_FREE";
+		};
+	}
+
+	private static String wire(JourneyCandidate.Status value) {
+		return switch (value) {
+			case FOUND -> "FOUND";
+		};
+	}
+
+	private static String wire(JourneyCandidate.PlanSource value) {
+		return switch (value) {
+			case SERVER_TIMETABLE_RAPTOR -> "SERVER_TIMETABLE_RAPTOR";
+		};
+	}
+
+	private static String wire(JourneyCandidate.TimeSource value) {
+		return switch (value) {
+			case TIMETABLE -> "TIMETABLE";
+			case REALTIME -> "REALTIME";
+		};
+	}
+
+	private static String wire(JourneyCandidate.AccessibilityResult value) {
+		return switch (value) {
+			case VERIFIED -> "VERIFIED";
+		};
+	}
+
+	record JourneySearchResponse(
+		String contractVersion,
+		String requestId,
+		String queryId,
+		String calculatedAt,
+		String validUntil,
+		String effectiveDepartureTime,
+		String serviceDate,
+		String serviceTimezone,
+		String serviceDayCutoff,
+		SourceIdentityResponse sourceIdentity,
+		RequestPolicyResponse requestPolicy,
+		List<JourneyResponse> journeys,
+		StairFreeAlternativeResponse stairFreeAlternative
+	) {
+	}
+
+	/** #469: 계단 없는 경로 묶음 결과와 시설 가동 정보 적용 여부. */
+	record StairFreeAlternativeResponse(String status, String facilityStatus) {
+	}
+
+	record SourceIdentityResponse(
+		String routeBundleId,
+		String routeBundleSha256,
+		String timetableSnapshotId,
+		String accessibilitySnapshotId,
+		String realtimeSnapshotId
+	) {
+	}
+
+	record RequestPolicyResponse(
+		String timePolicy,
+		String walkingPace,
+		String mobilityProfile,
+		String constraintMode,
+		int maxTransfers,
+		int alternativeCount
+	) {
+	}
+
+	record JourneyResponse(
+		String journeyId,
+		String status,
+		String planSource,
+		String plannedDepartureTime,
+		String plannedArrivalTime,
+		String realtimeDepartureTime,
+		String realtimeArrivalTime,
+		long durationSeconds,
+		int transferCount,
+		long walkingDistanceMeters,
+		String timeSource,
+		AccessibilityResponse accessibility,
+		FareResponse fare,
+		List<LegResponse> legs,
+		// #469: 검색 응답 여정만 대표 묶음을 낸다. 프로필 응답 여정은 objectiveTags를 쓰므로 이 키가 없다.
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		List<String> alternativeCategories
+	) {
+	}
+
+	record FareResponse(
+		String status,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer adultCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer adultCashWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer youthCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer youthCashWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer childCardWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer childCashWon,
+		List<String> sourceSnapshotIds
+	) {
+	}
+
+	record AccessibilityResponse(String result, boolean stairFree, List<String> reasonCodes) {
+	}
+
+	sealed interface LegResponse permits EntryLegResponse, RideLegResponse, TransferLegResponse, ExitLegResponse {
+	}
+
+	record EntryLegResponse(String type, String fromStationId, long durationSeconds) implements LegResponse {
+	}
+
+	record RideLegResponse(
+		String type,
+		String lineId,
+		String tripId,
+		String directionStationId,
+		String fromStationId,
+		String toStationId,
+		String servicePattern,
+		String plannedDepartureTime,
+		String plannedArrivalTime,
+		String realtimeDepartureTime,
+		String realtimeArrivalTime,
+		List<RideStopResponse> stops,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		List<AlightingCarDoorResponse> alightingCarDoors,
+		List<PlatformGapResponse> boardingPlatformGaps,
+		List<PlatformGapResponse> alightingPlatformGaps
+	) implements LegResponse {
+	}
+
+	private static List<PlatformGapResponse> platformGaps(List<PlatformGap> gaps) {
+		return gaps.stream()
+			.map(gap -> new PlatformGapResponse(
+				gap.platformPosition(), gap.carNumber(), gap.doorNumber(),
+				gap.gapGrade().name(), gap.heightDiffGrade().name(), gap.curved()))
+			.toList();
+	}
+
+	record PlatformGapResponse(
+		String platformPosition,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer carNumber,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer doorNumber,
+		String gapGrade,
+		String heightDiffGrade,
+		boolean curved
+	) {
+	}
+
+	record RideStopResponse(
+		String stationId,
+		String plannedArrivalTime,
+		String plannedDepartureTime,
+		String realtimeArrivalTime,
+		String realtimeDepartureTime
+	) {
+	}
+
+	record AlightingCarDoorResponse(
+		int carNumber,
+		int doorNumber,
+		String targetFacilityType
+	) {
+	}
+
+	record TransferLegResponse(
+		String type,
+		String fromStationId,
+		String toStationId,
+		long durationSeconds,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		String transferType,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Boolean farePenaltyApplies,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer transferLimitMinutes
+	) implements LegResponse {
+	}
+
+	record ExitLegResponse(String type, String fromStationId, long durationSeconds) implements LegResponse {
+	}
+}

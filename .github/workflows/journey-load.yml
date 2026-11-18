@@ -1,0 +1,53 @@
+name: Journey Load Scenarios
+
+on:
+  schedule:
+    # 매일 04:07 KST. 엔진 벤치마크 추세(03:23 KST)와 러너를 겹쳐 쓰지 않도록 시간을 벌린다.
+    - cron: "7 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 같은 시나리오가 겹쳐 돌면 서로의 부하가 측정에 섞인다. 진행 중인 실행은 취소하지 않는다.
+concurrency:
+  group: journey-load-scenarios
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: Journey load scenarios
+    # 대상은 러너가 직접 띄우는 로컬 서버뿐이다(운영 서버·운영 비밀 없음). 운영 부하와 겹치는 self-hosted 운영 러너는 쓰지 않는다.
+    # 정확성 계약(팩 교체 중 응답 일관성, 시설 상태 장애의 명시적 응답) 위반은 job을 실패시키고, 지연 한도 초과는 ::warning으로만 드러낸다.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up backend build environment
+        uses: ./.github/actions/backend-setup
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1
+        with:
+          k6-version: "2.1.0"
+
+      # 서버 기동·k6 실행·판정은 실행기 하나가 맡는다. 판정 요약은 job summary에 남고, 서버 로그와 k6 결과는 artifact로 남는다.
+      - name: Run the load scenarios
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: node tools/ci/journey-load-run.mjs --output-dir "${RUNNER_TEMP}/journey-load"
+
+      - name: Upload the load result
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: journey-load-${{ github.sha }}
+          path: ${{ runner.temp }}/journey-load/
+          retention-days: 14
+          if-no-files-found: error

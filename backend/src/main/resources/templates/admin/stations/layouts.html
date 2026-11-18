@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>역 구조도 요약</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-layout-editor')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>역 구조·동선 편집</h1>
+			<p>
+				<span th:text="${station.stationName}">상록수</span>
+				<span class="meta" th:text="${station.lineNames}">수도권 4호선</span>
+			</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn plain" th:href="@{/admin/stations/{stationId}/page(stationId=${station.stationId})}">역 상세</a>
+		</div>
+	</header>
+
+	<div class="alert warning" th:if="${!masterDataWritable}">
+		<strong>읽기 전용 마스터 데이터</strong>
+		<p>현재 운영 데이터는 저장할 수 없어 구조도와 내부 이동 정보 수정 요청이 차단됩니다.</p>
+	</div>
+	<div class="alert warning" th:if="${masterDataError}">
+		<strong>저장 요청 차단</strong>
+		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
+	</div>
+	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
+
+	<section class="admin-panel">
+		<h2>구조도 기준 자료</h2>
+		<div th:if="${layoutSources.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 구조도 기준 자료가 없습니다.', '아래 표의 등록 폼에서 기준 자료를 추가하세요.')}"></div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!layoutSources.isEmpty()}">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">자료</th>
+				<th scope="col">유형</th>
+				<th scope="col">라이선스</th>
+				<th scope="col">이용 조건</th>
+				<th scope="col">수집/확인일</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="source : ${layoutSources}">
+				<td>
+					<span class="meta" th:text="${source.sourceName}">상록수역 역사 안내도</span>
+					<span class="meta" th:text="${source.sourceUrl}">https://www.seoulmetro.co.kr</span>
+					<details class="admin-table-action-drawer">
+						<summary class="admin-btn outline small">수정</summary>
+						<form th:action="@{/admin/stations/{stationId}/layout-sources/{sourceId}/page(stationId=${station.stationId}, sourceId=${source.id})}"
+						      method="post">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<label class="meta" th:for="|source-type-${source.id}|">자료 유형</label>
+							<select name="sourceType" th:id="|source-type-${source.id}|" aria-label="자료 유형">
+								<option th:each="option : ${sourceTypeOptions}"
+								        th:value="${option.value}"
+								        th:text="${option.label}"
+								        th:selected="${option.value == source.sourceTypeValue}">OPERATOR_DIAGRAM</option>
+							</select>
+							<label class="meta" th:for="|source-name-${source.id}|">자료 이름</label>
+							<input type="text" name="sourceName" th:id="|source-name-${source.id}|"
+							       aria-label="자료 이름" th:value="${source.sourceName}" required>
+							<label class="meta" th:for="|source-url-${source.id}|">자료 URL</label>
+							<input type="url" name="sourceUrl" th:id="|source-url-${source.id}|"
+							       aria-label="자료 URL" th:value="${source.sourceUrl}" required>
+							<label class="meta" th:for="|source-license-${source.id}|">라이선스</label>
+							<input type="text" name="license" th:id="|source-license-${source.id}|"
+							       aria-label="라이선스" th:value="${source.license}" required>
+							<label class="meta" th:for="|commercial-use-${source.id}|">상업적 이용</label>
+							<select name="commercialUseAllowed" th:id="|commercial-use-${source.id}|" aria-label="상업적 이용">
+								<option value="false" th:selected="${!source.commercialUseAllowed}">불가</option>
+								<option value="true" th:selected="${source.commercialUseAllowed}">가능</option>
+							</select>
+							<label class="meta" th:for="|attribution-${source.id}|">출처 표시</label>
+							<select name="attributionRequired" th:id="|attribution-${source.id}|" aria-label="출처 표시">
+								<option value="true" th:selected="${source.attributionRequired}">필요</option>
+								<option value="false" th:selected="${!source.attributionRequired}">불필요</option>
+							</select>
+							<label class="meta" th:for="|captured-at-${source.id}|">수집일</label>
+							<input type="date" name="capturedAt" th:id="|captured-at-${source.id}|"
+							       aria-label="수집일" th:value="${source.capturedAt}" required>
+							<label class="meta" th:for="|reviewed-at-${source.id}|">확인일</label>
+							<input type="date" name="reviewedAt" th:id="|reviewed-at-${source.id}|"
+							       aria-label="확인일" th:value="${source.rawReviewedAt}">
+							<button type="submit" class="primary" th:disabled="${!masterDataWritable}">저장</button>
+						</form>
+					</details>
+				</td>
+				<td th:text="${source.sourceType}">OPERATOR_DIAGRAM</td>
+				<td th:text="${source.license}">운영기관 안내도 확인용</td>
+				<td>
+					<span th:text="${source.commercialUseLabel}">상업적 사용 불가</span>
+					<span class="meta" th:text="${source.attributionLabel}">출처 표시 필요</span>
+				</td>
+				<td>
+					<span th:text="${source.capturedAt}">2026-06-12</span>
+					<span class="meta" th:text="${source.reviewedAt}">2026-06-12</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>쉬운 내부 구조도</h2>
+		<div th:if="${layouts.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 쉬운 내부 구조도가 없습니다.', '구조도 기준 자료를 먼저 등록한 뒤 구조도를 추가하세요.')}"></div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!layouts.isEmpty()}">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">구조도</th>
+				<th scope="col">상태</th>
+					<th scope="col">확인 상태</th>
+				<th scope="col">기준층</th>
+				<th scope="col">기준 자료</th>
+				<th scope="col">마지막 확인일</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="layout : ${layouts}">
+				<td>
+					<span th:text="${layout.id}">layout-sangnoksu-draft</span>
+					<span class="meta" th:text="|v${layout.version}|">v1</span>
+				</td>
+				<td>
+					<form th:action="@{/admin/stations/{stationId}/layouts/{layoutId}/page/status(stationId=${station.stationId}, layoutId=${layout.id})}"
+					      method="post">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="expectedVersion" th:value="${layout.version}">
+							<label class="meta" th:for="|status-${layout.id}|">확인 상태</label>
+						<select name="status" th:id="|status-${layout.id}|" aria-label="확인 상태">
+							<option th:each="option : ${layoutStatusOptions}"
+							        th:value="${option.value}"
+							        th:text="${option.label}"
+							        th:selected="${option.value == layout.statusValue}">DRAFT</option>
+						</select>
+						<button type="submit" class="primary" th:disabled="${!masterDataWritable}">변경</button>
+					</form>
+				</td>
+				<td th:text="${layout.confidenceLevel}">OFFICIAL_DIAGRAM_REFERENCED</td>
+				<td th:text="${layout.baseFloor}">B1</td>
+				<td th:text="${layout.sourceIds}">layout-source-sangnoksu-station-map</td>
+				<td th:text="${layout.lastVerifiedAt}">2026-06-12</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>내부 이동 노드</h2>
+		<div th:if="${routeNodes.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 내부 이동 노드가 없습니다.', '아래 표의 등록 폼에서 노드를 추가하세요.')}"></div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!routeNodes.isEmpty()}">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">노드</th>
+				<th scope="col">유형</th>
+				<th scope="col">층</th>
+				<th scope="col">표시</th>
+				<th scope="col">접근성 메모</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="node : ${routeNodes}">
+				<td>
+					<span th:text="${node.name}">1번 출구 엘리베이터</span>
+					<span class="meta" th:text="${node.id}">node-sangnoksu-elevator-1</span>
+				</td>
+				<td th:text="${node.type}">ELEVATOR</td>
+				<td th:text="${node.floor}">B1</td>
+				<td>
+					<span th:text="${node.displayLabel}">1번 출구 엘리베이터</span>
+					<span class="meta" th:text="${node.positionLabel}">x 120, y 240</span>
+					<span class="meta" th:text="${node.layoutId}">layout-sangnoksu-draft</span>
+					<details class="admin-table-action-drawer">
+						<summary class="admin-btn outline small">수정</summary>
+						<form th:action="@{/admin/stations/{stationId}/route-nodes/{nodeId}/page(stationId=${station.stationId}, nodeId=${node.id})}"
+						      method="post">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<label class="meta" th:for="|display-label-${node.id}|">표시 라벨</label>
+							<input type="text" name="displayLabel" th:id="|display-label-${node.id}|"
+							       aria-label="표시 라벨" th:value="${node.displayLabel}" required>
+							<label class="meta" th:for="|display-x-${node.id}|">x</label>
+							<input type="number" name="displayX" th:id="|display-x-${node.id}|"
+							       aria-label="표시 x 좌표" th:value="${node.displayX}" min="0" required>
+							<label class="meta" th:for="|display-y-${node.id}|">y</label>
+							<input type="number" name="displayY" th:id="|display-y-${node.id}|"
+							       aria-label="표시 y 좌표" th:value="${node.displayY}" min="0" required>
+							<label class="meta" th:for="|accessibility-note-${node.id}|">접근성 메모</label>
+							<input type="text" name="accessibilityNote" th:id="|accessibility-note-${node.id}|"
+							       aria-label="접근성 메모" th:value="${node.rawAccessibilityNote}">
+							<button type="submit" class="primary" th:disabled="${!masterDataWritable}">저장</button>
+						</form>
+					</details>
+				</td>
+				<td th:text="${node.accessibilityNote}">휠체어 이동 가능</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel">
+		<h2>내부 이동 간선</h2>
+		<div th:if="${routeEdges.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 내부 이동 간선이 없습니다.', '내부 이동 노드를 먼저 등록한 뒤 간선을 추가하세요.')}"></div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!routeEdges.isEmpty()}">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">간선</th>
+				<th scope="col">유형</th>
+				<th scope="col">거리/시간</th>
+				<th scope="col">접근성 제약</th>
+					<th scope="col">확인 정도</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="edge : ${routeEdges}">
+				<td>
+					<span th:text="${edge.id}">edge-sangnoksu-elevator-to-faregate</span>
+					<span class="meta" th:text="${edge.fromNodeId}">node-sangnoksu-elevator-1</span>
+					<span class="meta" th:text="${edge.toNodeId}">node-sangnoksu-faregate</span>
+				</td>
+				<td th:text="${edge.type}">WALK</td>
+				<td>
+					<span th:text="${edge.distanceLabel}">28m</span>
+					<span class="meta" th:text="${edge.estimatedSecondsLabel}">75초</span>
+					<details class="admin-table-action-drawer">
+						<summary class="admin-btn outline small">수정</summary>
+						<form th:action="@{/admin/stations/{stationId}/route-edges/{edgeId}/page(stationId=${station.stationId}, edgeId=${edge.id})}"
+						      method="post">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<label class="meta" th:for="|distance-meters-${edge.id}|">거리 m</label>
+							<input type="number" name="distanceMeters" th:id="|distance-meters-${edge.id}|"
+							       aria-label="거리 m" th:value="${edge.distanceMeters}" min="0" required>
+							<label class="meta" th:for="|estimated-seconds-${edge.id}|">예상 초</label>
+							<input type="number" name="estimatedSeconds" th:id="|estimated-seconds-${edge.id}|"
+							       aria-label="예상 초" th:value="${edge.estimatedSeconds}" min="0" required>
+							<label class="meta" th:for="|slope-level-${edge.id}|">경사</label>
+							<input type="number" name="slopeLevel" th:id="|slope-level-${edge.id}|"
+							       aria-label="경사 수준" th:value="${edge.slopeLevel}" min="1" max="5" required>
+							<label class="meta" th:for="|width-level-${edge.id}|">폭</label>
+							<input type="number" name="widthLevel" th:id="|width-level-${edge.id}|"
+							       aria-label="폭 수준" th:value="${edge.widthLevel}" min="1" max="5" required>
+								<label class="meta" th:for="|reliability-score-${edge.id}|">확인 정도</label>
+							<input type="number" name="reliabilityScore" th:id="|reliability-score-${edge.id}|"
+							       aria-label="확인 정도" th:value="${edge.reliabilityScore}" min="0" max="100" required>
+							<label class="meta" th:for="|has-stairs-${edge.id}|">계단</label>
+							<select name="hasStairs" th:id="|has-stairs-${edge.id}|" aria-label="계단">
+								<option value="false" th:selected="${!edge.hasStairs}">없음</option>
+								<option value="true" th:selected="${edge.hasStairs}">포함</option>
+							</select>
+							<label class="meta" th:for="|requires-elevator-${edge.id}|">엘리베이터</label>
+							<select name="requiresElevator" th:id="|requires-elevator-${edge.id}|" aria-label="엘리베이터 필요">
+								<option value="false" th:selected="${!edge.requiresElevator}">불필요</option>
+								<option value="true" th:selected="${edge.requiresElevator}">필요</option>
+							</select>
+							<label class="meta" th:for="|requires-escalator-${edge.id}|">에스컬레이터</label>
+							<select name="requiresEscalator" th:id="|requires-escalator-${edge.id}|" aria-label="에스컬레이터 필요">
+								<option value="false" th:selected="${!edge.requiresEscalator}">불필요</option>
+								<option value="true" th:selected="${edge.requiresEscalator}">필요</option>
+							</select>
+							<label class="meta" th:for="|active-${edge.id}|">활성</label>
+							<select name="active" th:id="|active-${edge.id}|" aria-label="활성 여부">
+								<option value="true" th:selected="${edge.active}">활성</option>
+								<option value="false" th:selected="${!edge.active}">비활성</option>
+							</select>
+							<button type="submit" class="primary" th:disabled="${!masterDataWritable}">저장</button>
+						</form>
+					</details>
+				</td>
+				<td>
+					<span th:text="${edge.stairsLabel}">계단 없음</span>
+					<span class="meta" th:text="${edge.elevatorLabel}">엘리베이터 필요</span>
+					<span class="meta" th:text="${edge.escalatorLabel}">에스컬레이터 불필요</span>
+				</td>
+				<td>
+						<span th:text="${edge.reliabilityLabel}">확인 정도 92</span>
+					<span class="meta" th:text="${edge.activeLabel}">활성</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

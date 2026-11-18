@@ -1,0 +1,1042 @@
+package com.easysubway.journey.bundle;
+
+import com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.CarDoorHint;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendarDate;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.route.application.service.OfficialFareQuote;
+import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.luben.zstd.Zstd;
+import com.github.luben.zstd.ZstdInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Compiles already-admitted Data component bytes into one Journey RAPTOR runtime. */
+public final class RouteBundleSqliteRuntimeCompiler {
+
+	private static final Logger log = LoggerFactory.getLogger(RouteBundleSqliteRuntimeCompiler.class);
+
+	static final String TOPOLOGY_PATH = "payload/topology.sqlite.zst";
+	static final String TIMETABLE_PATH = "payload/timetable.sqlite.zst";
+	static final String ACCESSIBILITY_PATH = "payload/accessibility.sqlite.zst";
+	static final String FARE_PATH = "payload/fare.sqlite.zst";
+	private static final Set<String> PAYLOAD_PATHS = Set.of(
+		TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH);
+	private static final String OUT_OF_STATION_TRANSFER = "OUT_OF_STATION_TRANSFER";
+	// #458: 전국 공식 시간표 번들(실측 81.6MiB, #903 반영 예상 약 105MiB)에 여유를 둔 값.
+	// data server-route-bundle-build-contract.json maxTotalDecompressedBytes와 함께 바꾼다.
+	static final long MAX_TOTAL_DECOMPRESSED_BYTES = 192L * 1024L * 1024L;
+	private static final int SQLITE_USER_VERSION = 19;
+	private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
+	private static final ObjectMapper JSON = new ObjectMapper();
+	private static final DateTimeFormatter SERVICE_DATE = DateTimeFormatter.BASIC_ISO_DATE;
+	private final long maxTotalDecompressedBytes;
+
+	public RouteBundleSqliteRuntimeCompiler() {
+		this(MAX_TOTAL_DECOMPRESSED_BYTES);
+	}
+
+	RouteBundleSqliteRuntimeCompiler(long maxTotalDecompressedBytes) {
+		if (maxTotalDecompressedBytes < 1 || maxTotalDecompressedBytes > MAX_TOTAL_DECOMPRESSED_BYTES) {
+			throw new IllegalArgumentException("route-bundle total decompression limit is invalid");
+		}
+		this.maxTotalDecompressedBytes = maxTotalDecompressedBytes;
+	}
+
+	public RaptorRouteBundleRuntimeView compile(Input input) {
+		CompiledPayloads compiled = read(input);
+		return RaptorRouteBundleRuntimeView.compile(
+			input.routeBundleSha256(), input.generation(), compiled.timetable(), compiled.smrtElevatorFacilities(),
+			compiled.fareQuotes(), compiled.canonicalStationLines(), compiled.facilityEdgeIds(),
+			compiled.canonicalStationIds(), compiled.bundleFacilities(), compiled.bundleStationExits());
+	}
+
+	RouteTimetable readTimetable(Input input) {
+		return read(input).timetable();
+	}
+
+	// 검증·해제 수명은 여기서 끝내고 탐색용 인덱스 생성과 분리한다.
+	private CompiledPayloads read(Input input) {
+		Objects.requireNonNull(input, "input");
+		Map<String, byte[]> payloads = input.compressedPayloads();
+		if (!payloads.keySet().equals(PAYLOAD_PATHS)) {
+			throw new IllegalArgumentException("route-bundle payload inventory is invalid");
+		}
+		Map<String, String> admittedPayloadSha256s = input.admittedPayloadSha256s();
+		if (!admittedPayloadSha256s.keySet().equals(PAYLOAD_PATHS)) {
+			throw new IllegalArgumentException("route-bundle admitted payload digest inventory is invalid");
+		}
+		for (String payloadPath : PAYLOAD_PATHS) {
+			if (!admittedPayloadSha256s.get(payloadPath).equals(sha256(payloads.get(payloadPath)))) {
+				throw new IllegalArgumentException("route-bundle admitted payload digest mismatch");
+			}
+		}
+		Path directory = null;
+		var components = new ArrayList<Component>();
+		try {
+			directory = Files.createTempDirectory("journey-route-bundle-");
+			long decompressedBytes = 0;
+			for (String payloadPath : List.of(TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH)) {
+				Path sqlite = directory.resolve(payloadPath.substring("payload/".length()).replace(".zst", ""));
+				decompressedBytes = Math.addExact(decompressedBytes,
+					decompress(payloads.get(payloadPath), sqlite, maxTotalDecompressedBytes - decompressedBytes));
+				components.add(open(payloadPath, sqlite, input));
+			}
+			Map<String, Component> byPath = new HashMap<>();
+			components.forEach(component -> byPath.put(component.payloadPath(), component));
+			requireEqualReferences(components);
+			var topology = loadTopology(byPath.get(TOPOLOGY_PATH).connection());
+			var accessibilityConn = byPath.get(ACCESSIBILITY_PATH).connection();
+			var evaluations = validateAccessibility(accessibilityConn, topology);
+			var carDoorHints = loadCarDoorHints(accessibilityConn);
+			var platformGaps = loadPlatformGaps(accessibilityConn);
+			Map<String, OfficialFareQuote> fareQuotes = loadFare(byPath.get(FARE_PATH).connection());
+			var references = components.getFirst().references();
+			var loadedFacilities = loadFacilities(accessibilityConn);
+			var bundleStationExits = loadStationExits(accessibilityConn);
+			return new CompiledPayloads(loadTimetable(
+				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
+				loadedFacilities.smrtElevatorFacilities(), fareQuotes, canonicalStationLines(references),
+				indexFacilityEdgeIds(topology), canonicalStationIds(references),
+				loadedFacilities.bundleFacilities(), bundleStationExits);
+		} catch (IOException | SQLException exception) {
+			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
+		} finally {
+			for (var component : components) component.closeQuietly();
+			if (directory != null) deleteDirectory(directory);
+		}
+	}
+
+	/** Image preflight entry point: proves that the pinned native library loads without /tmp extraction. */
+	public static void main(String[] arguments) throws SQLException, IOException {
+		if (arguments.length != 0) throw new IllegalArgumentException("SQLite runtime probe takes no arguments");
+		byte[] expected = "easysubway-zstd-runtime-probe".getBytes(StandardCharsets.UTF_8);
+		try (var source = new ZstdInputStream(new ByteArrayInputStream(Zstd.compress(expected)));
+			var target = new ByteArrayOutputStream()) {
+			source.transferTo(target);
+			if (!Arrays.equals(expected, target.toByteArray())) {
+				throw new IllegalStateException("zstd runtime probe mismatch");
+			}
+		}
+		try (var connection = DriverManager.getConnection("jdbc:sqlite::memory:");
+			var statement = connection.createStatement();
+			var rows = statement.executeQuery("SELECT sqlite_version()")) {
+			if (!rows.next() || !"3.53.2".equals(rows.getString(1)) || rows.next()) {
+				throw new IllegalStateException("SQLite runtime version mismatch");
+			}
+		}
+	}
+
+	private static Component open(String payloadPath, Path sqlite, Input input) throws SQLException {
+		Connection connection = DriverManager.getConnection("jdbc:sqlite:" + sqlite.toAbsolutePath());
+		try {
+			execute(connection, "PRAGMA query_only=ON");
+			requireSqliteIntegrity(connection);
+			requireColumns(connection, "artifact_component_identity",
+				List.of("bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"));
+			requireColumns(connection, "stations", List.of("id"));
+			requireColumns(connection, "lines", List.of("id"));
+			requireColumns(connection, "station_lines", List.of("station_id", "line_id", "line_sequence"));
+			requireComponentIdentity(connection, input);
+			return new Component(payloadPath, connection, references(connection));
+		} catch (RuntimeException | SQLException exception) {
+			connection.close();
+			throw exception;
+		}
+	}
+
+	private static void requireSqliteIntegrity(Connection connection) throws SQLException {
+		if (querySingleInt(connection, "PRAGMA user_version") != SQLITE_USER_VERSION) {
+			throw new IllegalArgumentException("SQLite user_version is not 19");
+		}
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("PRAGMA integrity_check")) {
+			if (!rows.next() || !"ok".equals(rows.getString(1)) || rows.next()) {
+				throw new IllegalArgumentException("SQLite integrity check failed");
+			}
+		}
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("PRAGMA foreign_key_check")) {
+			if (rows.next()) throw new IllegalArgumentException("SQLite foreign key check failed");
+		}
+	}
+
+	private static void requireComponentIdentity(Connection connection, Input input) throws SQLException {
+		try (var statement = connection.createStatement();
+			var rows = statement.executeQuery("SELECT bundleId, releaseSequence, stationSetSha256, serviceTimezone FROM artifact_component_identity")) {
+			if (!rows.next()
+				|| !input.bundleId().equals(rows.getString(1))
+				|| input.releaseSequence() != rows.getLong(2)
+				|| !input.stationSetSha256().equals(rows.getString(3))
+				|| !"Asia/Seoul".equals(rows.getString(4))
+				|| rows.next()) {
+				throw new IllegalArgumentException("route-bundle component identity mismatch");
+			}
+		}
+	}
+
+	private static References references(Connection connection) throws SQLException {
+		return new References(
+			queryStrings(connection, "SELECT id FROM stations ORDER BY id COLLATE BINARY", 1),
+			queryStrings(connection, "SELECT id FROM lines ORDER BY id COLLATE BINARY", 1),
+			queryStrings(connection,
+				"SELECT station_id, line_id, line_sequence FROM station_lines ORDER BY station_id COLLATE BINARY, line_id COLLATE BINARY",
+				3));
+	}
+
+	private static void requireEqualReferences(List<Component> components) {
+		References expected = components.getFirst().references();
+		if (expected.stations().isEmpty() || expected.lines().isEmpty() || expected.stationLines().isEmpty()
+			|| components.stream().anyMatch(component -> !expected.equals(component.references()))) {
+			throw new IllegalArgumentException("route-bundle component reference rows mismatch");
+		}
+	}
+
+	// 정본 역 집합은 네 구성요소 일치 검증을 통과한 stations 표의 id 바이트 순서를 그대로 보존한다.
+	private static Set<String> canonicalStationIds(References references) {
+		return Collections.unmodifiableSet(new LinkedHashSet<>(references.stations()));
+	}
+
+	// #476: 네 구성요소가 같다고 확인한 station_lines가 역 시간표의 정본 역·노선이다.
+	private static Set<StationLine> canonicalStationLines(References references) {
+		var stationLines = new HashSet<StationLine>();
+		for (String row : references.stationLines()) {
+			String[] columns = row.split("\u0000", -1);
+			stationLines.add(new StationLine(columns[0], columns[1]));
+		}
+		return Set.copyOf(stationLines);
+	}
+
+	private static Map<String, TopologyEdge> loadTopology(Connection connection) throws SQLException {
+		requireColumns(connection, "network_edges", List.of(
+			"id", "from_node_id", "to_node_id", "duration_seconds", "distance_meters", "edge_type",
+			"service_pattern", "service_class", "includes_stairs", "stair_access_state",
+			"accessibility_status", "reliability_score", "source_id", "source_snapshot_id",
+			"provider_record_hash", "provenance_kind", "verification_status", "facility_id",
+			"last_verified_at", "evidence_hash"));
+		var edges = new LinkedHashMap<String, TopologyEdge>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+			SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters, edge_type,
+			 service_pattern, service_class, includes_stairs, accessibility_status, reliability_score,
+			 provenance_kind, verification_status, stair_access_state, facility_id
+			FROM network_edges ORDER BY id COLLATE BINARY
+			""")) {
+			while (rows.next()) {
+				var edge = new TopologyEdge(
+					requireText(rows.getString(1), "network edge id"),
+					requireText(rows.getString(2), "network edge from"),
+					requireText(rows.getString(3), "network edge to"),
+					rows.getInt(4), rows.getInt(5), requireText(rows.getString(6), "network edge type"),
+					rows.getString(7), requireText(rows.getString(8), "network edge service class"),
+					rows.getBoolean(9), requireText(rows.getString(10), "network edge accessibility status"),
+					rows.getInt(11), requireText(rows.getString(12), "network edge provenance"),
+					requireText(rows.getString(13), "network edge verification"),
+					requireText(rows.getString(14), "network edge stair access state"),
+					normalizeOptionalFacilityId(rows.getString(15)));
+				if (edge.durationSeconds() < 0 || edge.distanceMeters() < 0
+					|| edge.reliabilityScore() < 0 || edge.reliabilityScore() > 100
+					|| edges.put(edge.id(), edge) != null) {
+					throw new IllegalArgumentException("topology network edge is invalid");
+				}
+			}
+		}
+		if (edges.isEmpty()) throw new IllegalArgumentException("topology network edges are empty");
+		return Map.copyOf(edges);
+	}
+
+	private static Map<String, Evaluation> validateAccessibility(
+		Connection connection, Map<String, TopologyEdge> topology) throws SQLException {
+		requireColumns(connection, "route_accessibility_edge_evidence",
+			List.of("evaluation_digest", "materialization_digest", "canonical_json"));
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery(
+			"SELECT evaluation_digest, materialization_digest, canonical_json FROM route_accessibility_edge_evidence")) {
+			if (!rows.next()) throw new IllegalArgumentException("accessibility evidence is missing");
+			String evaluationDigest = requireSha256(rows.getString(1), "evaluation digest");
+			String materializationDigest = requireSha256(rows.getString(2), "materialization digest");
+			String rawJson = requireText(rows.getString(3), "accessibility evidence JSON");
+			if (rows.next()) throw new IllegalArgumentException("accessibility evidence must contain one row");
+			try {
+				JsonNode root = JSON.readTree(rawJson);
+				String candidateId = root.path("candidate").path("candidateId").textValue();
+				if (!rawJson.equals(canonical(root)) || !root.isObject()
+					|| !evaluationDigest.equals(root.path("evaluationDigest").textValue())
+					|| candidateId == null || candidateId.isBlank()
+					|| !root.path("eligible").isBoolean() || !root.path("eligible").booleanValue()) {
+					throw new IllegalArgumentException("accessibility evidence identity is invalid");
+				}
+				String unsignedJson = canonicalWithout(root, "evaluationDigest");
+				if (!evaluationDigest.equals(sha256(unsignedJson.getBytes(StandardCharsets.UTF_8)))) {
+					throw new IllegalArgumentException("accessibility evidence digest mismatch");
+				}
+				JsonNode results = root.path("results");
+				if (!results.isArray() || results.size() != topology.size()
+					|| root.path("denominator").path("edgeCount").intValue() != topology.size()) {
+					throw new IllegalArgumentException("accessibility evidence does not cover topology");
+				}
+				var evaluations = new HashMap<String, Evaluation>();
+				for (JsonNode result : results) {
+					String edgeId = requireText(result.path("edgeId").textValue(), "evaluated edge id");
+					TopologyEdge edge = topology.get(edgeId);
+					String state = requireText(result.path("state").textValue(), "evaluated edge state");
+					if (edge == null || evaluations.containsKey(edgeId)
+						|| !edge.type().equals(result.path("edgeType").textValue())
+						|| !Set.of("PASS", "BLOCKED", "NOT_APPLICABLE").contains(state)
+						|| !materializationDigest.equals(result.path("materializationDigest").textValue())
+						|| !edge.rawSha256().equals(result.path("rawEdgeSha256").textValue())) {
+						throw new IllegalArgumentException("accessibility evidence result mismatch");
+					}
+					String resultDigest = result.path("evidenceSha256").textValue();
+					if (!requireSha256(resultDigest, "edge evidence digest")
+						.equals(sha256(canonicalWithout(result, "evidenceSha256").getBytes(StandardCharsets.UTF_8)))) {
+						throw new IllegalArgumentException("accessibility edge evidence digest mismatch");
+					}
+					evaluations.put(edgeId, new Evaluation(state, result.path("reason").textValue()));
+				}
+				if (!evaluations.keySet().equals(topology.keySet())) {
+					throw new IllegalArgumentException("accessibility evidence does not cover topology");
+				}
+				return Map.copyOf(evaluations);
+			} catch (IOException exception) {
+				throw new IllegalArgumentException("accessibility evidence JSON is invalid", exception);
+			}
+		}
+	}
+
+	// #419: 관리자 확인 기록이 고를 서울교통공사 엘리베이터 시설 목록. accessibility 구성요소가 소유한 facilities 표(data 계약)에서
+	// smrt-elev: 행만 읽는다. 표가 없거나 이름이 비면 번들 계약 위반이라 컴파일을 실패시킨다.
+	// facilities 표 전체를 단일 패스로 읽어 일반 카탈로그와 smrt-elev: 부분 목록을 함께 만든다.
+	private static LoadedFacilities loadFacilities(Connection connection) throws SQLException {
+		if (!hasTable(connection, "facilities")) {
+			throw new SQLException("no such table: facilities");
+		}
+		Set<String> columns = requireRequiredColumns(connection, "facilities",
+			List.of("id", "station_id", "type", "name"));
+		boolean hasExitId = columns.contains("exit_id");
+		boolean hasFloorFrom = columns.contains("floor_from");
+		boolean hasFloorTo = columns.contains("floor_to");
+		boolean hasDescription = columns.contains("description");
+		boolean hasStatus = columns.contains("status");
+		boolean hasOperationalStatus = columns.contains("operational_status");
+		boolean hasProvenanceKind = columns.contains("provenance_kind");
+		boolean hasVerifiedAt = columns.contains("verified_at");
+		boolean hasConfidence = columns.contains("confidence");
+		var bundleFacilities = new ArrayList<RouteBundleFacilityCatalog.BundleFacility>();
+		var smrtElevatorFacilities = new ArrayList<RouteBundleFacilityCatalog.Facility>();
+		try (var statement = connection.prepareStatement("SELECT * FROM facilities ORDER BY id COLLATE BINARY");
+			var rows = statement.executeQuery()) {
+			while (rows.next()) {
+				String id = requireText(rows.getString("id"), "bundle facility id");
+				String stationId = requireText(rows.getString("station_id"), "bundle facility station");
+				String exitId = hasExitId ? rows.getString("exit_id") : null;
+				String type = requireText(rows.getString("type"), "bundle facility type");
+				String name = requireText(rows.getString("name"), "bundle facility name");
+				var facility = new RouteBundleFacilityCatalog.BundleFacility(
+					id,
+					stationId,
+					exitId,
+					type,
+					name,
+					hasFloorFrom ? rows.getString("floor_from") : "",
+					hasFloorTo ? rows.getString("floor_to") : "",
+					hasDescription ? rows.getString("description") : "",
+					hasStatus ? rows.getString("status") : "UNKNOWN",
+					hasOperationalStatus ? rows.getString("operational_status") : "UNKNOWN",
+					hasProvenanceKind ? rows.getString("provenance_kind") : "UNKNOWN",
+					hasVerifiedAt ? rows.getLong("verified_at") : 0L,
+					hasConfidence ? rows.getInt("confidence") : 0
+				);
+				bundleFacilities.add(facility);
+				if (id.startsWith(RouteBundleFacilityCatalog.SMRT_ELEVATOR_PREFIX)) {
+					smrtElevatorFacilities.add(new RouteBundleFacilityCatalog.Facility(id, name));
+				}
+			}
+		}
+		return new LoadedFacilities(List.copyOf(bundleFacilities), List.copyOf(smrtElevatorFacilities));
+	}
+
+	private static List<RouteBundleFacilityCatalog.BundleStationExit> loadStationExits(Connection connection)
+		throws SQLException {
+		if (!hasTable(connection, "station_exits")) {
+			return List.of();
+		}
+		Set<String> columns = requireRequiredColumns(connection, "station_exits",
+			List.of("id", "station_id", "exit_number"));
+		boolean hasDescription = columns.contains("description");
+		boolean hasLatitude = columns.contains("latitude");
+		boolean hasLongitude = columns.contains("longitude");
+		boolean hasElevatorConnection = columns.contains("has_elevator_connection");
+		boolean hasDataSourceType = columns.contains("data_source_type");
+		var exits = new ArrayList<RouteBundleFacilityCatalog.BundleStationExit>();
+		try (var statement = connection.prepareStatement("SELECT * FROM station_exits ORDER BY id COLLATE BINARY");
+			var rows = statement.executeQuery()) {
+			while (rows.next()) {
+				exits.add(new RouteBundleFacilityCatalog.BundleStationExit(
+					requireText(rows.getString("id"), "bundle station_exit id"),
+					requireText(rows.getString("station_id"), "bundle station_exit station"),
+					requireText(rows.getString("exit_number"), "bundle station_exit number"),
+					hasDescription ? rows.getString("description") : "",
+					hasLatitude ? optionalFiniteDouble(rows, "latitude") : null,
+					hasLongitude ? optionalFiniteDouble(rows, "longitude") : null,
+					hasElevatorConnection && rows.getInt("has_elevator_connection") != 0,
+					hasDataSourceType ? rows.getString("data_source_type") : "OFFICIAL_FILE"
+				));
+			}
+		}
+		return List.copyOf(exits);
+	}
+
+	private static boolean hasTable(Connection connection, String table) throws SQLException {
+		try (var statement = connection.prepareStatement(
+			"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+			statement.setString(1, table);
+			try (var rows = statement.executeQuery()) {
+				return rows.next();
+			}
+		}
+	}
+
+	private static Double optionalFiniteDouble(ResultSet rows, String column) throws SQLException {
+		Object value = rows.getObject(column);
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number number) {
+			double parsed = number.doubleValue();
+			if (!Double.isFinite(parsed)) {
+				throw new IllegalArgumentException("bundle station_exit " + column + " must be finite");
+			}
+			return parsed;
+		}
+		throw new IllegalArgumentException("bundle station_exit " + column + " must be numeric");
+	}
+
+	private static Map<String, OfficialFareQuote> loadFare(Connection connection) throws SQLException {
+		requireColumns(connection, "official_od_fare_quotes", List.of(
+			"origin_station_id", "destination_station_id", "source_id", "snapshot_id", "mapping_ledger_hash",
+			"gnrl_card_fare", "gnrl_cash_fare", "yung_card_fare", "yung_cash_fare",
+			"child_card_fare", "child_cash_fare"));
+		var fareQuotes = new HashMap<String, OfficialFareQuote>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+			SELECT origin_station_id, destination_station_id, source_id, snapshot_id, mapping_ledger_hash,
+			 gnrl_card_fare, gnrl_cash_fare, yung_card_fare, yung_cash_fare, child_card_fare, child_cash_fare
+			FROM official_od_fare_quotes
+			""")) {
+			while (rows.next()) {
+				String origin = requireText(rows.getString(1), "fare origin station");
+				String destination = requireText(rows.getString(2), "fare destination station");
+				if (origin.equals(destination)) {
+					throw new IllegalArgumentException("fare origin and destination must differ");
+				}
+				String sourceId = requireText(rows.getString(3), "fare source");
+				String snapshotId = requireText(rows.getString(4), "fare snapshot");
+				String mappingLedgerHash = requireSha256(rows.getString(5), "fare mapping ledger");
+				for (int column = 6; column <= 11; column++) {
+					int fareValue = rows.getInt(column);
+					if (rows.wasNull() || fareValue < 0) {
+						throw new IllegalArgumentException("fare value is invalid");
+					}
+				}
+				int gnrlCardFare = rows.getInt(6);
+				int gnrlCashFare = rows.getInt(7);
+				int yungCardFare = rows.getInt(8);
+				int yungCashFare = rows.getInt(9);
+				int childCardFare = rows.getInt(10);
+				int childCashFare = rows.getInt(11);
+
+				String key = OfficialFareQuote.fareKey(origin, destination);
+				var quote = new OfficialFareQuote(
+					origin, destination, sourceId, snapshotId, mappingLedgerHash,
+					gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare);
+				if (fareQuotes.put(key, quote) != null) {
+					throw new IllegalArgumentException("duplicate official_od_fare_quotes key: " + key);
+				}
+			}
+		}
+		return Map.copyOf(fareQuotes);
+	}
+
+	private static List<CarDoorHint> loadCarDoorHints(Connection connection) throws SQLException {
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_car_door_hints'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_car_door_hints does not exist; loaded 0 hints");
+			return List.of();
+		}
+		requireColumns(connection, "station_car_door_hints", List.of(
+			"id", "station_id", "line_id", "direction", "target_facility_type", "car_number", "door_number",
+			"source_id", "source_snapshot_id", "provider_record_hash", "provenance_kind", "verification_status",
+			"last_verified_at", "evidence_hash"));
+		var hints = new ArrayList<CarDoorHint>();
+		try (var statement = connection.createStatement();
+			 var rows = statement.executeQuery("""
+				SELECT station_id, line_id, direction, target_facility_type, car_number, door_number
+				FROM station_car_door_hints
+				ORDER BY station_id, line_id, direction, target_facility_type, car_number, door_number
+				""")) {
+			while (rows.next()) {
+				hints.add(new CarDoorHint(
+					requireText(rows.getString(1), "station_car_door_hints station_id"),
+					requireText(rows.getString(2), "station_car_door_hints line_id"),
+					requireText(rows.getString(3), "station_car_door_hints direction"),
+					requireText(rows.getString(4), "station_car_door_hints target_facility_type"),
+					rows.getInt(5),
+					rows.getInt(6)
+				));
+			}
+		}
+		log.info("Loaded {} car door hints from accessibility bundle", hints.size());
+		return List.copyOf(hints);
+	}
+
+	private static Map<PlatformGapKey, List<PlatformGap>> loadPlatformGaps(Connection connection)
+		throws SQLException {
+		int tableCount = querySingleInt(connection,
+			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='station_platform_gaps'");
+		if (tableCount == 0) {
+			log.info("Accessibility bundle table station_platform_gaps does not exist; loaded 0 platform gaps");
+			return Map.of();
+		}
+		requireColumns(connection, "station_platform_gaps", List.of(
+			"id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number",
+			"gap_grade", "height_diff_grade", "curved", "source_snapshot_id"));
+		var grouped = new LinkedHashMap<PlatformGapKey, List<PlatformGap>>();
+		int count = 0;
+		try (var statement = connection.createStatement();
+			 var rows = statement.executeQuery("""
+				SELECT station_id, line_id, direction, platform_position, car_number, door_number,
+				       gap_grade, height_diff_grade, curved
+				FROM station_platform_gaps
+				""")) {
+			while (rows.next()) {
+				String direction = requireText(rows.getString(3), "station_platform_gaps direction");
+				if (!"UP".equals(direction) && !"DOWN".equals(direction)) {
+					throw new IllegalArgumentException("invalid platform gap direction: " + direction);
+				}
+				int curved = rows.getInt(9);
+				if (curved != 0 && curved != 1) {
+					throw new IllegalArgumentException("invalid platform gap curved: " + curved);
+				}
+				var key = new PlatformGapKey(
+					requireText(rows.getString(1), "station_platform_gaps station_id"),
+					requireText(rows.getString(2), "station_platform_gaps line_id"),
+					direction);
+				grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new PlatformGap(
+					requireText(rows.getString(4), "station_platform_gaps platform_position"),
+					rows.getObject(5) == null ? null : rows.getInt(5),
+					rows.getObject(6) == null ? null : rows.getInt(6),
+					GapGrade.fromCode(requireText(rows.getString(7), "station_platform_gaps gap_grade")),
+					HeightDiffGrade.fromCode(requireText(rows.getString(8), "station_platform_gaps height_diff_grade")),
+					curved == 1));
+				count++;
+			}
+		}
+		// 노출 순서: 간격 WIDE→NORMAL→NARROW, 같으면 높이차 HIGH→NORMAL→LOW, 그다음 위치 오름차순
+		var order = Comparator.comparing(PlatformGap::gapGrade)
+			.thenComparing(PlatformGap::heightDiffGrade)
+			.thenComparing(PlatformGap::platformPosition);
+		var sorted = new LinkedHashMap<PlatformGapKey, List<PlatformGap>>();
+		grouped.forEach((key, gaps) -> sorted.put(key, gaps.stream().sorted(order).toList()));
+		log.info("Loaded {} platform gaps from accessibility bundle", count);
+		return sorted;
+	}
+
+	private static RouteTimetable loadTimetable(
+		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
+		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps)
+		throws SQLException {
+		requireTimetableColumns(connection);
+		var calendars = new ArrayList<ServiceCalendar>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+			SELECT service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday,
+			 start_date, end_date, timezone FROM service_calendars ORDER BY service_id COLLATE BINARY
+			""")) {
+			while (rows.next()) calendars.add(new ServiceCalendar(
+				rows.getString(1), rows.getBoolean(2), rows.getBoolean(3), rows.getBoolean(4), rows.getBoolean(5),
+				rows.getBoolean(6), rows.getBoolean(7), rows.getBoolean(8), serviceDate(rows.getString(9)),
+				serviceDate(rows.getString(10)), rows.getString(11)));
+		}
+		var calendarDates = new ArrayList<ServiceCalendarDate>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery(
+			"SELECT service_id, date, exception_type FROM service_calendar_dates ORDER BY service_id COLLATE BINARY, date COLLATE BINARY")) {
+			while (rows.next()) calendarDates.add(new ServiceCalendarDate(
+				rows.getString(1), serviceDate(rows.getString(2)), rows.getInt(3)));
+		}
+		var routes = new ArrayList<TransitRoute>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery(
+			"SELECT id, line_id, route_short_name, route_long_name, direction_name, timezone FROM transit_routes ORDER BY id COLLATE BINARY")) {
+			while (rows.next()) routes.add(new TransitRoute(
+				rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4), rows.getString(5), rows.getString(6)));
+		}
+		var trips = new ArrayList<TransitTrip>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+			SELECT id, route_id, service_id, trip_headsign, direction_id, service_class, service_pattern,
+			 service_day_start_seconds FROM transit_trips ORDER BY id COLLATE BINARY
+			""")) {
+			while (rows.next()) trips.add(new TransitTrip(
+				rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4), rows.getString(5),
+				rows.getString(6), rows.getString(7), null, rows.getInt(8)));
+		}
+		var stopTimes = new ArrayList<TransitStopTime>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+			SELECT trip_id, stop_sequence, station_id, line_id, arrival_seconds, departure_seconds,
+			 pickup_type, drop_off_type FROM transit_stop_times ORDER BY trip_id COLLATE BINARY, stop_sequence
+			""")) {
+			while (rows.next()) stopTimes.add(new TransitStopTime(
+				rows.getString(1), rows.getInt(2), rows.getString(3), rows.getString(4), rows.getInt(5),
+				rows.getInt(6), rows.getInt(7), rows.getInt(8)));
+		}
+		var frequencies = new ArrayList<TransitFrequency>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+			SELECT trip_id, start_time_seconds, end_time_seconds, headway_seconds, exact_times
+			FROM transit_frequencies ORDER BY trip_id COLLATE BINARY, start_time_seconds
+			""")) {
+			while (rows.next()) frequencies.add(new TransitFrequency(
+				rows.getString(1), rows.getInt(2), rows.getInt(3), rows.getInt(4), rows.getBoolean(5)));
+		}
+		LocalDate feedEndDate = null;
+		try (var statement = connection.createStatement();
+			var rows = statement.executeQuery("SELECT feed_end_date FROM transit_feed_info WHERE id=1")) {
+			if (rows.next()) feedEndDate = serviceDate(rows.getString(1));
+			if (rows.next()) throw new IllegalArgumentException("transit feed info must contain one row");
+		}
+		if (calendars.isEmpty() || routes.isEmpty() || trips.isEmpty() || stopTimes.isEmpty()) {
+			throw new IllegalArgumentException("route-bundle timetable is empty");
+		}
+		return new RouteTimetable(
+			calendars, calendarDates, routes, trips, stopTimes, frequencies, List.of(), feedEndDate,
+			projectAccess(topology, evaluations, carDoorHints, platformGaps));
+	}
+
+	private static RouteAccessData projectAccess(
+		Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
+		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps) {
+		var nodes = new LinkedHashMap<String, PathwayNode>();
+		var edges = new ArrayList<PathwayEdge>();
+		var rules = new ArrayList<TransferRule>();
+		var evidence = new ArrayList<RouteEdgeEvidence>();
+		for (var edge : topology.values().stream().sorted(Comparator.comparing(TopologyEdge::id)).toList()) {
+			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER", OUT_OF_STATION_TRANSFER).contains(edge.type())) continue;
+			var evaluation = evaluations.get(edge.id());
+			boolean pass = "PASS".equals(evaluation.state());
+			Endpoint from = endpoint(edge.fromNodeId());
+			Endpoint to = endpoint(edge.toNodeId());
+			requireEndpointShape(edge.type(), from, to);
+			nodes.putIfAbsent(edge.fromNodeId(), new PathwayNode(edge.fromNodeId(), from.stationId(), from.lineId(), "ROUTE_ENDPOINT"));
+			nodes.putIfAbsent(edge.toNodeId(), new PathwayNode(edge.toNodeId(), to.stationId(), to.lineId(), "ROUTE_ENDPOINT"));
+			String accessibilityStatus = switch (evaluation.state()) {
+				case "PASS" -> "AVAILABLE";
+				case "NOT_APPLICABLE" -> "NOT_APPLICABLE";
+				default -> "UNAVAILABLE";
+			};
+			String provenanceKind = edge.provenanceKind();
+			String verificationStatus = edge.verificationStatus();
+			edges.add(new PathwayEdge(
+				edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(), edge.distanceMeters(), false,
+				edge.includesStairs(), edge.reliabilityScore(), accessibilityStatus, provenanceKind,
+				verificationStatus, edge.id(), edge.stairAccessState()));
+			String evidenceType;
+			String stationId;
+			String lineId;
+			if ("ENTRY".equals(edge.type())) {
+				evidenceType = "ENTRY";
+				stationId = to.stationId();
+				lineId = to.lineId();
+			} else if ("EXIT".equals(edge.type())) {
+				evidenceType = "EXIT";
+				stationId = from.stationId();
+				lineId = from.lineId();
+			} else {
+				evidenceType = "TRANSFER";
+				stationId = to.stationId();
+				lineId = to.lineId();
+				// #469 F1(#480): 엄격 무단차 동선은 계단 없음이 확정(STEP_FREE)된 동선만이다. UNKNOWN은 계단 없음이 아니다.
+				String strictEdge = (edge.includesStairs() || !"STEP_FREE".equals(edge.stairAccessState()) || !pass)
+					? null : edge.id();
+				String transferType = OUT_OF_STATION_TRANSFER.equals(edge.type()) ? "OUT_OF_STATION" : "IN_STATION";
+				rules.add(new TransferRule(
+					edge.id(), from.stationId(), from.lineId(), to.stationId(), to.lineId(), transferType,
+					edge.durationSeconds(), edge.id(), strictEdge, verificationStatus));
+			}
+			evidence.add(new RouteEdgeEvidence(
+				edge.id(), stationId, lineId, edge.id(), evidenceType, provenanceKind, verificationStatus, pass,
+				pass ? null : evaluation.reason()));
+		}
+		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence, carDoorHints, platformGaps);
+	}
+
+	private static void requireEndpointShape(String type, Endpoint from, Endpoint to) {
+		boolean valid = switch (type) {
+			case "ENTRY" -> from.lineId() == null && to.lineId() != null && from.stationId().equals(to.stationId());
+			case "EXIT" -> from.lineId() != null && to.lineId() == null && from.stationId().equals(to.stationId());
+			case "IN_STATION_TRANSFER" -> from.lineId() != null && to.lineId() != null
+				&& from.stationId().equals(to.stationId()) && !from.lineId().equals(to.lineId());
+			case OUT_OF_STATION_TRANSFER -> from.lineId() != null && to.lineId() != null
+				&& !from.stationId().equals(to.stationId());
+			default -> false;
+		};
+		if (!valid) throw new IllegalArgumentException("projected topology endpoint is invalid");
+	}
+
+	private static Endpoint endpoint(String value) {
+		String[] parts = value.split(":", -1);
+		if (parts.length < 1 || Arrays.stream(parts).anyMatch(String::isBlank)) {
+			throw new IllegalArgumentException("topology endpoint is invalid");
+		}
+		return new Endpoint(parts[0], parts.length >= 2 ? parts[1] : null);
+	}
+
+	private static void requireTimetableColumns(Connection connection) throws SQLException {
+		requireColumns(connection, "service_calendars", List.of(
+			"service_id", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+			"start_date", "end_date", "timezone"));
+		requireColumns(connection, "service_calendar_dates", List.of("service_id", "date", "exception_type"));
+		requireColumns(connection, "transit_routes", List.of(
+			"id", "line_id", "route_short_name", "route_long_name", "direction_name", "timezone"));
+		requireColumns(connection, "transit_trips", List.of(
+			"id", "route_id", "service_id", "trip_headsign", "direction_id", "service_pattern",
+			"service_class", "service_day_start_seconds"));
+		requireColumns(connection, "transit_stop_times", List.of(
+			"trip_id", "stop_sequence", "station_id", "line_id", "arrival_seconds", "departure_seconds",
+			"pickup_type", "drop_off_type"));
+		requireColumns(connection, "transit_frequencies", List.of(
+			"trip_id", "start_time_seconds", "end_time_seconds", "headway_seconds", "exact_times"));
+		requireColumns(connection, "transit_feed_info", List.of("id", "feed_end_date"));
+	}
+
+	private static void requireColumns(Connection connection, String table, List<String> expected) throws SQLException {
+		var columns = readTableColumns(connection, table);
+		if (!columns.equals(expected)) throw new IllegalArgumentException("SQLite table schema mismatch: " + table);
+	}
+
+	private static Set<String> requireRequiredColumns(Connection connection, String table, List<String> required)
+		throws SQLException {
+		var columns = new LinkedHashSet<>(readTableColumns(connection, table));
+		if (!columns.containsAll(required)) throw new IllegalArgumentException("SQLite table schema mismatch: " + table);
+		return columns;
+	}
+
+	private static List<String> readTableColumns(Connection connection, String table) throws SQLException {
+		var columns = new ArrayList<String>();
+		try (var statement = connection.prepareStatement("SELECT name FROM pragma_table_info(?) ORDER BY cid")) {
+			statement.setString(1, table);
+			try (var rows = statement.executeQuery()) {
+				while (rows.next()) columns.add(rows.getString("name"));
+			}
+		}
+		return columns;
+	}
+
+	private static List<String> queryStrings(Connection connection, String sql, int columns) throws SQLException {
+		var values = new ArrayList<String>();
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+			while (rows.next()) {
+				var row = new StringBuilder();
+				for (int column = 1; column <= columns; column++) {
+					if (column > 1) row.append('\u0000');
+					row.append(rows.getString(column));
+				}
+				values.add(row.toString());
+			}
+		}
+		return List.copyOf(values);
+	}
+
+	private static int querySingleInt(Connection connection, String sql) throws SQLException {
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+			if (!rows.next()) throw new IllegalArgumentException("SQLite scalar query is empty");
+			int value = rows.getInt(1);
+			if (rows.next()) throw new IllegalArgumentException("SQLite scalar query has extra rows");
+			return value;
+		}
+	}
+
+	private static void execute(Connection connection, String sql) throws SQLException {
+		try (var statement = connection.createStatement()) {
+			statement.execute(sql);
+		}
+	}
+
+	private static LocalDate serviceDate(String value) {
+		try {
+			return LocalDate.parse(value, SERVICE_DATE);
+		} catch (RuntimeException exception) {
+			throw new IllegalArgumentException("timetable service date is invalid", exception);
+		}
+	}
+
+	static long decompress(byte[] compressed, Path output, long remainingBytes) {
+		try (OutputStream target = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+			return copyBounded(compressed, target, remainingBytes);
+		} catch (IOException exception) {
+			throw temporaryStorageFailure(exception);
+		}
+	}
+
+	// #458: 임시 저장소(/tmp) 쓰기 실패(ENOSPC 등)와 zstd 디코드 오류를 다른 메시지로 드러낸다. 둘 다 컴파일 실패다.
+	static long copyBounded(byte[] compressed, OutputStream target, long remainingBytes) {
+		if (compressed == null || compressed.length == 0) {
+			throw new IllegalArgumentException("route-bundle zstd payload is empty");
+		}
+		if (remainingBytes < 1) {
+			throw new IllegalArgumentException("route-bundle total decompression limit exceeded");
+		}
+		try (var source = new ZstdInputStream(new ByteArrayInputStream(compressed))) {
+			byte[] buffer = new byte[64 * 1024];
+			long written = 0;
+			for (int read; (read = source.read(buffer)) >= 0;) {
+				if (read == 0) continue;
+				written = Math.addExact(written, read);
+				if (written > remainingBytes) {
+					throw new IllegalArgumentException("route-bundle total decompression limit exceeded");
+				}
+				try {
+					target.write(buffer, 0, read);
+				} catch (IOException exception) {
+					throw temporaryStorageFailure(exception);
+				}
+			}
+			if (written == 0) throw new IllegalArgumentException("route-bundle zstd payload is empty");
+			return written;
+		} catch (IOException exception) {
+			throw new IllegalArgumentException("route-bundle zstd payload is invalid", exception);
+		}
+	}
+
+	private static IllegalArgumentException temporaryStorageFailure(IOException exception) {
+		return new IllegalArgumentException("route-bundle temporary storage write failed", exception);
+	}
+
+	private static String canonical(JsonNode node) throws IOException {
+		return canonicalWithout(node, null);
+	}
+
+	private static String canonicalWithout(JsonNode node, String excludedKey) throws IOException {
+		return JSON.writeValueAsString(sortedWithout(node, excludedKey));
+	}
+
+	private static JsonNode sortedWithout(JsonNode node, String excludedKey) {
+		if (node.isObject()) {
+			ObjectNode result = JSON.createObjectNode();
+			var names = new ArrayList<String>();
+			node.fieldNames().forEachRemaining(name -> {
+				if (!name.equals(excludedKey)) {
+					names.add(name);
+				}
+			});
+			names.sort(Comparator.naturalOrder());
+			for (var name : names) {
+				result.set(name, sortedWithout(node.get(name), null));
+			}
+			return result;
+		}
+		if (node.isArray()) {
+			ArrayNode result = JSON.createArrayNode();
+			node.forEach(value -> result.add(sortedWithout(value, null)));
+			return result;
+		}
+		return node;
+	}
+
+	private static String sha256(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 is unavailable", exception);
+		}
+	}
+
+	private static String requireSha256(String value, String field) {
+		if (value == null || !SHA256.matcher(value).matches()) {
+			throw new IllegalArgumentException(field + " must be a lowercase SHA-256");
+		}
+		return value;
+	}
+
+	private static String requireText(String value, String field) {
+		if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " must not be blank");
+		return value;
+	}
+
+	private static void deleteDirectory(Path directory) {
+		try (var paths = Files.walk(directory)) {
+			paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+				try {
+					Files.deleteIfExists(path);
+				} catch (IOException ignored) {
+					// A failed cleanup cannot turn a verified runtime into a different runtime.
+				}
+			});
+		} catch (IOException ignored) {
+			// Best-effort cleanup of task-owned temporary files.
+		}
+	}
+
+	public record Input(
+		String routeBundleSha256,
+		long generation,
+		String bundleId,
+		long releaseSequence,
+		String stationSetSha256,
+		Map<String, String> admittedPayloadSha256s,
+		Map<String, byte[]> compressedPayloads) {
+
+		public Input {
+			routeBundleSha256 = requireSha256(routeBundleSha256, "routeBundleSha256");
+			if (generation < 1) throw new IllegalArgumentException("generation must be positive");
+			bundleId = requireText(bundleId, "bundleId");
+			if (releaseSequence < 1 || releaseSequence > 9_007_199_254_740_991L) {
+				throw new IllegalArgumentException("releaseSequence is invalid");
+			}
+			stationSetSha256 = requireSha256(stationSetSha256, "stationSetSha256");
+			Objects.requireNonNull(admittedPayloadSha256s, "admittedPayloadSha256s");
+			var copiedDigests = new LinkedHashMap<String, String>();
+			admittedPayloadSha256s.forEach((path, digest) -> copiedDigests.put(
+				requireText(path, "admitted payload path"), requireSha256(digest, "admitted payload digest")));
+			admittedPayloadSha256s = Map.copyOf(copiedDigests);
+			Objects.requireNonNull(compressedPayloads, "compressedPayloads");
+			var copied = new LinkedHashMap<String, byte[]>();
+			compressedPayloads.forEach((path, bytes) -> {
+				if (bytes == null) throw new IllegalArgumentException("route-bundle payload bytes must not be null");
+				copied.put(requireText(path, "payload path"), bytes.clone());
+			});
+			compressedPayloads = Map.copyOf(copied);
+		}
+
+		@Override
+		public Map<String, byte[]> compressedPayloads() {
+			return compressedPayloads;
+		}
+	}
+
+	private record Component(String payloadPath, Connection connection, References references) {
+		private void closeQuietly() {
+			try {
+				connection.close();
+			} catch (SQLException ignored) {
+				// Cleanup only.
+			}
+		}
+	}
+
+	private record References(List<String> stations, List<String> lines, List<String> stationLines) {
+	}
+
+	private record Endpoint(String stationId, String lineId) {
+	}
+
+	private record Evaluation(String state, String reason) {
+	}
+
+	private static String normalizeOptionalFacilityId(String value) {
+		return value == null || value.isBlank() ? null : value;
+	}
+
+	private static Map<String, Set<String>> indexFacilityEdgeIds(Map<String, TopologyEdge> topology) {
+		Map<String, Set<String>> grouped = new LinkedHashMap<>();
+		for (TopologyEdge edge : topology.values()) {
+			if (edge.facilityId() == null) continue;
+			grouped.computeIfAbsent(edge.facilityId(), ignored -> new LinkedHashSet<>()).add(edge.id());
+		}
+		if (grouped.isEmpty()) return Map.of();
+		Map<String, Set<String>> immutable = new LinkedHashMap<>(grouped.size());
+		grouped.forEach((facilityId, edgeIds) -> immutable.put(facilityId, Set.copyOf(edgeIds)));
+		return Map.copyOf(immutable);
+	}
+
+	private record TopologyEdge(
+		String id,
+		String fromNodeId,
+		String toNodeId,
+		int durationSeconds,
+		int distanceMeters,
+		String type,
+		String servicePattern,
+		String serviceClass,
+		boolean includesStairs,
+		String accessibilityStatus,
+		int reliabilityScore,
+		String provenanceKind,
+		String verificationStatus,
+		String stairAccessState,
+		String facilityId) {
+
+		private String rawSha256() {
+			ObjectNode raw = JSON.createObjectNode();
+			raw.put("edgeId", id);
+			raw.put("edgeType", type);
+			raw.put("fromNodeId", fromNodeId);
+			raw.put("toNodeId", toNodeId);
+			raw.put("durationSeconds", durationSeconds);
+			raw.put("distanceMeters", distanceMeters);
+			raw.put("servicePattern", servicePattern);
+			raw.put("serviceClass", serviceClass);
+			try {
+				return sha256(canonical(raw).getBytes(StandardCharsets.UTF_8));
+			} catch (IOException exception) {
+				throw new IllegalStateException("network edge canonicalization failed", exception);
+			}
+		}
+	}
+
+	private record LoadedFacilities(
+		List<RouteBundleFacilityCatalog.BundleFacility> bundleFacilities,
+		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities) {
+	}
+
+	private record CompiledPayloads(
+		RouteTimetable timetable,
+		List<RouteBundleFacilityCatalog.Facility> smrtElevatorFacilities,
+		Map<String, OfficialFareQuote> fareQuotes,
+		Set<StationLine> canonicalStationLines,
+		Map<String, Set<String>> facilityEdgeIds,
+		Set<String> canonicalStationIds,
+		List<RouteBundleFacilityCatalog.BundleFacility> bundleFacilities,
+		List<RouteBundleFacilityCatalog.BundleStationExit> bundleStationExits) {
+	}
+}

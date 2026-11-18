@@ -1,0 +1,652 @@
+package com.easysubway.datapack.adapter.out.catalog;
+
+import static java.util.Objects.requireNonNull;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InterruptedIOException;
+import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
+import java.security.Signature;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.HexFormat;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
+
+class HttpDatapackReleaseCatalogAdapterTest {
+	private static final ObjectMapper JSON = new ObjectMapper();
+
+	/**
+	 * hub contracts/datapack/canonical-number-contract.json snapshot은 Node·Java·Dart 세 구현이
+	 * 공유하는 정준 숫자 표기 계약이다. 기대 문자열은 세 런타임 실측으로 고정된 상수이며
+	 * 이 테스트는 구현을 복제하지 않고 저장된 상수와만 비교한다.
+	 */
+	@Test
+	void canonicalNumberFormattingMatchesSharedContract() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("formatting")) {
+			var literal = entry.get("literal").asText();
+			var parsed = HttpDatapackReleaseCatalogAdapter.JSON.readTree(literal);
+
+			assertThat(HttpDatapackReleaseCatalogAdapter.ecmascriptNumber(parsed.decimalValue()))
+				.as("formatting/%s (%s)", entry.get("id").asText(), literal)
+				.isEqualTo(entry.get("canonical").asText());
+		}
+	}
+
+	@Test
+	void canonicalSerializationAcceptsOnlySafeRangeNumbersFromSharedContract() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("formatting")) {
+			var literal = entry.get("literal").asText();
+			var label = "formatting/" + entry.get("id").asText() + " (" + literal + ")";
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.readTree("{\"value\":" + literal + "}");
+
+			if (entry.get("withinSafeRange").asBoolean()) {
+				assertThat(new String(HttpDatapackReleaseCatalogAdapter.canonical(document), StandardCharsets.UTF_8))
+					.as(label)
+					.isEqualTo("{\"value\":" + entry.get("canonical").asText() + "}");
+			} else {
+				assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+					.as(label)
+					.isInstanceOf(IllegalArgumentException.class);
+			}
+		}
+	}
+
+	@Test
+	void canonicalSerializationRejectsLiteralsWithoutAgreedCanonicalForm() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("rejectedLiterals")) {
+			var literal = entry.get("literal").asText();
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.readTree("{\"value\":" + literal + "}");
+
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+				.as("rejectedLiterals/%s (%s)", entry.get("id").asText(), literal)
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void canonicalSerializationRejectsNonFiniteNumbers() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("rejectedSpecialValues")) {
+			var value = switch (entry.get("value").asText()) {
+				case "Infinity" -> Double.POSITIVE_INFINITY;
+				case "-Infinity" -> Double.NEGATIVE_INFINITY;
+				case "NaN" -> Double.NaN;
+				default -> throw new IllegalStateException("unknown special value");
+			};
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.createObjectNode();
+			document.put("value", value);
+
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+				.as("rejectedSpecialValues/%s", entry.get("id").asText())
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void canonicalSerializationRejectsLiteralsThatAreNotShortestRoundTripDecimals() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("nonCanonicalLiterals")) {
+			var literal = entry.get("literal").asText();
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.readTree("{\"value\":" + literal + "}");
+
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+				.as("nonCanonicalLiterals/%s (%s)", entry.get("id").asText(), literal)
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void canonicalSerializationReproducesEveryRoundTripSample() throws Exception {
+		var samples = canonicalNumberContract().get("roundTripSamples");
+		assertThat(samples.size()).isGreaterThanOrEqualTo(300);
+		for (JsonNode sample : samples) {
+			var text = sample.asText();
+
+			assertThat(HttpDatapackReleaseCatalogAdapter.ecmascriptNumber(
+				HttpDatapackReleaseCatalogAdapter.JSON.readTree(text).decimalValue()))
+				.as("roundTripSamples/%s", text)
+				.isEqualTo(text);
+		}
+	}
+
+	@Test
+	void canonicalSerializationSortsKeysAndOmitsWhitespace() throws Exception {
+		var value = JSON.readTree("""
+			{"b":[1,true,null,"x"],"A":2,"a":{"z":3,"y":4}}
+			""");
+
+		assertThat(new String(HttpDatapackReleaseCatalogAdapter.canonical(value), StandardCharsets.UTF_8))
+			.isEqualTo("{\"A\":2,\"a\":{\"y\":4,\"z\":3},\"b\":[1,true,null,\"x\"]}");
+	}
+
+	@Test
+	void fetchCurrentFailsClosedWithoutConfiguredTrustMaterial() {
+		var adapter = new HttpDatapackReleaseCatalogAdapter("", "", "production-v1");
+		assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+			.isInstanceOf(com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.Unavailable.class);
+	}
+
+	@Test
+	void verifiesImmutableManifestSignatureAndIdentity() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var manifest = JSON.createObjectNode();
+		manifest.put("manifestVersion", 2);
+		manifest.put("channel", "production");
+		manifest.put("releaseSequence", 42);
+		manifest.put("keyId", "production-v1");
+		manifest.put("ttlSeconds", 3600);
+		manifest.putArray("packs");
+		var signer = Signature.getInstance("SHA256withRSA");
+		signer.initSign(keyPair.getPrivate());
+		signer.update(HttpDatapackReleaseCatalogAdapter.canonical(manifest));
+		var signature = manifest.putObject("signature");
+		signature.put("algorithm", "rsa-sha256-manifest-v2");
+		signature.put("value", Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()));
+		byte[] body = JSON.writeValueAsBytes(manifest);
+
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/releases/42.json", exchange -> {
+			exchange.sendResponseHeaders(200, body.length);
+			exchange.getResponseBody().write(body);
+			exchange.close();
+		});
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, body));
+		server.start();
+		try {
+			String publicKey = "-----BEGIN PUBLIC KEY-----\n"
+				+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+					.encodeToString(keyPair.getPublic().getEncoded())
+				+ "\n-----END PUBLIC KEY-----";
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				"http://127.0.0.1:" + server.getAddress().getPort(),
+				publicKey.replace("\n", "\\n"), "production-v1");
+
+			var identity = adapter.fetch("production", 42);
+			var currentIdentity = adapter.fetchCurrent("production");
+
+			assertThat(identity.releaseSequence()).isEqualTo(42);
+			assertThat(identity.channel()).isEqualTo("production");
+			assertThat(identity.signatureValid()).isTrue();
+			assertThat(identity.manifestSha256()).hasSize(64);
+			assertThat(currentIdentity).isEqualTo(identity);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void rejectsSignedManifestWithUnsupportedVersion() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] body = signedManifest(keyPair, 42, 1, "");
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, body));
+		server.start();
+		try {
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				"http://127.0.0.1:" + server.getAddress().getPort(), publicKey(keyPair), "production-v1");
+
+			assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+				.isInstanceOf(
+					com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.Unavailable.class);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void rejectsCatalogResponseLargerThanOneMebibyte() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] body = signedManifest(keyPair, 42, 2, "x".repeat(1_048_576));
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, body));
+		server.start();
+		try {
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				"http://127.0.0.1:" + server.getAddress().getPort(), publicKey(keyPair), "production-v1");
+
+			assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+				.isInstanceOf(com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.Unavailable.class);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void returnsSignedIdentityForServiceMismatchClassification() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var manifest = JSON.createObjectNode();
+		manifest.put("manifestVersion", 2);
+		manifest.put("channel", "staging");
+		manifest.put("releaseSequence", 41);
+		manifest.put("keyId", "production-v1");
+		manifest.put("ttlSeconds", 3600);
+		manifest.putArray("packs");
+		var signer = Signature.getInstance("SHA256withRSA");
+		signer.initSign(keyPair.getPrivate());
+		signer.update(HttpDatapackReleaseCatalogAdapter.canonical(manifest));
+		var signature = manifest.putObject("signature");
+		signature.put("algorithm", "rsa-sha256-manifest-v2");
+		signature.put("value", Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()));
+		byte[] body = JSON.writeValueAsBytes(manifest);
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/releases/42.json", exchange -> {
+			exchange.sendResponseHeaders(200, body.length);
+			exchange.getResponseBody().write(body);
+			exchange.close();
+		});
+		server.start();
+		try {
+			String publicKey = "-----BEGIN PUBLIC KEY-----\n"
+				+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+					.encodeToString(keyPair.getPublic().getEncoded())
+				+ "\n-----END PUBLIC KEY-----";
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				"http://127.0.0.1:" + server.getAddress().getPort(), publicKey, "production-v1");
+			var identity = adapter.fetch("production", 42);
+			assertThat(identity.signatureValid()).isTrue();
+			assertThat(identity.channel()).isEqualTo("staging");
+			assertThat(identity.releaseSequence()).isEqualTo(41);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void findsRequestThroughSignedBindingWithoutChangingManifestIdentity() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] manifest = signedManifest(keyPair, 42);
+		byte[] current = manifest;
+		byte[] binding = signedBinding(
+			keyPair, 42, "request-2057", sha256(manifest), "NO_CHANGE_VALID");
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/release-requests/"
+			+ sha256("request-2057".getBytes(StandardCharsets.UTF_8)) + ".json",
+			exchange -> respond(exchange, binding));
+		server.createContext("/catalog/releases/42.json", exchange -> respond(exchange, manifest));
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, current));
+		server.start();
+		try {
+			String publicKey = "-----BEGIN PUBLIC KEY-----\n"
+				+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+					.encodeToString(keyPair.getPublic().getEncoded())
+				+ "\n-----END PUBLIC KEY-----";
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				"http://127.0.0.1:" + server.getAddress().getPort(), publicKey, "production-v1");
+
+			var found = adapter.findByRequest("production", "request-2057");
+
+			assertThat(found).get().extracting(identity -> identity.releaseSequence()).isEqualTo(42L);
+			assertThat(found).get().extracting(identity -> identity.manifestSha256()).isEqualTo(sha256(manifest));
+			assertThat(found).get().extracting(identity -> identity.noChange()).isEqualTo(true);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void returnsImmutableRequestIdentityWhenALaterReleaseReplacedTheCurrentPointer() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] manifest = signedManifest(keyPair, 42);
+		byte[] current = signedManifest(keyPair, 44);
+		byte[] binding = signedBinding(keyPair, 42, "request-2057", sha256(manifest));
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/release-requests/"
+			+ sha256("request-2057".getBytes(StandardCharsets.UTF_8)) + ".json",
+			exchange -> respond(exchange, binding));
+		server.createContext("/catalog/releases/42.json", exchange -> respond(exchange, manifest));
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, current));
+		server.start();
+		try {
+			String publicKey = "-----BEGIN PUBLIC KEY-----\n"
+				+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+					.encodeToString(keyPair.getPublic().getEncoded())
+				+ "\n-----END PUBLIC KEY-----";
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				"http://127.0.0.1:" + server.getAddress().getPort(), publicKey, "production-v1");
+
+			assertThat(adapter.findByRequest("production", "request-2057"))
+				.get().extracting(identity -> identity.releaseSequence()).isEqualTo(42L);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	private static byte[] signedManifest(java.security.KeyPair keyPair, long sequence)
+		throws Exception {
+		return signedManifest(keyPair, sequence, 2, "");
+	}
+
+	private static byte[] signedManifest(java.security.KeyPair keyPair, long sequence,
+		int manifestVersion, String padding) throws Exception {
+		return signedManifest(keyPair, "production-v1", sequence, manifestVersion, padding);
+	}
+
+	private static byte[] signedManifest(java.security.KeyPair keyPair, String keyId,
+		long sequence, int manifestVersion, String padding) throws Exception {
+		var manifest = JSON.createObjectNode();
+		manifest.put("manifestVersion", manifestVersion);
+		manifest.put("channel", "production");
+		manifest.put("releaseSequence", sequence);
+		manifest.put("keyId", keyId);
+		manifest.put("ttlSeconds", 3600);
+		manifest.putArray("packs");
+		if (!padding.isEmpty()) manifest.put("padding", padding);
+		var signer = Signature.getInstance("SHA256withRSA");
+		signer.initSign(keyPair.getPrivate());
+		signer.update(HttpDatapackReleaseCatalogAdapter.canonical(manifest));
+		var signature = manifest.putObject("signature");
+		signature.put("algorithm", "rsa-sha256-manifest-v2");
+		signature.put("value", Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()));
+		return JSON.writeValueAsBytes(manifest);
+	}
+
+	private static String publicKey(java.security.KeyPair keyPair) {
+		return "-----BEGIN PUBLIC KEY-----\n"
+			+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+				.encodeToString(keyPair.getPublic().getEncoded())
+			+ "\n-----END PUBLIC KEY-----";
+	}
+
+	private static byte[] signedBinding(java.security.KeyPair keyPair, long sequence,
+		String requestId, String manifestSha256) throws Exception {
+		return signedBinding(keyPair, sequence, requestId, manifestSha256, "PUBLISHED_AND_VERIFIED");
+	}
+
+	private static byte[] signedBinding(java.security.KeyPair keyPair, long sequence,
+		String requestId, String manifestSha256, String releaseOutcome) throws Exception {
+		return signedBinding(keyPair, "production-v1", sequence, requestId, manifestSha256, releaseOutcome);
+	}
+
+	private static byte[] signedBinding(java.security.KeyPair keyPair, String keyId, long sequence,
+		String requestId, String manifestSha256, String releaseOutcome) throws Exception {
+		var binding = JSON.createObjectNode();
+		binding.put("schemaVersion", 1);
+		binding.put("artifactKind", "datapack-release-request-binding");
+		binding.put("releaseRequestId", requestId);
+		binding.put("releaseSequence", sequence);
+		binding.put("channel", "production");
+		binding.put("manifestSha256", manifestSha256);
+		binding.put("keyId", keyId);
+		binding.put("releaseOutcome", releaseOutcome);
+		var signer = Signature.getInstance("SHA256withRSA");
+		signer.initSign(keyPair.getPrivate());
+		signer.update(HttpDatapackReleaseCatalogAdapter.canonical(binding));
+		var signature = binding.putObject("signature");
+		signature.put("algorithm", "rsa-sha256-release-request-v1");
+		signature.put("value", Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()));
+		return JSON.writeValueAsBytes(binding);
+	}
+
+	private static JsonNode canonicalNumberContract() throws Exception {
+		return JSON.readTree(requireNonNull(HttpDatapackReleaseCatalogAdapterTest.class
+			.getResourceAsStream("/contracts/canonical-number-contract.json")));
+	}
+
+	private static String sha256(byte[] value) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+	}
+
+	@Test
+	void verifiesCatalogAndRequestBindingAcrossPrimaryAndNextRotatedSigningKeys() throws Exception {
+		var primaryKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var nextKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] primaryManifest = signedManifest(primaryKey, "production-v1", 42, 2, "");
+		byte[] nextManifest = signedManifest(nextKey, "production-v2", 43, 2, "");
+		byte[] nextBinding = signedBinding(
+			nextKey, "production-v2", 43, "request-next", sha256(nextManifest), "PUBLISHED_AND_VERIFIED");
+		byte[] unknownManifest = signedManifest(nextKey, "production-v3", 44, 2, "");
+
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/releases/42.json", exchange -> respond(exchange, primaryManifest));
+		server.createContext("/catalog/releases/43.json", exchange -> respond(exchange, nextManifest));
+		server.createContext("/catalog/releases/44.json", exchange -> respond(exchange, unknownManifest));
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, nextManifest));
+		server.createContext("/catalog/release-requests/"
+			+ sha256("request-next".getBytes(StandardCharsets.UTF_8)) + ".json",
+			exchange -> respond(exchange, nextBinding));
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				baseUrl,
+				publicKey(primaryKey),
+				"production-v1",
+				publicKey(nextKey),
+				"production-v2");
+
+			assertThat(adapter.fetch("production", 42).releaseSequence()).isEqualTo(42L);
+			assertThat(adapter.fetchCurrent("production").releaseSequence()).isEqualTo(43L);
+			assertThat(adapter.findByRequest("production", "request-next"))
+				.get()
+				.extracting(DatapackReleaseCatalogPort.CatalogIdentity::releaseSequence)
+				.isEqualTo(43L);
+			assertThatThrownBy(() -> adapter.fetch("production", 44))
+				.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void failsClosedWhenSigningKeyRingConfigurationIsPartialDuplicateMalformedOrTooLarge() throws Exception {
+		var primaryKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var nextKey = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] primaryManifest = signedManifest(primaryKey, "production-v1", 42, 2, "");
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, primaryManifest));
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			var client = HttpClient.newHttpClient();
+			var nineKeys = java.util.stream.IntStream.rangeClosed(1, 9)
+				.mapToObj(index -> new HttpDatapackReleaseCatalogAdapter.TrustedSigningKey(
+					"production-v" + index, publicKey(primaryKey)))
+				.toList();
+			var invalidAdapters = java.util.List.of(
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", publicKey(nextKey), ""),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", "", "production-v2"),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", publicKey(nextKey), "production-v1"),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), "production-v1", "not-a-pem", "production-v2"),
+				new HttpDatapackReleaseCatalogAdapter(baseUrl, publicKey(primaryKey), " production-v1", "", ""),
+				new HttpDatapackReleaseCatalogAdapter(client, baseUrl, java.util.List.of(), Duration.ofSeconds(1)),
+				new HttpDatapackReleaseCatalogAdapter(client, baseUrl, nineKeys, Duration.ofSeconds(1)));
+
+			for (var invalid : invalidAdapters) {
+				assertThatThrownBy(() -> invalid.fetchCurrent("production"))
+					.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+			}
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void rejectsMultiblockMalformedPaddingAndOversizedSignaturesAndPemInputs() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		byte[] validManifest = signedManifest(keyPair, 42);
+		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		var responseHolder = new java.util.concurrent.atomic.AtomicReference<>(validManifest);
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, responseHolder.get()));
+		server.createContext("/catalog/release-requests/"
+			+ sha256("request-sec".getBytes(StandardCharsets.UTF_8)) + ".json",
+			exchange -> respond(exchange, responseHolder.get()));
+		server.start();
+		try {
+			String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+			String oversizedPem = "-----BEGIN PUBLIC KEY-----\n"
+				+ "\n".repeat(8_200)
+				+ Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+					.encodeToString(keyPair.getPublic().getEncoded())
+				+ "\n-----END PUBLIC KEY-----";
+			var oversizedPemAdapter = new HttpDatapackReleaseCatalogAdapter(
+				baseUrl, oversizedPem, "production-v1");
+			assertThatThrownBy(() -> oversizedPemAdapter.fetchCurrent("production"))
+				.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.pemBytes(null))
+				.isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.pemBytes("A".repeat(8_193)))
+				.isInstanceOf(IllegalArgumentException.class);
+			assertThat(HttpDatapackReleaseCatalogAdapter.isValidSignatureBase64Url(null)).isFalse();
+
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				baseUrl, publicKey(keyPair), "production-v1");
+			for (String malformedSignature : java.util.List.of(
+				"",
+				"AQID",
+				"0".repeat(85) + "===",
+				"0".repeat(44) + "=" + "A".repeat(43),
+				"A".repeat(89),
+				"A".repeat(86) + "=",
+				"A".repeat(87) + "+",
+				"A".repeat(87) + "/",
+				"A".repeat(87) + "~",
+				"A".repeat(87) + "\u0080",
+				"A".repeat(1_369),
+				"A".repeat(1_372)
+			)) {
+				var tamperedManifest = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(validManifest);
+				((com.fasterxml.jackson.databind.node.ObjectNode) tamperedManifest.get("signature"))
+					.put("value", malformedSignature);
+				responseHolder.set(JSON.writeValueAsBytes(tamperedManifest));
+				assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+					.as("manifest signature %s", malformedSignature)
+					.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+
+				var tamperedBinding = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(
+					signedBinding(keyPair, 42, "request-sec", sha256(validManifest)));
+				((com.fasterxml.jackson.databind.node.ObjectNode) tamperedBinding.get("signature"))
+					.put("value", malformedSignature);
+				responseHolder.set(JSON.writeValueAsBytes(tamperedBinding));
+				assertThatThrownBy(() -> adapter.findByRequest("production", "request-sec"))
+					.as("binding signature %s", malformedSignature)
+					.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+			}
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	void requestBindingLookupFailsClosedOnUnavailableCatalogAndMalformedBinding() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		for (var body : new String[] {null, "not-json"}) {
+			var httpClient = mock(HttpClient.class);
+			@SuppressWarnings("unchecked")
+			var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+			when(response.statusCode()).thenReturn(body == null ? 503 : 200);
+			if (body != null) {
+				when(response.body()).thenReturn(new java.io.ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+			}
+			when(httpClient.<InputStream>send(any(), any())).thenReturn(response);
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				httpClient, "http://127.0.0.1:8080", publicKey(keyPair), "production-v1");
+
+			assertThatThrownBy(() -> adapter.findByRequest("production", "request-2057"))
+				.as("binding body %s", body)
+				.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		}
+	}
+
+	@Test
+	void injectedClientWithoutExplicitTimeoutUsesDefaultCatalogRequestTimeout() throws Exception {
+		var httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(503);
+		var request = ArgumentCaptor.forClass(HttpRequest.class);
+		when(httpClient.<InputStream>send(request.capture(), any())).thenReturn(response);
+
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var adapter = new HttpDatapackReleaseCatalogAdapter(
+			httpClient,
+			"http://127.0.0.1:8080",
+			publicKey(keyPair),
+			"production-v1"
+		);
+
+		assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+			.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		assertThat(request.getValue().timeout()).contains(Duration.ofSeconds(10));
+	}
+
+	@Test
+	@Timeout(5)
+	void catalogBodyStalledPastTimeoutIsUnavailable() throws Exception {
+		var httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenReturn(new StalledInputStream());
+		when(httpClient.<InputStream>send(any(), any())).thenReturn(response);
+
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var adapter = new HttpDatapackReleaseCatalogAdapter(
+			httpClient,
+			"http://127.0.0.1:8080",
+			publicKey(keyPair),
+			"production-v1",
+			Duration.ofMillis(200)
+		);
+
+		long startedAt = System.nanoTime();
+		assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+			.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		assertThat(Duration.ofNanos(System.nanoTime() - startedAt))
+			.isLessThan(Duration.ofSeconds(2));
+	}
+
+	private static final class StalledInputStream extends InputStream {
+		private final CountDownLatch closedLatch = new CountDownLatch(1);
+		private final AtomicBoolean closed = new AtomicBoolean();
+		private boolean firstByteRead;
+
+		@Override
+		public int read() throws IOException {
+			if (!firstByteRead) {
+				firstByteRead = true;
+				return '{';
+			}
+			try {
+				closedLatch.await();
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new InterruptedIOException("read interrupted");
+			}
+			if (closed.get()) {
+				throw new IOException("stream closed");
+			}
+			return -1;
+		}
+
+		@Override
+		public void close() {
+			closed.set(true);
+			closedLatch.countDown();
+		}
+	}
+
+	private static void respond(com.sun.net.httpserver.HttpExchange exchange, byte[] body)
+		throws java.io.IOException {
+		exchange.sendResponseHeaders(200, body.length);
+		exchange.getResponseBody().write(body);
+		exchange.close();
+	}
+}
+

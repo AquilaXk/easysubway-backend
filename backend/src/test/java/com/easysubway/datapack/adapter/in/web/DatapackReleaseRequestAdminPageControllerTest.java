@@ -1,0 +1,427 @@
+package com.easysubway.datapack.adapter.in.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@DisplayName("관리자 release request 화면")
+class DatapackReleaseRequestAdminPageControllerTest {
+
+	private static final String SHA = "a".repeat(64);
+
+	@Autowired
+	private MockMvc mockMvc;
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+	@Autowired
+	private AdminAuditEventRepository auditEventRepository;
+
+	@BeforeEach
+	void setUp() {
+		jdbcTemplate.update("DELETE FROM datapack_release_deliveries");
+		jdbcTemplate.update("DELETE FROM datapack_release_request");
+		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs");
+		jdbcTemplate.update("DELETE FROM datapack_candidates");
+		insertCandidate("candidate-stable-9", "2026.07.06-stable.9");
+	}
+
+	@Test
+	@DisplayName("datapack read 권한 관리자는 생성 폼과 candidate 목록을 본다")
+	void rendersCreateForm() throws Exception {
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("릴리스 요청")
+			.contains("candidate-stable-9")
+			.contains("name=\"candidateId\"")
+			.contains("name=\"targetChannel\"")
+			.contains("name=\"commandToken\"")
+			.contains("href=\"/admin/datapack/release-requests/page\"")
+			.contains("수동 dispatch 필요")
+			.contains("gh workflow run datapack-release.yml")
+			.contains("프로덕션 요청")
+			.contains("mode=production-publish")
+			.contains("targetChannel=production")
+			// 비프로덕션 요청에는 production dispatch가 아니라 채널에 맞는 명령을 안내한다.
+			.contains("스테이징 · 개발 요청")
+			.contains("mode=exploratory")
+			.contains("targetChannel=&lt;staging 또는 dev&gt;")
+			.contains("buildSpecPath")
+			.contains("releaseRequestId")
+			.contains("releaseRequestPath")
+			.contains("androidEvidencePath")
+			.contains("strictRouteRegressionPath")
+			.contains("현재 후보 생성·등록 경로는 없습니다");
+	}
+
+	@Test
+	@DisplayName("staging promote 권한 관리자는 candidate 선택으로 release request를 생성한다")
+	void createsRequest() throws Exception {
+		mockMvc.perform(post("/admin/datapack/release-requests")
+				.with(csrf())
+				.with(commandToken())
+				.with(user("alice").authorities(new SimpleGrantedAuthority("admin.datapack.staging.promote")))
+				.param("candidateId", "candidate-stable-9")
+				.param("targetChannel", "staging"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/release-requests/page"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT status FROM datapack_release_request WHERE candidate_id = ?", String.class, "candidate-stable-9"))
+			.isEqualTo("REQUESTED");
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT requested_by FROM datapack_release_request WHERE candidate_id = ?", String.class, "candidate-stable-9"))
+			.isEqualTo("alice");
+		// 파생: approvedLedgerHash ← candidate.override_set_hash("b"*64)
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT approved_ledger_hash FROM datapack_release_request WHERE candidate_id = ?", String.class, "candidate-stable-9"))
+			.isEqualTo("b".repeat(64));
+	}
+
+	@Test
+	@DisplayName("production approve 권한 관리자는 다른 요청자의 요청을 승인한다")
+	void approvesRequest() throws Exception {
+		// alice가 생성
+		mockMvc.perform(post("/admin/datapack/release-requests")
+				.with(csrf()).with(commandToken())
+				.with(user("alice").authorities(new SimpleGrantedAuthority("admin.datapack.staging.promote")))
+				.param("candidateId", "candidate-stable-9")
+				.param("targetChannel", "staging"))
+			.andExpect(status().is3xxRedirection());
+		String approvalId = jdbcTemplate.queryForObject(
+			"SELECT approval_id FROM datapack_release_request WHERE candidate_id = ?", String.class, "candidate-stable-9");
+
+		// bob이 승인
+		mockMvc.perform(post("/admin/datapack/release-requests/{id}/approve", approvalId)
+				.with(csrf()).with(commandToken())
+				.with(user("bob").authorities(new SimpleGrantedAuthority("admin.datapack.production.approve"))))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/release-requests/page"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT status FROM datapack_release_request WHERE approval_id = ?", String.class, approvalId))
+			.isEqualTo("APPROVED");
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT approved_by FROM datapack_release_request WHERE approval_id = ?", String.class, approvalId))
+			.isEqualTo("bob");
+		// 승인은 게시 워크플로를 발화하지 않는다 — dispatch 흔적(멱등키)이 남지 않는다.
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT dispatch_idempotency_key FROM datapack_release_request WHERE approval_id = ?",
+			String.class, approvalId))
+			.isNull();
+	}
+
+	@Test
+	@DisplayName("datapack read 권한이 없으면 화면에 접근할 수 없다")
+	void pageRequiresDatapackRead() throws Exception {
+		mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("v").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("미승인 candidate는 드롭다운에서 제외되고 create도 서버에서 거부된다")
+	void ineligibleCandidateRejected() throws Exception {
+		insertCandidateWithStatus("candidate-draft-1", "2026.07.06-draft.1", "DRAFT");
+
+		// 드롭다운 필터: 적격(PROMOTED)만 노출, DRAFT 제외
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andReturn().getResponse().getContentAsString();
+		assertThat(html).contains("candidate-stable-9").doesNotContain("candidate-draft-1");
+
+		// 서버측 create 거부(폼 우회 시도) — 미처리 예외는 표면화될 수 있으나 핵심은 미생성
+		try {
+			mockMvc.perform(post("/admin/datapack/release-requests")
+				.with(csrf()).with(commandToken())
+				.with(user("alice").authorities(new SimpleGrantedAuthority("admin.datapack.staging.promote")))
+				.param("candidateId", "candidate-draft-1")
+				.param("targetChannel", "staging"));
+		} catch (Exception expected) {
+			// no-op
+		}
+		Integer count = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM datapack_release_request WHERE candidate_id = ?", Integer.class, "candidate-draft-1");
+		assertThat(count).isZero();
+	}
+
+	@Test
+	@DisplayName("retry-dispatch 엔드포인트는 제거돼 요청이 실패하고 상태도 그대로다")
+	void retryDispatchEndpointIsGone() throws Exception {
+		insertReleaseRequest("rr-failed-1", "DISPATCH_FAILED", null);
+
+		mockMvc.perform(post("/admin/datapack/release-requests/{id}/retry-dispatch", "rr-failed-1")
+				.with(csrf()).with(commandToken())
+				.with(user("carol").authorities(
+					new SimpleGrantedAuthority("admin.datapack.production.approve"),
+					new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isNotFound());
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT status FROM datapack_release_request WHERE approval_id = ?", String.class, "rr-failed-1"))
+			.isEqualTo("DISPATCH_FAILED");
+	}
+
+	@Test
+	@DisplayName("PUBLISHED + promote REJECTED 행은 'promote 수동 필요'와 사유를 렌더한다")
+	void listRendersPromoteRejected() throws Exception {
+		insertReleaseRequest("rr-pub-1", "PUBLISHED", "https://run/1");
+		jdbcTemplate.update("UPDATE datapack_release_request SET promote_outcome='REJECTED', promote_detail='evidence bundle not registered' WHERE approval_id='rr-pub-1'");
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andReturn().getResponse().getContentAsString();
+		assertThat(html).contains("promote 수동 필요").contains("evidence bundle not registered");
+	}
+
+	@Test
+	@DisplayName("PUBLISHED + promote REJECTED + 사유 null 행은 '사유 없음'을 렌더하고 'null' 리터럴을 노출하지 않는다")
+	void listRendersPromoteRejectedWithNullDetail() throws Exception {
+		insertReleaseRequest("rr-pub-null", "PUBLISHED", "https://run/2");
+		jdbcTemplate.update(
+			"UPDATE datapack_release_request SET promote_outcome='REJECTED', promote_detail=NULL WHERE approval_id='rr-pub-null'");
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andReturn().getResponse().getContentAsString();
+		assertThat(html).contains("사유 없음").doesNotContain("— null");
+	}
+
+	@Test
+	@DisplayName("목록은 DISPATCH_FAILED 행에 재시도 버튼 대신 수동 실행 안내를, workflow run URL이 있으면 링크를 렌더한다")
+	void listRendersWorkflowRunLinkWithoutRetryAction() throws Exception {
+		insertReleaseRequest("rr-failed-3", "DISPATCH_FAILED", null);
+		insertReleaseRequest("rr-dispatched-1", "DISPATCHED",
+			"https://github.com/AquilaXk/easysubway/actions/runs/9001");
+
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.doesNotContain("retry-dispatch")
+			.doesNotContain("dispatch 재시도")
+			.contains("과거 자동 dispatch 실패 — 수동 실행 필요")
+			.contains("https://github.com/AquilaXk/easysubway/actions/runs/9001");
+	}
+
+	@Test
+	@DisplayName("목록은 sanitized callback delivery와 reconciliation blocker를 렌더한다")
+	void listRendersSanitizedDeliveryEvidence() throws Exception {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256, channel,
+			 candidate_id, payload_sha256, signature_sha256, state, attempts, next_attempt_at,
+			 reconcile_deadline, dead_letter_deadline, http_class, sanitized_detail,
+			 created_at, updated_at)
+			VALUES (?, 'rr-delivery-1', 42, ?, 'production', 'candidate-stable-9', ?, ?,
+			 'RECONCILIATION_REQUIRED', 4, '2026-07-06 03:08:00',
+			 '2026-07-06 03:10:00', '2026-07-06 04:10:00', '5XX',
+			 'CALLBACK_RECONCILIATION_REQUIRED', '2026-07-06 03:00:00', '2026-07-06 03:01:00')
+			""", "rr-delivery-1:42:" + SHA, SHA, "b".repeat(64), "c".repeat(64));
+
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("RECONCILIATION_REQUIRED")
+			.contains("CALLBACK_RECONCILIATION_REQUIRED")
+			.contains("5XX")
+			.contains("2026-07-06T03:08")
+			.contains("2026-07-06T03:10")
+			.contains("2026-07-06T04:10")
+			.contains("b".repeat(64))
+			.contains("c".repeat(64))
+			.doesNotContain("Authorization")
+			.doesNotContain("Bearer")
+			.doesNotContain("callback-secret");
+	}
+
+	@Test
+	@DisplayName("production approve 관리자는 dead letter를 repair하고 before/after·identity hash를 감사한다")
+	void manuallyRepairsDeliveryWithAudit() throws Exception {
+		String idempotencyKey = insertDelivery("DEAD_LETTER");
+
+		mockMvc.perform(post("/admin/datapack/release-deliveries/{idempotencyKey}/repair", idempotencyKey)
+				.with(csrf()).with(commandToken())
+				.with(user("repair-operator").authorities(
+					new SimpleGrantedAuthority("admin.datapack.production.approve")))
+				.param("reason", "catalog outage recovered"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/release-requests/page"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT state FROM datapack_release_deliveries WHERE idempotency_key=?",
+			String.class, idempotencyKey)).isEqualTo("RETRY_SCHEDULED");
+		var audit = auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 100).stream()
+			.filter(event -> event.actor().equals("repair-operator")
+				&& event.action().equals("MANUAL_REPAIR"))
+			.findFirst().orElseThrow();
+		assertThat(audit.targetType()).isEqualTo("DATAPACK_RELEASE_DELIVERY");
+		assertThat(audit.targetId()).isEqualTo(sha256(idempotencyKey));
+		assertThat(audit.action()).isEqualTo("MANUAL_REPAIR");
+		assertThat(audit.reason())
+			.contains("before=DEAD_LETTER")
+			.contains("after=RETRY_SCHEDULED")
+			.contains("operatorReason=catalog outage recovered")
+			.doesNotContain(idempotencyKey);
+	}
+
+	@Test
+	@DisplayName("delivery repair는 production approve 권한과 안전한 사유를 요구한다")
+	void manualRepairRequiresAuthorityAndSanitizedReason() throws Exception {
+		String idempotencyKey = insertDelivery("DEAD_LETTER");
+
+		mockMvc.perform(post("/admin/datapack/release-deliveries/{idempotencyKey}/repair", idempotencyKey)
+				.with(csrf()).with(commandToken())
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read")))
+				.param("reason", "catalog recovered"))
+			.andExpect(status().isForbidden());
+
+		try {
+			mockMvc.perform(post("/admin/datapack/release-deliveries/{idempotencyKey}/repair", idempotencyKey)
+				.with(csrf()).with(commandToken())
+				.with(user("repair-invalid").authorities(
+					new SimpleGrantedAuthority("admin.datapack.production.approve")))
+				.param("reason", " "));
+		} catch (Exception expected) {
+			// invalid command is fail-closed and transactionally leaves the delivery unchanged
+		}
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT state FROM datapack_release_deliveries WHERE idempotency_key=?",
+			String.class, idempotencyKey)).isEqualTo("DEAD_LETTER");
+	}
+
+	@Test
+	@DisplayName("repair 가능한 delivery만 수동 repair 폼을 렌더한다")
+	void rendersRepairFormOnlyForRepairableDelivery() throws Exception {
+		String deadLetter = insertDelivery("DEAD_LETTER");
+		String delivered = insertDelivery("DELIVERED", "rr-delivered-2", 43, "b".repeat(64));
+
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("/admin/datapack/release-deliveries/" + deadLetter + "/repair")
+			.doesNotContain("/admin/datapack/release-deliveries/" + delivered + "/repair")
+			.doesNotContain("Authorization")
+			.doesNotContain("Bearer")
+			.doesNotContain("callback-secret");
+	}
+
+	private void insertReleaseRequest(String approvalId, String status, String workflowRunUrl) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_request (
+				approval_id, candidate_id, scope_id, target_channel, build_spec_sha256,
+				source_snapshot_set_hash, approved_ledger_hash, requested_by, approved_by,
+				status, dispatch_idempotency_key, workflow_run_url, created_at, approved_at, updated_at
+			)
+			VALUES (?, 'candidate-stable-9', 'capital_pilot_android_v1', 'staging', ?,
+				?, ?, 'alice', 'bob', ?, ?, ?, '2026-07-06 03:00:00', '2026-07-06 03:05:00', '2026-07-06 03:05:00')
+			""",
+			approvalId, SHA, SHA, SHA, status, approvalId, workflowRunUrl);
+	}
+
+	private String insertDelivery(String state) {
+		return insertDelivery(state, "rr-delivery-repair", 42, SHA);
+	}
+
+	private String insertDelivery(String state, String requestId, long sequence, String manifestSha256) {
+		String idempotencyKey = requestId + ":" + sequence + ":" + manifestSha256;
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256, channel,
+			 candidate_id, payload_sha256, signature_sha256, state, attempts, next_attempt_at,
+			 reconcile_deadline, dead_letter_deadline, http_class, sanitized_detail,
+			 created_at, updated_at)
+			VALUES (?, ?, ?, ?, 'production', 'candidate-stable-9', ?, ?, ?, 4, NULL,
+			 '2026-07-06 03:10:00', '2026-07-06 04:10:00', 'UNAVAILABLE',
+			 'CATALOG_UNAVAILABLE', '2026-07-06 03:00:00', '2026-07-06 04:10:00')
+			""", idempotencyKey, requestId, sequence, manifestSha256,
+			"c".repeat(64), "d".repeat(64), state);
+		return idempotencyKey;
+	}
+
+	private static String sha256(String value) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+			.digest(value.getBytes(StandardCharsets.UTF_8)));
+	}
+
+	private void insertCandidate(String id, String version) {
+		insertCandidateWithStatus(id, version, "PROMOTED");
+	}
+
+	private void insertCandidateWithStatus(String id, String version, String approvalStatus) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_candidates (
+				id, scope_id, artifact_kind, version, source_snapshot_set_hash,
+				override_set_hash, build_spec_sha256, source_inventory_sha256,
+				sqlite_sha256, gzip_sha256, manifest_sha256, coverage_status,
+				validator_status, route_regression_status, android_evidence_status,
+				approval_status, created_at
+			)
+			VALUES (?, 'capital_pilot_android_v1', 'DATAPACK',
+				?, ?, ?, ?, ?, ?, ?, ?, 'PASS', 'PASS', 'PASS',
+				'PASS', ?, '2026-07-06 03:00:00')
+			""",
+			id, version,
+			"a".repeat(64), "b".repeat(64), "c".repeat(64), "d".repeat(64),
+			"e".repeat(64), "f".repeat(64), "0".repeat(64), approvalStatus);
+	}
+
+	private RequestPostProcessor commandToken() {
+		return request -> {
+			MockHttpSession session = (MockHttpSession) request.getSession();
+			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(session)));
+			return request;
+		};
+	}
+
+	private String getAdminHtml(MockHttpSession session) {
+		try {
+			return mockMvc.perform(get("/admin/datapack/release-requests/page")
+					.session(session)
+					.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andReturn().getResponse().getContentAsString();
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static String commandTokenFrom(String html) {
+		var matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		if (!matcher.find()) {
+			throw new IllegalStateException("commandToken missing");
+		}
+		return matcher.group(1);
+	}
+
+}

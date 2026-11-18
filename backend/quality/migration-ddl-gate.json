@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 2,
+  "gateId": "backend-migration-ddl-compat",
+  "issue": "https://github.com/AquilaXk/easysubway/issues/2365",
+  "baselineVersion": 66,
+  "scannedDirectory": "backend/src/main/resources/db/migration/postgresql",
+  "excludedDirectories": [
+    "backend/src/main/resources/db/migration/h2"
+  ],
+  "note": "blue/green standby+promotion 배포는 standby가 구 canonical과 동일한 live Postgres에 대해 부팅하므로 모든 마이그레이션이 expand/contract(순수 additive) 계약을 지켜야 한다. baselineVersion(V66)까지는 게이트 도입 전 기존 마이그레이션으로 grandfather 처리하고, baseline 초과 신규 파일에서 파괴적 DDL을 fail closed로 탐지한다. h2 디렉토리는 테스트 전용 스키마라 라이브 배포 대상이 아니므로 검사에서 제외한다.",
+  "allowlistEntryFormat": {
+    "file": "scannedDirectory-relative .sql path (예: V<n>__<name>.sql 또는 legacy_manual_patch.sql)",
+    "reason": "이 파괴적 마이그레이션이 안전한 이유(contract 단계 조건 등)",
+    "approval": "https://github.com/<owner>/<repo>/issues/<n>",
+    "expiresAt": "승인 만료 ISO instant(UTC, 예: 2030-01-01T00:00:00.000Z)",
+    "sha256": "실제 파일의 소문자 SHA-256"
+  },
+  "inventory": [
+    {
+      "file": "V67__admin_user_roles_granted_by.sql",
+      "sha256": "b4b33d415dcae56df2fe117bedf583a9dfdf11e28b5388f77042651a90cbd8c1"
+    },
+    {
+      "file": "V68__create_error_events.sql",
+      "sha256": "07ee7f2677086a903b74c74b54a1df819b1ba967f16fc356555267c6898aa010"
+    },
+    {
+      "file": "V69__admin_error_events_permission.sql",
+      "sha256": "16097e64609c86cf502b29e5b804ed72660c870563f5b642fd073a3a9d530e5a"
+    },
+    {
+      "file": "V70__transit_master_override_locks.sql",
+      "sha256": "9b6f70e5b45448254d991d542fb00cbc66fc9d9f1cd1941d88b64afc6083dad9"
+    },
+    {
+      "file": "V71__journey_v3_sessions.sql",
+      "sha256": "27fbadf8efe30b00e915e28e5165dd84ce896003ec49f36ca8ccccf26eca0a81"
+    },
+    {
+      "file": "V72__journey_v3_session_request_limit.sql",
+      "sha256": "74faa5dd617e88962076b17e44309066bddb466f8ed31dc5e3b05b07a7242f22"
+    },
+    {
+      "file": "V73__validate_journey_v3_session_request_limit.sql",
+      "sha256": "07659f2ecd87aee399eab72f50976b4c170c72328dacaae1108340318f42d3ff"
+    },
+    {
+      "file": "V74__route_service_station_catalog_evidence.sql",
+      "sha256": "76bba8f898cbdfa9a243f954ee86bc9c49d4d1df587e3c596efc7bcef7ba701b"
+    },
+    {
+      "file": "V75__soft_drop_route_v2_tables.sql",
+      "sha256": "c4ac7bf3ea74afa52455386e7edd9d3b928824778a0cf11197af66c0047dbb9d"
+    },
+    {
+      "file": "V76__facility_operational_status.sql",
+      "sha256": "421a6c2c2afac16e68833b8a9e5cc07bfa141b57bba812391fbb628496b9d9c8"
+    },
+    {
+      "file": "V77__datapack_release_channel_observations.sql",
+      "sha256": "b519d72d1b5c03ee43a345a9709e6a7aa5e2b6eead79080af71deab26b50bc81"
+    },
+    {
+      "file": "V78__journey_v3_search_records.sql",
+      "sha256": "ce333f3a6aacfcfc40426014f18f7f4f9a34d9e91f396f503a626f69c8f231f4"
+    },
+    {
+      "file": "V79__datapack_automation_status.sql",
+      "sha256": "8a47852f23fd188d3f1a077bbe75660b5d7467536a65928f52faf93a862da54f"
+    },
+    {
+      "file": "V80__facility_reports_station_facility_created_index.sql",
+      "sha256": "248991fd1032b9eb88e3a79b0f7a21676b13a7645ac5a567e9afadb6e1598369"
+    },
+    {
+      "file": "V81__facility_reports_type_station_facility_index.sql",
+      "sha256": "f1e73dd0a532705745d195d33e7ca1500b8c31b32d37e1df47d7edf73fcc37d6"
+    },
+    {
+      "file": "V82__route_search_results_status_created_index.sql",
+      "sha256": "dbbfb4c2b01a874ca90027709fadabfad6865fb40dc723adec9a76a289f9bf72"
+    },
+    {
+      "file": "V83__push_notification_outbox_status_claimed_index.sql",
+      "sha256": "5818097034ff57800fa9dcc0af2a07c3c6f76a1feba99ca658bf49ce98fde259"
+    }
+  ],
+  "allowlist": [
+    {
+      "file": "V69__admin_error_events_permission.sql",
+      "reason": "admin_role_permissions permission_code CHECK를 admin.errors.read 포함으로 확장하는 RBAC contract 단계. DROP CONSTRAINT + ADD CONSTRAINT는 기존 V11–V63 권한 시드 패턴과 동일하며, 새 권한 INSERT 전에 체크 제약이 먼저 열려야 한다.",
+      "approval": "https://github.com/AquilaXk/easysubway/issues/2433",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "16097e64609c86cf502b29e5b804ed72660c870563f5b642fd073a3a9d530e5a"
+    },
+    {
+      "file": "V72__journey_v3_session_request_limit.sql",
+      "reason": "Journey V3 10분 session row에 constant request_count=0을 추가하는 expand 단계. 기존 row와 old writer insert는 default로 유효하고 새 writer의 atomic 조건부 증가를 지원하며 drop, rename, type rewrite가 없다.",
+      "approval": "https://github.com/AquilaXk/easysubway-backend/issues/178",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "74faa5dd617e88962076b17e44309066bddb466f8ed31dc5e3b05b07a7242f22"
+    },
+    {
+      "file": "V73__validate_journey_v3_session_request_limit.sql",
+      "reason": "V72에서 NOT VALID로 즉시 새 write에 적용한 Journey session request-count CHECK의 기존 row를 별도 transaction과 낮은 lock 수준에서 검증하는 online validation 단계.",
+      "approval": "https://github.com/AquilaXk/easysubway-backend/issues/178",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "07659f2ecd87aee399eab72f50976b4c170c72328dacaae1108340318f42d3ff"
+    },
+    {
+      "file": "V75__soft_drop_route_v2_tables.sql",
+      "reason": "Route V2 폐기에 따른 route_v2_sessions, route_v2_nonce_replays, route_v2_states 테이블 soft rename. 이전 코드 및 런타임에서 더 이상 참조하지 않으며 파괴적 DROP 대신 안전한 soft rename 단계를 거친다.",
+      "approval": "https://github.com/AquilaXk/easysubway-backend/issues/334",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "c4ac7bf3ea74afa52455386e7edd9d3b928824778a0cf11197af66c0047dbb9d"
+    }
+  ]
+}

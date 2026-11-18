@@ -1,0 +1,555 @@
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.process.CommandLineArgumentProvider
+
+plugins {
+	id 'java'
+	id 'jacoco'
+	id 'com.github.spotbugs' version '6.2.2'
+	id 'org.springframework.boot' version '3.5.15'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+jacoco {
+	// Java 21 클래스 파일 계측을 지원하는 안정 버전을 고정한다.
+	toolVersion = '0.8.13'
+}
+
+spotbugs {
+	showProgress = false
+	excludeFilter = file('quality/spotbugs-exclude.xml')
+}
+
+configurations {
+	all {
+		exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+	}
+}
+
+group = 'com.easysubway'
+version = '0.0.1-SNAPSHOT'
+description = 'EasySubway backend'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
+}
+
+repositories {
+	// eGovFrame 공식 Maven 저장소가 CI runner에서 간헐적으로 timeout되어 필요한 artifact만 로컬 mirror로 먼저 해석한다.
+	maven {
+		url = uri('gradle/local-maven')
+		content {
+			includeGroup 'org.egovframe.boot'
+			includeGroup 'org.egovframe.rte'
+		}
+	}
+	mavenCentral()
+	maven {
+		url 'https://maven.egovframe.go.kr/maven'
+		content {
+			includeGroup 'org.egovframe.boot'
+			includeGroup 'org.egovframe.rte'
+		}
+	}
+}
+
+dependencyManagement {
+	imports {
+		mavenBom 'org.egovframe.boot:egovframe-boot-starter-parent:5.0.0'
+		mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+		// Jackson 2.21.7 — GHSA-5jmj-h7xm-6q6v(CVE-2026-54515) 패치(#2459), CVE-2026-68497·83557·19032 패치(#488), CVE-2026-91776·91777·89407·89425 패치.
+		mavenBom 'com.fasterxml.jackson:jackson-bom:2.21.7'
+	}
+	dependencies {
+		// Tomcat 10.1.62 — CVE-2026-65905·65182·68525·101296·101356·88041·93446 패치.
+		dependency 'org.apache.tomcat.embed:tomcat-embed-core:10.1.62'
+		dependency 'org.apache.tomcat.embed:tomcat-embed-el:10.1.62'
+		dependency 'org.apache.tomcat.embed:tomcat-embed-websocket:10.1.62'
+		// PostgreSQL JDBC 42.7.14 — CVE-2026-107314·107315 패치.
+		dependency 'org.postgresql:postgresql:42.7.14'
+		// Spring Boot BOM이 더 낮게 고정하는 공통 라이브러리는 기존 eGovFrame 기준 보안 패치 버전을 유지한다.
+		// fdl-property가 끌어오는 commons-configuration2 2.11.0은 GHSA-337m-mw94-2v6g(Medium)라 2.15.0으로 상향(#1821).
+		dependency 'org.apache.commons:commons-configuration2:2.15.0'
+		dependency 'org.apache.commons:commons-lang3:3.18.0'
+		// SpotBugs 도구 classpath도 애플리케이션과 같은 보안 하한을 사용한다(#161).
+		dependency 'org.apache.httpcomponents.client5:httpclient5:5.6.3'
+		dependency 'org.apache.httpcomponents.core5:httpcore5:5.4.3'
+		dependency 'org.apache.httpcomponents.core5:httpcore5-h2:5.4.3'
+		dependency 'org.apache.logging.log4j:log4j-api:2.25.5'
+		dependency 'org.apache.logging.log4j:log4j-core:2.25.5'
+		dependency 'org.apache.logging.log4j:log4j-jul:2.25.5'
+		dependency 'org.apache.logging.log4j:log4j-slf4j2-impl:2.25.5'
+		dependency 'org.apache.logging.log4j:log4j-layout-template-json:2.25.5'
+		dependency 'org.apache.commons:commons-compress:1.26.2'
+		dependency 'com.google.guava:guava:33.7.2-jre'
+	}
+}
+
+dependencyLocking {
+	lockAllConfigurations()
+}
+
+dependencies {
+	implementation 'org.egovframe.rte:egovframe-rte-ptl-mvc'
+	// 수집 배치 control-plane: bat-core 변수 리스너로 표준 배치 변수 시딩 + 생명주기 로깅(#1820).
+	// psl-dataaccess는 bat-core의 inert transitive로만 존재(직접 채택 금지, contract test 강제).
+	implementation 'org.egovframe.rte:egovframe-rte-bat-core'
+	// 수집 run ID control-plane: fdl-idgnr Table 전략 ID + fdl-property 접두어 외부화(#1821).
+	// 보안 식별자(UUID·DB PK·토큰)는 대상 아님 — 운영성 수집 run ID 한정(contract test 강제).
+	implementation 'org.egovframe.rte:egovframe-rte-fdl-property'
+	implementation 'org.egovframe.rte:egovframe-rte-fdl-idgnr'
+	// 관리자·운영기관 내보내기 xlsx 병행(#1822): fdl-excel AbstractPOIExcelView로 렌더. CSV 계약 불변.
+	// POI 계열 transitive는 mavenCentral 해석(버전 충돌 시 dependencyManagement 명시 고정).
+	implementation 'org.egovframe.rte:egovframe-rte-fdl-excel'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-batch'
+	implementation 'org.springframework.boot:spring-boot-starter-log4j2'
+	implementation 'org.apache.logging.log4j:log4j-layout-template-json'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	// 관리자 콘솔 htmx 부분 응답 규약: @HxRequest 매핑 분리와 hx: dialect의 CSRF 헤더 자동 주입.
+	// 4.0.x는 Spring Boot 3.5 기준으로 빌드된 계열이라 현재 BOM(3.5.15)과 정합한다(5.x는 Spring Boot 4.0 기준).
+	implementation 'io.github.wimdeblauwe:htmx-spring-boot-thymeleaf:4.0.3'
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+	implementation 'com.google.auth:google-auth-library-oauth2-http:1.48.0'
+	implementation 'com.github.luben:zstd-jni:1.5.7-13'
+	implementation 'org.flywaydb:flyway-core'
+	runtimeOnly 'com.h2database:h2'
+	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+	runtimeOnly 'org.postgresql:postgresql'
+	runtimeOnly 'org.xerial:sqlite-jdbc:3.53.2.1'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.batch:spring-batch-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+	testImplementation 'org.testcontainers:junit-jupiter:1.21.4'
+	testImplementation 'org.testcontainers:postgresql:1.21.4'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def sqliteNativeDirectory = layout.buildDirectory.dir('sqlite-native/linux-aarch64')
+def stageSqliteNative = tasks.register('stageSqliteNative', Sync) {
+	def sqliteArchiveName = 'sqlite-jdbc-3.53.2.1.jar'
+	def sqliteResource = 'org/sqlite/native/Linux/aarch64/libsqlitejdbc.so'
+	from({
+		def archives = configurations.runtimeClasspath.files.findAll { it.name == sqliteArchiveName }
+		if (archives.size() != 1) throw new GradleException("expected one ${sqliteArchiveName}, found ${archives.size()}")
+		zipTree(archives.iterator().next())
+	}) {
+		include sqliteResource
+		eachFile { details -> details.path = 'libsqlitejdbc.so' }
+		includeEmptyDirs = false
+	}
+	into sqliteNativeDirectory
+	doLast {
+		def nativeLibrary = sqliteNativeDirectory.get().file('libsqlitejdbc.so').asFile.toPath()
+		if (!java.nio.file.Files.isRegularFile(nativeLibrary, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| java.nio.file.Files.size(nativeLibrary) == 0) {
+			throw new GradleException('SQLite Linux/aarch64 native library was not staged')
+		}
+	}
+}
+
+def zstdNativeDirectory = layout.buildDirectory.dir('zstd-native/linux-aarch64')
+def stageZstdNative = tasks.register('stageZstdNative', Sync) {
+	def zstdArchiveName = 'zstd-jni-1.5.7-13.jar'
+	def zstdResource = 'linux/aarch64/libzstd-jni-1.5.7-13.so'
+	from({
+		def archives = configurations.runtimeClasspath.files.findAll { it.name == zstdArchiveName }
+		if (archives.size() != 1) throw new GradleException("expected one ${zstdArchiveName}, found ${archives.size()}")
+		zipTree(archives.iterator().next())
+	}) {
+		include zstdResource
+		eachFile { details -> details.path = 'libzstd-jni-1.5.7-13.so' }
+		includeEmptyDirs = false
+	}
+	into zstdNativeDirectory
+	doLast {
+		def nativeLibrary = zstdNativeDirectory.get().file('libzstd-jni-1.5.7-13.so').asFile.toPath()
+		if (!java.nio.file.Files.isRegularFile(nativeLibrary, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| java.nio.file.Files.size(nativeLibrary) == 0) {
+			throw new GradleException('zstd Linux/aarch64 native library was not staged')
+		}
+	}
+}
+
+tasks.withType(Test).configureEach {
+	jvmArgs '-XX:-UseBASE64Intrinsics'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	// 실패한 assertion의 기대값과 실제값을 남겨 같은 테스트를 진단용으로 재실행하지 않는다.
+	testLogging.exceptionFormat = 'full'
+	// @SpringBootTest 컨텍스트 캐시 누적 + fdl-excel 1만 행 xlsx 메모리 테스트(#1822)로 스위트 힙 수요가
+	// 기본 512MB를 넘어선다. 포크 테스트 JVM 힙을 2g로 상향(전체 스위트·CI 공통 OOM 방지).
+	maxHeapSize = '2g'
+	// 계약 테스트는 backend 밖의 contracts/api를 읽는다. 입력으로 선언하지 않으면 계약 파일만
+	// 고친 변경에서 test 태스크가 UP-TO-DATE로 건너뛰어 게이트가 조용히 비활성화된다.
+	inputs.dir(layout.projectDirectory.dir('../contracts/api'))
+		.withPropertyName('apiContracts')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.dir(layout.projectDirectory.dir('../contracts/route'))
+		.withPropertyName('routeContracts')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.dir(layout.projectDirectory.dir('src/main/java'))
+		.withPropertyName('runtimeInventoryJavaSources')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	// 커버리지 측정만 수행한다. 전역 % fail 게이트는 후속 이슈에서 패키지 단위로 검토한다(#2440).
+	finalizedBy tasks.named('jacocoTestReport')
+	// -PupdateGolden: 대표 경로 질의 golden 회귀가 의도한 변경을 golden 파일에 다시 쓴다(#514). 이 옵션이 없으면 golden을 쓰지 않는다.
+	if (project.hasProperty('updateGolden')) {
+		systemProperty 'easysubway.updateGolden', 'true'
+		outputs.upToDateWhen { false }
+	}
+}
+
+// 대표 경로 질의 golden 대비 번들 diff 보고(#514): ./gradlew journeyGoldenDiff -PgoldenBundle=<server-route-bundle 디렉터리> [-PgoldenServiceDate=YYYY-MM-DD]
+tasks.register('journeyGoldenDiff', JavaExec) {
+	group = 'verification'
+	description = '번들 디렉터리를 대표 경로 질의 golden과 비교한 차이 보고를 출력한다.'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.easysubway.route.application.service.JourneyGoldenDiffCli'
+	maxHeapSize = '2g'
+	jvmArgs '-XX:-UseBASE64Intrinsics'
+	javaLauncher = javaToolchains.launcherFor {
+		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
+	doFirst {
+		if (!project.hasProperty('goldenBundle')) throw new GradleException('-PgoldenBundle=<server-route-bundle 디렉터리>가 필요하다')
+		args(file(project.property('goldenBundle')).absolutePath)
+		if (project.hasProperty('goldenServiceDate')) args('--service-date', project.property('goldenServiceDate'))
+	}
+}
+
+def jacocoClassDirectoryExcludes = [
+	'com/easysubway/EasySubwayBackendApplication.class',
+]
+def jacocoCoverageEvidence = layout.buildDirectory.file('jacoco/jacocoTestReport-evidence.json')
+
+tasks.named('jacocoTestReport') {
+	dependsOn tasks.named('test')
+	reports {
+		xml.required = true
+		html.required = true
+		csv.required = false
+	}
+	classDirectories.setFrom(files(classDirectories.files.collect { classesDir ->
+		fileTree(dir: classesDir, exclude: jacocoClassDirectoryExcludes)
+	}))
+}
+
+def writeJacocoCoverageEvidence = tasks.register('writeJacocoCoverageEvidence') {
+	outputs.file(jacocoCoverageEvidence)
+	outputs.upToDateWhen { false }
+
+	doLast {
+		def reportTask = tasks.named('jacocoTestReport').get()
+		def testTask = tasks.named('test', org.gradle.api.tasks.testing.Test).get()
+		def launcher = testTask.javaLauncher.get().metadata
+		if (!JvmVendorSpec.ADOPTIUM.matches(launcher.vendor) || launcher.languageVersion.asInt() != 21) {
+			throw new GradleException("test launcher is not Adoptium 21: ${launcher.vendor} ${launcher.languageVersion}")
+		}
+		def configuredLauncher = new File(launcher.installationPath.asFile, 'bin/java')
+		def configuredReport = reportTask.reports.xml.outputLocation.get().asFile
+		if (!configuredLauncher.isFile() || java.nio.file.Files.isSymbolicLink(configuredLauncher.toPath())) throw new GradleException("test launcher is not a regular file: ${configuredLauncher}")
+		if (!configuredReport.isFile() || java.nio.file.Files.isSymbolicLink(configuredReport.toPath())) throw new GradleException("JaCoCo XML is not a regular file: ${configuredReport}")
+		def launcherFile = configuredLauncher.canonicalFile
+		def reportFile = configuredReport.canonicalFile
+		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+		def output = jacocoCoverageEvidence.get().asFile
+		output.parentFile.mkdirs()
+		output.setText(groovy.json.JsonOutput.toJson([
+			schemaVersion: 1,
+			gradleVersion: gradle.gradleVersion,
+			java: [vendor: 'ADOPTIUM', languageVersion: 21, launcherPath: launcherFile.canonicalPath, launcherSha256: hash(launcherFile)],
+			jacoco: [toolVersion: jacoco.toolVersion],
+			tasks: [test: testTask.name, report: reportTask.name],
+			report: [path: "backend/${project.relativePath(reportFile).replace('\\', '/')}", sha256: hash(reportFile), classDirectoryExcludes: jacocoClassDirectoryExcludes],
+		]) + '\n', 'UTF-8')
+	}
+}
+
+tasks.named('jacocoTestReport') {
+	finalizedBy writeJacocoCoverageEvidence
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	launcher = javaToolchains.launcherFor {
+		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
+	reports {
+		html.required = true
+		xml.required = true
+	}
+}
+
+def spotbugsMainEvidence = layout.buildDirectory.file('spotbugs/spotbugsMain-evidence.json')
+
+tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask) {
+	ignoreFailures = false
+	reports.named('html') {
+		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.html')
+	}
+	reports.named('xml') {
+		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.xml')
+	}
+}
+
+tasks.named('spotbugsTest', com.github.spotbugs.snom.SpotBugsTask) {
+	ignoreFailures = true
+}
+
+tasks.register('writeSpotbugsMainEvidence') {
+	def spotbugsMain = tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask)
+	dependsOn spotbugsMain
+	inputs.file(spotbugsMain.flatMap { it.reports.xml.outputLocation })
+		.withPropertyName('xmlReport')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.file(spotbugsMain.flatMap { it.reports.html.outputLocation })
+		.withPropertyName('htmlReport')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.file(spotbugsMain.flatMap { it.excludeFilter })
+		.withPropertyName('excludeFilter')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.files(spotbugsMain.map { it.classes })
+		.withPropertyName('classes')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(spotbugsMain.map { it.sourceDirs })
+		.withPropertyName('sourceDirs')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(configurations.spotbugs)
+		.withPropertyName('spotbugsEngine')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.files(configurations.spotbugsSlf4j)
+		.withPropertyName('spotbugsSlf4j')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.files(configurations.compileClasspath)
+		.withPropertyName('auxClasspath')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.files(configurations.spotbugsPlugins)
+		.withPropertyName('pluginClasspath')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.file(spotbugsMain.flatMap { it.launcher.map { it.executablePath } })
+		.withPropertyName('launcherExecutable')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.files(providers.provider {
+		def plugin = plugins.getPlugin('com.github.spotbugs')
+		[new File(plugin.class.protectionDomain.codeSource.location.toURI())]
+	})
+		.withPropertyName('pluginJar')
+		.withPathSensitivity(PathSensitivity.NONE)
+	inputs.property('spotbugsToolVersion', spotbugs.toolVersion)
+	inputs.property('spotbugsIgnoreFailures', spotbugsMain.flatMap { task -> provider { task.ignoreFailures } })
+	outputs.file(spotbugsMainEvidence)
+
+	doLast {
+		def task = spotbugsMain.get()
+		def declaredTaskType = com.github.spotbugs.snom.SpotBugsTask
+		if (!declaredTaskType.isAssignableFrom(task.class)) throw new GradleException("spotbugsMain runtime type is not assignable to ${declaredTaskType.name}: ${task.class.name}")
+		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+		def repositoryPath = { value -> "backend/${project.relativePath(value).replace('\\', '/')}" }
+		def directoryEntries = { values -> values.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it)] }.sort { it.repositoryPath } }
+		def fileEntries = { values -> values.findAll { it.isFile() }.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it), sha256: hash(it)] }.sort { it.repositoryPath } }
+		def artifactMap = { configuration, label ->
+			def mapped = [:]
+			configuration.incoming.artifactView { }.artifacts.artifacts.each { artifact ->
+				def file = artifact.file.canonicalFile
+				if (!file.isFile()) throw new GradleException("non-regular ${label} artifact: ${file}")
+				def owner = artifact.variant.owner
+				if (!(owner instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier)) throw new GradleException("unmapped ${label} component: ${owner}")
+				def identity = [component: "${owner.group}:${owner.module}:${owner.version}", artifact: file.name]
+				if (mapped.put(file, identity) != null) throw new GradleException("conflicting ${label} artifact: ${file}")
+			}
+			mapped
+		}
+		def mergeArtifactMaps = { label, maps ->
+			def merged = [:]
+			maps.each { mapped ->
+				mapped.each { file, identity ->
+					def existing = merged[file]
+					if (existing != null && existing != identity) throw new GradleException("conflicting ${label} artifact identity: ${file}")
+					merged[file] = identity
+				}
+			}
+			merged
+		}
+		def artifactFiles = { values, mapped, label -> values.collect { file ->
+			if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
+			def canonical = file.canonicalFile
+			def item = mapped[canonical]
+			if (item == null) throw new GradleException("unmapped ${label} input: ${canonical}")
+			[component: item.component, artifact: item.artifact, path: canonical.canonicalPath, sha256: hash(canonical)]
+		}.sort { "${it.component}/${it.artifact}" } }
+		def exactArtifactFiles = { values, mapped, label ->
+			def entries = artifactFiles(values, mapped, label)
+			def taskFiles = values.collect { file ->
+				if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
+				file.canonicalFile
+			}.toSet()
+			if (taskFiles != mapped.keySet()) throw new GradleException("${label} task inputs do not exactly match resolved artifacts")
+			entries
+		}
+		def expandedFiles = { directories, pattern -> directories.collectMany { fileTree(it).matching { include pattern }.files }.toSet().toList() }
+		def plugin = plugins.getPlugin('com.github.spotbugs')
+		def pluginJar = new File(plugin.class.protectionDomain.codeSource.location.toURI())
+		def launcher = task.launcher.get().metadata
+		if (!JvmVendorSpec.ADOPTIUM.matches(launcher.vendor)) throw new GradleException("spotbugsMain launcher is not Adoptium: ${launcher.vendor}")
+		def excludeFilter = task.excludeFilter.get().asFile
+		def xmlReport = task.reports.xml.outputLocation.get().asFile
+		def htmlReport = task.reports.html.outputLocation.get().asFile
+		def engineArtifacts = mergeArtifactMaps('SpotBugs task engine', [
+			artifactMap(configurations.spotbugs, 'SpotBugs engine'),
+			artifactMap(configurations.spotbugsSlf4j, 'SpotBugs SLF4J provider'),
+		])
+		def auxiliaryArtifacts = artifactMap(configurations.compileClasspath, 'SpotBugs auxiliary classpath')
+		def pluginArtifacts = artifactMap(configurations.spotbugsPlugins, 'SpotBugs external plugins')
+		def output = spotbugsMainEvidence.get().asFile
+		output.parentFile.mkdirs()
+		def sourceDirs = task.sourceDirs.files.toList()
+		def classDirs = task.classDirs?.files?.toList() ?: []
+		if (classDirs.isEmpty()) throw new GradleException('spotbugsMain has no class directories')
+		def taskClasses = task.classes
+		if (taskClasses == null) throw new GradleException('spotbugsMain classes input is unavailable')
+		def compiledClasses = taskClasses.asFileTree.files.toList()
+		if (compiledClasses.isEmpty() || compiledClasses.any { !it.isFile() || !it.name.endsWith('.class') } || compiledClasses.any { candidate -> !classDirs.any { directory -> candidate.canonicalPath.startsWith(directory.canonicalPath + File.separator) } }) throw new GradleException('spotbugsMain classes input does not match compiled class directories')
+		output.setText(groovy.json.JsonOutput.toJson([schemaVersion: 1, gradle: [version: gradle.gradleVersion], plugin: [id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: plugin.class.name, implementationPath: pluginJar.canonicalPath, implementationSha256: hash(pluginJar)], engine: [toolVersion: spotbugs.toolVersion.get(), classpath: exactArtifactFiles(task.spotbugsClasspath.files, engineArtifacts, 'SpotBugs engine')], java: [requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: launcher.vendor.toString(), languageVersion: launcher.languageVersion.asInt(), runtimeVersion: launcher.javaRuntimeVersion, jvmVersion: launcher.jvmVersion, installationPath: launcher.installationPath.asFile.canonicalPath, launcherPath: new File(launcher.installationPath.asFile, 'bin/java').canonicalPath, launcherSha256: hash(new File(launcher.installationPath.asFile, 'bin/java'))], task: [name: task.name, path: task.path, declaredType: declaredTaskType.name, runtimeType: task.class.name, runtimeTypeAssignableToDeclared: true, ignoreFailures: task.ignoreFailures, sourceDirs: directoryEntries(sourceDirs), classDirs: directoryEntries(classDirs), sources: fileEntries(expandedFiles(sourceDirs, '**/*.java')), classes: fileEntries(compiledClasses), auxClassPaths: exactArtifactFiles(task.auxClassPaths.files, auxiliaryArtifacts, 'SpotBugs auxiliary classpath'), pluginJarFiles: exactArtifactFiles(task.pluginJarFiles.files, pluginArtifacts, 'SpotBugs external plugins'), excludeFilter: repositoryPath(excludeFilter), xmlOutput: repositoryPath(xmlReport), htmlOutput: repositoryPath(htmlReport)]]) + '\n', 'UTF-8')
+	}
+}
+
+def contractsBundle = providers.environmentVariable('EASYSUBWAY_CONTRACTS_BUNDLE')
+
+def verifyEgovframeLocalMavenMirror = tasks.register('verifyEgovframeLocalMavenMirror', Exec) {
+	inputs.file(layout.projectDirectory.file('tools/verify-egovframe-local-maven-mirror.mjs'))
+	inputs.file(layout.projectDirectory.file('quality/egovframe-local-maven-mirror.json'))
+	inputs.dir(layout.projectDirectory.dir('gradle/local-maven'))
+	inputs.file(layout.projectDirectory.file('gradle.lockfile'))
+	inputs.file(layout.projectDirectory.file('build.gradle'))
+	commandLine 'node', 'tools/verify-egovframe-local-maven-mirror.mjs',
+		'--manifest', 'quality/egovframe-local-maven-mirror.json',
+		'--mirror', 'gradle/local-maven',
+		'--build', 'build.gradle',
+		'--lock', 'gradle.lockfile'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	dependsOn verifyEgovframeLocalMavenMirror
+}
+
+def journeyContractsStaging = layout.buildDirectory.dir('journey-contracts-staging')
+def journeyContractsStagingMarker = layout.buildDirectory.file('journey-contracts-staging/.stage-complete')
+def journeyContractsLock = layout.projectDirectory.file('journey-contracts.lock.json')
+
+def stageContracts = tasks.register('stageContracts', Exec) {
+	inputs.file(layout.projectDirectory.file('tools/stage-contracts.mjs'))
+	inputs.file(layout.projectDirectory.file('contracts.lock.json'))
+	inputs.files(providers.provider {
+		def bundle = contractsBundle.orNull
+		bundle == null || bundle.isBlank() ? [] : [file(bundle)]
+	})
+		.withPropertyName('contractsBundle')
+		.withPathSensitivity(PathSensitivity.ABSOLUTE)
+	outputs.dir(layout.buildDirectory.dir('contracts-staging'))
+	outputs.upToDateWhen {
+		def bundle = contractsBundle.orNull
+		bundle != null && !bundle.isBlank()
+			&& java.nio.file.Files.isRegularFile(file(bundle).toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+	}
+	executable = 'node'
+	args 'tools/stage-contracts.mjs', '--lock', 'contracts.lock.json'
+	argumentProviders.add({
+		def bundle = contractsBundle.orNull
+		if (bundle == null || bundle.isBlank()) {
+			def downloaded = layout.buildDirectory.file('downloaded-contracts-bundle.json').get().asFile
+			bundle = downloaded.absolutePath
+		}
+		return ['--input', bundle, '--output', 'build/contracts-staging']
+	} as CommandLineArgumentProvider)
+
+	doFirst {
+		def bundle = contractsBundle.orNull
+		if (bundle == null || bundle.isBlank()) {
+			def lock = new groovy.json.JsonSlurper().parse(file('contracts.lock.json'))
+			def targetFile = layout.buildDirectory.file('downloaded-contracts-bundle.json').get().asFile
+			targetFile.parentFile.mkdirs()
+			if (!targetFile.exists() || java.security.MessageDigest.getInstance('SHA-256').digest(targetFile.bytes).encodeHex().toString() != lock.sha256) {
+				try {
+					new URL(lock.artifactUrl as String).withInputStream { input ->
+						targetFile.withOutputStream { output -> output << input }
+					}
+				} catch (Exception e) {
+					throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
+				}
+			}
+			def digest = java.security.MessageDigest.getInstance('SHA-256').digest(targetFile.bytes).encodeHex().toString()
+			if (digest != lock.sha256) {
+				throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
+			}
+		}
+		def journeyLock = new groovy.json.JsonSlurper().parse(journeyContractsLock.asFile)
+		def payloadSha256 = journeyLock?.payload?.sha256
+		if (payloadSha256 instanceof String && payloadSha256 ==~ /[a-f0-9]{64}/) {
+			def stagingDir = journeyContractsStaging.get().asFile
+			stagingDir.mkdirs()
+			def marker = journeyContractsStagingMarker.get().asFile
+			if (!marker.exists()) {
+				marker.setText("${payloadSha256}\n", 'UTF-8')
+			}
+			if (journeyLock.resources instanceof List) {
+				journeyLock.resources.each { res ->
+					def src = file(res.path)
+					if (src.exists()) {
+						def dest = new File(stagingDir, res.path as String)
+						dest.parentFile.mkdirs()
+						dest.bytes = src.bytes
+					}
+				}
+			}
+		}
+	}
+}
+
+tasks.named('processResources') {
+	dependsOn stageContracts
+	dependsOn verifyEgovframeLocalMavenMirror
+	inputs.file(journeyContractsLock)
+		.withPropertyName('journeyContractsLock')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.dir(journeyContractsStaging)
+		.withPropertyName('journeyContractsStaging')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+
+	doFirst {
+		def lock = new groovy.json.JsonSlurper().parse(journeyContractsLock.asFile)
+		def payloadSha256 = lock?.payload?.sha256
+		if (!(payloadSha256 instanceof String) || !(payloadSha256 ==~ /[a-f0-9]{64}/)) {
+			throw new GradleException('Journey contract lock payload SHA-256 is invalid')
+		}
+		def marker = journeyContractsStagingMarker.get().asFile
+		if (!java.nio.file.Files.isRegularFile(marker.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| marker.getText('UTF-8') != "${payloadSha256}\n") {
+			throw new GradleException('Journey contract staging does not match the lock payload')
+		}
+	}
+
+	from(stageContracts)
+	from(layout.buildDirectory.dir('journey-contracts-staging'))
+	from('flyway-migration-inventory.lock.json') {
+		into 'META-INF/easysubway'
+	}
+	from('quality/migration-ddl-gate.json') {
+		into 'META-INF/easysubway'
+	}
+}
+
+tasks.named('bootJar') {
+	dependsOn stageSqliteNative, stageZstdNative
+	preserveFileTimestamps = false
+	reproducibleFileOrder = true
+}

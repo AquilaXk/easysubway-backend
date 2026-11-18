@@ -1,0 +1,16 @@
+origin_station_id,destination_station_id,departure_time,mobility_type,constraint_mode,expected_transfer_count,max_eta_error_seconds,observed_eta_error_seconds,use_realtime,notes
+station-sangnoksu,station-sinseoldong,2026-06-30T14:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:04:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:08:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:12:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:16:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:20:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:24:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:28:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:32:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:36:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:40:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:44:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:48:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sinseoldong,station-sangnoksu,2026-06-30T14:52:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture
+station-sangnoksu,station-sinseoldong,2026-06-30T14:56:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,120,false,strict step free fixture

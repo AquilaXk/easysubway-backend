@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
+	<title>운영기관 알림 발송 보고서</title>
+	<link rel="stylesheet" th:href="@{/css/operator-v3.css}" href="/css/operator-v3.css">
+</head>
+<body>
+<div class="desktop-frame">
+	<aside th:replace="~{operator/fragments/shell :: sidebar('push')}"></aside>
+
+	<section class="desktop-workspace">
+		<header th:replace="~{operator/fragments/shell :: topbar('알림 발송 보고서', '읽기 전용 리포트 · 전달 상태')}"></header>
+
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>운영기관 알림 발송 현황</h1>
+					<p>시설·경로·제보·데이터 품질 알림의 전달 상태를 읽기 전용으로 확인합니다.</p>
+				</div>
+			</div>
+
+			<div class="alert-banner" th:if="${report.latestFailureReason != null}">
+				<strong>최근 실패 원인</strong>
+				<span th:text="${report.latestFailureReason}">Provider timeout</span>
+			</div>
+
+			<div class="metric-grid" aria-label="알림 발송 현황 요약">
+				<div class="metric"><span>전체 알림</span><strong th:text="${report.totalCount}">0</strong></div>
+				<div class="metric"><span>대기 중</span><strong th:text="${report.pendingCount}">0</strong></div>
+				<div class="metric"><span>발송 완료</span><strong th:text="${report.sentCount}">0</strong></div>
+				<div class="metric"><span>발송 실패</span><strong th:text="${report.failedCount}">0</strong></div>
+			</div>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>알림 발송 상태 차트</h2>
+						<p>대기·완료·실패 건수입니다.</p>
+					</div>
+				</div>
+				<div th:if="${report.totalCount == 0}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('집계된 알림 발송이 없습니다.', '알림이 발송되면 상태별 분포가 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${report.totalCount == 0}">
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="push-notification-status-chart"
+					        role="img"
+					        aria-label="알림 발송 상태별 건수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<div class="operator-table-scroll" tabindex="0" role="group"
+					     aria-label="가로로 스크롤 가능한 알림 발송 상태 차트 데이터 표">
+					<table id="push-notification-status-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">상태</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.statusRows}">
+							<td th:text="${row.label}">대기 중</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+					</div>
+				</details>
+				</th:block>
+			</section>
+
+			<div class="desktop-grid-2">
+				<section class="panel">
+					<div class="panel-head">
+						<div class="panel-title">
+							<h2>상태별 발송 현황</h2>
+							<p>대기·완료·실패 건수입니다.</p>
+						</div>
+					</div>
+					<div class="operator-table-scroll" tabindex="0" role="group"
+					     aria-label="가로로 스크롤 가능한 상태별 발송 현황 표">
+					<table class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">상태</th>
+							<th scope="col">설명</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.statusRows}">
+							<td><span class="status" th:text="${row.label}">대기 중</span></td>
+							<td th:text="${row.description}">아직 발송 처리 전</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+					</div>
+				</section>
+
+				<section class="panel">
+					<div class="panel-head">
+						<div class="panel-title">
+							<h2>최근 실패 안내</h2>
+							<p>실패 원인이 있으면 운영 담당자 확인 대상으로 표시합니다.</p>
+						</div>
+					</div>
+					<div class="source-note" th:if="${report.latestFailureReason != null}" th:text="${report.latestFailureReason}">
+						푸시 발송 처리 중 오류가 발생했습니다. 관리자 점검이 필요합니다.
+					</div>
+					<div th:if="${report.latestFailureReason == null}"
+					     th:replace="~{operator/fragments/empty-state :: panel('최근 실패 없음', null)}"></div>
+				</section>
+			</div>
+		</main>
+	</section>
+</div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
+</body>
+</html>

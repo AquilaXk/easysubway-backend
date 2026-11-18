@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>통합 관리자 공용 셸</title>
+</head>
+<body>
+<nav class="admin-sidebar" id="admin-primary-nav" th:fragment="sidebar(active)" aria-label="통합 관리자 화면">
+	<div class="admin-brand">
+		<img class="admin-brand-icon" th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="">
+		<div>
+			<strong>쉬운 지하철</strong>
+			<span>관리자</span>
+		</div>
+	</div>
+	<!--
+	  퀵서치(#1981): 사이드바 최상단 검색 필드. 신규 JS 로직 없이 기존 커맨드 팔레트(#1738)
+	  메커니즘을 그대로 재사용한다 — command-palette x-data 블록(트리거+오버레이)을 topbar에서
+	  이 위치로 이동해, 퀵서치 입력 자체가 팔레트를 여는 트리거가 되도록 했다(x-on:click.prevent="show").
+	-->
+	<div class="command-palette" x-data="commandPalette"
+	     x-on:keydown.cmd.k.window.prevent="show"
+	     x-on:keydown.ctrl.k.window.prevent="show"
+	     x-on:keydown.escape.window="hide">
+		<a class="admin-sidebar-quicksearch command-palette-trigger" th:href="@{/admin/search}"
+		   x-ref="trigger" x-on:click.prevent="show"
+		   x-bind:aria-expanded="ariaExpanded" aria-controls="command-palette-overlay">
+			<svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
+			<span>메뉴·역 검색</span>
+			<kbd>⌘K</kbd>
+		</a>
+		<div id="command-palette-overlay" class="command-palette-overlay" x-cloak x-show="open"
+		     x-on:keydown="trapFocusKey"
+		     role="dialog" aria-modal="true" aria-label="통합 검색">
+			<div class="command-palette-backdrop" x-on:click="hide"></div>
+			<div class="command-palette-panel">
+				<form role="search" method="get" th:action="@{/admin/search}"
+				      hx-target="#palette-results" hx-swap="innerHTML"
+				      th:attr="hx-get=@{/admin/search}" hx-trigger="keyup changed delay:300ms">
+					<input type="search" name="q" x-ref="input" placeholder="메뉴·역 검색"
+					       aria-label="검색어" autocomplete="off"
+					       x-on:keydown.arrow-down.prevent="focusResults">
+					<button type="submit" class="outline">검색</button>
+				</form>
+				<div id="palette-results" class="command-palette-results"
+				     x-on:keydown.arrow-down.prevent="moveDown"
+				     x-on:keydown.arrow-up.prevent="moveUp"></div>
+			</div>
+		</div>
+	</div>
+	<!--
+	  업무 영역(workspace) IA(#2277): permission 필터를 통과한 program을 7개 업무 영역으로 묶어
+	  disclosure로 렌더한다. 서버는 모든 영역을 펼친 채 내보내(no-JS는 허용 program 전부 표시),
+	  JS가 있으면 navWorkspaceList 컴포넌트가 현재 위치(active)를 담은 영역과 탐색 영역 하나만 관리한다.
+	  펼침 전 순간의 flash는 admin-shell.css의 has-js:not(has-js-ready) 규칙이 가린다. CSP 빌드라
+	  x-on/x-bind에는 메서드·게터 이름만 쓴다. program이 0개인 영역은 advice가 목록에서 제외한다.
+	-->
+	<!--
+	  현재 위치 없음 폴백(#2277 리뷰): active가 permission 필터를 통과한 어떤 program에도 없으면
+	  (예: sidebar('')로 호출되는 검색·알림·오류 페이지) 현재 위치를 담은 영역이 하나도 없어 JS가 전
+	  영역을 접어버리는 회귀가 생긴다. 서버가 이 상태를 is-no-current로 표식해, FOUC 가드(admin-shell.css)와
+	  navWorkspaceList init이 모든 영역을 접은 상태에서 탐색을 시작하게 한다. no-JS는 has-js가 없어 이
+	  표식과 무관하게 정적 펼침을 유지한다. 판정은 adminProgramIds(렌더되는 workspace program id 집합)의 active 포함 여부로 한다
+	  — 각 program은 정확히 하나의 렌더 workspace에 속하므로 이는 "현재 workspace 존재"와 동치다.
+	  adminProgramIds가 null인 경로(권한 컨텍스트 없는 오류 페이지)도 폴백 상태로 안전하게 처리한다. -->
+	<div class="admin-nav-scroll"
+	     th:with="hasCurrentWorkspace=${adminProgramIds != null and adminProgramIds.contains(active)}"
+	     th:classappend="${hasCurrentWorkspace} ? '' : 'is-no-current'"
+	     x-data="navWorkspaceList">
+		<div class="admin-nav-workspace"
+		     th:each="workspace : ${adminWorkspaces}"
+		     th:with="isCurrent=${#lists.contains(workspace.programs.![id], active)},
+		              isPersistent=${workspace.id == 'overview'},
+		              workspaceIcon=${workspace.id == 'overview' ? 'dashboard' : (workspace.id == 'accessibility-data' ? 'data-quality' : (workspace.id == 'operations' ? 'operations' : (workspace.id == 'communications' ? 'communications' : (workspace.id == 'analytics' ? 'analytics' : (workspace.id == 'datapack' ? 'datapack' : 'system-audit')))))}"
+		     th:classappend="${(isCurrent ? ' is-current' : '') + (isPersistent ? ' is-persistent' : '')}"
+		     th:attr="data-current=${isCurrent},data-persistent=${isPersistent}">
+			<button th:unless="${isPersistent}" type="button" class="admin-nav-workspace-toggle" aria-expanded="true"
+			        x-on:click="toggle"
+			        th:attr="aria-controls=${'admin-workspace-' + workspace.id},aria-disabled=${isCurrent ? 'true' : null}">
+				<!-- aria-expanded="true"는 no-JS 정적 상태(모든 영역 펼침). JS는 init에서 실제 상태를 덮어쓴다. -->
+				<span class="admin-nav-workspace-icon"><svg th:replace="~{admin/fragments/icon :: icon(${workspaceIcon})}"></svg></span>
+				<span class="admin-nav-workspace-name" th:text="${workspace.label}">업무 영역</span>
+				<span class="admin-nav-workspace-caret" aria-hidden="true"></span>
+			</button>
+			<div class="admin-nav-workspace-programs" th:id="${'admin-workspace-' + workspace.id}">
+				<a th:each="program : ${workspace.programs}"
+				   class="admin-nav-item"
+				   th:classappend="${active == program.id} ? ' is-active'"
+				   th:attr="aria-current=${active == program.id ? 'page' : null}"
+				   th:href="@{${program.path}}">
+					<span th:if="${isPersistent}" class="admin-nav-program-icon"><svg th:replace="~{admin/fragments/icon :: icon(${workspaceIcon})}"></svg></span>
+					<span th:text="${program.label}">메뉴</span>
+				</a>
+			</div>
+		</div>
+	</div>
+</nav>
+<a th:fragment="skipLink" class="skip-link" href="#admin-content">본문으로 건너뛰기</a>
+<div th:fragment="topbar" class="admin-topbar">
+	<!--
+	  상단바 상단 행(#2047): 좌측 컨텍스트(브랜드 + 통합 관리자) / 우측 알림 벨 + 사용자 메뉴 드롭다운.
+	  aria-label과 클래스는 접근성 스모크 테스트가 고정한다(관리자 실행 환경).
+	-->
+	<div class="admin-topbar-row" aria-label="관리자 실행 환경">
+		<div class="admin-topbar-context">
+			<!-- 모바일 off-canvas nav의 leading control. sidebar target·Esc·backdrop 계약은 유지한다. -->
+			<div class="admin-sidebar-nav-control" x-data="sidebarToggle"
+			     x-on:keydown.escape.window="close">
+				<button type="button" class="admin-sidebar-toggle" x-on:click="toggle"
+				        x-bind:aria-expanded="ariaExpanded" aria-controls="admin-primary-nav"
+				        aria-label="주 메뉴 열기·닫기">
+					<svg th:replace="~{admin/fragments/icon :: icon('menu')}"></svg>
+				</button>
+				<div class="admin-sidebar-backdrop" x-cloak x-show="open" x-on:click="close"></div>
+			</div>
+			<span class="admin-topbar-mobile-brand">
+				<img class="admin-topbar-mobile-icon" th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="">
+				<strong class="admin-topbar-brand">쉬운 지하철 관리자</strong>
+			</span>
+			<span class="admin-topbar-sep" aria-hidden="true">/</span>
+			<span class="admin-topbar-scope">통합 관리자</span>
+			<div class="admin-topbar-location">
+				<span class="admin-topbar-crumb-parent">쉬운 지하철</span>
+				<span class="admin-topbar-crumb-sep" aria-hidden="true">/</span>
+				<span class="admin-topbar-crumb-current" th:text="${adminPageTitle != null ? adminPageTitle : (pageTitle != null ? pageTitle : '운영 현황')}">운영 현황</span>
+			</div>
+			<span class="admin-env-badge"
+			      th:classappend="${' is-' + (adminShell != null ? adminShell.environmentTone : 'development')}"
+			      title="현재 관리자 콘솔이 실행 중인 배포 환경"
+			      th:text="${adminShell != null ? adminShell.environmentLabel : 'DEV'}">DEV</span>
+		</div>
+		<form class="admin-topbar-search" role="search" method="get" th:action="@{/admin/search}">
+			<svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
+			<input type="search" name="q" placeholder="메뉴·역 검색" aria-label="메뉴·역 검색" autocomplete="off">
+			<kbd class="admin-search-kbd">⌘K</kbd>
+			<button type="submit" class="sr-only" tabindex="-1">검색</button>
+		</form>
+		<a class="admin-mobile-search" th:href="@{/admin/search}" aria-label="검색">
+			<svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
+		</a>
+		<div class="admin-topbar-actions">
+			<!--
+			  알림 센터(#1738): topbar 벨. 벨을 누르면 요약 패널이 열린다(Cmd 없이 클릭으로).
+			  live 영역은 alertCenter 컴포넌트가 60초마다 htmx로 /admin/alerts를 폴링해 채운다.
+			  탭이 비활성이면 폴링을 멈춘다. no-JS는 벨이 /admin/alerts 전용 페이지로 이동한다.
+			-->
+			<div class="admin-alert-center" x-data="alertCenter"
+			     x-bind:class="rootClass" x-on:keydown.escape.window="hide" x-on:keydown="trapFocusKey">
+				<a class="admin-alert-bell" th:href="@{/admin/alerts}" x-ref="trigger" x-on:click.prevent="toggle"
+				   x-bind:aria-expanded="ariaExpanded"
+				   aria-controls="admin-alert-live" aria-label="알림 센터">
+					<svg class="admin-alert-bell-icon" th:replace="~{admin/fragments/icon :: icon('alert')}"></svg>
+				</a>
+				<div id="admin-alert-live" x-ref="live" class="admin-alert-live" role="region" aria-label="알림 센터"></div>
+			</div>
+			<!--
+			  사용자 메뉴 disclosure(#2047): 이름·권한 요약을 트리거로 계정 정보를 보여준다.
+			  로그아웃은 다음 형제 action의 CSRF POST form이 소유한다. CSP 빌드라 디렉티브에는
+			  메서드·게터 이름만 넣고, no-JS에서도 계정 정보와 로그아웃 action을 모두 유지한다.
+			-->
+			<div class="admin-user-menu" x-data="userMenu"
+			     x-on:keydown.escape.window="closeFromKeyboard" x-on:click.outside="close">
+				<button type="button" class="admin-user-menu-trigger" x-ref="trigger"
+				        x-on:click="toggle"
+				        x-bind:aria-expanded="ariaExpanded" aria-controls="admin-user-menu-panel"
+				        aria-label="계정 메뉴">
+					<svg class="admin-user-menu-icon" th:replace="~{admin/fragments/icon :: icon('account')}"></svg>
+				</button>
+				<div id="admin-user-menu-panel" class="admin-user-menu-panel" x-show="open"
+				     role="region" aria-label="사용자 메뉴">
+					<dl class="admin-user-menu-info">
+						<dt>계정</dt>
+						<dd th:text="${adminShell != null ? adminShell.username : 'anonymous'}">admin</dd>
+						<dt>권한</dt>
+						<dd th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</dd>
+					</dl>
+					<div class="admin-user-menu-meta">
+						<span class="admin-status-item">
+							<span class="admin-status-label">리비전</span>
+							<strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong>
+						</span>
+						<span class="admin-status-item">
+							<span class="admin-status-label">마스터데이터</span>
+							<strong th:insert="~{admin/fragments/missing-value :: value(${adminShell != null and adminShell.masterDataVersion != null and adminShell.masterDataVersion != 'unknown' ? adminShell.masterDataVersion : null}, '미상')}">—</strong>
+						</span>
+					</div>
+					<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
+					      class="admin-topbar-logout-form"
+					      th:action="@{/admin/logout}"
+					      method="post"
+					      aria-label="관리자 로그아웃">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<button type="submit" class="admin-topbar-logout" aria-label="로그아웃">
+							<svg th:replace="~{admin/fragments/icon :: icon('logout')}"></svg>
+							<span>로그아웃</span>
+						</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!--
+	  상태 스트립: 데스크톱 1행 통합 후 시각적으로는 상단 pill badge 및 사용자 메뉴로 이전되었으며,
+	  기존 테스트/스크린리더 호환성을 위해 유지된다.
+	-->
+	<div class="admin-status-strip sr-only" aria-label="실행 환경 상태">
+		<span class="admin-status-item"
+		      title="관리자 콘솔 빌드 리비전(배포 식별자)">
+			<span class="admin-status-label">리비전</span>
+			<strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong>
+		</span>
+		<span class="admin-status-item"
+		      title="현재 적재된 마스터데이터(역·시설 참조 팩) 버전">
+			<span class="admin-status-label">마스터데이터</span>
+			<strong th:insert="~{admin/fragments/missing-value :: value(${adminShell != null and adminShell.masterDataVersion != null and adminShell.masterDataVersion != 'unknown' ? adminShell.masterDataVersion : null}, '미상')}">—</strong>
+		</span>
+	</div>
+	<!-- htmx 전역 인디케이터(#2416): body hx-indicator로 모든 htmx 요청에 연결한다(app.js). -->
+	<div id="admin-htmx-indicator" class="htmx-indicator admin-htmx-indicator" aria-live="polite">
+		<span class="admin-htmx-indicator-label">불러오는 중…</span>
+	</div>
+	<!-- 토스트(#1737, #2416): htmx HX-Trigger·responseError가 공유한다. topbar에 두어 전 화면에서 사용. -->
+	<div class="toast-region" aria-live="polite" aria-atomic="true"
+	     x-data="toastHub" x-on:admin-toast.window="show">
+		<output class="toast-item" x-cloak x-show="visible" x-bind:class="toneClass">
+			<span x-text="message">알림</span>
+			<button type="button" class="toast-dismiss" x-on:click="hide" aria-label="알림 닫기"><span aria-hidden="true">✕</span></button>
+		</output>
+	</div>
+</div>
+<div th:fragment="contentStart" id="admin-content" class="admin-content-anchor" tabindex="-1"></div>
+<!--
+  breadcrumb(#1738): 그룹 > 프로그램(링크) > 상세. 상세 화면(reports/detail 등)에서 위치를 보여준다.
+  detailLabel이 null이면 2단만 렌더. 화면군 이슈가 재사용한다.
+-->
+<nav th:fragment="breadcrumb(groupLabel, programLabel, programHref, detailLabel)"
+     class="admin-breadcrumb" aria-label="위치">
+	<ol>
+		<li th:text="${groupLabel}">그룹</li>
+		<li><a th:href="@{${programHref}}" th:text="${programLabel}">프로그램</a></li>
+		<li th:if="${detailLabel != null and !detailLabel.isEmpty()}"
+		    aria-current="page" th:text="${detailLabel}">상세</li>
+	</ol>
+</nav>
+<output th:fragment="flash" class="alert alert-dismissible"
+        th:if="${flashMessage != null && !flashMessage.isBlank()}"
+        th:classappend="${flashTone == 'failure'} ? ' failure' : (${flashTone == 'warning'} ? ' warning' : ' good')"
+        x-data="dismissibleAlert" x-show="visible">
+	<span th:text="${flashMessage}">처리되었습니다.</span>
+	<button type="button" class="alert-dismiss" x-cloak x-on:click="dismiss" aria-label="알림 닫기"><span aria-hidden="true">✕</span></button>
+</output>
+<!--
+  토스트 영역(#1737): htmx 응답의 HX-Trigger("admin-toast", {message, tone}) 이벤트로 우상단 알림을 띄운다.
+  no-JS에서는 서버 flash(<output th:fragment="flash">)가 대체한다. 화면군 이슈가 이 fragment를 재사용한다.
+-->
+<div th:fragment="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"
+     x-data="toastHub" x-on:admin-toast.window="show">
+	<output class="toast-item" x-cloak x-show="visible" x-bind:class="toneClass">
+		<span x-text="message">알림</span>
+		<button type="button" class="toast-dismiss" x-on:click="hide" aria-label="알림 닫기"><span aria-hidden="true">✕</span></button>
+	</output>
+</div>
+<!--
+  드로어(사이드 패널, #1737): htmx가 #admin-drawer-body에 상세 fragment를 로드하고 HX-Trigger로
+  admin-drawer-open을 쏘면 열린다. Esc·백드롭·닫기 버튼으로 닫는다. no-JS는 상세 링크가 상세 페이지로 이동.
+  화면군 이슈가 재사용한다. 열림/닫힘 포커스 이동·Tab 순환·복귀는 app.js drawer 컴포넌트가 담당한다(#2416).
+-->
+<aside th:fragment="drawer" class="admin-drawer" x-data="drawer" x-show="visible" x-cloak
+       x-on:admin-drawer-open.window="open" x-on:keydown.escape.window="close" x-on:keydown="trapFocusKey"
+       role="dialog" aria-modal="true" aria-label="상세 패널">
+	<div class="admin-drawer-backdrop" x-on:click="close"></div>
+	<div class="admin-drawer-panel" x-ref="panel" tabindex="-1">
+		<button type="button" class="admin-drawer-close" x-on:click="close" aria-label="패널 닫기"><span aria-hidden="true">✕</span></button>
+		<div id="admin-drawer-body" class="admin-drawer-body"></div>
+	</div>
+</aside>
+<!--
+  관리자 프론트 스크립트(#1736): htmx·Alpine(CSP 빌드)·app.js를 self-host + SRI로 로드한다.
+  전부 defer라 파싱 순서대로 실행된다. app.js는 Alpine보다 먼저 alpine:init 리스너를 등록해야
+  x-data 컴포넌트(sidebarToggle, commandPalette, copyField 등)가 Alpine start 전에 준비된다.
+  Chart.js는 필요한 화면만 chartScripts fragment로 별도 로드한다(대시보드·분석).
+-->
+<th:block th:fragment="scripts">
+	<script th:src="@{/vendor/htmx-2.0.10/htmx.min.js}"
+	        integrity="sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
+	        crossorigin="anonymous" defer></script>
+	<script th:src="@{/js/admin/app.js}" defer></script>
+	<script th:src="@{/vendor/alpinejs-csp-3.15.12/cdn.min.js}"
+	        integrity="sha384-MKLWq9B+VC0W3U8kDIBEsSu8uCnQ1B0UQpRaB+F7uR5ocXFbymMUKuLRntu5LLdu"
+	        crossorigin="anonymous" defer></script>
+</th:block>
+<th:block th:fragment="chartScripts">
+	<script th:src="@{/vendor/chartjs-4.5.1/chart.umd.js}"
+	        integrity="sha384-hfkuqrKeWFmnTMWN31VWyoe8xgdTADD11kgxmdpx2uyE6j5Az5uZq6u6AKYYmAOw"
+	        crossorigin="anonymous" defer></script>
+</th:block>
+<span th:fragment="status(text, tone)" class="admin-status"
+      th:classappend="${tone == 'good'} ? ' good' : (${tone == 'bad'} ? ' bad' : (${tone == 'warn'} ? ' warn' : (${tone == 'info'} ? ' info' : '')))"
+      th:text="${text}">상태</span>
+<span th:fragment="statusAuto(label)" class="admin-status"
+      th:classappend="${label == null ? '' :
+        (#lists.contains({'완료','성공','정상','반영','반영됨','확인 완료','관리자 확인','고장·공사 반영','SUCCESS','PASS','RESOLVED','OK'}, label) ? ' good' :
+        (#lists.contains({'실패','오류','고장','폐쇄','반려됨','차단','중단','OPEN','FAIL','FAILED','ERROR'}, label) ? ' bad' :
+        (#lists.contains({'접수됨','진행 중','실행 중','대기','확인 중','확인 필요','공사 중','미확인','사용자 제보','엘리베이터 미확인','PENDING','RUNNING'}, label) ? ' warn' : '')))}"
+      th:text="${label}">상태</span>
+<span th:fragment="lineBadge(badge)" class="metro-line-badge"
+      th:style="|--line-color: ${badge.color};|">
+	<span class="metro-line-emblem" th:text="${badge.emblemText}">4</span>
+	<span class="metro-line-name" th:text="${badge.name}">4호선</span>
+</span>
+<span th:fragment="lineBadgesFromNames(lineNames)" class="metro-line-list"
+      th:with="badgeList=${T(com.easysubway.admin.web.SubwayLineBadgeView).fromCommaSeparated(lineNames)}">
+	<th:block th:if="${!badgeList.isEmpty()}">
+		<span th:each="b : ${badgeList}" class="metro-line-badge" th:style="|--line-color: ${b.color};|">
+			<span class="metro-line-emblem" th:text="${b.emblemText}">4</span>
+			<span class="metro-line-name" th:text="${b.name}">4호선</span>
+		</span>
+	</th:block>
+	<span th:if="${badgeList.isEmpty()}" class="meta">—</span>
+</span>
+</body>
+</html>

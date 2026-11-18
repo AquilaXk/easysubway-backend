@@ -1,0 +1,276 @@
+package com.easysubway.datapack.adapter.in.web;
+
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
+import com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository;
+import com.easysubway.datapack.application.service.DatapackNormalizationRunCommandService;
+import com.easysubway.datapack.application.service.DatapackNormalizationRunCommandService.NormalizationRunCommand;
+import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService;
+import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService.SourceSnapshotCommand;
+import com.easysubway.datapack.domain.DataSourceSnapshot;
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.server.ResponseStatusException;
+
+@Controller
+class DataSourceSnapshotAdminPageController {
+
+	private final JdbcDataSourceSnapshotRepository snapshotRepository;
+	private final DatapackSourceSnapshotCommandService snapshotCommandService;
+	private final DatapackNormalizationRunCommandService normalizationRunCommandService;
+	private final AdminAuditWriter auditWriter;
+
+	DataSourceSnapshotAdminPageController(
+		JdbcDataSourceSnapshotRepository snapshotRepository,
+		DatapackSourceSnapshotCommandService snapshotCommandService,
+		DatapackNormalizationRunCommandService normalizationRunCommandService,
+		AdminAuditWriter auditWriter
+	) {
+		this.snapshotRepository = snapshotRepository;
+		this.snapshotCommandService = snapshotCommandService;
+		this.normalizationRunCommandService = normalizationRunCommandService;
+		this.auditWriter = auditWriter;
+	}
+
+	@GetMapping("/admin/datapack/source-snapshots/page")
+	@PreAuthorize("hasAuthority('admin.datapack.read')")
+	String listSourceSnapshots(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sourceSnapshotId,
+		@RequestParam(required = false) String sort,
+		Model model
+	) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, sourceSnapshotId, sort);
+		List<SourceSnapshotRow> rows = snapshotRepository
+			.listSnapshotsForAdmin(
+				filter.queryValue(),
+				filter.statusValue(),
+				filter.sourceSnapshotIds(),
+				filter.sortValue(),
+				pageRequest.limitForHasNext(),
+				pageRequest.offset()
+			)
+			.stream()
+			.map(SourceSnapshotRow::from)
+			.toList();
+		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), rows.size());
+		model.addAttribute("snapshots", pageView.visibleItems(rows));
+		model.addAttribute("page", pageView);
+		model.addAttribute("filter", filter);
+		model.addAttribute(
+			"paginationLinks",
+			pageView.links("/admin/datapack/source-snapshots/page", filter.params())
+		);
+		return "admin/datapack/source-snapshots/list";
+	}
+
+	@GetMapping("/admin/datapack/source-snapshots/{snapshotId}/page")
+	@PreAuthorize("hasAuthority('admin.datapack.read')")
+	String sourceSnapshotDetail(@PathVariable String snapshotId, Model model) {
+		SourceSnapshotRow snapshot = snapshotRepository.loadSnapshot(snapshotId)
+			.map(SourceSnapshotRow::from)
+			.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Source snapshot not found."));
+		model.addAttribute("snapshot", snapshot);
+		return "admin/datapack/source-snapshots/detail";
+	}
+
+	@PostMapping("/admin/datapack/source-snapshots")
+	@PreAuthorize("hasAuthority('admin.datapack.source.run')")
+	String createSourceSnapshot(@ModelAttribute SourceSnapshotCommandForm form, Authentication authentication) {
+		String snapshotId = snapshotCommandService.createLockedSnapshot(form.toCommand(authentication.getName()));
+		return "redirect:/admin/datapack/source-snapshots/%s/page".formatted(snapshotId);
+	}
+
+	@PostMapping("/admin/datapack/source-snapshots/{snapshotId}/normalization-runs")
+	@PreAuthorize("hasAuthority('admin.datapack.source.run')")
+	String requestNormalizationRun(
+		@PathVariable String snapshotId,
+		@ModelAttribute NormalizationRunCommandForm form,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		normalizationRunCommandService.requestRun(snapshotId, form.toCommand());
+		auditWriter.adminAction(
+			authentication,
+			request,
+			"DATAPACK_NORMALIZATION_RUN",
+			form.runId(),
+			"REQUEST",
+			AdminAuditOutcome.SUCCESS,
+			form.reason()
+		);
+		return "redirect:/admin/datapack/source-snapshots/%s/page".formatted(snapshotId);
+	}
+
+	record SourceSnapshotRow(
+		String snapshotId,
+		String sourceId,
+		String provider,
+		LocalDateTime retrievedAt,
+		LocalDateTime sourceUpdatedAt,
+		LocalDateTime freshnessBasisAt,
+		LocalDateTime providerValidUntil,
+		int rowCount,
+		int coverageCount,
+		String rawSha256,
+		String rawObjectUri,
+		String redactedRequestFingerprint,
+		String schemaFingerprint,
+		String snapshotStatus,
+		String schemaStatus,
+		String licenseStatus,
+		String fetchStatus,
+		boolean redistributionAllowed,
+		boolean credentialRedacted,
+		String previousSnapshotId,
+		String diffSummary,
+		String diffSummaryJson,
+		LocalDateTime freshnessExpiresAt,
+		LocalDateTime rawRetentionExpiresAt,
+		String governancePolicyVersion,
+		String governancePolicySha256
+	) {
+
+		static SourceSnapshotRow from(DataSourceSnapshot snapshot) {
+			return new SourceSnapshotRow(
+				snapshot.snapshotId(),
+				snapshot.sourceId(),
+				snapshot.provider(),
+				snapshot.retrievedAt(),
+				snapshot.sourceUpdatedAt(),
+				snapshot.freshnessBasisAt(),
+				snapshot.providerValidUntil(),
+				snapshot.rowCount(),
+				snapshot.coverageCount(),
+				snapshot.rawSha256(),
+				snapshot.rawObjectUri(),
+				snapshot.redactedRequestFingerprint(),
+				snapshot.schemaFingerprint(),
+				snapshot.snapshotStatus(),
+				snapshot.schemaStatus(),
+				snapshot.licenseStatus(),
+				snapshot.fetchStatus(),
+				snapshot.redistributionAllowed(),
+				snapshot.credentialRedacted(),
+				valueOrDash(snapshot.previousSnapshotId()),
+				valueOrDash(snapshot.diffSummary()),
+				valueOrDash(snapshot.diffSummaryJson()),
+				snapshot.freshnessExpiresAt(),
+				snapshot.rawRetentionExpiresAt(),
+				valueOrDash(snapshot.governancePolicyVersion()),
+				valueOrDash(snapshot.governancePolicySha256())
+			);
+		}
+
+		public String credentialRedactedLabel() {
+			return credentialRedacted ? "credential redacted" : "credential redaction 필요";
+		}
+
+		public String redistributionLabel() {
+			return redistributionAllowed ? "허용" : "불가";
+		}
+
+		private static String valueOrDash(String value) {
+			if (value == null || value.isBlank() || "-".equals(value)) {
+				return "—";
+			}
+			return value;
+		}
+	}
+
+	record SourceSnapshotCommandForm(
+		String snapshotId,
+		String sourceId,
+		String provider,
+		LocalDateTime retrievedAt,
+		LocalDateTime sourceUpdatedAt,
+		LocalDateTime freshnessBasisAt,
+		LocalDateTime providerValidUntil,
+		int rowCount,
+		int coverageCount,
+		String rawSha256,
+		String rawObjectUri,
+		String redactedRequestFingerprint,
+		String schemaFingerprint,
+		String schemaStatus,
+		String licenseStatus,
+		String fetchStatus,
+		boolean redistributionAllowed,
+		boolean credentialRedacted,
+		String previousSnapshotId,
+		String diffSummary,
+		String diffSummaryJson,
+		LocalDateTime freshnessExpiresAt,
+		LocalDateTime rawRetentionExpiresAt,
+		String governancePolicyVersion,
+		String governancePolicySha256,
+		String reason,
+		String idempotencyKey
+	) {
+
+		SourceSnapshotCommand toCommand(String requestedBy) {
+			return new SourceSnapshotCommand(
+				snapshotId,
+				sourceId,
+				provider,
+				retrievedAt,
+				sourceUpdatedAt,
+				freshnessBasisAt,
+				providerValidUntil,
+				rowCount,
+				coverageCount,
+				rawSha256,
+				rawObjectUri,
+				redactedRequestFingerprint,
+				schemaFingerprint,
+				schemaStatus,
+				licenseStatus,
+				fetchStatus,
+				redistributionAllowed,
+				credentialRedacted,
+				previousSnapshotId,
+				diffSummary,
+				diffSummaryJson,
+				freshnessExpiresAt,
+				rawRetentionExpiresAt,
+				governancePolicyVersion,
+				governancePolicySha256,
+				requestedBy,
+				reason,
+				idempotencyKey
+			);
+		}
+	}
+
+	record NormalizationRunCommandForm(
+		String runId,
+		String schemaDiffSha256,
+		String schemaDiffSummary,
+		String reason,
+		String idempotencyKey
+	) {
+
+		NormalizationRunCommand toCommand() {
+			return new NormalizationRunCommand(runId, schemaDiffSha256, schemaDiffSummary, reason, idempotencyKey);
+		}
+	}
+
+}

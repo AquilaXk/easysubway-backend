@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>사용자 활동 현황</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-usage')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>사용 현황</h1>
+		</div>
+	</header>
+
+	<section class="admin-panel usage-metric-panel" aria-labelledby="usage-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="usage-metric-panel-title">사용자 활동 요약</h2>
+		</div>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>최근 7일 활성 사용자</span>
+				<strong class="cell-num" th:text="${summary.totalActiveUsers}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>API 요청</span>
+				<strong class="cell-num" th:text="${summary.totalApiRequests}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>오류 응답</span>
+				<strong class="cell-num" th:text="${summary.totalApiErrors}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>API 오류율</span>
+				<strong class="cell-num" th:text="${summary.apiErrorRatePercent}">0.0%</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>평균 응답 시간</span>
+				<strong class="cell-num" th:text="${summary.averageApiResponseTimeLabel}">0ms</strong>
+			</div>
+		</div>
+	</section>
+
+	<div class="api-error-alert" th:classappend="${summary.apiErrorAlertClass}">
+		<strong>API 오류율 상태: <span th:text="${summary.apiErrorAlertLabel}">정상</span></strong>
+		<span>최근 7일 오류율: <b th:text="${summary.apiErrorRatePercent}">0.0%</b></span>
+		<p th:text="${summary.apiErrorAlertDescription}">최근 7일 API 오류율이 기준치 미만입니다.</p>
+	</div>
+
+	<div id="user-activity-trends" th:fragment="trends" class="dashboard-trends-section">
+		<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+			<a th:each="d : ${ {7, 30, 90} }"
+			   th:href="@{/admin/usage/activity/page(days=${d})}"
+			   th:attr="hx-get=@{/admin/usage/activity/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+			   hx-target="#user-activity-trends" hx-swap="outerHTML"
+			   th:classappend="${trendDays == d} ? ' is-active'"
+			   th:text="|${d}일|">7일</a>
+		</div>
+
+		<p class="admin-export">
+			<a class="admin-export-link" th:href="@{/admin/analytics/metrics/export(keys=${exportKeys},days=${trendDays})}"
+			   download>CSV 내보내기</a>
+		</p>
+
+		<section class="admin-panel usage-comparison-panel" aria-labelledby="usage-comparison-panel-title">
+			<div class="admin-panel-head">
+				<h2 id="usage-comparison-panel-title">전 기간 대비 증감</h2>
+			</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
+
+		<div class="trend-charts">
+			<section class="admin-panel trend-chart-panel" aria-labelledby="usage-trend-panel-title">
+				<div class="admin-panel-head">
+					<h2 id="usage-trend-panel-title" th:text="|활성 사용자·API 오류율 최근 ${trendDays}일 추이|">활성 사용자·API 오류율 추이</h2>
+				</div>
+				<div class="trend-canvas-wrap">
+					<canvas id="user-activity-trend-canvas" class="trend-canvas" role="img"
+					        th:attr="aria-label=|사용 현황 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
+				</div>
+				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
+			</section>
+		</div>
+	</div>
+
+	<section class="admin-panel">
+		<h2>일별 활성 사용자</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">날짜</th>
+				<th scope="col">고유 사용자</th>
+				<th scope="col">API 요청</th>
+				<th scope="col">오류 응답</th>
+				<th scope="col">API 오류율</th>
+				<th scope="col">평균 응답 시간</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.dailyActivityRows}">
+				<td th:text="${row.dateLabel}">2026-06-17</td>
+				<td th:text="${row.activeUserCount}">0</td>
+				<td th:text="${row.apiRequestCount}">0</td>
+				<td th:text="${row.apiErrorCount}">0</td>
+				<td th:text="${row.apiErrorRatePercent}">0.0%</td>
+				<td th:text="${row.averageApiResponseTimeLabel}">0ms</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: chartScripts}"></th:block>
+<script th:src="@{/js/admin/dashboard-charts.js}" defer></script>
+</body>
+</html>

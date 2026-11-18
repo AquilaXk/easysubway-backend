@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
+	<title>운영기관 반복 고장 시설</title>
+	<link rel="stylesheet" th:href="@{/css/operator-v3.css}" href="/css/operator-v3.css">
+</head>
+<body>
+<div class="desktop-frame">
+	<aside th:replace="~{operator/fragments/shell :: sidebar('repeated-broken')}"></aside>
+
+	<section class="desktop-workspace">
+		<header th:replace="~{operator/fragments/shell :: topbar('반복 고장 시설', '읽기 전용 리포트 · 현장 조치 우선순위')}"></header>
+
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>운영기관 반복 고장 시설 통계</h1>
+					<p>동일 시설에 반복 접수된 고장 제보를 현장 조치 우선순위로 봅니다.</p>
+				</div>
+			</div>
+
+			<div class="alert-banner bad" th:if="${report.totalRepeatedFacilityCount > 0}">
+				<strong>반복 확인 대상</strong>
+				<span th:text="|총 ${report.totalRepeatedFacilityCount}개 시설이 반복 고장으로 집계되었습니다.|">총 0개 시설</span>
+			</div>
+
+			<div class="metric-grid" aria-label="반복 고장 시설 통계 요약">
+				<div class="metric"><span>반복 제보 시설</span><strong th:text="${report.totalRepeatedFacilityCount}">0</strong></div>
+			</div>
+			<!-- 위계 정리(#2349 PR⑩e finding 21): 운영 상태·판정 기준·조치 연결은 지표가 아니라 이 리포트의
+			     고정 운영 정보라 지표 카드와 동급으로 두지 않고 설명 캡션으로 강등한다. -->
+			<p class="source-note">운영 상태: 읽기 전용 · 판정 기준: 2건+ · 조치 연결: 관리자 요청</p>
+
+			<form class="table-toolbar" method="get" th:action="@{/operator/repeated-broken-facilities/page}" action="/operator/repeated-broken-facilities/page">
+				<label>
+					<span>검색</span>
+					<input type="search" name="q" th:value="${query.q}" placeholder="역·시설·상태">
+				</label>
+				<input type="hidden" name="sort" th:value="${query.sort}">
+				<input type="hidden" name="direction" th:value="${query.direction}">
+				<button type="submit">필터 적용</button>
+				<a class="desk-btn" th:href="@{/operator/repeated-broken-facilities/page}" href="/operator/repeated-broken-facilities/page">초기화</a>
+			</form>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>반복 신고 차트</h2>
+						<p>시설별 반복 신고 건수입니다.</p>
+					</div>
+				</div>
+				<div th:if="${#lists.isEmpty(report.rows)}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('반복 고장으로 집계된 시설이 없습니다.', '동일 시설에 2건 이상 접수되면 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${#lists.isEmpty(report.rows)}">
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="repeated-broken-chart"
+					        role="img"
+					        aria-label="시설별 반복 신고 건수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<div class="operator-table-scroll" tabindex="0" role="group"
+					     aria-label="가로로 스크롤 가능한 반복 신고 차트 데이터 표">
+					<table id="repeated-broken-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">시설</th>
+							<th scope="col">신고 건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.rows}">
+							<td th:text="|${row.stationName} ${row.facilityName}|">상록수 1번 출구 엘리베이터</td>
+							<td th:text="${row.reportCount}">0</td>
+						</tr>
+						</tbody>
+					</table>
+					</div>
+				</details>
+				</th:block>
+			</section>
+
+			<section class="panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>시설별 반복 신고</h2>
+						<p>제보 건수 내림차순으로 현재 시설 상태를 함께 표시합니다.</p>
+					</div>
+				</div>
+				<div class="operator-table-scroll" tabindex="0" role="group"
+				     aria-label="가로로 스크롤 가능한 시설별 반복 신고 표">
+				<table class="data-table">
+					<thead>
+					<tr>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('station')}">
+							<a th:href="@{/operator/repeated-broken-facilities/page(q=${query.q},sort='station',direction=${query.nextDirection('station')})}">역</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('facility')}">
+							<a th:href="@{/operator/repeated-broken-facilities/page(q=${query.q},sort='facility',direction=${query.nextDirection('facility')})}">시설</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('status')}">
+							<a th:href="@{/operator/repeated-broken-facilities/page(q=${query.q},sort='status',direction=${query.nextDirection('status')})}">현재 상태</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('reportCount')}">
+							<a th:href="@{/operator/repeated-broken-facilities/page(q=${query.q},sort='reportCount',direction=${query.nextDirection('reportCount')})}">신고 건수</a>
+						</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="row : ${report.rows}">
+						<td th:text="${row.stationName}">상록수</td>
+						<td th:text="${row.facilityName}">1번 출구 엘리베이터</td>
+						<td><span class="status" th:text="${row.statusLabel}">정상</span></td>
+						<td th:text="${row.reportCount}">0</td>
+					</tr>
+					<tr th:if="${#lists.isEmpty(report.rows)}">
+						<td class="empty" colspan="4">
+							<div th:replace="~{operator/fragments/empty-state :: panel('반복 고장으로 집계된 시설이 없습니다.', '동일 시설에 2건 이상 접수되면 여기에 표시됩니다.')}"></div>
+						</td>
+					</tr>
+					</tbody>
+				</table>
+				</div>
+			</section>
+
+			<div class="source-note">이 보고서는 읽기 전용입니다. 상태 수정과 제보 판정은 통합 관리자에게 요청해 주세요.</div>
+		</main>
+	</section>
+</div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
+</body>
+</html>

@@ -1,0 +1,14 @@
+ALTER TABLE data_source_snapshots
+	VALIDATE CONSTRAINT chk_data_source_snapshots_coverage_count_not_null;
+
+ALTER TABLE data_source_snapshots
+	ALTER COLUMN coverage_count SET NOT NULL;
+
+ALTER TABLE data_source_snapshots
+	DROP CONSTRAINT chk_data_source_snapshots_coverage_count_not_null;
+
+ALTER TABLE data_source_snapshots
+	VALIDATE CONSTRAINT chk_data_source_snapshots_coverage_count,
+	VALIDATE CONSTRAINT chk_data_source_snapshots_governance_pair,
+	VALIDATE CONSTRAINT chk_data_source_snapshots_previous_not_self,
+	VALIDATE CONSTRAINT fk_data_source_snapshots_previous_source;

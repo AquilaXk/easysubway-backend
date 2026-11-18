@@ -1,0 +1,1575 @@
+/*
+ * admin-data.css — V6-04 CSS 책임 분리(#2276): 데이터·페이지 뷰(통합 대시보드 카드·핵심 지표 그리드·추이 차트·발송 이력·감사 콘솔·분포 막대 등).
+ * 데이터 밀도가 높은 화면 전용 스타일을 소유한다. import 순서상 마지막 레이어다.
+ */
+
+/* 통합 대시보드(#1739): 긴급 줄 → 핵심 카드(스파크라인·전일 대비) → 추이 → 상세. */
+.dashboard-overview-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+	gap: 20px;
+	margin-bottom: 0;
+}
+
+.dashboard-overview-grid > section + section {
+	margin-top: 0;
+}
+
+.admin-v3 .dashboard-overview-grid .admin-panel {
+	padding: 24px;
+	border-radius: var(--admin-radius-card);
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+}
+
+.dashboard-overview-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.admin-v3 .dashboard-overview-head h2 {
+	margin: 0;
+	font-size: var(--admin-fs-section);
+	font-weight: var(--admin-w-title);
+	line-height: 28px;
+}
+
+.dashboard-basis-time {
+	margin: 0;
+	color: var(--admin-ink-3);
+	font-size: var(--admin-fs-meta);
+	font-variant-numeric: tabular-nums;
+}
+
+.dashboard-current-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.admin-v3 .dashboard-snapshot-form {
+	margin: 0;
+}
+
+.admin-v3 .dashboard-snapshot-form button,
+.admin-v3 .dashboard-snapshot-form .admin-btn.outline {
+	min-height: 28px;
+	padding: 0 8px;
+	border: 0;
+	background: transparent;
+	color: var(--admin-ink-2);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	border-radius: var(--admin-radius-control);
+	box-shadow: none;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-v3 .dashboard-snapshot-form button:hover,
+.admin-v3 .dashboard-snapshot-form .admin-btn.outline:hover {
+	background: var(--admin-bg);
+	color: var(--admin-ink);
+	border: 0;
+}
+
+.admin-v3 .dashboard-refresh {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	min-width: 30px;
+	height: 30px;
+	min-height: 30px;
+	padding: 0;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-accent);
+	font-size: 16px;
+	line-height: 1;
+	text-decoration: none;
+}
+
+.dashboard-refresh svg {
+	width: 15px;
+	height: 15px;
+}
+
+.dashboard-current-overview {
+	display: grid;
+	grid-template-columns: minmax(130px, 0.72fr) minmax(270px, 1.28fr);
+	align-items: stretch;
+	gap: 16px;
+	margin-top: 14px;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--admin-border);
+}
+
+.dashboard-current-service {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	padding: 4px 16px 4px 0;
+	background: transparent;
+	border: 0;
+	border-right: 1px solid var(--admin-border);
+	border-radius: 0;
+}
+
+.dashboard-service-copy {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	justify-content: space-between;
+}
+
+.dashboard-service-copy span {
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-strong);
+}
+
+.dashboard-service-copy strong {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 6px;
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-section);
+	line-height: 1.2;
+	font-weight: var(--admin-w-title);
+}
+
+.dashboard-service-hint {
+	margin-top: 4px;
+	font-size: 11px;
+	color: var(--admin-ink-3);
+}
+
+.dashboard-service-copy strong > span:last-child {
+	color: inherit;
+	font-size: inherit;
+}
+
+.dashboard-service-dot {
+	width: 10px;
+	height: 10px;
+	flex: none;
+	border-radius: 50%;
+	background: var(--admin-warn);
+}
+
+.dashboard-service-dot.is-good {
+	background: var(--admin-good);
+}
+
+.dashboard-service-dot.is-bad {
+	background: var(--admin-danger);
+}
+
+.admin-v3 .dashboard-current-metrics {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+	margin: 0;
+}
+
+.dashboard-current-metrics > div {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 4px;
+	padding: 8px 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-header-bg);
+	text-align: left;
+}
+
+.dashboard-current-metrics dt {
+	order: 1;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 0 6px;
+	padding: 0;
+	border: 0;
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-medium);
+}
+
+.dashboard-current-metrics dt::before {
+	content: "";
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--admin-accent);
+	flex: none;
+}
+
+.dashboard-current-metrics .is-good dt::before {
+	background: var(--admin-good);
+}
+
+.dashboard-current-metrics .is-waiting dt::before {
+	background: var(--admin-warn);
+}
+
+.dashboard-current-metrics .is-bad dt::before {
+	background: var(--admin-danger);
+}
+
+.dashboard-current-metrics dd {
+	order: 2;
+	display: block;
+	width: auto;
+	height: auto;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-section);
+	font-weight: var(--admin-w-title);
+	font-variant-numeric: tabular-nums;
+	line-height: 1.2;
+}
+
+.dashboard-current-metrics .is-warn dd {
+	color: var(--admin-warn);
+	background: transparent;
+}
+
+.dashboard-current-metrics .is-good dd {
+	color: var(--admin-good);
+	background: transparent;
+}
+
+.dashboard-current-metrics .is-waiting dd {
+	color: var(--admin-warn);
+	background: transparent;
+}
+
+.dashboard-current-metrics .is-bad dd {
+	color: var(--admin-danger);
+	background: transparent;
+}
+
+.dashboard-api-health {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 8px 12px;
+	align-items: center;
+	margin-top: 25px;
+	padding-top: 20px;
+	border-top: 1px solid var(--admin-border);
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-control);
+}
+
+.dashboard-api-health strong {
+	color: var(--admin-ink);
+	font-variant-numeric: tabular-nums;
+}
+
+.dashboard-api-health progress {
+	grid-column: 1 / -1;
+	width: 100%;
+	height: 5px;
+	border: 0;
+	border-radius: 999px;
+	background: var(--admin-bg);
+	overflow: hidden;
+}
+
+.dashboard-api-health progress::-webkit-progress-bar {
+	background: var(--admin-bg);
+}
+
+.dashboard-api-health progress::-webkit-progress-value {
+	background: var(--admin-accent);
+}
+
+.dashboard-api-health progress::-moz-progress-bar {
+	background: var(--admin-accent);
+}
+
+.dashboard-api-meta {
+	grid-column: 1 / -1;
+	display: flex;
+	gap: 22px;
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-medium);
+}
+
+.dashboard-week-days {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 6px;
+	list-style: none;
+	margin: 14px 0 0;
+	padding: 0;
+	background: transparent;
+	border: 0;
+	align-items: flex-end;
+}
+
+.dashboard-week-day {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	min-width: 0;
+	height: 82px;
+	padding: 8px 4px;
+	border: 1px solid transparent;
+	border-radius: var(--admin-radius-control);
+	background: transparent;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	position: relative;
+}
+
+.dashboard-week-day::before {
+	content: "";
+	display: block;
+	width: 8px;
+	height: 26px;
+	border-radius: 4px;
+	background: var(--admin-border);
+	transition: height 0.2s ease, background-color 0.15s ease;
+	order: 2;
+}
+
+.dashboard-week-day:hover {
+	background: var(--admin-header-bg);
+}
+
+.dashboard-week-day:hover::before {
+	background: var(--admin-accent);
+}
+
+.dashboard-week-day span {
+	order: 3;
+	color: var(--admin-ink-3);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-medium);
+	letter-spacing: -0.01em;
+}
+
+.dashboard-week-day strong {
+	order: 1;
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-control);
+	font-weight: var(--admin-w-title);
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+}
+
+.dashboard-week-day.is-today {
+	border-color: var(--admin-border-strong);
+	background: var(--admin-surface);
+	box-shadow: none;
+}
+
+.dashboard-week-day.is-today::before {
+	height: 38px;
+	background: var(--admin-primary);
+}
+
+.dashboard-week-day.is-today span {
+	color: var(--admin-accent);
+	font-weight: var(--admin-w-title);
+}
+
+.dashboard-week-day.is-today strong {
+	color: var(--admin-accent-ink);
+}
+
+.dashboard-weekly-total {
+	color: var(--admin-accent);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-title);
+}
+
+.dashboard-reference-lower {
+	display: block;
+	margin-top: 20px;
+	width: 100%;
+}
+
+.dashboard-operations-details {
+	margin-top: 20px;
+}
+
+.dashboard-operations-details > summary {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 16px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-control);
+	font-weight: var(--admin-w-strong);
+	cursor: pointer;
+	box-shadow: var(--admin-shadow-card);
+	transition: all 0.15s ease;
+	user-select: none;
+}
+
+.dashboard-operations-details > summary:hover {
+	background: var(--admin-header-bg);
+	border-color: var(--admin-border-strong);
+	color: var(--admin-primary);
+}
+
+.dashboard-operations-details[open] > summary {
+	margin-bottom: 20px;
+	background: var(--admin-header-bg);
+	border-color: var(--admin-primary);
+	color: var(--admin-primary);
+}
+
+.dashboard-reference-lower > section + section {
+	margin-top: 0;
+}
+
+.admin-v3 .dashboard-reference-lower .admin-panel {
+	padding: 24px;
+	border-radius: var(--admin-radius-card);
+}
+
+.admin-v3 .dashboard-reference-lower h2 {
+	margin: 0 0 18px;
+	font-size: var(--admin-fs-section);
+	font-weight: var(--admin-w-title);
+	line-height: 28px;
+}
+
+.admin-panel-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 12px;
+	margin-bottom: 16px;
+	border-bottom: 1px solid var(--admin-border);
+}
+
+/* 지표 셀 분할용 1px 구분선 유틸리티(#1982) — .metric-grid 내부 셀 경계 */
+.admin-v3 .admin-panel-divider {
+	border-top: 1px solid var(--admin-border);
+}
+
+.admin-v3 .metric-cell + .metric-cell {
+	border-left: 1px solid var(--admin-border);
+	padding-left: 16px;
+}
+
+.admin-v3 .admin-link {
+	color: var(--admin-accent);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+}
+
+/* 긴급 신호(#2047 폴리시): 박스+틴트 콜아웃을 제거하고 플랫 행+1px 구분선으로 나열한다.
+   .admin-v3 section 박스(보더 4면·radius·surface)를 명시적으로 벗겨(플랫), 상단 1px로 목록을 열고
+   각 항목 하단 1px로 구분한다. 컨테이너 border-bottom과 마지막 항목 border-bottom이 겹쳐 하단 선이
+   이중으로 보이던 문제를 컨테이너 박스 제거로 해소한다(#2047 리뷰). 상태는 좌측 얇은(2px) 마커로만. */
+.admin-v3 .dashboard-urgent {
+	display: flex;
+	flex-direction: column;
+	margin-bottom: 16px;
+	border: 0;
+	border-top: 1px solid var(--admin-border);
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	overflow-x: visible;
+}
+
+.dashboard-urgent-item {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--admin-border);
+	border-left: 2px solid transparent;
+	text-decoration: none;
+	color: var(--admin-ink);
+}
+
+.dashboard-urgent-item:hover {
+	background: var(--admin-bg);
+}
+
+.dashboard-urgent-item.tone-warning {
+	border-left-color: var(--admin-warn);
+}
+
+.dashboard-urgent-item.tone-failure {
+	border-left-color: var(--admin-danger);
+}
+
+.dashboard-urgent-item small {
+	color: var(--admin-ink-2);
+	font-size: 12px;
+}
+
+/* 확인 필요 통합 카드(#2349): 트리아지 최우선 영역. 상태 톤 구분 없이 플랫 행+1px 구분선만 쓴다
+   (긴급 신호와 달리 심각도가 아니라 "해야 할 일" 목록이라 tone 마커를 붙이지 않는다). */
+.dashboard-triage-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 10px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.dashboard-triage-list li {
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.dashboard-triage-list a {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 14px;
+	text-decoration: none;
+	color: var(--admin-ink);
+	border-radius: var(--admin-radius-control);
+	background: transparent;
+	border: 1px solid transparent;
+	box-shadow: none;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.dashboard-triage-list a:hover {
+	background: var(--admin-bg);
+	border-color: transparent;
+}
+
+.dashboard-triage-list a:hover .dashboard-triage-label {
+	color: var(--admin-accent-ink);
+}
+
+.dashboard-triage-label {
+	font-size: var(--admin-fs-control);
+	font-weight: var(--admin-w-medium);
+	color: var(--admin-ink);
+}
+
+.dashboard-triage-count {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 10px;
+	border-radius: 999px;
+	background: var(--admin-accent-soft);
+	color: var(--admin-accent-ink);
+	font-size: 13px;
+	font-weight: var(--admin-w-strong);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 전부 0건일 때 카드 대신 보여주는 한 줄 상태 텍스트(#2349). 인접 섹션과 리듬을 맞춘다. */
+.dashboard-triage-empty {
+	margin: 0 0 24px;
+}
+
+/* 데이터팩 출시 준비 | 운영 이상 신호 2열(#2349): 데이터팩 권한이 없는 계정은 운영 이상 신호만
+   단독 폭으로 렌더한다. */
+.dashboard-readiness-grid.is-single {
+	grid-template-columns: 1fr;
+}
+
+/* 핵심 지표 그리드(#1983): .admin-panel 하나 안에서 3열 반응형(최대 3열)으로 배치하고,
+   카드 자체는 보더·그림자 없이 .metric-cell 좌측 1px 구분선으로만 나뉜다(패널 보더 중복 방지).
+   좁은 화면에서는 하단 미디어쿼리로 2열 → 1열로 줄어든다(각 행 첫 열은 구분선 제외). */
+.dashboard-cards {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0;
+}
+
+.dashboard-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 14px 18px;
+	text-decoration: none;
+	color: var(--admin-ink);
+	transition: background-color 0.15s ease;
+}
+
+.dashboard-card:hover {
+	background: var(--admin-header-bg);
+}
+
+/* 셀 좌측 구분선 base(#1983): 명시도를 .admin-v3(0,3,0)로 올려 utility 구분선
+   (.admin-v3 .metric-cell + .metric-cell, 0,3,0)과 동률로 맞춘다. 첫 열(:nth-child)·반응형
+   1열(768px override) 규칙이 소스상 이 base보다 뒤에 와 동률 소스순서로 이겨 좌측 선을 벗긴다(#2298 리뷰). */
+.admin-v3 .dashboard-card.metric-cell {
+	border-left: 1px solid var(--admin-border);
+	padding-left: 18px;
+}
+
+/* 각 행의 첫 열(3열 그리드 기준 3n+1)은 좌측 구분선 없이 패널 안쪽 여백만 유지. */
+.dashboard-card.metric-cell:nth-child(3n+1) {
+	border-left: 0;
+}
+
+.dashboard-card-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.dashboard-card-indicator {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--admin-accent);
+	flex: none;
+}
+
+.dashboard-card[data-metric-key="reports.pending"] .dashboard-card-indicator {
+	background: var(--admin-warn);
+}
+
+.dashboard-card:hover .dashboard-card-title {
+	color: var(--admin-accent);
+}
+
+.dashboard-card-title {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+}
+
+.dashboard-card-value {
+	font-size: 28px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+.dashboard-spark {
+	width: 100%;
+	height: 24px;
+	color: var(--admin-accent);
+}
+
+.dashboard-card-delta {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	width: fit-content;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink-2);
+	background: var(--admin-bg);
+}
+
+.dashboard-card-delta.is-up {
+	color: var(--admin-danger);
+	background: var(--admin-danger-soft);
+}
+
+.dashboard-card-delta.is-down {
+	color: var(--admin-good);
+	background: var(--admin-good-soft);
+}
+
+.dashboard-details {
+	margin-top: 12px;
+}
+
+.dashboard-details summary {
+	cursor: pointer;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+}
+
+/* 나머지 KPI disclosure(#2281 V6-09): 대표 3개 아래로 격하된 지표를 접어 둔다. 펼치면 headline과
+   같은 카드 그리드(.dashboard-cards)를 재사용하되 요약과 카드 사이 상단 여백만 준다(구분선·시각 언어 불변). */
+.dashboard-more[open] .dashboard-cards {
+	margin-top: 12px;
+}
+
+/* 핵심 지표 패널 ↔ 기간 토글 사이 여백(#2047): #dashboard-trends는 section이 아니라 div라
+   section+section 자동 간격을 못 받으므로, 추이 섹션 상단에 명시 여백을 준다(붙어 보이는 문제).
+   대시보드 전용 스코프(#dashboard-trends)로 좁혀 usage·routes·notifications 화면에는 파급하지 않는다. */
+#dashboard-trends .dashboard-trends-section {
+	margin-top: 24px;
+}
+
+.trend-periods {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	background: var(--admin-bg);
+	border-radius: var(--admin-radius-control);
+	margin-bottom: 16px;
+}
+
+.trend-periods a {
+	min-height: 28px;
+	display: inline-flex;
+	align-items: center;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--admin-ink-2);
+	text-decoration: none;
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trend-periods a:hover {
+	color: var(--admin-ink);
+}
+
+.trend-periods a.is-active {
+	border: 0;
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	box-shadow: var(--admin-shadow-card);
+}
+
+.batch-history-charts,
+.trend-charts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	gap: 16px;
+	margin-bottom: 20px;
+	/* 두 추이 패널의 세로 시작 위치를 맞춘다(#2047): 한 패널 제목이 길어도 위쪽 라인을 정렬한다. */
+	align-items: start;
+}
+
+/* 그리드 안 두 차트 패널의 세로 시작 위치 정렬(#2047): .admin-v3 section + section의
+   margin-top:24px가 두 번째 패널(section 인접 형제)에만 붙어 24px 아래로 밀려 top이 어긋났다.
+   차트 그리드는 gap으로 간격을 주므로 인접 형제 margin을 0으로 되돌려 두 패널 top을 일치시킨다. */
+.batch-history-charts > section + section,
+.trend-charts > section + section {
+	margin-top: 0;
+}
+
+.batch-history-canvas-wrap,
+.trend-canvas-wrap {
+	position: relative;
+	height: 240px;
+}
+
+.batch-history-canvas,
+.trend-canvas {
+	width: 100%;
+	height: 100%;
+}
+
+/* 발송 이력 콘솔(#1746) */
+.admin-v3 .card-sparkline {
+	display: block;
+	width: 100%;
+	height: 24px;
+	margin-top: 6px;
+}
+
+.admin-v3 .card-sparkline polyline {
+	stroke: var(--admin-danger);
+	stroke-width: 1.5;
+	vector-effect: non-scaling-stroke;
+}
+
+.admin-v3 .metric .card-sparkline polyline {
+	fill: none;
+}
+
+.admin-v3 .delivery-alert-link {
+	margin: -8px 0 12px;
+	font-size: 14px;
+}
+
+.admin-v3 .section-hint {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	margin: 4px 0 12px;
+}
+
+.admin-v3 .table-summary {
+	color: var(--admin-ink);
+	font-size: 14px;
+	margin: 12px 0;
+}
+
+.admin-v3 .table-summary .filter-clear {
+	margin-left: 6px;
+	font-size: 13px;
+}
+
+.admin-v3 .status-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: var(--admin-radius-badge);
+	font-size: 12px;
+	background: var(--admin-header-bg);
+	color: var(--admin-ink);
+}
+
+.admin-v3 .status-badge.tone-ok {
+	background: var(--admin-good-soft);
+	color: var(--admin-good);
+}
+
+.admin-v3 .status-badge.tone-failure {
+	background: var(--admin-danger-soft);
+	color: var(--admin-danger);
+}
+
+.admin-v3 .status-badge.tone-pending {
+	background: var(--admin-warn-soft);
+	color: var(--admin-warn);
+}
+
+.admin-v3 .row-detail summary {
+	cursor: pointer;
+	color: var(--admin-accent);
+}
+
+.admin-v3 .row-detail-list {
+	margin: 8px 0 0;
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 12px;
+}
+
+.admin-v3 .row-detail-list dt {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+}
+
+.admin-v3 .row-detail-list dd {
+	margin: 0;
+	font-size: 13px;
+}
+
+.admin-v3 .failure-breakdown {
+	margin: 16px 0;
+}
+
+.admin-v3 .breakdown-bars {
+	list-style: none;
+	margin: 8px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 6px;
+}
+
+.admin-v3 .breakdown-bars a {
+	display: grid;
+	grid-template-columns: minmax(140px, 1fr) 2fr max-content;
+	align-items: center;
+	gap: 12px;
+	text-decoration: none;
+	color: var(--admin-ink);
+	padding: 4px 8px;
+	border-radius: 6px;
+}
+
+.admin-v3 .breakdown-bars a:hover,
+.admin-v3 .breakdown-bars a[aria-current="true"] {
+	background: var(--admin-accent-soft);
+}
+
+.admin-v3 .breakdown-bar {
+	width: 100%;
+	height: 12px;
+}
+
+.admin-v3 .breakdown-bar rect {
+	fill: var(--admin-danger);
+}
+
+.admin-v3 .breakdown-count {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+
+/* 감사 콘솔(#1747): 필터 체크박스·점검 배너·상세 타임라인 */
+.admin-v3 .toolbar-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--admin-ink-2);
+	white-space: nowrap;
+}
+
+.admin-v3 .compliance-banner {
+	margin: 12px 0;
+	padding: 10px 14px;
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-warn-soft);
+	color: var(--admin-warn);
+	font-size: 13px;
+}
+
+/* 권한 컬럼 raw 덤프 방지(#2349 PR⑩c): 콤마 결합 권한 전체 문자열을 "첫 권한 외 N개" 요약 +
+   접힌 details로 담아 행 높이 폭증·우측 클리핑을 없앤다. */
+.admin-v3 .admin-permission-detail summary {
+	cursor: pointer;
+	color: var(--admin-ink);
+}
+
+.admin-v3 .admin-permission-list {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	max-width: 320px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	line-height: 1.6;
+	/* 권한 코드는 점(.)으로만 이어져 공백·하이픈 break 기회가 없다. overflow-wrap: anywhere로
+	   강제 줄바꿈해야 표 auto layout이 이 컬럼의 min-content를 가장 긴 권한 코드 폭까지 벌리지 않는다
+	   (그러지 않으면 펼쳤을 때 다른 컬럼이 한글 낱글자 줄바꿈으로 밀린다). */
+	overflow-wrap: anywhere;
+}
+
+.admin-v3 .compliance-banner .filter-quick {
+	margin-left: 8px;
+	color: var(--admin-warn);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 td.reason-missing,
+.admin-v3 dd.reason-missing {
+	color: var(--admin-danger);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .target-link {
+	margin-left: 8px;
+	font-size: 13px;
+	color: var(--admin-accent);
+}
+
+.admin-v3 .audit-timeline {
+	margin-top: 24px;
+}
+
+.admin-v3 .timeline {
+	list-style: none;
+	margin: 12px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 2px;
+	border-left: 2px solid var(--admin-border-strong);
+}
+
+.admin-v3 .timeline li {
+	display: grid;
+	grid-template-columns: max-content 1fr max-content;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 12px;
+	font-size: 13px;
+}
+
+.admin-v3 .timeline .timeline-time {
+	color: var(--admin-ink-3);
+	font-variant-numeric: tabular-nums;
+}
+
+.admin-v3 .timeline .timeline-current {
+	background: var(--admin-accent-soft);
+	border-radius: 0 var(--admin-radius-control) var(--admin-radius-control) 0;
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .timeline .timeline-current .timeline-time {
+	color: var(--admin-ink-2);
+}
+
+/* 핵심 지표 그리드 반응형(#1983): 900px 이하 2열, 768px 이하 1열. 각 행의 첫 열은
+   좌측 구분선을 빼고, 1열에서는 상단 구분선으로 전환한다. */
+@media (max-width: 1200px) {
+	.dashboard-overview-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 1024px) {
+	.admin-v3 .dashboard-refresh {
+		width: 44px;
+		min-width: 44px;
+		height: 44px;
+		min-height: 44px;
+	}
+}
+
+@media (max-width: 900px) {
+	.dashboard-overview-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.dashboard-cards {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.dashboard-card.metric-cell:nth-child(3n+1) {
+		border-left: 1px solid var(--admin-border);
+	}
+
+	.dashboard-card.metric-cell:nth-child(2n+1) {
+		border-left: 0;
+	}
+}
+
+@media (max-width: 768px) {
+	.dashboard-overview-grid {
+		grid-template-columns: 1fr;
+		gap: 14px;
+	}
+
+	.admin-v3 .dashboard-overview-grid .admin-panel {
+		padding: 20px;
+	}
+
+	.admin-v3 .dashboard-overview-grid .dashboard-current-panel {
+		padding: 23px 21px;
+	}
+
+	.dashboard-current-overview {
+		display: block;
+		margin-top: 18px;
+	}
+
+	.dashboard-current-service {
+		margin: 0 0 24px;
+	}
+
+	.admin-v3 .dashboard-current-metrics {
+		justify-content: flex-start;
+		gap: 8px;
+	}
+
+	.dashboard-current-metrics > div {
+		min-width: 0;
+		flex: 1;
+		padding: 8px 10px;
+	}
+
+	.dashboard-current-metrics dd {
+		width: auto;
+		height: auto;
+		font-size: 16px;
+	}
+
+	.dashboard-service-copy strong {
+		font-size: 30px;
+	}
+
+	.dashboard-api-health {
+		margin-top: 22px;
+	}
+
+	.dashboard-week-days {
+		gap: 2px;
+		margin-top: 14px;
+	}
+
+	.dashboard-week-day {
+		gap: 6px;
+		padding: 8px 1px;
+	}
+
+	.dashboard-week-day strong {
+		font-size: 15px;
+	}
+
+	.admin-v3 .dashboard-reference-lower .admin-panel {
+		padding: 20px;
+	}
+
+	.dashboard-triage-list {
+		grid-template-columns: 1fr;
+	}
+
+	.dashboard-triage-list li + li {
+		border-top: 1px solid var(--admin-border);
+		border-left: 0;
+	}
+
+	.dashboard-triage-list a {
+		padding: 10px 2px;
+	}
+
+	.dashboard-cards {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-v3 .dashboard-card.metric-cell {
+		border-left: 0;
+		border-top: 1px solid var(--admin-border);
+		padding-top: 12px;
+	}
+
+	.admin-v3 .dashboard-card.metric-cell:first-child {
+		border-top: 0;
+		padding-top: 4px;
+	}
+}
+
+/* 목록 툴바 공통 계약(#2278 V6-06): 검색·필터·저장된 뷰·보기 설정을 하나의 toolbar 행으로 모은다.
+   list-toolbar.html fragment가 소비하는 데이터/목록 레이아웃 규칙이라 data 레이어가 소유한다(시각 언어 불변). */
+.admin-list-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.admin-list-toolbar-search {
+	display: inline-flex;
+	align-items: center;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	height: 36px;
+	min-height: 36px;
+	margin: 0;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.admin-list-toolbar-search:focus-within {
+	border-color: var(--admin-primary);
+	outline: 2px solid var(--admin-focus);
+	outline-offset: 0;
+}
+
+/* wrapping <label>가 flex 자식이 되므로(#2420 Sonar InputWithoutLabelCheck) label이 폭을 받고 input이 채운다. */
+.admin-list-toolbar-search > label {
+	flex: 1;
+	min-width: 0;
+	display: block;
+	height: 100%;
+}
+
+.admin-list-toolbar-search input[type="search"] {
+	width: 100%;
+	min-width: 180px;
+	height: 100%;
+	min-height: 100%;
+	padding: 0 12px;
+	border: 0;
+	background: transparent;
+	font-size: 13px;
+	color: var(--admin-ink);
+}
+
+.admin-list-toolbar-search button[type="submit"] {
+	height: 100%;
+	min-height: 100%;
+	padding: 0 12px 0 6px;
+	border: 0;
+	background: transparent;
+	color: var(--admin-ink-3);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	border-radius: 0;
+	transition: color 0.15s ease;
+}
+
+.admin-list-toolbar-search button[type="submit"]:hover {
+	background: transparent;
+	color: var(--admin-ink);
+}
+
+/* 필터·보기 설정 시트: wide(기본)에서는 인라인 노출, compact에서는 트리거로 여닫는 시트로 접는다.
+   시트 내용은 기본 노출이라 no-JS(트리거 x-cloak 숨김)에서도 form/link가 그대로 동작한다. */
+.admin-toolbar-sheet {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+}
+
+/* 시트 트리거는 wide에서 숨긴다(인라인 노출이라 불필요). compact + JS에서만 노출한다.
+   #2349 PR⑩a 실측: 셀렉터를 `.admin-toolbar-sheet-trigger` 단독(specificity 0,1,0)으로 두면
+   admin-components.css의 `.admin-v3 button` 버튼 base(specificity 0,1,1, class 없는 button
+   compat 포함)가 더 높은 specificity로 이겨 display:none이 wide에서 무효화된다 — 트리거가
+   숨겨지지 않고 compat 파랑 filled 배경까지 그대로 노출돼(1440) 필터·보기 설정 버튼이 filled로
+   보이는 원인이었다(390은 아래 has-js 컴팩트 규칙이 specificity로 이겨 정상 outline풍으로 렌더).
+   `.admin-v3` 접두를 붙여 specificity를 0,2,0으로 올려 `.admin-v3 button`을 항상 이기게 해서
+   wide에서는 트리거가 원래 설계대로 숨겨지고 compact에서만 노출되는 단일 위계로 정리한다. */
+.admin-v3 .admin-toolbar-sheet-trigger {
+	display: none;
+}
+
+/* 통합 툴바: 검색·상태 세그먼트·기간 드롭다운/프리셋·보기 설정을 1개 통합 행으로 압축 */
+.table-toolbar-unified {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: var(--admin-shadow-card);
+	margin-bottom: 16px;
+}
+
+.table-toolbar-unified select {
+	height: 34px;
+	padding: 0 28px 0 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background-color: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	appearance: none;
+	-webkit-appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgb(105,112,137)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 8px center;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.table-toolbar-unified select:hover {
+	border-color: var(--admin-border-strong);
+	background-color: var(--admin-header-bg);
+}
+
+.table-toolbar-unified select:focus {
+	border-color: var(--admin-primary);
+	outline: 2px solid var(--admin-focus);
+	outline-offset: 0;
+}
+
+.table-toolbar-unified .admin-list-toolbar {
+	display: contents;
+}
+
+.table-toolbar-unified .admin-list-toolbar-search {
+	order: 1;
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	height: 36px;
+	min-height: 36px;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.table-toolbar-unified .admin-list-toolbar-search:focus-within {
+	border-color: var(--admin-primary);
+	outline: 2px solid var(--admin-focus);
+	outline-offset: 0;
+}
+
+.table-toolbar-unified .admin-list-toolbar-search input[type="search"] {
+	min-width: 180px;
+	height: 100%;
+	min-height: 100%;
+	padding: 0 10px 0 12px;
+	border: 0;
+	background: transparent;
+	font-size: 13px;
+	color: var(--admin-ink);
+}
+
+.table-toolbar-unified .admin-list-toolbar-search button[type="submit"] {
+	height: 100%;
+	min-height: 100%;
+	padding: 0 12px 0 6px;
+	border: 0;
+	background: transparent;
+	color: var(--admin-ink-3);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	border-radius: 0;
+	transition: color 0.15s ease;
+}
+
+.table-toolbar-unified .admin-list-toolbar-search button[type="submit"]:hover {
+	background: transparent;
+	color: var(--admin-ink);
+}
+
+.table-toolbar-unified .status-filter {
+	order: 2;
+	flex: 0 0 auto;
+	margin-bottom: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	background: var(--admin-bg);
+	border-radius: var(--admin-radius-control);
+	border: 0;
+}
+
+.table-toolbar-unified .status-filter a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 30px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+	transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.table-toolbar-unified .status-filter a:hover {
+	color: var(--admin-ink);
+}
+
+.table-toolbar-unified .status-filter a[aria-current="page"] {
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+	border: 0;
+	box-shadow: var(--admin-shadow-card);
+}
+
+.table-toolbar-unified .date-presets {
+	order: 3;
+	flex: 0 0 auto;
+	display: inline-flex;
+	gap: 2px;
+	align-items: center;
+	padding: 2px;
+	background: var(--admin-bg);
+	border-radius: var(--admin-radius-control);
+	border: 0;
+}
+
+.table-toolbar-unified .date-presets a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 30px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 6px;
+	font-size: var(--admin-fs-meta);
+	color: var(--admin-ink-2);
+	text-decoration: none;
+	transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.table-toolbar-unified .date-presets a:hover {
+	color: var(--admin-accent);
+}
+
+.table-toolbar-unified .date-presets a[aria-current="true"] {
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
+	background: var(--admin-surface);
+	border: 0;
+	box-shadow: var(--admin-shadow-card);
+}
+
+
+.table-toolbar-unified .admin-toolbar-filter-trigger {
+	order: 4;
+	margin-left: auto;
+}
+
+.table-toolbar-unified .admin-toolbar-filter-sheet {
+	order: 5;
+}
+
+.table-toolbar-unified .admin-toolbar-view-trigger {
+	order: 6;
+}
+
+.table-toolbar-unified .admin-toolbar-view-sheet {
+	order: 7;
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet-trigger {
+	display: inline-flex;
+	min-height: 32px;
+	align-items: center;
+	gap: 6px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--admin-radius-control);
+	background: transparent;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet-trigger:hover {
+	background: var(--admin-bg);
+	color: var(--admin-ink);
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet-trigger[aria-expanded="true"] {
+	border: 0;
+	color: var(--admin-accent-ink);
+	background: var(--admin-accent-soft);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet {
+	display: none;
+	flex-basis: 100%;
+	padding-top: 10px;
+	margin-top: 6px;
+	border-top: 1px solid var(--admin-border);
+}
+
+.admin-v3.has-js .table-toolbar-unified .admin-toolbar-sheet.is-open {
+	display: flex;
+}
+
+/* 첫 식별자 열 외에 "필요한 action 열"만 우측 sticky로 고정하는 유틸리티(#2278 §7).
+   wrapper(.admin-table-scroll)만 가로 overflow를 소유한다는 계약을 그대로 따른다. */
+.admin-table-scroll th.cell-sticky-action,
+.admin-table-scroll td.cell-sticky-action:not([colspan]) {
+	position: sticky;
+	right: 0;
+	z-index: 2;
+	background: var(--admin-surface);
+}
+
+.admin-table-scroll thead th.cell-sticky-action {
+	z-index: 3;
+	background: var(--admin-header-bg);
+}
+
+/* 첫 열 sticky와 동일 패턴(admin-components.css)으로 행 hover·선택 배경을 sticky action 열에도
+   동기화한다. 동기화하지 않으면 sticky 열만 hover/선택 배경이 어긋나 보인다(#2301 리뷰). */
+.admin-v3 .admin-table-scroll tbody tr:hover td.cell-sticky-action:not([colspan]) {
+	background: var(--admin-header-bg);
+}
+
+.admin-v3 .admin-table-scroll tbody tr[aria-selected="true"] td.cell-sticky-action:not([colspan]),
+.admin-v3 .admin-table-scroll tbody tr.is-selected td.cell-sticky-action:not([colspan]) {
+	background: var(--admin-accent-soft);
+}
+
+/* 시트 안 필터·정렬 form(V6-07 #2279): 시트가 소유하는 no-JS/HTMX form의 컨트롤을 인라인으로 배치한다.
+   시각 언어(무채색·flat·radius≤8)는 기존 폼 컨트롤 토큰을 그대로 상속한다. */
+.admin-toolbar-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 0;
+}
+
+.admin-toolbar-form select {
+	height: 36px;
+	min-height: 36px;
+	padding: 0 28px 0 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background-color: var(--admin-surface);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 10px center;
+	color: var(--admin-ink);
+	font-size: 13px;
+	font-family: inherit;
+	appearance: none;
+	-webkit-appearance: none;
+	cursor: pointer;
+	box-shadow: none;
+	transition: border-color 0.15s ease;
+}
+
+.admin-toolbar-form select:hover {
+	border-color: var(--admin-border-strong);
+}
+
+.admin-toolbar-form select:focus {
+	border-color: var(--admin-primary);
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 1px;
+}
+
+/* 마지막 확인/갱신일 셀(V6-07 #2279): 상대 시간을 위, 정확한 날짜를 아래(meta)로 병기한다.
+   상대 시간에는 정확한 날짜를 title로도 달아 hover·스크린리더에서 절대 시각을 확인할 수 있다. */
+.admin-v3 .data-verified {
+	display: inline-flex;
+	flex-direction: column;
+	line-height: 1.3;
+}
+
+.admin-v3 .data-verified-relative {
+	color: var(--admin-ink);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 필터/정렬 적용 버튼 JS 시 숨김(#2313): 이 버튼이 속한 필터 form은 htmx `hx-trigger="change, submit"`으로
+   이미 값이 바뀌는 즉시 자동 제출된다. JS 활성 환경에서 명시 제출 버튼은 잉여이므로 숨긴다. no-JS(has-js
+   미부착)에서는 자동 제출이 동작하지 않으므로 이 규칙이 걸리지 않아 버튼이 계속 노출되고, 그대로 수동
+   GET 제출로 필터가 적용된다(폴백 유지, hidden 필터 바인딩·GET 계약은 그대로). */
+.admin-v3.has-js .admin-filter-apply {
+	display: none;
+}
+
+/* compact: 필터·보기 설정을 시트로 접는다. JS가 있을 때만(has-js) 트리거를 노출하고 시트를 접어
+   direct control을 5개 이하로 유지한다. no-JS(has-js 미부착)는 시트 내용이 인라인으로 남는다. */
+@media (max-width: 768px) {
+	.admin-v3.has-js .admin-toolbar-sheet-trigger {
+		display: inline-flex;
+		min-height: 32px;
+		align-items: center;
+		padding: 0 12px;
+		border: 1px solid var(--admin-border);
+		border-radius: var(--admin-radius-control);
+		background: var(--admin-surface);
+		color: var(--admin-ink-2);
+		font-size: 13px;
+		cursor: pointer;
+	}
+
+	.admin-v3.has-js .admin-toolbar-sheet {
+		display: none;
+		flex-basis: 100%;
+	}
+
+	.admin-v3.has-js .admin-toolbar-sheet.is-open {
+		display: flex;
+	}
+}

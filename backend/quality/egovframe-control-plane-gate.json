@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "gateId": "egovframe-control-plane-adoption",
+  "framework": {
+    "egovFrame": "5.0.0",
+    "springBoot": "3.5.x",
+    "java": "21"
+  },
+  "decision": "selective_control_plane_only",
+  "utilizationDefinition": {
+    "formula": "adopted_modules / gate_approved_applicable_modules",
+    "adoptedStatus": "adopted_control_plane_only",
+    "applicableModules": [
+      "pagination",
+      "egovframeBatCore",
+      "fdlLogging",
+      "fdlProperty",
+      "fdlIdgnr",
+      "fdlExcel"
+    ],
+    "current": {
+      "adoptedModules": 5,
+      "applicableModules": 6,
+      "percent": 83.33
+    },
+    "denominatorExcludes": [
+      "noGoSurface",
+      "pending_separate_decision(psl-dataaccess, fdl-access)"
+    ],
+    "reportingPolicy": "report_computed_current_state_without_mechanical_expansion",
+    "supersedes": "adoption_plan_docx_whole_codebase_30_percent"
+  },
+  "allowedProductionSurface": [
+    "backend_admin_operator_pages",
+    "data_collection_batch_control_plane",
+    "operations_logging_properties_ids"
+  ],
+  "noGoSurface": [
+    "flutter_mobile_runtime",
+    "ordinary_mobile_api",
+    "realtime_hot_path",
+    "token_or_crypto_security_boundary",
+    "domain_application_public_json_contracts"
+  ],
+  "dependencyPolicy": {
+    "directAllowed": [
+      "org.egovframe.rte:egovframe-rte-ptl-mvc",
+      "org.egovframe.rte:egovframe-rte-bat-core",
+      "org.egovframe.rte:egovframe-rte-fdl-property",
+      "org.egovframe.rte:egovframe-rte-fdl-idgnr",
+      "org.egovframe.rte:egovframe-rte-fdl-excel"
+    ],
+    "directDeferredUntilPocPasses": [
+      "org.egovframe.rte:egovframe-rte-psl-dataaccess",
+      "org.egovframe.boot:egovframe-boot-starter-access"
+    ],
+    "directForbidden": [
+      "org.egovframe.boot:egovframe-boot-starter-crypto",
+      "org.egovframe.boot:egovframe-boot-starter-security"
+    ]
+  },
+  "pocDecision": {
+    "pagination": {
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/common/web/pagination/EgovPaginationView.java",
+      "verification": "backend/src/test/java/com/easysubway/common/web/pagination/EgovPaginationViewTest.java"
+    },
+    "egovframeBatCore": {
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/collection/adapter/out/batch/TransitMasterCollectionBatchConfig.java",
+      "verification": "backend/src/test/java/com/easysubway/collection/adapter/out/batch/TransitMasterCollectionBatchConfigTest.java",
+      "reason": "collection batch seeds standardized batch variables into the ExecutionContext and gets lifecycle logging via bat-core EgovJobVariableListener/EgovStepVariableListener; Spring Batch JobRepository, restart, and idempotency semantics and job/step names stay unchanged. psl-dataaccess rides in only as bat-core's inert transitive (classpath-verified, never imported)."
+    },
+    "fdlLogging": {
+      "status": "classpath_verified_control_plane_only",
+      "currentImplementation": "transitive runtime from egovframe-rte-ptl-mvc",
+      "constraint": "do not import eGovFrame logging types outside backend support runtime verification"
+    },
+    "fdlProperty": {
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfig.java",
+      "verification": "backend/src/test/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfigTest.java",
+      "constraint": "Spring Boot application.yml remains the bootstrap source of truth; only the operational collection run id prefix is externalized to egovframe/collection-control-plane.properties. No credentials or secrets in eGovFrame property."
+    },
+    "fdlIdgnr": {
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfig.java",
+      "verification": "backend/src/test/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfigTest.java",
+      "constraint": "UUID, database IDs, receipt tokens, and security identifiers must not move to eGovFrame ID generation; adopted only for the operational collection run id (collection-<id>) via the Table strategy on the ids table."
+    },
+    "pslDataaccess": {
+      "status": "forbidden_until_poc_passes",
+      "constraint": "current production persistence stays on Spring JDBC/JdbcTemplate and Flyway-managed schema"
+    },
+    "fdlAccess": {
+      "status": "forbidden_until_poc_passes",
+      "constraint": "admin/operator auth stays on Spring Security and does not cross token or crypto boundaries"
+    },
+    "fdlExcel": {
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/common/web/export/EgovExcelExportSupport.java",
+      "verification": "backend/src/test/java/com/easysubway/common/web/export/EgovExcelExportSupportTest.java",
+      "constraint": "admin/operator xlsx exports run alongside the unchanged CSV contract via fdl-excel AbstractPOIExcelView; in-memory XSSF is bounded by MAX_EXPORT_ROWS (fail on exceed), privacy columns match the CSV policy (verifiedBy unchanged), and eGovFrame excel types stay inside the export support class."
+    }
+  },
+  "compatibilityEvidence": {
+    "requiredBeforeExpansion": [
+      "cd backend && ./gradlew check",
+      "cd backend && ./gradlew dependencyInsight --dependency org.egovframe",
+      "node --test tools/ci/*.test.mjs"
+    ],
+    "releaseBlocker": true
+  },
+  "mustNotDo": [
+    "increase eGovFrame usage percentage mechanically",
+    "move mobile or public JSON contracts to eGovFrame types",
+    "replace token, crypto, receipt, or auth boundaries with eGovFrame starters",
+    "add remote-only eGovFrame dependencies without lockfile and local mirror evidence"
+  ]
+}

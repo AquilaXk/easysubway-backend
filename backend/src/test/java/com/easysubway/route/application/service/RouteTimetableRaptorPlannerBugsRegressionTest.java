@@ -1,0 +1,294 @@
+package com.easysubway.route.application.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import java.time.LocalDate;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("#368 RAPTOR BMRAP circular loop, integer overflow, and workspace state regression tests")
+class RouteTimetableRaptorPlannerBugsRegressionTest {
+
+	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 6);
+
+	@Test
+	@DisplayName("순환선(Loop pattern: A -> B -> C -> A)에서 목적지 A에 대한 역방향 하한선이 이전 역들로 정상 전파된다")
+	void circularPatternBMRAPLowerBoundsPropagateToAllPredecessors() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		int sta1 = compiled.stationIndex("sta-1");
+		int sta2 = compiled.stationIndex("sta-2");
+		int sta3 = compiled.stationIndex("sta-3");
+
+		int[] lowerBounds = RouteTimetableRaptorPlanner.computeStationLowerBounds(compiled, sta1);
+
+		assertThat(lowerBounds[sta1]).isEqualTo(0);
+		// sta-3 to sta-1: running time is 29400 - 29200 = 200s
+		assertThat(lowerBounds[sta3]).isLessThanOrEqualTo(200);
+		// sta-2 to sta-1: running time is 29400 - 29000 = 400s
+		assertThat(lowerBounds[sta2]).isLessThanOrEqualTo(400);
+	}
+
+	@Test
+	@DisplayName("UNREACHED 값 또는 큰 시각 연산 시 정수 오버플로로 인해 조기 차단이 오작동하지 않는다")
+	void integerOverflowGuardsInDominationAndLowerBounds() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		var workspace = new RouteTimetableRaptorPlanner.ScanWorkspace();
+		workspace.prepare(compiled);
+
+		int sta1 = compiled.stationIndex("sta-1");
+		int sta2 = compiled.stationIndex("sta-2");
+		int[] lb = new int[compiled.stationCount()];
+		lb[sta2] = 300;
+		workspace.setTargetStation(sta1, lb);
+
+		// Target has been reached at 30,000s
+		workspace.bestTargetArrivalSeconds[0] = 30000;
+
+		// When candidate is UNREACHED (Integer.MAX_VALUE), it must be dominated, not wrap to negative
+		assertThat(workspace.isDominatedByTarget(sta2, RouteTimetableRaptorPlanner.UNREACHED, 0)).isTrue();
+		// Target station itself with UNREACHED
+		assertThat(workspace.isDominatedByTarget(sta1, RouteTimetableRaptorPlanner.UNREACHED, 0)).isTrue();
+		// Earlier arrival is not dominated
+		assertThat(workspace.isDominatedByTarget(sta2, 29000, 0)).isFalse();
+
+		// When departure is UNREACHED, target must dominate it
+		assertThat(workspace.isTargetDominatingDeparture(sta2, RouteTimetableRaptorPlanner.UNREACHED)).isTrue();
+		// Earlier departure is not dominated
+		assertThat(workspace.isTargetDominatingDeparture(sta2, 28000)).isFalse();
+		// Target station itself with earlier departure
+		assertThat(workspace.isTargetDominatingDeparture(sta1, 29000)).isFalse();
+
+		// When target has NOT been reached, neither should be dominated
+		workspace.bestTargetArrivalSeconds[0] = RouteTimetableRaptorPlanner.UNREACHED;
+		assertThat(workspace.isDominatedByTarget(sta2, RouteTimetableRaptorPlanner.UNREACHED, 0)).isFalse();
+		assertThat(workspace.isTargetDominatingDeparture(sta2, RouteTimetableRaptorPlanner.UNREACHED)).isFalse();
+	}
+
+	@Test
+	@DisplayName("미정차 노선에 대한 relax 호출이 공유 dummyUnreachedSlot 상태를 오염시키지 않는다")
+	void dummyUnreachedSlotCannotBePollutedByRelax() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		var workspace = new RouteTimetableRaptorPlanner.ScanWorkspace();
+		workspace.prepare(compiled);
+
+		int sta1 = compiled.stationIndex("sta-1");
+		// line-99 is an unserved/invalid line for sta-1
+		int unservedLine = 99;
+
+		int invalidSlot = workspace.slot(1, sta1, unservedLine, 0);
+		assertThat(workspace.arrivalSeconds[invalidSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+
+		// Attempt to relax on unserved line
+		workspace.relax(sta1, 1, unservedLine, 35000, 1, 0, 1, 0, 0, (byte) 0);
+
+		// The dummy slot must NOT be polluted
+		assertThat(workspace.arrivalSeconds[invalidSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+	}
+
+	@Test
+	@DisplayName("transfer transition에 유효하지 않은 경계 인덱스 전달 시 예외 없이 안전하게 -1을 반환한다")
+	void accessTransitionsTransferBoundsSafe() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		int stationCount = compiled.stationCount();
+		int lineCount = compiled.lineCount();
+
+		// transferTransition boundary checks
+		assertThatNoException().isThrownBy(() -> {
+			assertThat(compiled.transferTransition(-1, 0, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(stationCount, 0, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, -1, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, lineCount, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, 0, -1, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, 0, lineCount, 1, false, false)).isEqualTo(-1);
+		});
+	}
+
+	@Test
+	@DisplayName("ScanWorkspace가 relax/improveOrigin으로 변경된 슬롯만 추적하여 다음 prepare 시 O(touched)로 초기화한다")
+	void workspacePrepareClearsTouchedSlotsLazilyWithoutFullWipe() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		var workspace = new RouteTimetableRaptorPlanner.ScanWorkspace();
+		workspace.prepare(compiled);
+
+		int sta1 = compiled.stationIndex("sta-1");
+		int sta2 = compiled.stationIndex("sta-2");
+		int sta3 = compiled.stationIndex("sta-3");
+		int line = compiled.lineIndex("line-circ");
+
+		// Improve origin: touches origin slot (first time UNREACHED)
+		assertThat(workspace.improveOrigin(sta1, 28800)).isTrue();
+		int originSlot = workspace.slot(0, sta1, workspace.noIncomingLine(), 0);
+		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(28800);
+
+		// Improve origin again with earlier arrival (not UNREACHED)
+		assertThat(workspace.improveOrigin(sta1, 28000)).isTrue();
+		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(28000);
+
+		// Attempt to improve origin with later arrival (returns false)
+		assertThat(workspace.improveOrigin(sta1, 29000)).isFalse();
+
+		// Relax sta-2: touches sta-2 slot (first time UNREACHED)
+		workspace.relax(sta2, 1, line, 29000, 0, 0, 1, 0, originSlot, (byte) 0);
+		int sta2Slot = workspace.slot(1, sta2, line, 0);
+		assertThat(workspace.arrivalSeconds[sta2Slot]).isEqualTo(29000);
+
+		// Relax sta-2 again with earlier arrival (not UNREACHED)
+		workspace.relax(sta2, 1, line, 28500, 0, 0, 1, 0, originSlot, (byte) 0);
+		assertThat(workspace.arrivalSeconds[sta2Slot]).isEqualTo(28500);
+
+		// Exercise touchedSlots expansion by relaxing multiple boarding/warning variants
+		for (int b = 0; b < 3; b += 1) {
+			for (int w = 0; w < 4; w += 1) {
+				workspace.relax(sta3, b, line, 30000 + b * 100 + w, 0, 0, 1, 0, originSlot, (byte) w);
+				workspace.relax(sta1, b, line, 31000 + b * 100 + w, 0, 0, 1, 0, originSlot, (byte) w);
+				workspace.relax(sta2, b, line, 32000 + b * 100 + w, 0, 0, 1, 0, originSlot, (byte) w);
+			}
+		}
+
+		// Re-prepare workspace: should reset touched slots to UNREACHED (touchedSlotCount > 0 branch)
+		workspace.prepare(compiled);
+		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+		assertThat(workspace.arrivalSeconds[sta2Slot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+
+		// Immediate second prepare: exercises touchedSlotCount == 0 branch
+		workspace.prepare(compiled);
+		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+	}
+
+	private static RouteTimetable circularTimetable() {
+		var calendar = new ServiceCalendar("cal-circ", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var route = new TransitRoute("route-circ", "line-circ", "2", "2호선순환", "circle", "Asia/Seoul");
+
+		// Circular pattern: sta-1 -> sta-2 -> sta-3 -> sta-1
+		var trip = new TransitTrip("trip-c1", "route-circ", "cal-circ", "head-circ", "0", "LOCAL", 28800);
+		var st1 = new TransitStopTime("trip-c1", 1, "sta-1", "line-circ", 28800, 28860, 0, 0);
+		var st2 = new TransitStopTime("trip-c1", 2, "sta-2", "line-circ", 29000, 29060, 1, 0);
+		var st3 = new TransitStopTime("trip-c1", 3, "sta-3", "line-circ", 29200, 29260, 2, 0);
+		var st4 = new TransitStopTime("trip-c1", 4, "sta-1", "line-circ", 29400, 29460, 3, 0);
+
+		return new RouteTimetable(
+			List.of(calendar),
+			List.of(),
+			List.of(route),
+			List.of(trip),
+			List.of(st1, st2, st3, st4),
+			List.of(),
+			List.of(),
+			null,
+			circularAccess()
+		);
+	}
+
+	private static RouteAccessData circularAccess() {
+		var edges = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"entry", "entrance", "platform-sta1", 120, 60, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit", "platform-sta1", "outside", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit-sta3", "platform-sta3", "outside-sta3", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+		var evidence = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"entry-evidence", "sta-1", "line-circ", "entry", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence", "sta-1", "line-circ", "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence-sta3", "sta-3", "line-circ", "exit-sta3", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		return new RouteAccessData(
+			List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("entrance", "sta-1", null, "ENTRANCE"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-sta1", "sta-1", "line-circ", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "sta-1", null, "EXIT"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-sta3", "sta-3", "line-circ", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside-sta3", "sta-3", null, "EXIT")),
+			edges,
+			List.of(),
+			evidence
+		);
+	}
+
+	@Test
+	@DisplayName("[P1-4] CompiledTimetable은 'test-bundle' 매직 식별자 없이 유효한 SHA-256 및 generation을 캡슐화한다")
+	void compiledTimetableEncapsulatesDeterministicSha256AndGeneration() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		assertThat(compiled.routeBundleSha256()).matches("^[a-f0-9]{64}$");
+		assertThat(compiled.generation()).isEqualTo(1L);
+
+		// 명시적 주입 오버로드 검증
+		String explicitSha = "b".repeat(64);
+		var explicitCompiled = planner.compile(explicitSha, 42L, timetable);
+		assertThat(explicitCompiled.routeBundleSha256()).isEqualTo(explicitSha);
+		assertThat(explicitCompiled.generation()).isEqualTo(42L);
+
+		// 유효하지 않은 SHA-256 및 generation 차단 검증 (Fail-Closed)
+		assertThatThrownBy(() -> planner.compile("invalid-sha", 1L, timetable))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("lowercase SHA-256");
+
+		assertThatThrownBy(() -> planner.compile(explicitSha, 0L, timetable))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("generation must be positive");
+
+		// journeyItineraries 3-arg 오버로드 호출 및 explicitCompiled 기반 여정 계획 결과 단언 (출발: sta-1, 도착: sta-3)
+		var query = new com.easysubway.journey.application.JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"sta-1",
+			"sta-3",
+			new com.easysubway.journey.application.JourneyRaptorQuery.DepartAt(java.time.Instant.parse("2026-07-05T22:55:00Z")),
+			com.easysubway.journey.application.JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			com.easysubway.journey.application.JourneyRequest.WalkingPace.STANDARD,
+			com.easysubway.journey.application.JourneyRequest.MobilityProfile.STANDARD,
+			com.easysubway.journey.application.JourneyRequest.ConstraintMode.NONE,
+			3,
+			3,
+			() -> false
+		);
+		var plan = planner.journeyItineraries(query, explicitCompiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		assertThat(plan.itineraries()).hasSize(1);
+		var itinerary = plan.itineraries().getFirst();
+		// #454: 승강장에서 시작해 승강장에서 끝나므로 구간은 승차 하나이고 도착은 승강장 도착 시각이다.
+		assertThat(itinerary.legs()).hasSize(1);
+		assertThat(itinerary.plannedDepartureTime()).isEqualTo(java.time.Instant.parse("2026-07-05T22:55:00Z"));
+		assertThat(itinerary.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:06:40Z"));
+
+		var rideLeg = (RouteTimetableRaptorPlanner.JourneyRideProjection) itinerary.legs().get(0);
+		assertThat(rideLeg.tripId()).isEqualTo("trip-c1");
+		assertThat(rideLeg.fromStationId()).isEqualTo("sta-1");
+		assertThat(rideLeg.toStationId()).isEqualTo("sta-3");
+		assertThat(rideLeg.plannedDepartureTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:01:00Z"));
+		assertThat(rideLeg.plannedArrivalTime()).isEqualTo(java.time.Instant.parse("2026-07-05T23:06:40Z"));
+	}
+}

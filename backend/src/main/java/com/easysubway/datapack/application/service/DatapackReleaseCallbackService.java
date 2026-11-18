@@ -1,0 +1,530 @@
+package com.easysubway.datapack.application.service;
+
+import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort;
+import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort.ChannelObservation;
+import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort.ChannelObservationOutcome;
+import com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort.PassingReleaseEvidence;
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
+import com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository;
+import com.easysubway.datapack.application.port.out.DatapackReleaseDeliveryRepository;
+import com.easysubway.datapack.application.service.CallbackSignature.CanonicalFields;
+import com.easysubway.datapack.application.service.CallbackSignature.LegacyCanonicalFields;
+import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService.ReleaseChannelCommand;
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.CatalogIdentity;
+import com.easysubway.datapack.domain.DatapackReleaseRequest;
+import com.easysubway.datapack.domain.DatapackReleaseRequestStatus;
+import com.easysubway.datapack.domain.DatapackReleaseDelivery;
+import com.easysubway.datapack.domain.DatapackReleaseDelivery.State;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * 워크플로가 보낸 release callback payload를 수신해 HMAC 검증 → release request 상태 전이 → 멱등 재수신
+ * no-op를 처리한다. PASS 시 production 채널로 best-effort 자동 promote를 시도한다.
+ * promote 게이트 거부 시에도 status=PUBLISHED를 유지하고 promote_outcome=REJECTED를 기록한다.
+ *
+ * <p>git 원본 release request(#456): backend에 request 행이 없는 PASS callback은 HMAC 검증 뒤
+ * catalog/current.json과 서명된 release-request binding 결속이 모두 일치할 때만 delivery를
+ * DELIVERED로 종결하고 배포 채널 관측을 갱신한다. 상태 전이·승인·승격은 만들지 않는다.
+ * 결속 불일치는 DEAD_LETTER, binding 부재는 RELEASE_REQUEST_MISSING, 읽기 실패는 오류로 거부한다.
+ */
+@Service
+public class DatapackReleaseCallbackService {
+
+    private static final Logger log = LoggerFactory.getLogger(DatapackReleaseCallbackService.class);
+
+	// 게시 콜백을 수용하는 진행 중 상태. DISPATCHED·DISPATCH_FAILED는 backend dispatch 발화가
+	// 제거된 뒤(#2564) 새로 생기지 않는 이력 상태지만, 남은 행이 수동 게시 결과로 종결될 수
+	// 있도록 APPROVED와 동등하게 수용한다(거부하면 해당 행은 영구 미종결로 남는다).
+	// backend request 행 없이 기록된 delivery의 candidate 표식. 재조정은 이 표식이 있는 delivery만
+	// git 원본 관측 경로로 보낸다(request 행이 사라진 backend 원본 delivery와 구분).
+	static final String NO_BACKEND_REQUEST_CANDIDATE_ID = "missing-request";
+	private static final String OBSERVED = "OBSERVED";
+
+	private static final Set<DatapackReleaseRequestStatus> CALLBACK_ACCEPTED_STATUSES = Set.of(
+		DatapackReleaseRequestStatus.APPROVED,
+		DatapackReleaseRequestStatus.DISPATCHED,
+		DatapackReleaseRequestStatus.DISPATCH_FAILED);
+
+    private final DatapackReleaseRequestRepository repository;
+    private final CallbackSignature signature;
+    private final Clock clock;
+    private final DatapackReleaseChannelCommandPort channelCommandPort;
+    private final DatapackReleasePromoteDelegate promoteDelegate;
+    private final DatapackReleaseDeliveryRepository deliveryRepository;
+    private final DatapackReleaseCatalogPort releaseCatalog;
+    private final TransactionTemplate transactionTemplate;
+
+    public DatapackReleaseCallbackService(DatapackReleaseRequestRepository repository,
+        CallbackSignature signature, ObjectProvider<Clock> clockProvider,
+        DatapackReleaseChannelCommandPort channelCommandPort,
+        DatapackReleasePromoteDelegate promoteDelegate,
+        DatapackReleaseDeliveryRepository deliveryRepository,
+        DatapackReleaseCatalogPort releaseCatalog,
+        PlatformTransactionManager transactionManager) {
+        this.repository = repository;
+        this.signature = signature;
+        this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
+        this.channelCommandPort = channelCommandPort;
+        this.promoteDelegate = promoteDelegate;
+        this.deliveryRepository = deliveryRepository;
+        this.releaseCatalog = releaseCatalog;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
+    public CallbackResult receive(CallbackCommand cmd) {
+		if (cmd.schemaVersion() == 1) {
+			return receiveLegacy(cmd);
+		}
+        // HMAC 검증 — verifierKind 불일치 또는 서명 불일치 시 거부
+        var fields = new CanonicalFields(cmd.schemaVersion(), cmd.artifactKind(),
+            cmd.releaseRequestId(), cmd.releaseSequence(), cmd.channel(), cmd.idempotencyKey(),
+            cmd.workflowRunUrl(), cmd.manifestSha256(), cmd.sqliteSha256(),
+            cmd.gzipSha256(), cmd.evidenceBundleSha256(), cmd.validatorStatus(),
+            cmd.routeRegressionStatus(), cmd.publishStatus());
+        if (cmd.schemaVersion() != 2 || !"datapack-release-callback".equals(cmd.artifactKind())
+            || !expectedIdempotencyKey(cmd).equals(cmd.idempotencyKey())
+            || !"payload-signature".equals(cmd.verifierKind())
+            || !signature.verify(fields, cmd.verifierValue())) {
+            throw new IllegalArgumentException("callback verifier mismatch");
+		}
+		boolean pass = allGatesPass(cmd);
+		var terminalReplay = transactionTemplate.execute(
+			status -> receiveTerminalReplay(cmd, fields));
+		if (terminalReplay != null) return terminalReplay;
+		boolean knownRequest = repository.findByApprovalId(cmd.releaseRequestId()).isPresent();
+		var catalogValidation = pass ? validatePublishedCatalog(cmd, knownRequest) : null;
+		return transactionTemplate.execute(status -> receiveVerified(cmd, fields, catalogValidation));
+	}
+
+	private CallbackResult receiveTerminalReplay(CallbackCommand cmd, CanonicalFields fields) {
+		var existingSequence = deliveryRepository.findByRequestAndSequence(
+			cmd.releaseRequestId(), cmd.releaseSequence());
+		if (existingSequence.isPresent()
+			&& !existingSequence.get().manifestSha256().equals(cmd.manifestSha256())) {
+			if (existingSequence.get().state() != State.DELIVERED) {
+				var now = LocalDateTime.now(clock);
+				deliveryRepository.mark(existingSequence.get().idempotencyKey(), State.DEAD_LETTER,
+					existingSequence.get().attempts(), null, "CONFLICT",
+					"MANIFEST_IDENTITY_MISMATCH", now);
+			}
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		var request = repository.findByApprovalId(cmd.releaseRequestId()).orElse(null);
+		if (request == null) {
+			if (existingSequence.isEmpty()) return null;
+			var state = existingSequence.get().state();
+			if (!existingSequence.get().channel().equals(cmd.channel())) {
+				// git 원본은 request 행이 없으므로 저장된 delivery channel이 유일한 대조 기준이다.
+				if (state != State.DELIVERED) {
+					deliveryRepository.mark(existingSequence.get().idempotencyKey(), State.DEAD_LETTER,
+						existingSequence.get().attempts(), null, "CONFLICT", "CHANNEL_MISMATCH",
+						LocalDateTime.now(clock));
+				}
+				return new CallbackResult("DEAD_LETTER", false);
+			}
+			if (state == State.DELIVERED) return new CallbackResult(OBSERVED, true);
+			return state == State.DEAD_LETTER ? new CallbackResult("DEAD_LETTER", true) : null;
+		}
+		var deliveryTerminal = existingSequence.isPresent()
+			&& (existingSequence.get().state() == State.DELIVERED
+				|| existingSequence.get().state() == State.DEAD_LETTER);
+		if (!deliveryTerminal && cmd.channel().equals(request.targetChannel())) return null;
+		return receiveVerified(cmd, fields, null);
+	}
+
+	private CallbackResult receiveVerified(CallbackCommand cmd, CanonicalFields fields,
+		PublishedCatalogValidation catalogValidation) {
+        var now = LocalDateTime.now(clock);
+        var existingSequence = deliveryRepository.findByRequestAndSequence(
+            cmd.releaseRequestId(), cmd.releaseSequence());
+        if (existingSequence.isPresent()
+            && !existingSequence.get().manifestSha256().equals(cmd.manifestSha256())) {
+			if (existingSequence.get().state() != State.DELIVERED) {
+				deliveryRepository.mark(existingSequence.get().idempotencyKey(), State.DEAD_LETTER,
+					existingSequence.get().attempts(), null, "CONFLICT", "MANIFEST_IDENTITY_MISMATCH", now);
+			}
+            return new CallbackResult("DEAD_LETTER", false);
+        }
+
+        var request = repository.findByApprovalId(cmd.releaseRequestId()).orElse(null);
+		if (request != null && catalogValidation != null && catalogValidation.bindingMissing()) {
+			// binding 부재는 트랜잭션 밖에서 request 행이 없을 때 판정했다. 그 사이 행이 생겼으면
+			// binding 검증 없이 게시·승격하지 않고, backend 원본 경로와 같이 재시도로 돌린다.
+			throw new DatapackReleaseCatalogPort.Unavailable();
+		}
+        var delivery = deliveryRepository.upsertSameDelivery(DatapackReleaseDelivery.pending(
+            cmd.releaseRequestId(), cmd.releaseSequence(), cmd.manifestSha256(), cmd.channel(),
+            request == null ? NO_BACKEND_REQUEST_CANDIDATE_ID : request.candidateId(), fields.payloadSha256(),
+            CallbackSignature.sha256(cmd.verifierValue()), now));
+        if (request == null) {
+			return receiveGitRelease(cmd, delivery, catalogValidation, now);
+        }
+        if (!cmd.channel().equals(request.targetChannel())) {
+            deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+                delivery.attempts(), null, "CONFLICT", "CHANNEL_MISMATCH", now);
+            return new CallbackResult("DEAD_LETTER", false);
+        }
+        if (delivery.state() == State.DELIVERED) {
+            return new CallbackResult(request.status().name(), true);
+        }
+        if (delivery.state() == State.DEAD_LETTER) {
+            return new CallbackResult("DEAD_LETTER", true);
+        }
+
+		boolean pass = allGatesPass(cmd);
+		boolean reconciliationRequired = "BLOCKED_EXTERNAL".equals(cmd.publishStatus())
+			&& "PASS".equals(cmd.validatorStatus())
+			&& "PASS".equals(cmd.routeRegressionStatus());
+		if (reconciliationRequired) {
+			deliveryRepository.mark(delivery.idempotencyKey(), State.RECONCILIATION_REQUIRED,
+				delivery.attempts() + 1, now.plusMinutes(5), "BLOCKED", "BINDING_UNAVAILABLE", now);
+			return new CallbackResult("RECONCILIATION_REQUIRED", false);
+		}
+		if (pass) {
+			if (catalogValidation != null && catalogValidation.mismatch() != null) {
+				var mismatch = catalogValidation.mismatch();
+				deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+					delivery.attempts(), null, mismatch.httpClass(), mismatch.detail(), now);
+				return new CallbackResult("DEAD_LETTER", false);
+			}
+		}
+        var terminal = pass ? DatapackReleaseRequestStatus.PUBLISHED : DatapackReleaseRequestStatus.FAILED;
+
+        // 멱등: 이미 terminal 상태 + 동일 결과 → no-op
+        if (request.status() == terminal) {
+            deliveryRepository.mark(delivery.idempotencyKey(), State.DELIVERED,
+                delivery.attempts() + 1, null, "2XX", null, now);
+            return new CallbackResult(terminal.name(), true);
+        }
+
+        var status = request.status();
+        if (!CALLBACK_ACCEPTED_STATUSES.contains(status)) {
+            throw new IllegalStateException("callback not accepted from state: " + status);
+        }
+
+        var updated = pass
+            ? request.markPublished(cmd.workflowRunUrl(), now)
+            : request.markFailed("publish " + cmd.publishStatus(), now);
+        repository.save(updated);
+
+		if (pass) {
+			if (catalogValidation != null && catalogValidation.noChange()) {
+				repository.save(updated.withPromoteOutcome("NO_CHANGE", null));
+			} else {
+				tryPromote(updated, cmd);
+			}
+        }
+		deliveryRepository.mark(delivery.idempotencyKey(), State.DELIVERED,
+			delivery.attempts() + 1, null, "2XX", null, now);
+
+        return new CallbackResult(terminal.name(), false);
+    }
+
+	private CallbackResult receiveGitRelease(CallbackCommand cmd, DatapackReleaseDelivery delivery,
+		PublishedCatalogValidation catalogValidation, LocalDateTime now) {
+		if (catalogValidation == null || catalogValidation.bindingMissing()) {
+			deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+				delivery.attempts(), null, "NOT_FOUND", "RELEASE_REQUEST_MISSING", now);
+			return new CallbackResult("MISSING_REQUEST", false);
+		}
+		if (catalogValidation.mismatch() != null) {
+			var mismatch = catalogValidation.mismatch();
+			deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+				delivery.attempts(), null, mismatch.httpClass(), mismatch.detail(), now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		var outcome = observeGitRelease(delivery, cmd.workflowRunUrl(),
+			catalogValidation.bindingSignatureSha256(), now);
+		if (outcome == ChannelObservationOutcome.REJECTED) {
+			deliveryRepository.mark(delivery.idempotencyKey(), State.DEAD_LETTER,
+				delivery.attempts(), null, "CONFLICT", "CHANNEL_OBSERVATION_REGRESSION", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		deliveryRepository.mark(delivery.idempotencyKey(), State.DELIVERED,
+			delivery.attempts() + 1, null, "2XX", observationDetail(outcome), now);
+		return new CallbackResult(OBSERVED, false);
+	}
+
+	/** 수신·재조정이 같은 binding 검증을 통과한 delivery만 호출한다. 관측 전용이며 승격 상태는 바꾸지 않는다. */
+	private ChannelObservationOutcome observeGitRelease(DatapackReleaseDelivery delivery,
+		String workflowRunUrl, String bindingSignatureSha256, LocalDateTime now) {
+		return channelCommandPort.observeRelease(new ChannelObservation(
+			delivery.channel(), delivery.releaseSequence(), delivery.manifestSha256(),
+			delivery.releaseRequestId(), bindingSignatureSha256, delivery.idempotencyKey(),
+			workflowRunUrl, now));
+	}
+
+	private static String observationDetail(ChannelObservationOutcome outcome) {
+		return outcome == ChannelObservationOutcome.APPLIED
+			? "GIT_RELEASE_OBSERVED"
+			: "GIT_RELEASE_OBSERVATION_UNCHANGED";
+	}
+
+	private CallbackResult receiveLegacy(CallbackCommand cmd) {
+		var fields = new LegacyCanonicalFields(cmd.schemaVersion(), cmd.artifactKind(),
+			cmd.releaseRequestId(), cmd.workflowRunUrl(), cmd.manifestSha256(), cmd.sqliteSha256(),
+			cmd.gzipSha256(), cmd.evidenceBundleSha256(), cmd.validatorStatus(),
+			cmd.routeRegressionStatus(), cmd.publishStatus());
+		if (!"datapack-release-callback".equals(cmd.artifactKind())
+			|| !"payload-signature".equals(cmd.verifierKind())
+			|| !signature.verify(fields, cmd.verifierValue())) {
+			throw new IllegalArgumentException("callback verifier mismatch");
+		}
+		boolean pass = "PASS".equals(cmd.publishStatus());
+		var request = repository.findByApprovalId(cmd.releaseRequestId())
+			.orElseThrow(() -> new IllegalArgumentException(
+				"release request not found: " + cmd.releaseRequestId()));
+		var terminal = pass ? DatapackReleaseRequestStatus.PUBLISHED
+			: DatapackReleaseRequestStatus.FAILED;
+		if (request.status() == terminal) return new CallbackResult(terminal.name(), true);
+		var current = pass ? releaseCatalog.fetchCurrent(request.targetChannel()) : null;
+		return transactionTemplate.execute(status -> receiveLegacyVerified(cmd, current));
+	}
+
+	private CallbackResult receiveLegacyVerified(CallbackCommand cmd, CatalogIdentity current) {
+		var request = repository.findByApprovalId(cmd.releaseRequestId())
+			.orElseThrow(() -> new IllegalArgumentException(
+				"release request not found: " + cmd.releaseRequestId()));
+		boolean pass = "PASS".equals(cmd.publishStatus());
+		var terminal = pass ? DatapackReleaseRequestStatus.PUBLISHED : DatapackReleaseRequestStatus.FAILED;
+		if (request.status() == terminal) {
+			return new CallbackResult(terminal.name(), true);
+		}
+		if (!CALLBACK_ACCEPTED_STATUSES.contains(request.status())) {
+			throw new IllegalStateException("callback not accepted from state: " + request.status());
+		}
+
+		var now = LocalDateTime.now(clock);
+		var updated = pass
+			? request.markPublished(cmd.workflowRunUrl(), now)
+			: request.markFailed("publish " + cmd.publishStatus(), now);
+		repository.save(updated);
+		if (pass) {
+			if (legacyCurrentReleaseMatches(updated, cmd, current)) {
+				tryPromote(updated, cmd.manifestSha256(), cmd.workflowRunUrl(),
+					cmd.evidenceBundleSha256(), updated.approvalId());
+			} else {
+				repository.save(updated.withPromoteOutcome(
+					"REJECTED", "LEGACY_CURRENT_RELEASE_MISMATCH"));
+			}
+		}
+		return new CallbackResult(terminal.name(), false);
+	}
+
+	private boolean legacyCurrentReleaseMatches(DatapackReleaseRequest request, CallbackCommand cmd,
+		CatalogIdentity current) {
+		return current.signatureValid()
+			&& request.targetChannel().equals(current.channel())
+			&& cmd.manifestSha256().equals(current.manifestSha256());
+	}
+
+	private static boolean allGatesPass(CallbackCommand cmd) {
+		return "PASS".equals(cmd.publishStatus())
+			&& "PASS".equals(cmd.validatorStatus())
+			&& "PASS".equals(cmd.routeRegressionStatus());
+	}
+
+	private PublishedCatalogValidation validatePublishedCatalog(CallbackCommand cmd, boolean knownRequest) {
+		var currentMismatch = currentReleaseMismatch(cmd);
+		if (currentMismatch != null) {
+			return new PublishedCatalogValidation(currentMismatch, false, null, false);
+		}
+		var binding = releaseCatalog.findByRequest(cmd.channel(), cmd.releaseRequestId()).orElse(null);
+		if (binding == null) {
+			// backend request 행이 있으면 binding 미게시는 일시 장애로 재시도한다. git 원본은 binding이
+			// 유일한 발행 근거라 없으면 지금처럼 RELEASE_REQUEST_MISSING으로 거부한다.
+			if (knownRequest) throw new DatapackReleaseCatalogPort.Unavailable();
+			return new PublishedCatalogValidation(null, false, null, true);
+		}
+		if (!binding.signatureValid()
+			|| binding.releaseSequence() != cmd.releaseSequence()
+			|| !binding.channel().equals(cmd.channel())
+			|| !binding.releaseRequestId().equals(cmd.releaseRequestId())
+			|| !binding.manifestSha256().equals(cmd.manifestSha256())) {
+			return new PublishedCatalogValidation(
+				new CurrentReleaseMismatch("CONFLICT", "RELEASE_REQUEST_BINDING_MISMATCH"), false, null, false);
+		}
+		return new PublishedCatalogValidation(null, binding.noChange(), binding.signatureSha256(), false);
+	}
+
+	private static String expectedIdempotencyKey(CallbackCommand cmd) {
+		return cmd.releaseRequestId() + ":" + cmd.releaseSequence() + ":" + cmd.manifestSha256();
+	}
+
+	private CurrentReleaseMismatch currentReleaseMismatch(CallbackCommand cmd) {
+		var current = releaseCatalog.fetchCurrent(cmd.channel());
+		if (!current.signatureValid() || !cmd.channel().equals(current.channel())) {
+			return new CurrentReleaseMismatch("CONFLICT", "CATALOG_CURRENT_MISMATCH");
+		}
+		if (current.releaseSequence() > cmd.releaseSequence()) {
+			return new CurrentReleaseMismatch("STALE", "CURRENT_RELEASE_ADVANCED");
+		}
+		if (current.releaseSequence() < cmd.releaseSequence()) {
+			throw new DatapackReleaseCatalogPort.Unavailable();
+		}
+		if (!current.manifestSha256().equals(cmd.manifestSha256())) {
+			return new CurrentReleaseMismatch("CONFLICT", "CATALOG_CURRENT_MISMATCH");
+		}
+		return null;
+	}
+
+	private record CurrentReleaseMismatch(String httpClass, String detail) {}
+	private record PublishedCatalogValidation(CurrentReleaseMismatch mismatch, boolean noChange,
+		String bindingSignatureSha256, boolean bindingMissing) {}
+
+    private void tryPromote(DatapackReleaseRequest r, CallbackCommand cmd) {
+		tryPromote(r, cmd.manifestSha256(), cmd.workflowRunUrl(), cmd.evidenceBundleSha256(),
+			cmd.idempotencyKey());
+	}
+
+	private void tryPromote(DatapackReleaseRequest r, String manifestSha256, String workflowRunUrl,
+		String evidenceBundleSha256, String idempotencyKey) {
+        try {
+            var channel = channelCommandPort.findChannel(r.targetChannel())
+                .orElseThrow(() -> new IllegalStateException(r.targetChannel() + " channel missing"));
+            promoteDelegate.promote(new ReleaseChannelCommand(
+                r.targetChannel(), channel.candidateId(), r.candidateId(),
+                channel.manifestSha256(), manifestSha256,
+                r.requestedBy(), r.approvedBy(), "auto-promote via release callback",
+                "callback:" + idempotencyKey, workflowRunUrl, evidenceBundleSha256));
+            repository.save(r.withPromoteOutcome("SUCCEEDED", null));
+        } catch (RuntimeException e) {
+            log.warn("auto-promote rejected for {}: {}", r.approvalId(), e.getMessage());
+            repository.save(r.withPromoteOutcome("REJECTED", e.getMessage()));
+        }
+    }
+
+	@Transactional
+	public CallbackResult reconcile(DatapackReleaseDelivery delivery, CatalogIdentity catalog) {
+		var now = LocalDateTime.now(clock);
+		if (!catalog.signatureValid()
+			|| catalog.releaseSequence() != delivery.releaseSequence()
+			|| !delivery.releaseRequestId().equals(catalog.releaseRequestId())
+			|| !delivery.channel().equals(catalog.channel())
+			|| !delivery.manifestSha256().equals(catalog.manifestSha256())) {
+			markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+				"CONFLICT", "CATALOG_IDENTITY_MISMATCH", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		var request = repository.findByApprovalId(delivery.releaseRequestId()).orElse(null);
+		if (request == null && NO_BACKEND_REQUEST_CANDIDATE_ID.equals(delivery.candidateId())) {
+			var outcome = observeGitRelease(delivery, null, catalog.signatureSha256(), now);
+			if (outcome == ChannelObservationOutcome.REJECTED) {
+				markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+					"CONFLICT", "CHANNEL_OBSERVATION_REGRESSION", now);
+				return new CallbackResult("DEAD_LETTER", false);
+			}
+			markClaimed(delivery, State.DELIVERED, delivery.attempts() + 1, null,
+				"RECONCILED", observationDetail(outcome), now);
+			return new CallbackResult(OBSERVED, false);
+		}
+		if (request == null
+			|| !request.candidateId().equals(delivery.candidateId())
+			|| !request.targetChannel().equals(delivery.channel())) {
+			markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+				"CONFLICT", "REQUEST_CATALOG_MISMATCH", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		var evidence = channelCommandPort.findPassingReleaseEvidence(request.candidateId()).orElse(null);
+		if (!channelCommandPort.candidateHasManifest(request.candidateId(), catalog.manifestSha256())) {
+			if (catalog.noChange()) return completeNoChange(delivery, request, evidence, now);
+			markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+				"CONFLICT", "REQUEST_CATALOG_MISMATCH", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		if ("production".equals(request.targetChannel()) && evidence == null) {
+			markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+				"CONFLICT", "RELEASE_EVIDENCE_MISSING", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		var workflowRunUrl = request.workflowRunUrl() != null
+			? request.workflowRunUrl()
+			: evidence == null ? null : evidence.workflowRunUrl();
+		if (workflowRunUrl == null || workflowRunUrl.isBlank()) {
+			markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+				"CONFLICT", "WORKFLOW_RUN_URL_MISSING", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		if (request.status() != DatapackReleaseRequestStatus.PUBLISHED) {
+			if (!CALLBACK_ACCEPTED_STATUSES.contains(request.status())) {
+				markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+					"CONFLICT", "REQUEST_STATE_MISMATCH", now);
+				return new CallbackResult("DEAD_LETTER", false);
+			}
+			request = request.markPublished(workflowRunUrl, now);
+			repository.save(request);
+			tryPromote(request, catalog.manifestSha256(), workflowRunUrl,
+				evidence == null ? null : evidence.evidenceBundleSha256(),
+				delivery.idempotencyKey());
+		}
+		markClaimed(delivery, State.DELIVERED, delivery.attempts() + 1, null,
+			"RECONCILED", null, now);
+		return new CallbackResult("PUBLISHED", false);
+	}
+
+	private CallbackResult completeNoChange(DatapackReleaseDelivery delivery,
+		DatapackReleaseRequest request, PassingReleaseEvidence evidence, LocalDateTime now) {
+		var workflowRunUrl = request.workflowRunUrl() != null
+			? request.workflowRunUrl()
+			: evidence == null ? null : evidence.workflowRunUrl();
+		if (workflowRunUrl == null || workflowRunUrl.isBlank()) {
+			markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+				"CONFLICT", "WORKFLOW_RUN_URL_MISSING", now);
+			return new CallbackResult("DEAD_LETTER", false);
+		}
+		if (request.status() != DatapackReleaseRequestStatus.PUBLISHED) {
+			if (!CALLBACK_ACCEPTED_STATUSES.contains(request.status())) {
+				markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
+					"CONFLICT", "REQUEST_STATE_MISMATCH", now);
+				return new CallbackResult("DEAD_LETTER", false);
+			}
+			request = request.markPublished(workflowRunUrl, now)
+				.withPromoteOutcome("NO_CHANGE", null);
+			repository.save(request);
+		}
+		markClaimed(delivery, State.DELIVERED, delivery.attempts() + 1, null,
+			"RECONCILED", null, now);
+		return new CallbackResult("PUBLISHED", false);
+	}
+
+	private void markClaimed(DatapackReleaseDelivery delivery, State state, int attempts,
+		LocalDateTime nextAttemptAt, String httpClass, String detail, LocalDateTime now) {
+		if (delivery.claimOwner() == null) {
+			deliveryRepository.mark(delivery.idempotencyKey(), state, attempts, nextAttemptAt,
+				httpClass, detail, now);
+		} else {
+			deliveryRepository.markClaimed(delivery.idempotencyKey(), delivery.claimOwner(), state,
+				attempts, nextAttemptAt, httpClass, detail, now);
+		}
+	}
+
+    public record CallbackCommand(
+        int schemaVersion,
+        String artifactKind,
+        String releaseRequestId,
+        long releaseSequence,
+        String channel,
+        String idempotencyKey,
+        String workflowRunUrl,
+        String manifestSha256,
+        String sqliteSha256,
+        String gzipSha256,
+        String evidenceBundleSha256,
+        String validatorStatus,
+        String routeRegressionStatus,
+        String publishStatus,
+        String verifierKind,
+        String verifierValue
+    ) {}
+
+    public record CallbackResult(String status, boolean idempotentReplay) {}
+}

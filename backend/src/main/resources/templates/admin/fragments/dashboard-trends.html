@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>추이 섹션</title>
+</head>
+<body>
+<!--
+  추이 섹션(#1739). 기간(7/30/90) 라인 차트 2개. 기간 버튼은 no-JS에서 ?days= 링크로 페이지를
+  새로고침하고, JS에서는 hx-get으로 #dashboard-trends만 부분 갱신한다.
+  차트 데이터는 canvas data-chart(JSON)에 실려 dashboard-charts.js가 Chart.js로 그린다.
+  접근성: canvas는 role=img + aria-label, 같은 데이터를 details 안 표로 제공(no-JS 대체 겸용).
+  빈 상태(#2327): 조회 기간 내 데이터가 전무하면(trend.empty) 빈 격자 캔버스 대신 표준 empty-state를
+  렌더한다 — "왜 비었고 무엇을 하면 채워지는지"(재집계 실행 시 오늘부터 누적)를 안내한다. 데이터가
+  1일치라도 있으면 기존 차트 렌더 그대로(회귀 금지). htmx 부분 갱신 경로도 이 fragment를 그대로
+  재사용하므로 동일 분기가 적용된다.
+-->
+<div th:fragment="section" class="dashboard-trends-section">
+	<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+		<a th:each="d : ${ {7, 30, 90} }"
+		   th:href="@{/admin/dashboard/page(days=${d})}"
+		   th:attr="hx-get=@{/admin/dashboard/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+		   hx-target="#dashboard-trends" hx-swap="innerHTML"
+		   th:classappend="${trendDays == d} ? ' is-active'"
+		   th:text="|${d}일|">7일</a>
+	</div>
+
+	<div class="trend-charts">
+		<section th:each="trend : ${trends}" class="admin-panel trend-chart-panel">
+			<div class="admin-panel-head">
+				<h2 th:text="${trend.title}">추이</h2>
+			</div>
+			<div th:if="${trend.empty}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('아직 집계된 추이가 없습니다.', '지표 집계가 실행되면 오늘부터 데이터가 누적됩니다.')}"></div>
+			</div>
+			<th:block th:unless="${trend.empty}">
+			<div class="trend-canvas-wrap">
+				<canvas th:id="${trend.id}" class="trend-canvas" role="img"
+				        th:attr="aria-label=|${trend.title} 최근 ${trendDays}일 추이|,data-chart=${trend.json}"></canvas>
+			</div>
+			<details class="dashboard-details">
+				<summary>데이터 표로 보기</summary>
+				<div class="admin-table-scroll" tabindex="0" role="group"
+				     aria-label="가로로 스크롤 가능한 데이터 표">
+				<table class="static-table">
+					<thead>
+					<tr>
+						<th scope="col">날짜</th>
+						<th th:each="s : ${trend.data.series}" scope="col" th:text="${s.label}">지표</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="label, iter : ${trend.data.labels}">
+						<th scope="row" th:text="${label}">날짜</th>
+						<td th:each="s : ${trend.data.series}"><th:block
+						    th:insert="~{admin/fragments/missing-value :: value(${s.values[iter.index]}, '미상')}">0</th:block></td>
+					</tr>
+					</tbody>
+				</table>
+				</div>
+			</details>
+			</th:block>
+		</section>
+	</div>
+</div>
+</body>
+</html>

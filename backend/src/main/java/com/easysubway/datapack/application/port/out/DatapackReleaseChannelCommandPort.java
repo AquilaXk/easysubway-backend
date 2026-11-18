@@ -1,0 +1,103 @@
+package com.easysubway.datapack.application.port.out;
+
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+public interface DatapackReleaseChannelCommandPort {
+
+	Optional<ReleaseChannelEvent> findEventByIdempotencyKey(String channel, String idempotencyKey);
+
+	/** 채널 현재 상태 조회 — 잠금 없음. promote 전 채널 존재 확인 등 읽기 전용 용도. */
+	Optional<ReleaseChannelState> findChannel(String channel);
+
+	Optional<ReleaseChannelState> lockChannel(String channel);
+
+	boolean candidateHasManifest(String candidateId, String manifestSha256);
+
+	boolean candidateHasPassingReleaseEvidence(String candidateId, String evidenceBundleSha256);
+
+	Optional<PassingReleaseEvidence> findPassingReleaseEvidence(String candidateId);
+
+	void updateChannel(
+		String channel,
+		String nextCandidateId,
+		String nextManifestSha256,
+		String previousStableCandidateId,
+		String previousManifestSha256,
+		String operationType,
+		String requestedBy,
+		String approvedBy,
+		String reason,
+		String idempotencyKey,
+		LocalDateTime updatedAt
+	);
+
+	void insertEvent(
+		String id,
+		String channel,
+		String previousCandidateId,
+		String nextCandidateId,
+		String previousManifestSha256,
+		String nextManifestSha256,
+		String operationType,
+		String requestedBy,
+		String approvedBy,
+		String reason,
+		String idempotencyKey,
+		String workflowRunUrl,
+		String evidenceBundleSha256,
+		LocalDateTime createdAt
+	);
+
+	/**
+	 * git 원본 release request 발행의 채널 관측을 기록한다(#456, 관측 전용). 승격·롤백 상태는 바꾸지 않는다.
+	 * sequence가 커질 때만 갱신(APPLIED)하고, 같은 sequence·manifest 재관측은 no-op(UNCHANGED),
+	 * sequence 역행이나 같은 sequence의 다른 manifest는 거부(REJECTED)한다.
+	 */
+	ChannelObservationOutcome observeRelease(ChannelObservation observation);
+
+	record ChannelObservation(
+		String channel,
+		long releaseSequence,
+		String manifestSha256,
+		String releaseRequestId,
+		String bindingSignatureSha256,
+		String deliveryIdempotencyKey,
+		String workflowRunUrl,
+		LocalDateTime observedAt
+	) {
+	}
+
+	enum ChannelObservationOutcome { APPLIED, UNCHANGED, REJECTED }
+
+	record ReleaseChannelEvent(
+		String id,
+		String channel,
+		String previousCandidateId,
+		String nextCandidateId,
+		String previousManifestSha256,
+		String nextManifestSha256,
+		String operationType,
+		String requestedBy,
+		String approvedBy,
+		String reason,
+		String idempotencyKey,
+		String workflowRunUrl,
+		String evidenceBundleSha256
+	) {
+	}
+
+	record ReleaseChannelState(
+		String channel,
+		String candidateId,
+		String manifestSha256,
+		String previousStableCandidateId,
+		String previousManifestSha256,
+		boolean rollbackAvailable,
+		String lastOperationStatus
+	) {
+	}
+
+	record PassingReleaseEvidence(String evidenceBundleSha256, String workflowRunUrl) {
+	}
+}

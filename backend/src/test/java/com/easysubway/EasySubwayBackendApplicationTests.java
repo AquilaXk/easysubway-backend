@@ -1,0 +1,263 @@
+package com.easysubway;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.bundle.RouteBundleStartupCandidateLoader;
+import com.easysubway.journey.canary.JourneyCandidateCanaryService;
+import com.easysubway.journey.config.JourneyProfileResourcePolicyTestFixture;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
+import org.springframework.core.env.Environment;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest
+@DisplayName("백엔드 애플리케이션 컨텍스트")
+class EasySubwayBackendApplicationTests {
+
+	private static final String TEST_SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+	private static final String TEST_SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+	private static final String TEST_SHA_C = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+	private static final String TEST_SHA_D = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+	@Test
+	@DisplayName("스프링 부트 애플리케이션 컨텍스트가 정상 로드된다")
+	void contextLoads() {
+	}
+
+	@SpringBootTest(
+		webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+		properties = {
+			"spring.datasource.url=jdbc:h2:mem:prod-readiness-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+			"spring.datasource.username=sa",
+			"spring.datasource.password=",
+			"spring.datasource.driver-class-name=org.h2.Driver",
+			"spring.flyway.locations=classpath:db/migration/h2",
+			"spring.sql.init.mode=always",
+			"spring.sql.init.continue-on-error=true",
+			"spring.batch.jdbc.initialize-schema=never",
+			"easysubway.admin.username=admin-user",
+			"easysubway.admin.password=admin-password",
+			"easysubway.admin.remember-me.key=prod-test-admin-remember-me-signing-key",
+			"easysubway.auth.client-ip.trusted-proxies=",
+			"easysubway.notifications.push.external-enabled=false",
+			"EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=synthetic-test-key",
+			"EASYSUBWAY_ADS_EVENT_DAILY_CAP=1000000",
+			"easysubway.journey.session.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
+			"easysubway.journey-v3.readiness.instance-id=backend-context-prod",
+			"easysubway.journey-v3.readiness.release-tuple-sha256=" + TEST_SHA_A,
+			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + TEST_SHA_B,
+			"easysubway.journey-v3.readiness.backend-config-sha256=" + TEST_SHA_C,
+			"easysubway.journey-v3.readiness.journey-contract-sha256=" + TEST_SHA_D,
+			"easysubway.journey-v3.readiness.traffic-generation=1",
+			"easysubway.journey-v3.route-bundle-startup.descriptor-base64=e30=",
+			"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:" + TEST_SHA_A,
+			"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
+			"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
+			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=-----BEGIN PUBLIC KEY-----\\n"
+				+ "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5"
+				+ "e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK"
+				+ "tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6"
+				+ "AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd"
+				+ "hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA"
+				+ "FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X"
+				+ "sQIDAQAB\\n-----END PUBLIC KEY-----",
+			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
+			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
+			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
+			"easysubway.report.upload.public-base-url=https://uploads.easysubway.example",
+			"easysubway.report.upload.bucket=easysubway-report-uploads",
+			"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",
+			"easysubway.report.upload.object-storage-secret-key=prod-object-storage-secret-key-with-enough-entropy",
+			"easysubway.report.upload.object-storage-region=ap-northeast-2",
+			"management.endpoint.health.show-details=always"
+		}
+	)
+	@ActiveProfiles("prod")
+	@AutoConfigureMockMvc
+	@DisplayName("운영 프로필 애플리케이션 컨텍스트")
+	static class ProductionProfileContextTests {
+
+		@DynamicPropertySource
+		static void journeyProfilePolicy(DynamicPropertyRegistry registry) {
+			registry.add("easysubway.journey.profile.resource-policy-path", JourneyProfileResourcePolicyTestFixture::path);
+			registry.add("easysubway.journey.profile.resource-policy-sha256", JourneyProfileResourcePolicyTestFixture::sha256);
+			registry.add("easysubway.journey.profile.max-request-bytes", () -> 65_536);
+		}
+
+		@MockitoBean
+		private RouteBundleStartupCandidateLoader startupCandidateLoader;
+
+		@Autowired
+		private MockMvc mockMvc;
+
+		@Autowired
+		private Environment environment;
+
+		@Autowired
+		private ApplicationContext applicationContext;
+
+		@Test
+		@DisplayName("운영 프로필은 Journey V3 search graph와 readiness를 함께 기동한다")
+		void prodProfileStartsUntilReadinessEndpoint() throws Exception {
+			assertThat(environment.getProperty("easysubway.journey-v3.search-web.enabled"))
+				.isEqualTo("true");
+			assertThat(applicationContext.getBeanNamesForType(
+				Class.forName("com.easysubway.journey.adapter.in.web.JourneySearchController"),
+				true,
+				false
+			)).containsExactly("journeySearchController");
+			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
+			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
+			assertThat(environment.getProperty("easysubway.journey.facility-status.required"))
+				.isEqualTo("true");
+			assertProductionFacilityAvailabilityEnforcement(applicationContext);
+
+			mockMvc.perform(get("/actuator/health/readiness"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"))
+				.andExpect(jsonPath("$.components.productionReadiness.status").value("UP"));
+		}
+
+	}
+
+	@SpringBootTest(
+		webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+		properties = {
+			"EASYSUBWAY_DATASOURCE_URL=jdbc:h2:mem:staging-readiness-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+			"EASYSUBWAY_DATASOURCE_USERNAME=sa",
+			"EASYSUBWAY_DATASOURCE_PASSWORD=",
+			"spring.datasource.driver-class-name=org.h2.Driver",
+			"spring.flyway.locations=classpath:db/migration/h2",
+			"spring.sql.init.mode=always",
+			"spring.sql.init.continue-on-error=true",
+			"spring.batch.jdbc.initialize-schema=never",
+			"EASYSUBWAY_ADMIN_USERNAME=admin-user",
+			"EASYSUBWAY_ADMIN_PASSWORD=admin-password",
+			"EASYSUBWAY_ADMIN_REMEMBER_ME_KEY=prod-like-test-admin-remember-me-signing-key",
+			"EASYSUBWAY_TRUSTED_PROXY_CIDRS=",
+			"EASYSUBWAY_PUSH_EXTERNAL_ENABLED=false",
+			"EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=synthetic-test-key",
+			"EASYSUBWAY_ADS_EVENT_DAILY_CAP=1000000",
+			"EASYSUBWAY_JOURNEY_SESSION_CERTIFICATE_SHA256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
+			"easysubway.journey-v3.readiness.instance-id=backend-context-staging",
+			"easysubway.journey-v3.readiness.release-tuple-sha256=" + TEST_SHA_A,
+			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + TEST_SHA_B,
+			"easysubway.journey-v3.readiness.backend-config-sha256=" + TEST_SHA_C,
+			"easysubway.journey-v3.readiness.journey-contract-sha256=" + TEST_SHA_D,
+			"easysubway.journey-v3.readiness.traffic-generation=1",
+			"easysubway.journey-v3.route-bundle-startup.descriptor-base64=e30=",
+			"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:" + TEST_SHA_A,
+			"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
+			"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
+			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=-----BEGIN PUBLIC KEY-----\\n"
+				+ "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5"
+				+ "e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK"
+				+ "tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6"
+				+ "AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd"
+				+ "hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA"
+				+ "FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X"
+				+ "sQIDAQAB\\n-----END PUBLIC KEY-----",
+			"EASYSUBWAY_REPORT_RECEIPT_PEPPER=prod-like-test-receipt-token-pepper-with-enough-entropy",
+			"EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY=prod-like-test-upload-intent-signing-key-with-enough-entropy",
+			"EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT=https://object-storage.example.com",
+			"EASYSUBWAY_REPORT_UPLOAD_PUBLIC_BASE_URL=https://uploads.easysubway.example",
+			"EASYSUBWAY_REPORT_UPLOAD_BUCKET=easysubway-report-uploads",
+			"EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY=prod-object-storage-access-key",
+			"EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=prod-object-storage-secret-key-with-enough-entropy",
+			"EASYSUBWAY_OBJECT_STORAGE_REGION=ap-northeast-2",
+			"management.endpoint.health.show-details=always"
+		}
+	)
+	@ActiveProfiles("staging")
+	@AutoConfigureMockMvc
+	@DisplayName("운영 유사 프로필 애플리케이션 컨텍스트")
+	static class ProductionLikeProfileContextTests {
+
+		@DynamicPropertySource
+		static void journeyProfilePolicy(DynamicPropertyRegistry registry) {
+			registry.add("EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_PATH", JourneyProfileResourcePolicyTestFixture::path);
+			registry.add("EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256", JourneyProfileResourcePolicyTestFixture::sha256);
+			registry.add("EASYSUBWAY_JOURNEY_PROFILE_MAX_REQUEST_BYTES", () -> 65_536);
+		}
+
+		@MockitoBean
+		private RouteBundleStartupCandidateLoader startupCandidateLoader;
+
+		@Autowired
+		private Environment environment;
+
+		@Autowired
+		private ApplicationContext applicationContext;
+
+		@Autowired
+		private MockMvc mockMvc;
+
+		@Test
+		@DisplayName("staging 프로필은 prod 설정과 env 매핑을 함께 로드한다")
+		void stagingProfileImportsProductionConfiguration() throws Exception {
+			assertThat(environment.getActiveProfiles()).contains("staging", "prod");
+			assertThat(environment.getProperty("easysubway.report.receipt-token-pepper"))
+				.isEqualTo("prod-like-test-receipt-token-pepper-with-enough-entropy");
+			assertThat(environment.getProperty("easysubway.report.upload.bucket"))
+				.isEqualTo("easysubway-report-uploads");
+			assertThat(environment.getProperty("easysubway.journey-v3.search-web.enabled"))
+				.isEqualTo("true");
+			assertThat(applicationContext.getBeanNamesForType(
+				Class.forName("com.easysubway.journey.adapter.in.web.JourneySearchController"),
+				true,
+				false
+			)).containsExactly("journeySearchController");
+			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
+			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
+			assertThat(environment.getProperty("easysubway.journey.facility-status.required"))
+				.isEqualTo("true");
+			assertProductionFacilityAvailabilityEnforcement(applicationContext);
+
+			mockMvc.perform(get("/actuator/health/readiness"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"))
+				.andExpect(jsonPath("$.components.productionReadiness.status").value("UP"));
+		}
+
+	}
+
+	private static void assertProductionFacilityAvailabilityEnforcement(ApplicationContext applicationContext) {
+		assertThat(applicationContext.getBean(com.easysubway.journey.application.FacilityAvailabilityPort.class))
+			.isInstanceOf(com.easysubway.transit.adapter.out.bundle.ActiveRouteBundleFacilityAvailabilityAdapter.class);
+
+		var raptorPort = applicationContext.getBean(com.easysubway.journey.application.JourneyRaptorPort.class);
+		var emptyRuntime = com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.compile(
+			TEST_SHA_A, 1L, com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable.empty());
+		var activeSnapshot = new com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot-prod", "bundle-prod", TEST_SHA_A, "timetable-prod", "accessibility-prod", 1L,
+			emptyRuntime, java.time.Instant.now().plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
+		var stepFreeRequest = new com.easysubway.journey.application.JourneyRequest(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-b",
+			new com.easysubway.journey.application.JourneyRequest.Departure.Now(),
+			com.easysubway.journey.application.JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			com.easysubway.journey.application.JourneyRequest.WalkingPace.STANDARD,
+			com.easysubway.journey.application.JourneyRequest.MobilityProfile.STEP_FREE,
+			com.easysubway.journey.application.JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			2, 1, () -> false);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> raptorPort.plan(
+			stepFreeRequest, activeSnapshot, java.time.Instant.now(), null,
+			new com.easysubway.journey.application.JourneyRequestMeasurement(stepFreeRequest.requestId())))
+			.isInstanceOf(com.easysubway.journey.application.FacilityStatusUnavailableException.class);
+	}
+}

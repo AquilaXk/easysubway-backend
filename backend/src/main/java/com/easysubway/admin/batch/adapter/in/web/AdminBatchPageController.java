@@ -1,0 +1,369 @@
+package com.easysubway.admin.batch.adapter.in.web;
+
+import com.easysubway.admin.web.AdminFormErrorView;
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.admin.batch.application.service.AdminBatchOperationService;
+import com.easysubway.admin.batch.application.service.AdminBatchOperationService.JobExecutionHistory;
+import com.easysubway.admin.batch.application.service.AdminBatchOperationService.RunExecution;
+import com.easysubway.admin.batch.domain.AdminBatchJob;
+import com.easysubway.common.time.BusinessTime;
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
+import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
+import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
+import com.easysubway.collection.domain.DataCollectionStatus;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
+import java.security.Principal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+@Controller
+class AdminBatchPageController {
+
+	private static final int HISTORY_PER_JOB = 30;
+	private static final DateTimeFormatter HISTORY_LABEL = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+	private static final String ALREADY_RUNNING_MESSAGE = "같은 수집 대상이 이미 실행 중입니다.";
+
+	private final AdminBatchOperationService batchOperationService;
+	private final AdminAuditWriter auditWriter;
+	private final ObjectMapper objectMapper;
+
+	AdminBatchPageController(
+		AdminBatchOperationService batchOperationService,
+		AdminAuditWriter auditWriter,
+		ObjectMapper objectMapper
+	) {
+		this.batchOperationService = batchOperationService;
+		this.auditWriter = auditWriter;
+		this.objectMapper = objectMapper;
+	}
+
+	@GetMapping("/admin/batches/page")
+	String batchPage(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		Set<DataCollectionSource> runningSources = batchOperationService.runningSources();
+		model.addAttribute("jobs", batchOperationService.listJobs().stream()
+			.map(job -> BatchJobRow.from(job, runningSources.contains(job.source())))
+			.toList());
+		populateBatchLive(model, page, size);
+		return "admin/batches/list";
+	}
+
+	@PostMapping("/admin/batches/{jobId}/run")
+	@PreAuthorize("hasAuthority('admin.batch.run')")
+	String run(
+		@PathVariable String jobId,
+		@Valid @ModelAttribute("runBatchJobForm") RunBatchJobForm form,
+		BindingResult bindingResult,
+		Principal principal,
+		Authentication authentication,
+		HttpServletRequest request,
+		Model model,
+		HttpServletResponse response
+	) {
+		if (bindingResult.hasErrors()) {
+			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			batchPage(null, null, model);
+			AdminFormErrorView.expose(model, bindingResult);
+			return "admin/batches/list";
+		}
+		try {
+			DataCollectionRun run = batchOperationService.run(jobId, principal.getName());
+			auditWriter.batchOperation(
+				authentication,
+				request,
+				"BATCH_JOB",
+				jobId,
+				"RUN_BATCH_JOB",
+				AdminAuditOutcome.SUCCESS,
+				"runId=%s".formatted(run.runId())
+			);
+		} catch (RuntimeException exception) {
+			auditWriter.batchOperation(
+				authentication,
+				request,
+				"BATCH_JOB",
+				jobId,
+				"RUN_BATCH_JOB",
+				AdminAuditOutcome.FAILURE,
+				runFailureAuditReason(exception)
+			);
+			throw exception;
+		}
+		return "redirect:/admin/batches/page";
+	}
+
+	private static String runFailureAuditReason(RuntimeException exception) {
+		if (ALREADY_RUNNING_MESSAGE.equals(exception.getMessage())) {
+			return "reason=" + ALREADY_RUNNING_MESSAGE;
+		}
+		return "errorType=%s detail=배치 실행 실패".formatted(exception.getClass().getSimpleName());
+	}
+
+	// 배치 운영 자동 갱신(#1742): 실행 중 배치가 있을 때만 10초 폴링이 live 영역(이력 차트·최근 실행)을 받아간다.
+	@GetMapping("/admin/batches/page/live")
+	String batchLive(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		populateBatchLive(model, page, size);
+		return "admin/batches/list :: live";
+	}
+
+	private void populateBatchLive(Model model, Integer page, Integer size) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		List<DataCollectionRun> recent = batchOperationService.listExecutions(
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		List<BatchRunRow> runs = recent.stream()
+			.flatMap(run -> BatchRunRow.from(run).stream())
+			.toList();
+		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), runs.size());
+		model.addAttribute("runs", pageView.visibleItems(runs));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links("/admin/batches/page", Collections.emptyMap()));
+		model.addAttribute("histories", batchOperationService.jobHistories(HISTORY_PER_JOB)
+			.stream()
+			.map(this::historyChart)
+			.toList());
+		model.addAttribute("hasRunning", recent.stream()
+			.anyMatch(run -> run.status() == DataCollectionStatus.RUNNING));
+	}
+
+	private BatchHistoryChart historyChart(JobExecutionHistory history) {
+		List<String> labels = history.executions().stream()
+			.map(execution -> HISTORY_LABEL.format(BusinessTime.fromUtcLocal(execution.startedAt())))
+			.toList();
+		List<Long> values = history.executions().stream()
+			.map(AdminBatchPageController::durationMillisOrZero)
+			.toList();
+		List<String> statuses = history.executions().stream()
+			.map(execution -> execution.status().name())
+			.toList();
+		List<HistoryCell> table = history.executions().stream().map(HistoryCell::from).toList();
+		Map<String, Object> chart = new LinkedHashMap<>();
+		chart.put("labels", labels);
+		chart.put("values", values);
+		chart.put("statuses", statuses);
+		return new BatchHistoryChart(
+			"batch-history-" + history.jobId(),
+			history.label(),
+			history.successCount(),
+			history.failureCount(),
+			toJson(chart),
+			table
+		);
+	}
+
+	static Long durationMillisOrZero(RunExecution execution) {
+		Long durationMillis = execution.durationMillis();
+		return durationMillis == null ? Long.valueOf(0L) : durationMillis;
+	}
+
+	private String toJson(Map<String, Object> chart) {
+		try {
+			return objectMapper.writeValueAsString(chart);
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException("배치 실행 이력 차트 JSON 직렬화에 실패했습니다.", exception);
+		}
+	}
+
+	record BatchHistoryChart(
+		String canvasId,
+		String label,
+		long successCount,
+		long failureCount,
+		String json,
+		List<HistoryCell> table
+	) {
+
+		public boolean isEmpty() {
+			return table.isEmpty();
+		}
+	}
+
+	record HistoryCell(String startedAt, String statusLabel, String durationLabel) {
+
+		static HistoryCell from(RunExecution execution) {
+			return new HistoryCell(
+				BusinessTime.fromUtcLocal(execution.startedAt()).toString(),
+				statusLabel(execution.status()),
+				execution.durationMillis() == null ? "—" : execution.durationMillis() + "ms"
+			);
+		}
+
+		private static String statusLabel(DataCollectionStatus status) {
+			return switch (status) {
+				case RUNNING -> "실행 중";
+				case COMPLETED -> "완료";
+				case FAILED -> "실패";
+			};
+		}
+	}
+
+	@PostMapping("/admin/batches/{jobId}/runs/{runId}/retry")
+	@PreAuthorize("hasAuthority('admin.batch.retry')")
+	String retry(
+		@PathVariable String jobId,
+		@PathVariable String runId,
+		@Valid @ModelAttribute("retryBatchRunForm") RetryBatchRunForm form,
+		BindingResult bindingResult,
+		Principal principal,
+		Authentication authentication,
+		HttpServletRequest request,
+		Model model,
+		HttpServletResponse response
+	) {
+		if (bindingResult.hasErrors()) {
+			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			batchPage(null, null, model);
+			AdminFormErrorView.expose(model, bindingResult);
+			return "admin/batches/list";
+		}
+		try {
+			DataCollectionRun retried = batchOperationService.retry(jobId, runId, principal.getName());
+			auditWriter.batchOperation(
+				authentication,
+				request,
+				"BATCH_JOB",
+				jobId,
+				"RETRY_BATCH_RUN",
+				AdminAuditOutcome.SUCCESS,
+				"runId=%s retriedRunId=%s".formatted(runId, retried.runId())
+			);
+		} catch (RuntimeException exception) {
+			auditWriter.batchOperation(
+				authentication,
+				request,
+				"BATCH_JOB",
+				jobId,
+				"RETRY_BATCH_RUN",
+				AdminAuditOutcome.FAILURE,
+				"runId=%s error=%s".formatted(runId, exception.getMessage())
+			);
+			throw exception;
+		}
+		return "redirect:/admin/batches/page";
+	}
+
+	record BatchJobRow(String id, String jobName, String label, boolean retryEnabled, boolean running) {
+
+		static BatchJobRow from(AdminBatchJob job, boolean running) {
+			return new BatchJobRow(job.id(), job.jobName(), job.label(), job.retryEnabled(), running);
+		}
+	}
+
+	record RunBatchJobForm(
+		@AssertTrue(message = "배치 신규 실행 요청을 확인해야 합니다.")
+		boolean runRequested
+	) {
+	}
+
+	record RetryBatchRunForm(
+		@AssertTrue(message = "배치 재처리 요청을 확인해야 합니다.")
+		boolean retryRequested
+	) {
+	}
+
+	record BatchRunRow(
+		String runId,
+		String jobId,
+		String sourceLabel,
+		String statusLabel,
+		String requestedBy,
+		LocalDateTime startedAt,
+		LocalDateTime completedAt,
+		int collectedCount,
+		String failureMessage,
+		boolean retryable,
+		String operatorAction,
+		List<BatchStepRow> steps
+	) {
+
+		static Optional<BatchRunRow> from(DataCollectionRun run) {
+			return AdminBatchJob.all()
+				.stream()
+				.filter(candidate -> candidate.source() == run.source())
+				.findFirst()
+				.map(job -> new BatchRunRow(
+					run.runId(),
+					job.id(),
+					job.label(),
+					statusLabel(run.status()),
+					run.requestedBy(),
+					BusinessTime.fromUtcLocal(run.startedAt()),
+					run.completedAt() == null ? null : BusinessTime.fromUtcLocal(run.completedAt()),
+					run.collectedCount(),
+					valueOrDash(run.failureMessage()),
+					run.retryable(),
+					run.operatorAction(),
+					run.steps().stream().map(BatchStepRow::from).toList()
+				));
+		}
+
+		public String completedAtLabel() {
+			return completedAt == null ? "—" : completedAt.toString();
+		}
+
+		public String retryableLabel() {
+			return retryable ? "가능" : "불가";
+		}
+
+		private static String statusLabel(DataCollectionStatus status) {
+			return switch (status) {
+				case RUNNING -> "실행 중";
+				case COMPLETED -> "완료";
+				case FAILED -> "실패";
+			};
+		}
+	}
+
+	record BatchStepRow(String name, String statusLabel, int recordCount, String failureMessage) {
+
+		static BatchStepRow from(DataCollectionRunStep step) {
+			return new BatchStepRow(step.name(), stepStatusLabel(step.status()), step.recordCount(), valueOrDash(step.failureMessage()));
+		}
+
+		private static String stepStatusLabel(DataCollectionStepStatus status) {
+			return switch (status) {
+				case COMPLETED -> "완료";
+				case FAILED -> "실패";
+				case SKIPPED -> "건너뜀";
+				case MANUAL_REQUIRED -> "수동 필요";
+			};
+		}
+	}
+
+	private static String valueOrDash(String value) {
+		return value == null || value.isBlank() ? "—" : value;
+	}
+}

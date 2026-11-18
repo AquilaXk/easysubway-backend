@@ -1,0 +1,32 @@
+logging:
+  level:
+    com.easysubway: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+spring:
+  datasource:
+    url: ${EASYSUBWAY_DATASOURCE_URL:jdbc:h2:mem:easysubway-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE}
+    driver-class-name: ${EASYSUBWAY_DATASOURCE_DRIVER:org.h2.Driver}
+    username: ${EASYSUBWAY_DATASOURCE_USERNAME:sa}
+    password: ${EASYSUBWAY_DATASOURCE_PASSWORD:}
+easysubway:
+  report:
+    abuse-control:
+      window-seconds: ${EASYSUBWAY_REPORT_ABUSE_WINDOW_SECONDS:60}
+      upload-intent-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_INTENT_LIMIT:1000}
+      upload-claim-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_CLAIM_LIMIT:1000}
+      report-submit-limit: ${EASYSUBWAY_REPORT_ABUSE_REPORT_SUBMIT_LIMIT:1000}
+      status-limit: ${EASYSUBWAY_REPORT_ABUSE_STATUS_LIMIT:1000}
+      confirm-limit: ${EASYSUBWAY_REPORT_ABUSE_CONFIRM_LIMIT:1000}
+      max-counter-keys: ${EASYSUBWAY_REPORT_ABUSE_MAX_COUNTER_KEYS:16384}
+      store-mode: ${EASYSUBWAY_REPORT_ABUSE_STORE_MODE:local}
+  admin:
+    basic-auth:
+      enabled: ${EASYSUBWAY_ADMIN_BASIC_AUTH_ENABLED:true}
+  auth:
+    client-ip:
+      trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS:}

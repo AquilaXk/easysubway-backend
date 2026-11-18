@@ -1,0 +1,74 @@
+spring:
+  application:
+    name: easysubway-backend
+  messages:
+    fallback-to-system-locale: false
+  profiles:
+    default: dev
+    group:
+      staging: prod
+      release: prod
+      prod-like: prod
+  batch:
+    job:
+      enabled: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/{vendor}
+
+server:
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    min-response-size: 1024
+
+management:
+  server:
+    port: ${EASYSUBWAY_MANAGEMENT_PORT:}
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      status:
+        order: "down,out-of-service,degraded,stale,up,unknown"
+
+easysubway:
+  journey:
+    session:
+      max-request-bytes: ${EASYSUBWAY_JOURNEY_SESSION_MAX_REQUEST_BYTES:65536}
+    search:
+      max-request-bytes: ${EASYSUBWAY_JOURNEY_SEARCH_MAX_REQUEST_BYTES:65536}
+    station-timetable:
+      max-request-bytes: ${EASYSUBWAY_STATION_TIMETABLE_MAX_REQUEST_BYTES:65536}
+    profile:
+      max-request-bytes: ${EASYSUBWAY_JOURNEY_PROFILE_MAX_REQUEST_BYTES:65536}
+    facility-status:
+      required: ${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:false}
+  datapack:
+    # 워크플로 전용 서비스 토큰. 미설정이면 조회/콜백 API 체인이 전면 거부(자동화 dormant = 안전 기본값).
+    workflow-token: ${EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN:}
+    # 자동화 상태 snapshot 게시 전용 서비스 토큰. 릴리스/콜백/롤백 워크플로 토큰과 분리하며 미설정이면 전면 거부한다.
+    automation-status-token: ${EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN:}
+    # 워크플로→backend 콜백 payload HMAC 서명 키. 미설정이면 빈 키로 초기화해 모든 콜백이 거부된다(안전 기본값).
+    callback-hmac-key: ${EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY:}
+    next-callback-hmac-key: ${EASYSUBWAY_DATAPACK_NEXT_CALLBACK_HMAC_KEY:}
+    catalog-base-url: ${EASYSUBWAY_DATAPACK_CATALOG_BASE_URL:}
+    signing-public-key-pem: ${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:}
+    signing-key-id: ${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID:production-v1}
+    next-signing-public-key-pem: ${EASYSUBWAY_DATAPACK_NEXT_SIGNING_PUBLIC_KEY_PEM:}
+    next-signing-key-id: ${EASYSUBWAY_DATAPACK_NEXT_SIGNING_KEY_ID:}
+  # dev 프로파일 실사용 인상 평가·검수 스크린샷 전용 opt-in 합성 데이터(https://github.com/AquilaXk/easysubway/issues/2327 PR⑤). 미설정(기본
+  # false)이면 DevFixtureSeeder 빈이 등록되지 않는다(prod 계열 프로파일에서는 @Profile로 이중 차단).
+  # CI는 이 값을 켜지 않으므로 기존 seed 전제·QA 하네스 계약에 영향이 없다.
+  dev-seed:
+    enabled: ${EASYSUBWAY_DEV_SEED:false}
+  notifications:
+    push:
+      delivery:
+        enabled: ${EASYSUBWAY_PUSH_DELIVERY_ENABLED:false}
+        initial-delay-ms: ${EASYSUBWAY_PUSH_DELIVERY_INITIAL_DELAY_MS:10000}
+        fixed-delay-ms: ${EASYSUBWAY_PUSH_DELIVERY_FIXED_DELAY_MS:60000}

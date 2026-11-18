@@ -1,0 +1,27 @@
+{
+  "candidateId": "seoul-topis-realtime-station-arrival",
+  "observedUrl": "http://swopenapi.seoul.go.kr/api/subway/[서비스키값]/json/realtimeStationArrival/0/5/서울",
+  "receivedAt": "2026-06-25T09:00:30+09:00",
+  "payload": {
+    "errorMessage": {
+      "status": 200,
+      "code": "INFO-000",
+      "message": "정상 처리되었습니다."
+    },
+    "realtimeArrivalList": [
+      {
+        "subwayId": "1001",
+        "statnId": "1001000133",
+        "statnNm": "서울",
+        "trainLineNm": "청량리행 - 시청방면",
+        "updnLine": "상행",
+        "btrainNo": "0000",
+        "barvlDt": "180",
+        "arvlCd": "99",
+        "arvlMsg2": "3분 후",
+        "arvlMsg3": "남영",
+        "recptnDt": "2026-06-25 09:00:00"
+      }
+    ]
+  }
+}

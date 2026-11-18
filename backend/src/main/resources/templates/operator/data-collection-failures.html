@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
+	<title>운영기관 데이터 수집 실패 보고서</title>
+	<link rel="stylesheet" th:href="@{/css/operator-v3.css}" href="/css/operator-v3.css">
+</head>
+<body>
+<div class="desktop-frame">
+	<aside th:replace="~{operator/fragments/shell :: sidebar('data-collection')}"></aside>
+
+	<section class="desktop-workspace">
+		<header th:replace="~{operator/fragments/shell :: topbar('데이터 수집 실패', '읽기 전용 리포트 · 최근 20회')}"></header>
+
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>운영기관 데이터 수집 실패 현황</h1>
+					<p>최근 수집 이력과 실패 원인, 재시도 가능 여부를 확인합니다.</p>
+				</div>
+			</div>
+
+			<div class="alert-banner" th:classappend="${report.freshnessAlertClass}">
+				<strong>데이터 갱신 상태: <span th:text="${report.freshnessAlertLabel}">점검 필요</span></strong>
+				<span>최신 완료 수집: <b th:insert="~{admin/fragments/missing-value :: value(${report.latestCompletedAtLabel}, '없음')}">—</b></span>
+				<p th:text="${report.freshnessAlertDescription}">데이터 수집 완료 기록이 없습니다.</p>
+			</div>
+
+			<div class="metric-grid" aria-label="데이터 수집 실패 현황 요약">
+				<div class="metric"><span>전체 수집 실행</span><strong th:text="${report.totalRunCount}">0</strong></div>
+				<div class="metric"><span>실패 실행</span><strong th:text="${report.failedRunCount}">0</strong></div>
+				<div class="metric"><span>재시도 가능</span><strong th:text="${report.retryableRunCount}">0</strong></div>
+				<div class="metric"><span>최신 완료</span><strong th:insert="~{admin/fragments/missing-value :: value(${report.latestCompletedAtLabel}, '없음')}">—</strong></div>
+			</div>
+
+			<form class="table-toolbar" method="get" th:action="@{/operator/data-collection-failures/page}" action="/operator/data-collection-failures/page">
+				<label>
+					<span>검색</span>
+					<input type="search" name="q" th:value="${query.q}" placeholder="원천·상태·실패 사유">
+				</label>
+				<label>
+					<span>시작일</span>
+					<input type="date" name="from" th:value="${query.from}">
+				</label>
+				<label>
+					<span>종료일</span>
+					<input type="date" name="to" th:value="${query.to}">
+				</label>
+				<input type="hidden" name="sort" th:value="${query.sort}">
+				<input type="hidden" name="direction" th:value="${query.direction}">
+				<button type="submit">필터 적용</button>
+				<a class="desk-btn" th:href="@{/operator/data-collection-failures/page}" href="/operator/data-collection-failures/page">초기화</a>
+			</form>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>수집 상태 차트</h2>
+						<p>완료·실패·실행 중 분포입니다.</p>
+					</div>
+				</div>
+				<div th:if="${report.totalRunCount == 0}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('집계된 수집 실행이 없습니다.', '수집이 실행되면 상태별 분포가 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${report.totalRunCount == 0}">
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="data-collection-status-chart"
+					        role="img"
+					        aria-label="데이터 수집 상태별 실행 수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<div class="operator-table-scroll" tabindex="0" role="group"
+					     aria-label="가로로 스크롤 가능한 수집 상태 차트 데이터 표">
+					<table id="data-collection-status-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">상태</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.statusRows}">
+							<td th:text="${row.label}">완료</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+					</div>
+				</details>
+				</th:block>
+			</section>
+
+			<section class="panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>최근 수집 실행</h2>
+						<p>운영 행동 문구까지 함께 제공합니다.</p>
+					</div>
+				</div>
+				<div class="operator-table-scroll" tabindex="0" role="group"
+				     aria-label="가로로 스크롤 가능한 최근 수집 실행 표">
+				<table class="data-table">
+					<thead>
+					<tr>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('source')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='source',direction=${query.nextDirection('source')})}">수집 원천</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('status')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='status',direction=${query.nextDirection('status')})}">상태</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('startedAt')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='startedAt',direction=${query.nextDirection('startedAt')})}">시작 시각</a>
+						</th>
+						<th scope="col">종료 시각</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('collectedCount')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='collectedCount',direction=${query.nextDirection('collectedCount')})}">수집 건수</a>
+						</th>
+						<th scope="col">실패 사유</th>
+						<th scope="col">운영 조치</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="row : ${report.rows}">
+						<td th:text="${row.sourceLabel}">도시철도 마스터</td>
+						<td><span class="status" th:text="${row.statusLabel}">실패</span></td>
+						<td th:text="${row.startedAtLabel}">2026-06-18T10:00</td>
+						<td th:text="${row.completedAtLabel}">2026-06-18T10:00:30</td>
+						<td th:text="${row.collectedCount}">0</td>
+						<td th:text="${row.failureMessage}">공공데이터 응답 지연</td>
+						<td th:text="${row.operatorAction}">재시도하세요.</td>
+					</tr>
+					<tr th:if="${#lists.isEmpty(report.rows)}">
+						<td class="empty" colspan="7">
+							<div th:replace="~{operator/fragments/empty-state :: panel('최근 데이터 수집 실행 기록이 없습니다.', '수집이 실행되면 여기에 표시됩니다.')}"></div>
+						</td>
+					</tr>
+					</tbody>
+				</table>
+				</div>
+			</section>
+
+			<div class="source-note">완료 기록이 24시간 이상 갱신되지 않으면 점검 필요 경고로 전환됩니다.</div>
+		</main>
+	</section>
+</div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
+</body>
+</html>

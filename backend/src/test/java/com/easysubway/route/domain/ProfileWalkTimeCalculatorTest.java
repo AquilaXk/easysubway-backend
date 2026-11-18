@@ -1,0 +1,93 @@
+package com.easysubway.route.domain;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("보행 프로필 시간 계산기")
+class ProfileWalkTimeCalculatorTest {
+
+	@Test
+	@DisplayName("Journey V3 보행 속도는 검증 거리로만 ceil 계산하고 이동약자 고정 대기는 배율로 처리하지 않는다")
+	void calculatesJourneyPaceFromPositiveDistanceWithFixedFacilityWait() {
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 3_500, MobilityPreset.STANDARD, false)).isEqualTo(103);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 4_500, MobilityPreset.STANDARD, false)).isEqualTo(80);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 6_000, MobilityPreset.STANDARD, false)).isEqualTo(60);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(1, 6_000, MobilityPreset.STANDARD, false)).isEqualTo(1);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 4_500, MobilityPreset.STEP_FREE, false)).isEqualTo(140);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 4_500, MobilityPreset.STEP_FREE, true)).isEqualTo(80);
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.journeySeconds(0, 4_500, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("distanceMeters must be positive");
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.journeySeconds(100, 0, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("speedMetersPerHour must be positive");
+	}
+
+	@Test
+	@DisplayName("프리셋별 speedFactor와 timeSource 라벨을 적용한다")
+	void appliesPresetSpeedFactorAndTimeSource() {
+		assertThat(ProfileWalkTimeCalculator.estimateSeconds(100, MobilityPreset.STANDARD, WalkTimeSource.MEASURED_PATHWAY, false))
+			.isEqualTo(new ProfileWalkTimeCalculator.WalkTime(100, WalkTimeSource.MEASURED_PATHWAY, MobilityPreset.STANDARD));
+		assertThat(ProfileWalkTimeCalculator.estimateSeconds(100, MobilityPreset.SLOW, WalkTimeSource.OFFICIAL_BASELINE, false))
+			.isEqualTo(new ProfileWalkTimeCalculator.WalkTime(135, WalkTimeSource.OFFICIAL_BASELINE, MobilityPreset.SLOW));
+		assertThat(ProfileWalkTimeCalculator.estimateSeconds(100, MobilityPreset.NO_STAIRS, WalkTimeSource.DISTANCE_ESTIMATE, false))
+			.isEqualTo(new ProfileWalkTimeCalculator.WalkTime(120, WalkTimeSource.DISTANCE_ESTIMATE, MobilityPreset.NO_STAIRS));
+		assertThat(ProfileWalkTimeCalculator.estimateSeconds(100, MobilityPreset.STEP_FREE, WalkTimeSource.MEASURED_PATHWAY, false))
+			.isEqualTo(new ProfileWalkTimeCalculator.WalkTime(160, WalkTimeSource.MEASURED_PATHWAY, MobilityPreset.STEP_FREE));
+	}
+
+	@Test
+	@DisplayName("시설 대기 시간이 baseline에 이미 포함됐으면 중복 가산하지 않는다")
+	void doesNotDoubleCountFacilityWait() {
+		assertThat(ProfileWalkTimeCalculator.estimateSeconds(160, MobilityPreset.STEP_FREE, WalkTimeSource.MEASURED_PATHWAY, true))
+			.isEqualTo(new ProfileWalkTimeCalculator.WalkTime(160, WalkTimeSource.MEASURED_PATHWAY, MobilityPreset.STEP_FREE));
+	}
+
+	@Test
+	@DisplayName("기존 mobilityType은 기본 preset으로 매핑한다")
+	void mapsMobilityTypeToPreset() {
+		assertThat(ProfileWalkTimeCalculator.presetFor(MobilityType.SENIOR)).isEqualTo(MobilityPreset.SLOW);
+		assertThat(ProfileWalkTimeCalculator.presetFor(MobilityType.PREGNANT)).isEqualTo(MobilityPreset.SLOW);
+		assertThat(ProfileWalkTimeCalculator.presetFor(MobilityType.TEMPORARY_INJURY)).isEqualTo(MobilityPreset.SLOW);
+		assertThat(ProfileWalkTimeCalculator.presetFor(MobilityType.LUGGAGE)).isEqualTo(MobilityPreset.NO_STAIRS);
+		assertThat(ProfileWalkTimeCalculator.presetFor(MobilityType.STROLLER)).isEqualTo(MobilityPreset.STEP_FREE);
+		assertThat(ProfileWalkTimeCalculator.presetFor(MobilityType.WHEELCHAIR)).isEqualTo(MobilityPreset.STEP_FREE);
+	}
+
+	@Test
+	@DisplayName("baseline은 음수가 될 수 없다")
+	void rejectsNegativeBaseline() {
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.estimateSeconds(-1, MobilityPreset.STANDARD, WalkTimeSource.MEASURED_PATHWAY, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("baselineSeconds must not be negative");
+	}
+
+	@Test
+	@DisplayName("#454: 시간 전용 실측 환승은 1.2 m/s 이상이면 실측 시간을, 느리면 1.2 m/s ÷ 속도 배율을 쓴다")
+	void scalesMeasuredTransferSecondsOnlyForSlowerPaces() {
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(
+			300, ProfileWalkTimeCalculator.OFFICIAL_ANCHOR_SPEED_METERS_PER_HOUR, MobilityPreset.STANDARD, false))
+			.isEqualTo(300);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 6_000, MobilityPreset.STANDARD, false)).isEqualTo(300);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 3_500, MobilityPreset.SLOW, false)).isEqualTo(371);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 4_500, MobilityPreset.STEP_FREE, false)).isEqualTo(360);
+		assertThat(ProfileWalkTimeCalculator.measuredJourneySeconds(300, 4_500, MobilityPreset.STEP_FREE, true)).isEqualTo(300);
+	}
+
+	@Test
+	@DisplayName("#454: 실측 시간·속도·프리셋이 없으면 시간 전용 환승 시간을 만들지 않는다")
+	void rejectsMeasuredTransferWithoutMeasurementSpeedOrPreset() {
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.measuredJourneySeconds(0, 4_500, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class).hasMessage("measuredSeconds must be positive");
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.measuredJourneySeconds(300, 0, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class).hasMessage("speedMetersPerHour must be positive");
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.measuredJourneySeconds(300, 4_500, null, false))
+			.isInstanceOf(NullPointerException.class);
+	}
+}

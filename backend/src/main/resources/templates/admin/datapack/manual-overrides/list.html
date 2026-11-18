@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>수동 오버라이드</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-manual-overrides')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>수동 오버라이드</h1>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<h2>오버라이드 요청</h2>
+		<form class="admin-form" method="post" th:action="@{/admin/datapack/manual-overrides}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<input type="hidden" name="idempotencyKey" th:value="${overrideForm.idempotencyKey != null ? overrideForm.idempotencyKey : 'manual-override-request'}">
+			<fieldset>
+				<legend>대상 식별</legend>
+				<label>오버라이드 ID <input name="id" th:value="${overrideForm.id}" placeholder="예: ov-20260722-01" required></label>
+				<div class="admin-form-row-2">
+					<label>대상 유형 <input name="entityType" th:value="${overrideForm.entityType != null ? overrideForm.entityType : 'FACILITY'}" placeholder="예: FACILITY" required></label>
+					<label>대상 ID <input name="entityId" th:value="${overrideForm.entityId}" placeholder="예: facility-id" required></label>
+				</div>
+				<label>필드명 <input name="fieldName" th:value="${overrideForm.fieldName}" placeholder="예: operatingStatus" required></label>
+			</fieldset>
+			<fieldset>
+				<legend>변경 값</legend>
+				<div class="admin-form-row-2">
+					<label>변경 전 값 <input name="beforeValue" th:value="${overrideForm.beforeValue}" placeholder="예: AVAILABLE"></label>
+					<label>변경 후 값 <input name="afterValue" th:value="${overrideForm.afterValue}" placeholder="예: UNAVAILABLE" required></label>
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>근거·안전</legend>
+				<label>사유 코드 <input name="reasonCode" th:value="${overrideForm.reasonCode != null ? overrideForm.reasonCode : 'FIELD_CHECK'}" placeholder="예: FIELD_CHECK" required></label>
+				<label>사유 <input name="reason" th:value="${overrideForm.reason}" placeholder="예: 현장 확인 결과 반영" required></label>
+				<label>증거 URI <input name="evidenceUri" th:value="${overrideForm.evidenceUri}" placeholder="예: https://example.com/evidence.pdf" required></label>
+				<label>증거 해시 <input name="evidenceHash" th:value="${overrideForm.evidenceHash}" placeholder="예: 64자리 SHA-256 해시" required></label>
+				<label>strict 경로 사용 가능 <input type="checkbox" name="strictRouteEligible" value="true" th:checked="${overrideForm.strictRouteEligible}"></label>
+			</fieldset>
+			<fieldset>
+				<legend>유효 기간</legend>
+				<div class="admin-form-row-2">
+					<label>적용 시작 <input type="datetime-local" name="effectiveFrom" th:value="${overrideForm.effectiveFrom}" required></label>
+					<label>만료 시각 <input type="datetime-local" name="expiresAt" th:value="${overrideForm.expiresAt}" required></label>
+				</div>
+			</fieldset>
+			<button type="submit" class="primary">요청 저장</button>
+		</form>
+	</section>
+
+	<section class="admin-panel">
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/manual-overrides/page}"
+		      role="search" aria-label="수동 오버라이드 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="대상·필드·사유 검색" aria-label="수동 오버라이드 검색" autocomplete="off">
+			<select name="status" aria-label="상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
+				<option value="STRICT" th:selected="${filter.selectedStatus('STRICT')}">strict 요청</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">대기</option>
+				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">승인됨</option>
+				<option value="EXPIRED" th:selected="${filter.selectedStatus('EXPIRED')}">만료됨</option>
+				<option value="UNRESOLVED" th:selected="${filter.selectedStatus('UNRESOLVED')}">충돌 미해결</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${filter.selectedSort('')}">운영 차단 우선</option>
+				<option value="entity" th:selected="${filter.selectedSort('entity')}">대상순</option>
+				<option value="created" th:selected="${filter.selectedSort('created')}">시작 최신순</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<button type="submit" class="outline">검색</button>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/manual-overrides/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate()}" th:text="${filter.contextLabel()}">후보</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 수동 오버라이드 표">
+		<table class="static-table">
+			<thead>
+			<tr>
+				<th scope="col">ID</th>
+				<th scope="col">대상</th>
+				<th scope="col">필드</th>
+				<th scope="col">변경 전</th>
+				<th scope="col">변경 후</th>
+				<th scope="col">사유</th>
+				<th scope="col">증거</th>
+				<th scope="col">요청</th>
+				<th scope="col">승인</th>
+				<th scope="col">상태</th>
+				<th scope="col">충돌</th>
+				<th scope="col">strict</th>
+				<th scope="col">유효 기간</th>
+				<th scope="col">대체됨</th>
+				<th scope="col">프로덕션</th>
+				<th scope="col">작업</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${overrideRows.isEmpty()}">
+				<td colspan="16">
+					<div th:replace="~{admin/fragments/empty-state :: panel('수동 오버라이드 row가 없습니다.', '검색어·상태 필터를 조정해 보세요.')}"></div>
+				</td>
+			</tr>
+			<tr th:each="row : ${overrideRows}">
+				<td th:text="${row.id}">override-id</td>
+				<td>
+					<span th:text="${row.entityType}">FACILITY</span>
+					<span th:text="${row.entityId}">entity-id</span>
+				</td>
+				<td th:text="${row.fieldName}">field</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${row.beforeValue}, '미상')}">before</td>
+				<td th:text="${row.afterValue}">after</td>
+				<td>
+					<span th:text="${row.reasonCode}">FIELD_CHECK</span>
+					<span th:text="${row.reason}">reason</span>
+				</td>
+				<td>
+					<span th:text="${row.evidenceUri}">evidence-uri</span>
+					<span th:title="${row.evidenceHash}" th:text="${#strings.abbreviate(row.evidenceHash, 11)}">sha256</span>
+				</td>
+				<td th:text="${row.requestedBy}">requester</td>
+				<td>
+					<span th:insert="~{admin/fragments/missing-value :: value(${row.approvedBy}, '미상')}">approver</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${row.approvedAt}, '미상')}">—</span>
+				</td>
+				<td>
+					<span th:text="${row.approvalStatus == 'PENDING' ? '대기' : (row.approvalStatus == 'APPROVED' ? '승인됨' : (row.approvalStatus == 'EXPIRED' ? '만료됨' : (row.approvalStatus == 'REJECTED' ? '반려됨' : (row.approvalStatus == 'SUPERSEDED' ? '대체됨' : row.approvalStatus))))}">APPROVED</span>
+					<span class="meta" th:text="${row.approvalStatus}">APPROVED</span>
+				</td>
+				<td>
+					<span th:text="${row.conflictStatus == 'NONE' ? '충돌 없음' : (row.conflictStatus == 'RESOLVED' ? '해결됨' : (row.conflictStatus == 'UNRESOLVED' ? '충돌 미해결' : row.conflictStatus))}">충돌 없음</span>
+					<span class="meta" th:text="${row.conflictStatus}">NONE</span>
+				</td>
+				<td>
+					<span th:text="${row.strictRouteEligible ? 'strict 요청' : 'strict 아님'}">strict 아님</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${row.routeSafetyApprovedBy}, '미상')}">—</span>
+				</td>
+				<td>
+					<span th:text="${row.effectiveFrom}">2026-06-29T03:00</span>
+					<span th:text="${row.expiresAt}">2026-07-29T03:00</span>
+				</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${row.supersededBy}, '미상')}">—</td>
+				<td th:text="${row.productionStatus}">candidate 가능</td>
+				<td>
+					<details class="admin-table-action-drawer">
+						<summary class="admin-btn outline small">작업</summary>
+						<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/approve'}">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="idempotencyKey" th:value="${'manual-override-approve-' + row.id}">
+							<label>
+								<span class="sr-only">승인 사유</span>
+								<input name="reason" value="manual override reviewed" required>
+							</label>
+							<button type="submit" class="primary">승인 저장</button>
+						</form>
+						<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/expire'}">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="idempotencyKey" th:value="${'manual-override-expire-' + row.id}">
+							<label>
+								<span class="sr-only">만료 사유</span>
+								<input name="reason" value="manual override expired" required>
+							</label>
+							<details class="admin-action-confirm">
+								<summary class="danger">만료…</summary>
+								<p class="meta">이 수동 오버라이드를 만료할까요? 이 작업은 되돌리기 어렵습니다.</p>
+								<button type="submit" class="danger">만료 저장</button>
+							</details>
+						</form>
+					</details>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

@@ -1,0 +1,21 @@
+origin_station_id,destination_station_id,departure_time,mobility_type,constraint_mode,expected_transfer_count,max_eta_error_seconds,observed_eta_error_seconds,use_realtime,notes
+station-sangnoksu,station-gangnam,2026-06-30T10:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:03:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:06:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:09:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:12:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:15:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:18:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:21:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:24:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:27:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,true,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:30:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:33:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:36:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:39:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:42:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:45:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:48:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:51:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-sangnoksu,station-gangnam,2026-06-30T10:54:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,1,240,45,false,one transfer fixture
+station-gangnam,station-sangnoksu,2026-06-30T10:57:00+09:00,STROLLER,STRICT_STEP_FREE,1,240,45,false,one transfer fixture

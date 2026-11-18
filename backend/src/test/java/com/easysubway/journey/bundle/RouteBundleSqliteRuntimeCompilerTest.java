@@ -1,0 +1,1440 @@
+package com.easysubway.journey.bundle;
+
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.GapGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.HeightDiffGrade;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGap;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlatformGapKey;
+import com.easysubway.route.application.service.JourneyRaptorAdapter;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.luben.zstd.Zstd;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class RouteBundleSqliteRuntimeCompilerTest {
+
+	private static final ObjectMapper JSON = new ObjectMapper();
+	private static final String SHA = "a".repeat(64);
+	private static final String STATION_SET_SHA = "b".repeat(64);
+	private static final String BUNDLE_ID = "capital-20260812";
+	private static final Instant DEPARTURE = Instant.parse("2026-08-12T00:50:00Z");
+
+	@TempDir
+	Path temp;
+
+	@Test
+	void readsVerifiedTimetableAndDirectionalAccessBeforePlannerCompilation() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads()));
+
+		assertThat(timetable.transitStopTimes()).extracting(stop -> stop.stationId())
+			.containsExactly("station-a", "station-b");
+		assertThat(timetable.routeAccessData().pathwayEdges()).extracting(edge -> edge.id())
+			.containsExactly("entry-a", "exit-b");
+		assertThat(timetable.routeAccessData().pathwayEdges()).extracting(edge -> edge.durationSeconds())
+			.containsExactly(120, 60);
+		assertThat(timetable.routeAccessData().pathwayEdges()).extracting(edge -> edge.distanceMeters())
+			.containsExactly(60, 40);
+	}
+
+	@Test
+	void compilesExactFourProducerPayloadsIntoOneWarmJourneyRuntime() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+		assertThat(runtime.generation()).isEqualTo(7);
+
+		var request = new JourneyRequest(
+			"01HZY3Q4J5K6M7N8P9Q0R1S2T3",
+			"station-a",
+			"station-b",
+			new JourneyRequest.Departure.Scheduled(DEPARTURE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0,
+			1,
+			() -> false);
+		var snapshot = new ActiveJourneySnapshot(
+			"active:7", BUNDLE_ID, SHA, "timetable", "accessibility", 7, runtime,
+			DEPARTURE.plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+
+		var planned = new JourneyRaptorAdapter().plan(
+			request, snapshot, DEPARTURE, null, new JourneyRequestMeasurement(request.requestId()));
+
+		assertThat(planned.queryId()).isEqualTo(request.requestId());
+		assertThat(planned.candidates()).singleElement().satisfies(candidate -> {
+			// #454: 번들의 ENTRY/EXIT 간선은 경로에 쓰지 않아 직행 승차 하나만 남는다.
+			assertThat(candidate.legs()).singleElement().isInstanceOf(com.easysubway.journey.application.JourneyCandidate.Ride.class);
+			assertThat(candidate.transferCount()).isZero();
+			assertThat(candidate.accessibility().stairFree()).isTrue();
+			assertThat(candidate.fare().status()).isEqualTo(com.easysubway.journey.application.JourneyCandidate.FareStatus.AVAILABLE);
+			assertThat(candidate.fare().adultCardWon()).isEqualTo(1400);
+		});
+	}
+
+	@Test
+	void exposesTheCompiledTimetableAndCanonicalStationLinesForStationTimetables() throws Exception {
+		// #476: 역 시간표는 같은 번들 세대의 시간표와 번들 station_lines(정본 역·노선)만 읽는다.
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime.stationTimetableIndex().timetable().transitStopTimes()).extracting(stop -> stop.stationId())
+			.containsExactly("station-a", "station-b");
+		// #476 F3: 역 시간표 색인은 이 세대에 한 번만 만들어 재사용한다.
+		assertThat(runtime.stationTimetableIndex()).isSameAs(runtime.stationTimetableIndex());
+		assertThat(runtime.canonicalStationLines()).containsExactlyInAnyOrder(
+			new com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine("station-a", "line-1"),
+			new com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine("station-b", "line-1"),
+			new com.easysubway.journey.application.StationTimetableSnapshotPort.StationLine("station-b", "line-2"));
+	}
+
+	@Test
+	void readsStationCarDoorHintsFromAccessibilityBundleWhenPresent() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-with-hints", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+			execute(connection, """
+				CREATE TABLE station_car_door_hints (
+					id TEXT NOT NULL PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					line_id TEXT NOT NULL,
+					direction TEXT NOT NULL,
+					target_facility_type TEXT NOT NULL,
+					car_number INTEGER NOT NULL,
+					door_number INTEGER NOT NULL,
+					source_id TEXT NOT NULL DEFAULT '',
+					source_snapshot_id TEXT NOT NULL DEFAULT '',
+					provider_record_hash TEXT NOT NULL DEFAULT '',
+					provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+					verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+					last_verified_at INTEGER NOT NULL DEFAULT 0,
+					evidence_hash TEXT NOT NULL DEFAULT ''
+				)
+				""");
+			insert(connection, "INSERT INTO station_car_door_hints (id, station_id, line_id, direction, target_facility_type, car_number, door_number) VALUES ('h1','station-b','line-1','UP','TRANSFER',3,2)");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		assertThat(timetable.routeAccessData().carDoorHints()).hasSize(1);
+		var hint = timetable.routeAccessData().carDoorHints().getFirst();
+		assertThat(hint.stationId()).isEqualTo("station-b");
+		assertThat(hint.lineId()).isEqualTo("line-1");
+		assertThat(hint.direction()).isEqualTo("UP");
+		assertThat(hint.targetFacilityType()).isEqualTo("TRANSFER");
+		assertThat(hint.carNumber()).isEqualTo(3);
+		assertThat(hint.doorNumber()).isEqualTo(2);
+	}
+
+	@Test
+	void exposesOnlySmrtElevatorFacilitiesFromTheAccessibilityComponentAsAReadOnlyCatalog() throws Exception {
+		RouteBundleRuntimeView runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(runtime).isInstanceOf(RouteBundleFacilityCatalog.class);
+		assertThat(((RouteBundleFacilityCatalog) runtime).smrtElevatorFacilities()).containsExactly(
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0150:1:나역 방면1-1", "가역 엘리베이터 나역 방면1-1"),
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0201:2:9번 출입구", "나역 엘리베이터 9번 출입구"));
+		assertThatThrownBy(() -> ((RouteBundleFacilityCatalog) runtime).smrtElevatorFacilities().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void exposesCanonicalStationIdsAndAllFacilitiesEvenWithMinimalFourColumnFixture() throws Exception {
+		RouteBundleFacilityCatalog catalog = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+
+		assertThat(catalog.canonicalStationIds()).containsExactly("station-a", "station-b");
+		assertThat(catalog.bundleFacilities()).containsExactly(
+			new RouteBundleFacilityCatalog.BundleFacility(
+				"facility-a-escalator", "station-a", null, "ESCALATOR", "가역 에스컬레이터",
+				"", "", "", "UNKNOWN", "UNKNOWN", "UNKNOWN", 0L, 0),
+			new RouteBundleFacilityCatalog.BundleFacility(
+				"smrt-elev:0150:1:나역 방면1-1", "station-a", null, "ELEVATOR", "가역 엘리베이터 나역 방면1-1",
+				"", "", "", "UNKNOWN", "UNKNOWN", "UNKNOWN", 0L, 0),
+			new RouteBundleFacilityCatalog.BundleFacility(
+				"smrt-elev:0201:2:9번 출입구", "station-b", null, "ELEVATOR", "나역 엘리베이터 9번 출입구",
+				"", "", "", "UNKNOWN", "UNKNOWN", "UNKNOWN", 0L, 0));
+		assertThat(catalog.bundleStationExits()).isEmpty();
+		assertThatThrownBy(() -> catalog.canonicalStationIds().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+		assertThatThrownBy(() -> catalog.bundleFacilities().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+		assertThatThrownBy(() -> catalog.bundleStationExits().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void compilesFullSchemaFacilitiesAndStationExitsAndRejectsInvalidColumnsOrCoordinates() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-full-catalog", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE station_exits (
+					id TEXT NOT NULL PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					exit_number TEXT NOT NULL,
+					description TEXT NOT NULL DEFAULT '',
+					latitude REAL,
+					longitude REAL,
+					has_elevator_connection INTEGER NOT NULL DEFAULT 0,
+					data_source_type TEXT NOT NULL DEFAULT 'OFFICIAL_FILE'
+				)
+				""");
+			insert(connection, "INSERT INTO station_exits VALUES(?,?,?,?,?,?,?,?)",
+				"exit-b-1", "station-b", "1", "나역 1번 출구", null, null, 0, "OFFICIAL_FILE");
+			insert(connection, "INSERT INTO station_exits VALUES(?,?,?,?,?,?,?,?)",
+				"exit-a-1", "station-a", "1", "가역 1번 출구", 37.541653d, 127.017303d, 1, "OFFICIAL_API");
+			execute(connection, """
+				CREATE TABLE facilities (
+					id TEXT NOT NULL PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					exit_id TEXT,
+					type TEXT NOT NULL,
+					name TEXT NOT NULL,
+					status TEXT NOT NULL DEFAULT 'UNKNOWN',
+					operational_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+					floor_from TEXT NOT NULL DEFAULT '',
+					floor_to TEXT NOT NULL DEFAULT '',
+					description TEXT NOT NULL DEFAULT '',
+					provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+					verified_at INTEGER NOT NULL DEFAULT 0,
+					confidence INTEGER NOT NULL DEFAULT 0
+				)
+				""");
+			insert(connection, "INSERT INTO facilities VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+				"smrt-elev:0150:1:나역 방면1-1", "station-a", "exit-a-1", "ELEVATOR", "가역 승강기",
+				"NORMAL", "OUT_OF_SERVICE", "B2", "F1", "외부 엘리베이터", "OFFICIAL_SOURCE", 1781568000L, 95);
+			insert(connection, "INSERT INTO facilities VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+				"facility-b-lift", "station-b", null, "WHEELCHAIR_LIFT", "나역 리프트",
+				"UNKNOWN", "UNKNOWN", "B1", "B2", "", "OPERATOR_CONFIRMED", 0L, 75);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		RouteBundleFacilityCatalog catalog = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+
+		assertThat(catalog.smrtElevatorFacilities()).containsExactly(
+			new RouteBundleFacilityCatalog.Facility("smrt-elev:0150:1:나역 방면1-1", "가역 승강기"));
+		assertThat(catalog.bundleFacilities()).containsExactly(
+			new RouteBundleFacilityCatalog.BundleFacility(
+				"facility-b-lift", "station-b", null, "WHEELCHAIR_LIFT", "나역 리프트",
+				"B1", "B2", "", "UNKNOWN", "UNKNOWN", "OPERATOR_CONFIRMED", 0L, 75),
+			new RouteBundleFacilityCatalog.BundleFacility(
+				"smrt-elev:0150:1:나역 방면1-1", "station-a", "exit-a-1", "ELEVATOR", "가역 승강기",
+				"B2", "F1", "외부 엘리베이터", "NORMAL", "OUT_OF_SERVICE", "OFFICIAL_SOURCE", 1781568000L, 95));
+		assertThat(catalog.bundleStationExits()).containsExactly(
+			new RouteBundleFacilityCatalog.BundleStationExit(
+				"exit-a-1", "station-a", "1", "가역 1번 출구", 37.541653d, 127.017303d, true, "OFFICIAL_API"),
+			new RouteBundleFacilityCatalog.BundleStationExit(
+				"exit-b-1", "station-b", "1", "나역 1번 출구", null, null, false, "OFFICIAL_FILE"));
+
+		var badSchema = payloads();
+		badSchema.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-bad-exit-schema", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE station_exits (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL)");
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(badSchema)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("SQLite table schema mismatch: station_exits");
+
+		var badCoord = payloads();
+		badCoord.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-bad-exit-coord", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE station_exits (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, exit_number TEXT NOT NULL, latitude TEXT)");
+			insert(connection, "INSERT INTO station_exits VALUES(?,?,?,?)", "exit-a-1", "station-a", "1", "not-a-number");
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(badCoord)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("bundle station_exit latitude must be numeric");
+	}
+
+	@Test
+	void rejectsAccessibilityComponentWithoutFacilitiesOrWithBlankFacilityName() throws Exception {
+		var missing = payloads();
+		missing.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-no-facilities", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(missing)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("runtime compilation failed")
+			.cause().hasMessageContaining("facilities");
+
+		var blankName = payloads();
+		blankName.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(sqlite("accessibility-blank-name", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL)");
+			insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)", "smrt-elev:0201:2:9번 출입구", "station-b", "ELEVATOR", " ");
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		}), 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(blankName)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("bundle facility name");
+	}
+
+	@Test
+	void rejectsDuplicateOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-duplicate", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official-2", "snapshot-2", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("duplicate official_od_fare_quotes key");
+	}
+
+	@Test
+	void loadsTheSixRealOfficialOdFareRowsFromTheFareComponent() throws Exception {
+		JsonNode realRows;
+		try (var input = RouteBundleSqliteRuntimeCompilerTest.class.getResourceAsStream(
+			"/route/fare/official-od-fare-quotes.json")) {
+			realRows = JSON.readTree(java.util.Objects.requireNonNull(input, "real fare quotes")).path("quotes");
+		}
+		var fare = sqlite("fare-real-rows", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL, PRIMARY KEY(origin_station_id,destination_station_id))
+				""");
+			for (JsonNode row : realRows) {
+				insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+					row.path("originStationId").textValue(), row.path("destinationStationId").textValue(),
+					row.path("sourceId").textValue(), row.path("snapshotId").textValue(),
+					row.path("mappingLedgerHash").textValue(), row.path("gnrlCardFare").intValue(),
+					row.path("gnrlCashFare").intValue(), row.path("yungCardFare").intValue(),
+					row.path("yungCashFare").intValue(), row.path("childCardFare").intValue(),
+					row.path("childCashFare").intValue());
+			}
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, Zstd.compress(fare, 10));
+
+		var quotes = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)).officialFareQuotes();
+
+		assertThat(realRows).hasSize(6);
+		assertThat(quotes).hasSize(6);
+		for (JsonNode row : realRows) {
+			var quote = quotes.get(com.easysubway.route.application.service.OfficialFareQuote.fareKey(
+				row.path("originStationId").textValue(), row.path("destinationStationId").textValue()));
+			assertThat(quote).isNotNull();
+			assertThat(List.of(quote.sourceId(), quote.snapshotId(), quote.mappingLedgerHash()))
+				.containsExactly(row.path("sourceId").textValue(), row.path("snapshotId").textValue(),
+					row.path("mappingLedgerHash").textValue());
+			assertThat(List.of(quote.gnrlCardFare(), quote.gnrlCashFare(), quote.yungCardFare(),
+				quote.yungCashFare(), quote.childCardFare(), quote.childCashFare()))
+				.containsExactly(row.path("gnrlCardFare").intValue(), row.path("gnrlCashFare").intValue(),
+					row.path("yungCardFare").intValue(), row.path("yungCashFare").intValue(),
+					row.path("childCardFare").intValue(), row.path("childCashFare").intValue());
+		}
+		var sangnoksuToSadang = quotes.get(
+			com.easysubway.route.application.service.OfficialFareQuote.fareKey("station-sangnoksu", "station-sadang"));
+		assertThat(List.of(sangnoksuToSadang.gnrlCardFare(), sangnoksuToSadang.gnrlCashFare(),
+			sangnoksuToSadang.yungCardFare(), sangnoksuToSadang.yungCashFare(),
+			sangnoksuToSadang.childCardFare(), sangnoksuToSadang.childCashFare()))
+			.containsExactly(1950, 2050, 1220, 2050, 750, 750);
+		assertThat(sangnoksuToSadang.snapshotId()).isEqualTo("seoul-metro-official-od-fares-20260712");
+	}
+
+	@Test
+	void rejectsNullFareValuesInOfficialOdFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-null", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER,
+				 gnrl_cash_fare INTEGER, yung_card_fare INTEGER,
+				 yung_cash_fare INTEGER, child_card_fare INTEGER,
+				 child_cash_fare INTEGER)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), null, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare value is invalid");
+	}
+
+	@Test
+	void rejectsSameOriginAndDestinationInFareQuotes() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var fare = sqlite("fare-same-od", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL)
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-a", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var payloads = payloads();
+		payloads.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, com.github.luben.zstd.Zstd.compress(fare, 10));
+
+		assertThatThrownBy(() -> compiler.compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("fare origin and destination must differ");
+	}
+
+	@Test
+	void rejectsIncompleteCorruptOrIdentityMismatchedPayloads() throws Exception {
+		var compiler = new RouteBundleSqliteRuntimeCompiler();
+		var valid = payloads();
+
+		var missing = new LinkedHashMap<>(valid);
+		missing.remove(RouteBundleSqliteRuntimeCompiler.FARE_PATH);
+		assertThatThrownBy(() -> compiler.compile(input(missing)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("payload inventory");
+
+		var corrupt = new LinkedHashMap<>(valid);
+		corrupt.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, new byte[] {1, 2, 3});
+		assertThatThrownBy(() -> compiler.compile(input(corrupt)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("zstd");
+
+		var nullPayload = new LinkedHashMap<>(valid);
+		nullPayload.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, null);
+		assertThatThrownBy(() -> input(nullPayload))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("payload bytes");
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(1).compile(input(valid)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("total decompression limit");
+
+		var wrongIdentity = payloads(identity -> identity.replace(BUNDLE_ID, "other-bundle"));
+		assertThatThrownBy(() -> compiler.compile(input(wrongIdentity)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("component identity");
+	}
+
+	@Test
+	void pinsTheDefaultTotalDecompressionLimitMirroredByTheDataBuildContract() {
+		// data contracts/datapack/server-route-bundle-build-contract.json maxTotalDecompressedBytes와 같은 값이다.
+		assertThat(RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES).isEqualTo(201_326_592L);
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(
+			RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES + 1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("total decompression limit");
+	}
+
+	@Test
+	void compilesAValidBundleLargerThanThePreviousFiftySixMebibyteLimit() throws Exception {
+		var payloads = payloads();
+		var padded = sqlite("accessibility-padded", connection -> {
+			commonAccessibility(connection);
+			execute(connection, "CREATE TABLE bundle_padding (id INTEGER PRIMARY KEY, bytes BLOB NOT NULL)");
+			insert(connection, "INSERT INTO bundle_padding VALUES(1, zeroblob(57 * 1024 * 1024))");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(padded, 3));
+		assertThat(padded.length).isGreaterThan(56 * 1024 * 1024);
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void rejectsAPayloadThatDecompressesPastTheDefaultLimit() throws Exception {
+		var payloads = payloads();
+		var bomb = new java.io.ByteArrayOutputStream();
+		try (var zstd = new com.github.luben.zstd.ZstdOutputStream(bomb, 3)) {
+			byte[] chunk = new byte[1024 * 1024];
+			long remaining = RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES + 1;
+			while (remaining > 0) {
+				int length = (int) Math.min(chunk.length, remaining);
+				zstd.write(chunk, 0, length);
+				remaining -= length;
+			}
+		}
+		payloads.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, bomb.toByteArray());
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("total decompression limit exceeded");
+	}
+
+	@Test
+	void acceptsComponentsWhoseDecompressedTotalEqualsTheLimitAndRejectsOneByteMore() throws Exception {
+		var payloads = payloads();
+		long total = 0;
+		for (byte[] compressed : payloads.values()) {
+			try (var source = new com.github.luben.zstd.ZstdInputStream(new java.io.ByteArrayInputStream(compressed))) {
+				total += source.readAllBytes().length;
+			}
+		}
+		long exactLimit = total;
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler(exactLimit).compile(input(payloads));
+
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(exactLimit - 1).compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle total decompression limit exceeded");
+	}
+
+	@Test
+	void separatesTemporaryStorageFailuresFromInvalidZstdPayloads() throws Exception {
+		byte[] valid = Zstd.compress(new byte[4096], 3);
+		var full = new java.io.OutputStream() {
+			@Override
+			public void write(int value) throws java.io.IOException {
+				throw new java.io.IOException("No space left on device");
+			}
+
+			@Override
+			public void write(byte[] bytes, int offset, int length) throws java.io.IOException {
+				throw new java.io.IOException("No space left on device");
+			}
+		};
+
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.copyBounded(valid, full, 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle temporary storage write failed")
+			.hasRootCauseMessage("No space left on device");
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.decompress(
+			valid, temp.resolve("missing-directory").resolve("topology.sqlite"), 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle temporary storage write failed");
+		assertThatThrownBy(() -> RouteBundleSqliteRuntimeCompiler.copyBounded(
+			new byte[] {1, 2, 3}, java.io.OutputStream.nullOutputStream(), 1024 * 1024))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("route-bundle zstd payload is invalid");
+	}
+
+	@Test
+	void rejectsTopologyAccessibilityMutationOutsideTheAdmittedPayloadDigests() throws Exception {
+		var admitted = payloads();
+		var mutated = payloads(value -> value, "UNAVAILABLE");
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(
+			input(mutated, payloadSha256s(admitted))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("admitted payload digest");
+	}
+
+	@Test
+	void rejectsAccessibilityEvidenceThatDoesNotCoverTheExactTopology() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-drift", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var edges = topologyEdges();
+			edges.remove(edges.size() - 1);
+			var evaluation = evaluation(edges);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("accessibility evidence");
+	}
+
+	@Test
+	void projectsBlockedAccessibilityEdgesWithoutFailingCompilation() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-blocked", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of("entry-a", "BLOCKED"));
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var entryEvidence = timetable.routeAccessData().routeEdgeEvidence().stream()
+			.filter(edge -> "entry-a".equals(edge.edgeId()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(entryEvidence.strictRouteEligible()).isFalse();
+		assertThat(entryEvidence.blockerReason()).isEqualTo("verified fixture");
+
+		var exitEvidence = timetable.routeAccessData().routeEdgeEvidence().stream()
+			.filter(edge -> "exit-b".equals(edge.edgeId()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(exitEvidence.strictRouteEligible()).isTrue();
+		assertThat(exitEvidence.blockerReason()).isNull();
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void projectsTransferEdgesWithStrictAndBlockedStates() throws Exception {
+		var transferEdges = List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
+			new Edge("transfer-pass", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-stairs", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 1),
+			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-blocked-stairs", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 1),
+			// #469 F1(#480): seq126처럼 계단 플래그는 0이지만 계단 상태가 UNKNOWN인 동선은 엄격 무단차 동선이 아니다.
+			new Edge("transfer-unknown", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0, "UNKNOWN"),
+			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
+
+		var states = Map.of(
+			"transfer-blocked", "BLOCKED",
+			"transfer-blocked-stairs", "BLOCKED");
+
+		var payloads = payloads(transferEdges, value -> value, "AVAILABLE");
+		var accessibility = sqlite("accessibility-transfers", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(transferEdges, states);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var rules = timetable.routeAccessData().transferRules();
+
+		var passRule = rules.stream().filter(r -> "transfer-pass".equals(r.id())).findFirst().orElseThrow();
+		assertThat(passRule.strictStepFreePathwayEdgeId()).isEqualTo("transfer-pass");
+
+		var stairsRule = rules.stream().filter(r -> "transfer-stairs".equals(r.id())).findFirst().orElseThrow();
+		assertThat(stairsRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var blockedRule = rules.stream().filter(r -> "transfer-blocked".equals(r.id())).findFirst().orElseThrow();
+		assertThat(blockedRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var blockedStairsRule = rules.stream().filter(r -> "transfer-blocked-stairs".equals(r.id())).findFirst().orElseThrow();
+		assertThat(blockedStairsRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var unknownRule = rules.stream().filter(r -> "transfer-unknown".equals(r.id())).findFirst().orElseThrow();
+		assertThat(unknownRule.strictStepFreePathwayEdgeId()).isNull();
+		assertThat(timetable.routeAccessData().pathwayEdges()).filteredOn(edge -> edge.id().startsWith("transfer-"))
+			.extracting(LoadRouteTimetablePort.PathwayEdge::id, LoadRouteTimetablePort.PathwayEdge::stairAccessState)
+			.containsExactlyInAnyOrder(
+				org.assertj.core.groups.Tuple.tuple("transfer-blocked", "STEP_FREE"),
+				org.assertj.core.groups.Tuple.tuple("transfer-blocked-stairs", "STAIR_ONLY"),
+				org.assertj.core.groups.Tuple.tuple("transfer-pass", "STEP_FREE"),
+				org.assertj.core.groups.Tuple.tuple("transfer-stairs", "STAIR_ONLY"),
+				org.assertj.core.groups.Tuple.tuple("transfer-unknown", "UNKNOWN"));
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void compilesRouteBundleWithDistinctDataCandidateIdInAccessibilityEvidence() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-distinct-candidate", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of(), "nationwide-candidate-20260909");
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void rejectsAccessibilityEvidenceWithBlankCandidateId() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-blank-candidate", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of(), "   ");
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("accessibility evidence identity is invalid");
+	}
+
+	@Test
+	void projectsUnknownTopologyAttributesIntoEvaluatedStates() throws Exception {
+		var transferEdges = List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
+			new Edge("transfer-pass", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-out", "station-b:line-1:platform-b", "station-c:line-2:platform-c", 120, 80, "OUT_OF_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
+
+		var states = Map.of("transfer-blocked", "BLOCKED");
+		var payloads = payloads(transferEdges, value -> value, "UNKNOWN", "UNKNOWN", "UNKNOWN");
+		var accessibility = sqlite("accessibility-unknown", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(transferEdges, states);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var edges = timetable.routeAccessData().pathwayEdges();
+
+		var entryA = edges.stream().filter(e -> "entry-a".equals(e.id())).findFirst().orElseThrow();
+		assertThat(entryA.accessibilityStatus()).isEqualTo("AVAILABLE");
+		assertThat(entryA.provenanceKind()).isEqualTo("UNKNOWN");
+		assertThat(entryA.verificationStatus()).isEqualTo("UNKNOWN");
+
+		var transferBlocked = edges.stream().filter(e -> "transfer-blocked".equals(e.id())).findFirst().orElseThrow();
+		assertThat(transferBlocked.accessibilityStatus()).isEqualTo("UNAVAILABLE");
+		assertThat(transferBlocked.provenanceKind()).isEqualTo("UNKNOWN");
+		assertThat(transferBlocked.verificationStatus()).isEqualTo("UNKNOWN");
+
+		var rules = timetable.routeAccessData().transferRules();
+		var passRule = rules.stream().filter(r -> "transfer-pass".equals(r.id())).findFirst().orElseThrow();
+		assertThat(passRule.verificationStatus()).isEqualTo("UNKNOWN");
+
+		var outRule = rules.stream().filter(r -> "transfer-out".equals(r.id())).findFirst().orElseThrow();
+		assertThat(outRule.transferType()).isEqualTo("OUT_OF_STATION");
+
+		var evidenceList = timetable.routeAccessData().routeEdgeEvidence();
+		var exitEvidence = evidenceList.stream().filter(e -> "exit-b".equals(e.edgeId())).findFirst().orElseThrow();
+		assertThat(exitEvidence.provenanceKind()).isEqualTo("UNKNOWN");
+		assertThat(exitEvidence.verificationStatus()).isEqualTo("UNKNOWN");
+		assertThat(exitEvidence.strictRouteEligible()).isTrue();
+
+		var blockedEvidence = evidenceList.stream().filter(e -> "transfer-blocked".equals(e.edgeId())).findFirst().orElseThrow();
+		assertThat(blockedEvidence.provenanceKind()).isEqualTo("UNKNOWN");
+		assertThat(blockedEvidence.verificationStatus()).isEqualTo("UNKNOWN");
+		assertThat(blockedEvidence.strictRouteEligible()).isFalse();
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void preservesUnknownProvenanceAndVerificationAndKeepsNotApplicableDistinctFromUnavailable() throws Exception {
+		var edges = List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
+			new Edge("transfer-na", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
+
+		var states = Map.of(
+			"transfer-na", "NOT_APPLICABLE",
+			"transfer-blocked", "BLOCKED"
+		);
+		var payloads = payloads(edges, value -> value, "UNKNOWN", "UNKNOWN", "UNKNOWN");
+		var accessibility = sqlite("accessibility-unknown-and-na", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(edges, states);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var pathwayById = timetable.routeAccessData().pathwayEdges().stream()
+			.collect(java.util.stream.Collectors.toMap(LoadRouteTimetablePort.PathwayEdge::id, e -> e));
+
+		// UNKNOWN source/verification must NOT be promoted to OFFICIAL_SOURCE / VERIFIED
+		assertThat(pathwayById.get("entry-a").accessibilityStatus()).isEqualTo("AVAILABLE");
+		assertThat(pathwayById.get("entry-a").provenanceKind()).isEqualTo("UNKNOWN");
+		assertThat(pathwayById.get("entry-a").verificationStatus()).isEqualTo("UNKNOWN");
+
+		// NOT_APPLICABLE must remain NOT_APPLICABLE instead of collapsing into UNAVAILABLE
+		assertThat(pathwayById.get("transfer-na").accessibilityStatus()).isEqualTo("NOT_APPLICABLE");
+		assertThat(pathwayById.get("transfer-blocked").accessibilityStatus()).isEqualTo("UNAVAILABLE");
+
+		var ruleNa = timetable.routeAccessData().transferRules().stream()
+			.filter(r -> "transfer-na".equals(r.id()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(ruleNa.verificationStatus()).isEqualTo("UNKNOWN");
+		assertThat(ruleNa.strictStepFreePathwayEdgeId()).isNull();
+
+		var evNa = timetable.routeAccessData().routeEdgeEvidence().stream()
+			.filter(e -> "transfer-na".equals(e.edgeId()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(evNa.provenanceKind()).isEqualTo("UNKNOWN");
+		assertThat(evNa.verificationStatus()).isEqualTo("UNKNOWN");
+		assertThat(evNa.strictRouteEligible()).isFalse();
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void compilesOfficialPlatformGapGradesInDeclaredOrder() throws Exception {
+		var payloads = payloadsWithGaps(true,
+			gap("g1", "station-a", "line-1", "UP", "본선 2-1", 2, 1, "NARROW", "LOW", 0),
+			gap("g2", "station-a", "line-1", "UP", "본선 1-2", 1, 2, "NORMAL", "HIGH", 0),
+			gap("g3", "station-a", "line-1", "UP", "본선 1-1", 1, 1, "WIDE", "LOW", 1),
+			gap("g4", "station-a", "line-1", "UP", "본선 3-1", 3, 1, "NORMAL", "NORMAL", 0),
+			gap("g5", "station-a", "line-1", "UP", "본선 1-3", 1, 3, "NORMAL", "HIGH", 0),
+			gap("g6", "station-a", "line-1", "DOWN", "하선 오이도 방면", null, null, "WIDE", "HIGH", 1));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+
+		var up = timetable.routeAccessData().platformGaps().get(new PlatformGapKey("station-a", "line-1", "UP"));
+		// WIDE -> NORMAL -> NARROW, 같은 간격이면 HIGH -> NORMAL -> LOW, 그다음 platformPosition 오름차순
+		assertThat(up).containsExactly(
+			new PlatformGap("본선 1-1", 1, 1, GapGrade.WIDE, HeightDiffGrade.LOW, true),
+			new PlatformGap("본선 1-2", 1, 2, GapGrade.NORMAL, HeightDiffGrade.HIGH, false),
+			new PlatformGap("본선 1-3", 1, 3, GapGrade.NORMAL, HeightDiffGrade.HIGH, false),
+			new PlatformGap("본선 3-1", 3, 1, GapGrade.NORMAL, HeightDiffGrade.NORMAL, false),
+			new PlatformGap("본선 2-1", 2, 1, GapGrade.NARROW, HeightDiffGrade.LOW, false));
+		var down = timetable.routeAccessData().platformGaps()
+			.get(new PlatformGapKey("station-a", "line-1", "DOWN"));
+		assertThat(down).containsExactly(
+			new PlatformGap("하선 오이도 방면", null, null, GapGrade.WIDE, HeightDiffGrade.HIGH, true));
+	}
+
+	@Test
+	void treatsMissingPlatformGapTableAsNoGaps() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads()));
+
+		assertThat(timetable.routeAccessData().platformGaps()).isEmpty();
+	}
+
+	@Test
+	void treatsEmptyPlatformGapTableAsNoGaps() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloadsWithGaps(true)));
+
+		assertThat(timetable.routeAccessData().platformGaps()).isEmpty();
+	}
+
+	@Test
+	void rejectsUnknownGapGrade() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "좁음", "LOW", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap gap_grade: 좁음");
+	}
+
+	@Test
+	void rejectsUnknownHeightDiffGrade() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "WIDE", "HUGE", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap height_diff_grade: HUGE");
+	}
+
+	@Test
+	void rejectsInvalidCurvedFlag() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "UP", "1-1", 1, 1, "WIDE", "LOW", 2));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap curved: 2");
+	}
+
+	@Test
+	void indexesOnlyCompiledTransitionEdgeIdsByFacilityIdExcludingEntryAndExit() throws Exception {
+		var edges = new ArrayList<>(List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
+			new Edge("transfer-fast", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 60, 60, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-out", "station-b:line-1:platform-b", "station-a:line-1:platform-a", 90, 80, "OUT_OF_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-other", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 180, 200, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-blank", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 210, 220, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0)));
+		Map<String, String> facilityByEdge = Map.of(
+			"entry-a", "smrt-elev:entry",
+			"transfer-fast", "smrt-elev:0201:1:1번",
+			"transfer-out", "smrt-elev:0201:1:1번",
+			"transfer-other", "smrt-elev:0201:2:2번",
+			"transfer-blank", "   ",
+			"exit-b", "smrt-elev:exit");
+
+		var payloads = payloads(edges, value -> value, "AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+		var topology = sqlite("topology-facility-index", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE network_edges (
+				 id TEXT PRIMARY KEY, from_node_id TEXT NOT NULL, to_node_id TEXT NOT NULL,
+				 duration_seconds INTEGER NOT NULL, distance_meters INTEGER NOT NULL,
+				 edge_type TEXT NOT NULL, service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL,
+				 accessibility_status TEXT NOT NULL, reliability_score INTEGER NOT NULL,
+				 source_id TEXT NOT NULL, source_snapshot_id TEXT NOT NULL,
+				 provider_record_hash TEXT NOT NULL, provenance_kind TEXT NOT NULL,
+				 verification_status TEXT NOT NULL, facility_id TEXT,
+				 last_verified_at INTEGER, evidence_hash TEXT NOT NULL)
+				""");
+			for (var edge : edges) {
+				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
+					edge.serviceClass(), edge.includesStairs(), edge.stairAccessState(), "AVAILABLE", 100, "official",
+					"snapshot", "d".repeat(64), "OFFICIAL_SOURCE", "VERIFIED", facilityByEdge.get(edge.id()),
+					1_786_485_600_000L, "e".repeat(64));
+			}
+		});
+		var accessibility = sqlite("accessibility-facility-index", connection -> {
+			common(connection, identitySql());
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(edges);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		var timetable = sqlite("timetable-facility-index", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, monday INTEGER NOT NULL,
+				 tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL,
+				 friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL,
+				 start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE service_calendar_dates (service_id TEXT NOT NULL, date TEXT NOT NULL,
+				 exception_type INTEGER NOT NULL, PRIMARY KEY(service_id,date));
+				CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL,
+				 route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL,
+				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_day_start_seconds INTEGER NOT NULL);
+				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
+				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
+				 departure_seconds INTEGER NOT NULL, pickup_type INTEGER NOT NULL,
+				 drop_off_type INTEGER NOT NULL, PRIMARY KEY(trip_id,stop_sequence));
+				CREATE TABLE transit_frequencies (trip_id TEXT NOT NULL, start_time_seconds INTEGER NOT NULL,
+				 end_time_seconds INTEGER NOT NULL, headway_seconds INTEGER NOT NULL,
+				 exact_times INTEGER NOT NULL, PRIMARY KEY(trip_id,start_time_seconds));
+				CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL)
+				""");
+			insert(connection, "INSERT INTO service_calendars VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"weekday", 1, 1, 1, 1, 1, 1, 1, "20260801", "20261231", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
+				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
+				"route-2", "line-2", "2", "Line 2", "station-a", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
+				"trip-2", "route-2", "weekday", "station-a", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", 1, "station-a", "line-1", 36000, 36000, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", 2, "station-b", "line-1", 36600, 36600, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-2", 1, "station-b", "line-2", 36900, 36900, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-2", 2, "station-a", "line-2", 37500, 37500, 0, 0);
+			insert(connection, "INSERT INTO transit_feed_info VALUES(?,?)", 1, "20261231");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, Zstd.compress(topology, 10));
+		payloads.put(RouteBundleSqliteRuntimeCompiler.TIMETABLE_PATH, Zstd.compress(timetable, 10));
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+
+		assertThat(runtime.transitionEdgeIdsForFacility("smrt-elev:0201:1:1번"))
+			.containsExactlyInAnyOrder("transfer-fast", "transfer-out");
+		assertThat(runtime.transitionEdgeIdsForFacility("smrt-elev:0201:2:2번"))
+			.containsExactly("transfer-other");
+		// ENTRY/EXIT 간선은 #454로 전환이 생성되지 않으므로 색인에서 제외되어야 한다.
+		assertThat(runtime.transitionEdgeIdsForFacility("smrt-elev:entry")).isEmpty();
+		assertThat(runtime.transitionEdgeIdsForFacility("smrt-elev:exit")).isEmpty();
+		assertThat(runtime.transitionEdgeIdsForFacility("unknown-facility")).isEmpty();
+		assertThat(runtime.transitionEdgeIdsForFacility(null)).isEmpty();
+		assertThat(runtime.transitionEdgeIdsForFacility("   ")).isEmpty();
+	}
+
+	@Test
+	void rejectsPlatformGapDirectionOutsideUpDown() throws Exception {
+		var payloads = payloadsWithGaps(false,
+			gap("g1", "station-a", "line-1", "EAST", "1-1", 1, 1, "WIDE", "LOW", 0));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("invalid platform gap direction: EAST");
+	}
+
+	@Test
+	void rejectsPlatformGapTableWithNumericMillimetreColumns() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-mm-gaps", connection -> {
+			commonAccessibility(connection);
+			execute(connection, """
+				CREATE TABLE station_platform_gaps (
+					id TEXT PRIMARY KEY, station_id TEXT NOT NULL, line_id TEXT NOT NULL, direction TEXT,
+					platform_position TEXT NOT NULL, car_number INTEGER, door_number INTEGER,
+					gap_mm INTEGER NOT NULL, height_diff_mm INTEGER NOT NULL, source_snapshot_id TEXT NOT NULL)
+				""");
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("SQLite table schema mismatch: station_platform_gaps");
+	}
+
+	private record GapRow(String id, String stationId, String lineId, String direction, String position,
+		Integer car, Integer door, String gapGrade, String heightDiffGrade, int curved) {
+	}
+
+	private static GapRow gap(String id, String stationId, String lineId, String direction, String position,
+		Integer car, Integer door, String gapGrade, String heightDiffGrade, int curved) {
+		return new GapRow(id, stationId, lineId, direction, position, car, door, gapGrade, heightDiffGrade, curved);
+	}
+
+	private void commonAccessibility(Connection connection) throws Exception {
+		common(connection, identitySql());
+		facilities(connection);
+		execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+		var evaluation = evaluation(topologyEdges());
+		insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+			evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+	}
+
+	/** checked=true는 data 계약의 CHECK 제약을 그대로 두고, false는 계약 위반 값을 넣기 위해 제약을 뺀다. */
+	private Map<String, byte[]> payloadsWithGaps(boolean checked, GapRow... rows) throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-gaps", connection -> {
+			commonAccessibility(connection);
+			execute(connection, """
+				CREATE TABLE station_platform_gaps (
+					id TEXT PRIMARY KEY,
+					station_id TEXT NOT NULL,
+					line_id TEXT NOT NULL,
+					direction TEXT %s,
+					platform_position TEXT NOT NULL,
+					car_number INTEGER,
+					door_number INTEGER,
+					gap_grade TEXT NOT NULL %s,
+					height_diff_grade TEXT NOT NULL %s,
+					curved INTEGER NOT NULL %s,
+					source_snapshot_id TEXT NOT NULL
+				)
+				""".formatted(
+				checked ? "CHECK (direction IN ('UP','DOWN'))" : "",
+				checked ? "CHECK (gap_grade IN ('NARROW','NORMAL','WIDE'))" : "",
+				checked ? "CHECK (height_diff_grade IN ('LOW','NORMAL','HIGH'))" : "",
+				checked ? "CHECK (curved IN (0,1))" : ""));
+			for (var row : rows) {
+				insert(connection, "INSERT INTO station_platform_gaps VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+					row.id(), row.stationId(), row.lineId(), row.direction(), row.position(), row.car(),
+					row.door(), row.gapGrade(), row.heightDiffGrade(), row.curved(), "snap-1");
+			}
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+		return payloads;
+	}
+
+	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
+		return input(payloads, payloadSha256s(payloads));
+	}
+
+	private RouteBundleSqliteRuntimeCompiler.Input input(
+		Map<String, byte[]> payloads,
+		Map<String, String> admittedPayloadSha256s
+	) {
+		return new RouteBundleSqliteRuntimeCompiler.Input(
+			SHA, 7, BUNDLE_ID, 11, STATION_SET_SHA, admittedPayloadSha256s, payloads);
+	}
+
+	private Map<String, byte[]> payloads() throws Exception {
+		return payloads(value -> value);
+	}
+
+	private Map<String, byte[]> payloads(java.util.function.UnaryOperator<String> identityTransform) throws Exception {
+		return payloads(identityTransform, "AVAILABLE");
+	}
+
+	private Map<String, byte[]> payloads(
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus
+	) throws Exception {
+		return payloads(topologyEdges(), identityTransform, accessibilityStatus);
+	}
+
+	private Map<String, byte[]> payloads(
+		List<Edge> edges,
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus
+	) throws Exception {
+		return payloads(edges, identityTransform, accessibilityStatus, "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
+	private Map<String, byte[]> payloads(
+		List<Edge> edges,
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus,
+		String provenanceKind,
+		String verificationStatus
+	) throws Exception {
+		var topology = sqlite("topology", connection -> {
+			common(connection, identityTransform.apply(identitySql()));
+			execute(connection, """
+				CREATE TABLE network_edges (
+				 id TEXT PRIMARY KEY, from_node_id TEXT NOT NULL, to_node_id TEXT NOT NULL,
+				 duration_seconds INTEGER NOT NULL, distance_meters INTEGER NOT NULL,
+				 edge_type TEXT NOT NULL, service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL,
+				 accessibility_status TEXT NOT NULL, reliability_score INTEGER NOT NULL,
+				 source_id TEXT NOT NULL, source_snapshot_id TEXT NOT NULL,
+				 provider_record_hash TEXT NOT NULL, provenance_kind TEXT NOT NULL,
+				 verification_status TEXT NOT NULL, facility_id TEXT,
+				 last_verified_at INTEGER, evidence_hash TEXT NOT NULL)
+				""");
+			for (var edge : edges) {
+				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
+					edge.serviceClass(), edge.includesStairs(), edge.stairAccessState(), accessibilityStatus, 100, "official", "snapshot",
+					"d".repeat(64), provenanceKind, verificationStatus, null, 1_786_485_600_000L,
+					"e".repeat(64));
+			}
+		});
+		var timetable = sqlite("timetable", connection -> {
+			common(connection, identityTransform.apply(identitySql()));
+			execute(connection, """
+				CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, monday INTEGER NOT NULL,
+				 tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL,
+				 friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL,
+				 start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE service_calendar_dates (service_id TEXT NOT NULL, date TEXT NOT NULL,
+				 exception_type INTEGER NOT NULL, PRIMARY KEY(service_id,date));
+				CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL,
+				 route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL,
+				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_day_start_seconds INTEGER NOT NULL);
+				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
+				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
+				 departure_seconds INTEGER NOT NULL, pickup_type INTEGER NOT NULL,
+				 drop_off_type INTEGER NOT NULL, PRIMARY KEY(trip_id,stop_sequence));
+				CREATE TABLE transit_frequencies (trip_id TEXT NOT NULL, start_time_seconds INTEGER NOT NULL,
+				 end_time_seconds INTEGER NOT NULL, headway_seconds INTEGER NOT NULL,
+				 exact_times INTEGER NOT NULL, PRIMARY KEY(trip_id,start_time_seconds));
+				CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL)
+				""");
+			insert(connection, "INSERT INTO service_calendars VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"weekday", 1, 1, 1, 1, 1, 1, 1, "20260801", "20261231", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
+				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", 1, "station-a", "line-1", 36000, 36000, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", 2, "station-b", "line-1", 36600, 36600, 0, 0);
+			insert(connection, "INSERT INTO transit_feed_info VALUES(?,?)", 1, "20261231");
+		});
+		var accessibility = sqlite("accessibility", connection -> {
+			common(connection, identityTransform.apply(identitySql()));
+			facilities(connection);
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges());
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		var fare = sqlite("fare", connection -> {
+			common(connection, identityTransform.apply(identitySql()));
+			execute(connection, """
+				CREATE TABLE official_od_fare_quotes (origin_station_id TEXT NOT NULL,
+				 destination_station_id TEXT NOT NULL, source_id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+				 mapping_ledger_hash TEXT NOT NULL, gnrl_card_fare INTEGER NOT NULL,
+				 gnrl_cash_fare INTEGER NOT NULL, yung_card_fare INTEGER NOT NULL,
+				 yung_cash_fare INTEGER NOT NULL, child_card_fare INTEGER NOT NULL,
+				 child_cash_fare INTEGER NOT NULL, PRIMARY KEY(origin_station_id,destination_station_id))
+				""");
+			insert(connection, "INSERT INTO official_od_fare_quotes VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"station-a", "station-b", "official", "snapshot", "f".repeat(64), 1400, 1500, 800, 900, 500, 600);
+		});
+		var result = new LinkedHashMap<String, byte[]>();
+		result.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, Zstd.compress(topology, 10));
+		result.put(RouteBundleSqliteRuntimeCompiler.TIMETABLE_PATH, Zstd.compress(timetable, 10));
+		result.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+		result.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, Zstd.compress(fare, 10));
+		return result;
+	}
+
+	private static Map<String, String> payloadSha256s(Map<String, byte[]> payloads) {
+		var result = new LinkedHashMap<String, String>();
+		payloads.forEach((path, bytes) -> result.put(path, bytes == null ? SHA : sha256Unchecked(bytes)));
+		return result;
+	}
+
+	private static String sha256Unchecked(byte[] bytes) {
+		try {
+			return sha256(bytes);
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private byte[] sqlite(String name, SqliteWriter writer) throws Exception {
+		var file = Files.createTempFile(temp, name + "-", ".sqlite");
+		try (var connection = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+			writer.write(connection);
+		}
+		return Files.readAllBytes(file);
+	}
+
+	private static void common(Connection connection, String identitySql) throws Exception {
+		execute(connection, "PRAGMA user_version=19; " + identitySql + """
+			; CREATE TABLE stations (id TEXT PRIMARY KEY)
+			; CREATE TABLE lines (id TEXT PRIMARY KEY)
+			; CREATE TABLE station_lines (station_id TEXT NOT NULL, line_id TEXT NOT NULL,
+			  line_sequence INTEGER NOT NULL, PRIMARY KEY(station_id,line_id))
+			""");
+		insert(connection, "INSERT INTO stations VALUES(?)", "station-a");
+		insert(connection, "INSERT INTO stations VALUES(?)", "station-b");
+		insert(connection, "INSERT INTO lines VALUES(?)", "line-1");
+		insert(connection, "INSERT INTO lines VALUES(?)", "line-2");
+		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-a", "line-1", 1);
+		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-1", 2);
+		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-2", 3);
+	}
+
+	// data 번들 accessibility 구성요소의 facilities 표(catalog-schema)에서 컴파일러가 읽는 열만 둔다.
+	private static void facilities(Connection connection) throws Exception {
+		execute(connection, "CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY, station_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL)");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"smrt-elev:0201:2:9번 출입구", "station-b", "ELEVATOR", "나역 엘리베이터 9번 출입구");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"smrt-elev:0150:1:나역 방면1-1", "station-a", "ELEVATOR", "가역 엘리베이터 나역 방면1-1");
+		insert(connection, "INSERT INTO facilities VALUES(?,?,?,?)",
+			"facility-a-escalator", "station-a", "ESCALATOR", "가역 에스컬레이터");
+	}
+
+	private static String identitySql() {
+		return "CREATE TABLE artifact_component_identity (bundleId TEXT NOT NULL, releaseSequence INTEGER NOT NULL, stationSetSha256 TEXT NOT NULL, serviceTimezone TEXT NOT NULL);"
+			+ "INSERT INTO artifact_component_identity VALUES('" + BUNDLE_ID + "',11,'" + STATION_SET_SHA + "','Asia/Seoul')";
+	}
+
+	private static List<Edge> topologyEdges() {
+		return new ArrayList<>(List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY"),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY"),
+			new Edge("exit-b", "station-b:line-1:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY")));
+	}
+
+	private static ObjectNode evaluation(List<Edge> edges) throws Exception {
+		return evaluation(edges, Map.of());
+	}
+
+	private static ObjectNode evaluation(List<Edge> edges, Map<String, String> states) throws Exception {
+		return evaluation(edges, states, BUNDLE_ID);
+	}
+
+	private static ObjectNode evaluation(
+		List<Edge> edges, Map<String, String> states, String candidateId) throws Exception {
+		var results = JSON.createArrayNode();
+		var stateCounts = new LinkedHashMap<String, Integer>();
+		for (var edge : edges) {
+			String state = states.getOrDefault(edge.id(), "PASS");
+			stateCounts.merge(state, 1, Integer::sum);
+			var withoutEvidence = JSON.createObjectNode();
+			withoutEvidence.put("edgeId", edge.id());
+			withoutEvidence.put("edgeType", edge.type());
+			withoutEvidence.set("from", endpoint(edge.from()));
+			withoutEvidence.set("to", endpoint(edge.to()));
+			withoutEvidence.put("servicePattern", edge.pattern());
+			withoutEvidence.put("serviceClass", edge.serviceClass());
+			withoutEvidence.set("requiredDomains", JSON.createArrayNode());
+			withoutEvidence.put("state", state);
+			withoutEvidence.put("reason", "verified fixture");
+			withoutEvidence.put("rawEdgeSha256", edgeSha(edge));
+			withoutEvidence.put("materializationDigest", "c".repeat(64));
+			withoutEvidence.set("materializationCells", JSON.createArrayNode());
+			withoutEvidence.put("topologySha256", "d".repeat(64));
+			withoutEvidence.put("policyVersion", "route-edge-evaluation-v1");
+			withoutEvidence.put("evaluatorVersion", "1");
+			withoutEvidence.put("evaluationAt", "2026-08-12T00:00:00.000Z");
+			var result = withoutEvidence.deepCopy();
+			result.put("evidenceSha256", sha256(canonical(withoutEvidence).getBytes(StandardCharsets.UTF_8)));
+			results.add(result);
+		}
+		var payload = JSON.createObjectNode();
+		payload.set("candidate", JSON.createObjectNode().put("candidateId", candidateId));
+		payload.put("evaluationAt", "2026-08-12T00:00:00.000Z");
+		payload.set("denominator", JSON.createObjectNode().put("edgeCount", edges.size()).put("digest", "e".repeat(64)));
+		payload.set("results", results);
+		var stateSummary = JSON.createObjectNode();
+		stateCounts.forEach(stateSummary::put);
+		payload.set("stateSummary", stateSummary);
+		payload.put("eligible", true);
+		var result = payload.deepCopy();
+		result.put("evaluationDigest", sha256(canonical(payload).getBytes(StandardCharsets.UTF_8)));
+		return result;
+	}
+
+	private static ObjectNode endpoint(String value) {
+		var parts = value.split(":", -1);
+		var endpoint = JSON.createObjectNode().put("stationId", parts[0]);
+		if (parts.length == 1) {
+			endpoint.putNull("lineId").putNull("operatorId").putNull("lineSequence");
+		} else {
+			endpoint.put("lineId", parts[1]).put("operatorId", "operator-1").put("lineSequence",
+				"station-a".equals(parts[0]) ? 1 : 2);
+		}
+		return endpoint;
+	}
+
+	private static String edgeSha(Edge edge) throws Exception {
+		var raw = JSON.createObjectNode();
+		raw.put("edgeId", edge.id());
+		raw.put("edgeType", edge.type());
+		raw.put("fromNodeId", edge.from());
+		raw.put("toNodeId", edge.to());
+		raw.put("durationSeconds", edge.duration());
+		raw.put("distanceMeters", edge.distance());
+		raw.put("servicePattern", edge.pattern());
+		raw.put("serviceClass", edge.serviceClass());
+		return sha256(canonical(raw).getBytes(StandardCharsets.UTF_8));
+	}
+
+	private static String canonical(JsonNode node) throws Exception {
+		return JSON.writeValueAsString(sorted(node));
+	}
+
+	private static JsonNode sorted(JsonNode node) {
+		if (node.isObject()) {
+			var result = JSON.createObjectNode();
+			var fields = new ArrayList<String>();
+			node.fieldNames().forEachRemaining(fields::add);
+			fields.sort(Comparator.naturalOrder());
+			for (var field : fields) result.set(field, sorted(node.get(field)));
+			return result;
+		}
+		if (node.isArray()) {
+			ArrayNode result = JSON.createArrayNode();
+			node.forEach(value -> result.add(sorted(value)));
+			return result;
+		}
+		return node.deepCopy();
+	}
+
+	private static String sha256(byte[] bytes) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+	}
+
+	private static void execute(Connection connection, String sql) throws Exception {
+		try (var statement = connection.createStatement()) {
+			statement.executeUpdate(sql);
+		}
+	}
+
+	private static void insert(Connection connection, String sql, Object... values) throws Exception {
+		try (var statement = connection.prepareStatement(sql)) {
+			for (int index = 0; index < values.length; index++) statement.setObject(index + 1, values[index]);
+			statement.executeUpdate();
+		}
+	}
+
+	@FunctionalInterface
+	private interface SqliteWriter {
+		void write(Connection connection) throws Exception;
+	}
+
+	private record Edge(
+		String id, String from, String to, int duration, int distance, String type, String pattern,
+		String serviceClass, int includesStairs, String stairAccessState) {
+		Edge(String id, String from, String to, int duration, int distance, String type, String pattern, String serviceClass) {
+			this(id, from, to, duration, distance, type, pattern, serviceClass, 0);
+		}
+
+		/** data 어휘의 확정 상태(계단이면 STAIR_ONLY, 아니면 STEP_FREE)를 둔다. */
+		Edge(String id, String from, String to, int duration, int distance, String type, String pattern, String serviceClass,
+			int includesStairs) {
+			this(id, from, to, duration, distance, type, pattern, serviceClass, includesStairs,
+				includesStairs == 1 ? "STAIR_ONLY" : "STEP_FREE");
+		}
+	}
+}

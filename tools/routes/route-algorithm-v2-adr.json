@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "status": "active-production",
+  "issue": 313,
+  "algorithmSuiteId": "EASYSUBWAY_RAPTOR_SUITE_V2",
+  "pointQuery": {
+    "status": "active",
+    "algorithm": "MARKED_SINGLE_DEPARTURE_RAPTOR",
+    "supportedModes": ["NOW", "DEPART_AT"]
+  },
+  "profileQuery": {
+    "status": "active",
+    "activationRequirement": "Backend PR #312 is terminal",
+    "supportedModes": ["DEPART_BETWEEN", "ARRIVE_BY", "LAST_CONNECTION"]
+  },
+  "semanticFallbackAllowed": false,
+  "mobileStaticRouteCalculationContribution": false,
+  "routeV2PrototypeCurrentContribution": false,
+  "verification": "node --test tools/routes/route-algorithm-v2-adr.test.mjs"
+}

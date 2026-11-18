@@ -1,0 +1,1472 @@
+package com.easysubway.transit.application.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
+import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
+import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
+import com.easysubway.transit.application.port.in.StationSearchCommand;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
+import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
+import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
+import com.easysubway.transit.application.port.in.UpdateStationLayoutSourceCommand;
+import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
+import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
+import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
+import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.AccessibilityFacilityType;
+import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.InvalidRouteEdgeException;
+import com.easysubway.transit.domain.InvalidRouteNodeException;
+import com.easysubway.transit.domain.InvalidStationLayoutSourceException;
+import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
+import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeNotFoundException;
+import com.easysubway.transit.domain.RouteEdgeType;
+import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.RouteNodeNotFoundException;
+import com.easysubway.transit.domain.RouteNodeType;
+import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationExit;
+import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLayoutSourceNotFoundException;
+import com.easysubway.transit.domain.StationLayoutSourceType;
+import com.easysubway.transit.domain.StationNotFoundException;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
+import com.easysubway.transit.domain.SimplifiedStationLayoutConfidence;
+import com.easysubway.transit.domain.SimplifiedStationLayoutNotFoundException;
+import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
+import com.easysubway.transit.domain.SubwayLine;
+import com.easysubway.transit.domain.TransitOperator;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("도시철도 마스터데이터 서비스")
+class TransitMasterServiceTest {
+
+	private final InMemoryTransitMasterRepository transitRepository = new InMemoryTransitMasterRepository();
+	private final TransitMasterService service = new TransitMasterService(transitRepository, transitRepository);
+
+	@Test
+	@DisplayName("활성 운영기관 마스터데이터를 반환한다")
+	void listOperatorsReturnsActiveMasterData() {
+		var operators = service.listOperators();
+
+		assertThat(operators)
+			.extracting("id")
+			.contains("seoul-metro", "korail");
+	}
+
+	@Test
+	@DisplayName("지역 목록은 활성 운영기관과 노선과 역 수를 집계한다")
+	void listRegionsSummarizesActiveMasterDataCounts() {
+		// #2095: InMemoryTransitMasterRepository에 ITX-청춘 pilot 정차역 14곳이
+		// 추가돼(수도권 11 + 강원권 3) region 목록·집계가 늘었다. ITX-청춘 노선을
+		// LINES에 추가하고 14역을 STATION_LINES로 연결해 강원권 lineCount는 1이
+		// 됐다. operatorCount는 여전히 0인데, ITX-청춘 운영기관인 한국철도공사가
+		// 이미 수인분당선으로 "수도권" TransitOperator에 등록돼 있고 SubwayLine/
+		// TransitOperator 스키마가 단일 region만 표현할 수 있어, 강원권 전용
+		// "korail-gangwon" 같은 실재하지 않는 운영기관을 지어내지 않았기 때문이다.
+		var regions = service.listRegions();
+
+		assertThat(regions)
+			.extracting("name")
+			.containsExactly("강원권", "수도권");
+
+		var gangwon = regions.get(0);
+		assertThat(gangwon.operatorCount()).isZero();
+		assertThat(gangwon.lineCount()).isEqualTo(1);
+		assertThat(gangwon.stationCount()).isEqualTo(3);
+		assertThat(gangwon.dataQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_1, 3L);
+
+		var metro = regions.get(1);
+		assertThat(metro.operatorCount()).isEqualTo(2);
+		assertThat(metro.lineCount()).isEqualTo(2);
+		assertThat(metro.stationCount()).isEqualTo(13);
+		assertThat(metro.dataQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_1, 13L);
+	}
+
+	@Test
+	@DisplayName("운영기관 식별자로 노선을 필터링한다")
+	void listLinesCanFilterByOperatorId() {
+		// #2095: ITX-청춘 노선(운영기관 한국철도공사)이 LINES에 추가돼
+		// korail 필터 결과에 suin-bundang과 함께 포함된다.
+		var lines = service.listLines("korail");
+
+		assertThat(lines)
+			.extracting("id")
+			.containsExactly("suin-bundang", "itx-cheongchun");
+	}
+
+	@Test
+	@DisplayName("역 검색은 한글 이름과 영문 이름을 모두 찾는다")
+	void searchStationsMatchesKoreanAndEnglishNames() {
+		// "sang"은 #2095에서 추가된 ITX-청춘 pilot 역 "Sangbong"(상봉)과도 매치되므로,
+		// station-sangnoksu만 고유하게 가리키는 "sangnok"으로 질의한다.
+		var koreanMatches = service.searchStations(new StationSearchCommand("상록수", null));
+		var englishMatches = service.searchStations(new StationSearchCommand("sangnok", null));
+
+		assertThat(koreanMatches).hasSize(1);
+		assertThat(englishMatches).hasSize(1);
+		assertThat(koreanMatches.getFirst().station().dataQualityLevel()).isEqualTo(DataQualityLevel.LEVEL_1);
+	}
+
+	@Test
+	@DisplayName("역 검색은 접근성 정보 품질이 높은 역을 먼저 반환한다")
+	void searchStationsPrioritizesHighQualityAccessibilityData() {
+		var qualityService = new TransitMasterService(
+			new QualityPriorityTransitMasterPort(),
+			(facilityId, status, updatedAt) -> {
+			}
+		);
+
+		var stations = qualityService.searchStations(new StationSearchCommand("중앙", null));
+
+		assertThat(stations)
+			.extracting(station -> station.station().id())
+			.containsExactly("station-central-level-4", "station-central-level-3", "station-central-level-2", "station-central-level-1");
+	}
+
+	@Test
+	@DisplayName("노선 필터 역 검색도 접근성 정보 품질이 높은 역을 먼저 반환한다")
+	void searchStationsOnLinePrioritizesHighQualityAccessibilityData() {
+		var qualityService = new TransitMasterService(
+			new QualityPriorityTransitMasterPort(),
+			(facilityId, status, updatedAt) -> {
+			}
+		);
+
+		var stations = qualityService.searchStations(new StationSearchCommand("중앙", "quality-line-a"));
+
+		assertThat(stations)
+			.extracting(station -> station.station().id())
+			.containsExactly("station-central-level-4", "station-central-level-2");
+	}
+
+	@Test
+	@DisplayName("역 검색은 한글 초성만 입력해도 역을 찾는다")
+	void searchStationsMatchesKoreanInitialConsonants() {
+		var stations = service.searchStations(new StationSearchCommand("ㅅㄹㅅ", null));
+
+		assertThat(stations)
+			.extracting(station -> station.station().id())
+			.containsExactly("station-sangnoksu");
+	}
+
+	@Test
+	@DisplayName("역 검색 응답에서 비활성 노선은 제외한다")
+	void searchStationsExcludesInactiveLinesFromStationResponses() {
+		var serviceWithInactiveLine = new TransitMasterService(
+			new TransitMasterPortWithInactiveLine(),
+			(facilityId, status, updatedAt) -> {
+			}
+		);
+
+		var stations = serviceWithInactiveLine.searchStations(new StationSearchCommand("상록수", null));
+		var inactiveLineMatches = serviceWithInactiveLine.searchStations(new StationSearchCommand("상록수", "closed-line"));
+
+		assertThat(stations).hasSize(1);
+		assertThat(stations.getFirst().lines())
+			.extracting("id")
+			.containsExactly("seoul-4");
+		assertThat(inactiveLineMatches).isEmpty();
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 대척점 부동소수점 오차로 먼 역을 포함하지 않는다")
+	void searchNearbyStationsDoesNotIncludeAntipodalStationAsZeroDistance() {
+		var nearbyStations = service.searchNearbyStations(NearbyStationSearchCommand.of(
+			new BigDecimal("-37.302795319689004"),
+			new BigDecimal("-53.13351073508813"),
+			500,
+			10
+		));
+
+		assertThat(nearbyStations).isEmpty();
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 역-노선 연결을 한 번만 불러온다")
+	void searchNearbyStationsLoadsStationLinesOnce() {
+		var repository = new CountingTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		service.searchNearbyStations(NearbyStationSearchCommand.of(
+			new BigDecimal("37.302795"),
+			new BigDecimal("126.866489"),
+			50_000,
+			10
+		));
+
+		assertThat(repository.stationLineLoadCount).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("역 운영 데이터 수 집계는 하위 컬렉션을 한 번씩만 불러온다")
+	void countStationMasterDataLoadsEachCollectionOnce() {
+		var repository = new CountingTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var counts = service.countStationMasterDataByStationId();
+
+		assertThat(counts.get("station-sangnoksu").exitCount()).isEqualTo(2);
+		assertThat(counts.get("station-sangnoksu").facilityCount()).isEqualTo(3);
+		assertThat(counts.get("station-sangnoksu").layoutSourceCount()).isEqualTo(1);
+		assertThat(counts.get("station-sangnoksu").simplifiedLayoutCount()).isEqualTo(1);
+		assertThat(counts.get("station-sangnoksu").routeNodeCount()).isEqualTo(2);
+		assertThat(counts.get("station-sangnoksu").routeEdgeCount()).isEqualTo(1);
+		assertThat(repository.stationExitLoadCount).isEqualTo(1);
+		assertThat(repository.facilityLoadCount).isEqualTo(1);
+		assertThat(repository.layoutSourceLoadCount).isEqualTo(1);
+		assertThat(repository.simplifiedLayoutLoadCount).isEqualTo(1);
+		assertThat(repository.routeNodeLoadCount).isEqualTo(1);
+		assertThat(repository.routeEdgeLoadCount).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역 상세 조회는 도메인 예외를 던진다")
+	void getStationThrowsDomainExceptionForUnknownStation() {
+		assertThatThrownBy(() -> service.getStation("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("역 출구 목록은 접근성 신호를 함께 반환한다")
+	void listStationExitsReturnsExitAccessibilitySignals() {
+		var exits = service.listStationExits("station-sangnoksu");
+
+		assertThat(exits)
+			.extracting("id")
+			.containsExactly("exit-sangnoksu-1", "exit-sangnoksu-2");
+		assertThat(exits.getFirst().exitNumber()).isEqualTo("1");
+		assertThat(exits.getFirst().hasElevatorConnection()).isTrue();
+		assertThat(exits.getFirst().hasStairOnlyPath()).isFalse();
+		assertThat(exits.getFirst().dataConfidence()).isEqualTo(DataConfidenceLevel.HIGH);
+	}
+
+	@Test
+	@DisplayName("역 시설 목록은 상태와 데이터 신뢰도를 함께 반환한다")
+	void listStationFacilitiesReturnsStatusAndConfidence() {
+		var facilities = service.listStationFacilities("station-sangnoksu");
+
+		assertThat(facilities)
+			.extracting("id")
+			.containsExactly("facility-sangnoksu-elevator-1", "facility-sangnoksu-escalator-1", "facility-sangnoksu-accessible-toilet");
+		assertThat(facilities.getFirst().type()).isEqualTo(AccessibilityFacilityType.ELEVATOR);
+		assertThat(facilities.getFirst().status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
+		assertThat(facilities.getFirst().exitId()).isEqualTo("exit-sangnoksu-1");
+		assertThat(facilities.getFirst().dataConfidence()).isEqualTo(DataConfidenceLevel.HIGH);
+	}
+
+	@Test
+	@DisplayName("역 내부 구조도 기준 자료는 출처와 검수 정보를 함께 반환한다")
+	void listStationLayoutSourcesReturnsLicenseAndReviewMetadata() {
+		var sources = service.listStationLayoutSources("station-sangnoksu");
+
+		assertThat(sources)
+			.extracting("id")
+			.containsExactly("layout-source-sangnoksu-station-map");
+		assertThat(sources.getFirst().sourceType()).isEqualTo(StationLayoutSourceType.OPERATOR_DIAGRAM);
+		assertThat(sources.getFirst().sourceName()).isEqualTo("상록수역 역사 안내도");
+		assertThat(sources.getFirst().commercialUseAllowed()).isFalse();
+		assertThat(sources.getFirst().attributionRequired()).isTrue();
+		assertThat(sources.getFirst().reviewedAt()).isEqualTo(LocalDate.of(2026, 6, 12));
+	}
+
+	@Test
+	@DisplayName("관리자는 구조도 기준 자료의 출처와 이용 조건과 검수일을 수정한다")
+	void updateStationLayoutSourceStoresSourceMetadata() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var updated = service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"admin-user"
+		));
+
+		assertThat(updated.sourceType()).isEqualTo(StationLayoutSourceType.OPERATOR_PAGE);
+		assertThat(updated.sourceName()).isEqualTo("상록수역 운영기관 안내 페이지");
+		assertThat(updated.sourceUrl()).isEqualTo("https://www.seoulmetro.co.kr/station/sangnoksu");
+		assertThat(updated.license()).isEqualTo("운영기관 페이지 확인용");
+		assertThat(updated.commercialUseAllowed()).isTrue();
+		assertThat(updated.attributionRequired()).isFalse();
+		assertThat(updated.capturedAt()).isEqualTo(LocalDate.of(2026, 6, 13));
+		assertThat(updated.reviewedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
+		assertThat(service.listStationLayoutSources("station-sangnoksu").getFirst().sourceName())
+			.isEqualTo("상록수역 운영기관 안내 페이지");
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정은 필수 값과 검수일 범위와 관리자 식별자를 요구한다")
+	void updateStationLayoutSourceRequiresValidInputsAndUpdater() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			" ",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidStationLayoutSourceException.class)
+			.hasMessage("기준 자료 이름을 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 12),
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidStationLayoutSourceException.class)
+			.hasMessage("기준 자료 확인일은 수집일보다 빠를 수 없습니다.");
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			""
+		)))
+			.isInstanceOf(InvalidStationLayoutSourceException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정은 URL 역과 기준 자료 소속이 일치해야 한다")
+	void updateStationLayoutSourceRequiresSourceInStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sadang",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"admin-user"
+		)))
+			.isInstanceOf(StationLayoutSourceNotFoundException.class)
+			.hasMessage("구조도 기준 자료 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 초안은 상태와 신뢰도와 기준 자료를 함께 반환한다")
+	void listSimplifiedStationLayoutsReturnsStatusConfidenceAndSources() {
+		var layouts = service.listSimplifiedStationLayouts("station-sangnoksu");
+
+		assertThat(layouts)
+			.extracting("id")
+			.containsExactly("layout-sangnoksu-draft");
+		assertThat(layouts.getFirst().version()).isEqualTo(1);
+		assertThat(layouts.getFirst().status()).isEqualTo(SimplifiedStationLayoutStatus.DRAFT);
+		assertThat(layouts.getFirst().confidenceLevel())
+			.isEqualTo(SimplifiedStationLayoutConfidence.OFFICIAL_DIAGRAM_REFERENCED);
+		assertThat(layouts.getFirst().sourceIds())
+			.containsExactly("layout-source-sangnoksu-station-map");
+		assertThat(layouts.getFirst().layoutJson()).contains("\"nodes\"");
+		assertThat(layouts.getFirst().lastVerifiedAt()).isEqualTo(LocalDate.of(2026, 6, 12));
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드는 구조도와 현장 표시 정보를 함께 반환한다")
+	void listRouteNodesReturnsLayoutAndDisplayMetadata() {
+		var nodes = service.listRouteNodes("station-sangnoksu");
+
+		assertThat(nodes)
+			.extracting("id")
+			.containsExactly("node-sangnoksu-elevator-1", "node-sangnoksu-faregate");
+		assertThat(nodes.getFirst().type()).isEqualTo(RouteNodeType.ELEVATOR);
+		assertThat(nodes.getFirst().layoutId()).isEqualTo("layout-sangnoksu-draft");
+		assertThat(nodes.getFirst().facilityId()).isEqualTo("facility-sangnoksu-elevator-1");
+		assertThat(nodes.getFirst().displayLabel()).isEqualTo("엘리베이터");
+		assertThat(nodes.getFirst().displayX()).isEqualTo(120);
+		assertThat(nodes.getFirst().displayY()).isEqualTo(240);
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선은 이동 난이도와 접근성 제약을 함께 반환한다")
+	void listRouteEdgesReturnsDifficultyAndAccessibilityMetadata() {
+		var edges = service.listRouteEdges("station-sangnoksu");
+
+		assertThat(edges)
+			.extracting("id")
+			.containsExactly("edge-sangnoksu-elevator-to-faregate");
+		assertThat(edges.getFirst().type()).isEqualTo(RouteEdgeType.WALK);
+		assertThat(edges.getFirst().fromNodeId()).isEqualTo("node-sangnoksu-elevator-1");
+		assertThat(edges.getFirst().toNodeId()).isEqualTo("node-sangnoksu-faregate");
+		assertThat(edges.getFirst().distanceMeters()).isEqualTo(28);
+		assertThat(edges.getFirst().estimatedSeconds()).isEqualTo(75);
+		assertThat(edges.getFirst().hasStairs()).isFalse();
+		assertThat(edges.getFirst().requiresElevator()).isTrue();
+		assertThat(edges.getFirst().slopeLevel()).isEqualTo(1);
+		assertThat(edges.getFirst().widthLevel()).isEqualTo(2);
+		assertThat(edges.getFirst().reliabilityScore()).isEqualTo(92);
+		assertThat(edges.getFirst().active()).isTrue();
+	}
+
+	@Test
+	@DisplayName("역 출구와 시설과 구조도와 노드와 간선 목록은 존재하는 역을 요구한다")
+	void stationExitsFacilitiesLayoutsNodesAndEdgesRequireExistingStation() {
+		assertThatThrownBy(() -> service.listStationExits("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listStationFacilities("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listStationLayoutSources("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listSimplifiedStationLayouts("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listRouteNodes("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listRouteEdges("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 시설 상태를 수정하고 갱신일을 기록한다")
+	void updateFacilityStatusStoresStatusAndUpdatedDate() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var updated = service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		));
+
+		assertThat(updated.status()).isEqualTo(AccessibilityFacilityStatus.BROKEN);
+		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
+		assertThat(service.listStationFacilities("station-sangnoksu").getFirst().status())
+			.isEqualTo(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("운영 마스터 데이터 수정은 저장 port까지 관리자 식별자를 전달한다")
+	void adminMasterDataUpdatesPassActorToSavePorts() {
+		var repository = new RecordingActorTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-ramp-actor",
+			"station-sangnoksu",
+			"exit-sangnoksu-2",
+			AccessibilityFacilityType.RAMP,
+			"2번 출구 임시 경사로",
+			"지상",
+			"대합실",
+			new BigDecimal("37.303041"),
+			new BigDecimal("126.866768"),
+			"actor 전달 검증용 시설입니다.",
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.MEDIUM,
+			DataSourceType.ADMIN_VERIFIED,
+			"create-admin"
+		));
+		service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-1",
+			AccessibilityFacilityType.ELEVATOR,
+			"1번 출구 엘리베이터 actor 검증",
+			"지상",
+			"대합실",
+			new BigDecimal("37.302430"),
+			new BigDecimal("126.866230"),
+			"actor 전달 검증용 수정입니다.",
+			AccessibilityFacilityStatus.UNDER_CONSTRUCTION,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"update-admin"
+		));
+		service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"facility-admin"
+		));
+		service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"source-admin"
+		));
+		service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			"휠체어와 유모차 이동 가능",
+			"node-admin"
+		));
+		service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			true,
+			false,
+			true,
+			2,
+			3,
+			76,
+			false,
+			"edge-admin"
+		));
+
+		assertThat(repository.updatedByValues)
+			.containsExactly("create-admin", "update-admin", "facility-admin", "source-admin", "node-admin", "edge-admin");
+	}
+
+	@Test
+	@DisplayName("마스터 데이터 override rollback은 대상과 수정자 식별자를 요구한다")
+	void rollbackMasterDataOverrideRequiresTargetAndUpdater() {
+		assertThatThrownBy(() -> service.rollbackMasterDataOverride("", "facility-id", "admin-user"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("롤백 대상 식별자가 필요합니다.");
+		assertThatThrownBy(() -> service.rollbackMasterDataOverride("ACCESSIBILITY_FACILITY", " ", "admin-user"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("롤백 대상 식별자가 필요합니다.");
+		assertThatThrownBy(() -> service.rollbackMasterDataOverride("ACCESSIBILITY_FACILITY", "facility-id", ""))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("마스터 데이터가 읽기 전용이면 서비스 직접 호출도 저장소 예외 전에 차단한다")
+	void updateFacilityStatusRejectsReadOnlyMasterDataBeforeSavePortException() {
+		var repository = new UnavailableTransitMasterRepository();
+		var readOnlyService = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		assertThatThrownBy(() -> readOnlyService.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		)))
+			.isInstanceOf(MasterDataWriteNotAllowedException.class)
+			.hasMessage("운영 마스터 데이터가 읽기 전용입니다.");
+	}
+
+	@Test
+	@DisplayName("관리자 시설 상태 수정은 즐겨찾기 알림을 요청한다")
+	void updateFacilityStatusRequestsFavoriteAlert() {
+		var repository = new InMemoryTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		));
+
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::facilityId)
+			.containsExactly("facility-sangnoksu-elevator-1");
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::status)
+			.containsExactly(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("관리자 시설 상태 수정은 값이 같으면 즐겨찾기 알림을 요청하지 않는다")
+	void updateFacilityStatusDoesNotRequestFavoriteAlertWhenStatusIsSame() {
+		var repository = new InMemoryTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.NORMAL,
+			"admin-user"
+		));
+
+		assertThat(alertUseCase.commands).isEmpty();
+	}
+
+	@Test
+	@DisplayName("시설 상태 수정은 상태값과 관리자 식별자를 요구한다")
+	void updateFacilityStatusRequiresStatusAndReviewer() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		assertThatThrownBy(() -> service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("시설 상태를 선택해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			""
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 시설 상태는 수정할 수 없다")
+	void updateFacilityStatusRequiresExistingFacility() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		assertThatThrownBy(() -> service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"missing-facility",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		)))
+			.isInstanceOf(AccessibilityFacilityNotFoundException.class)
+			.hasMessage("시설 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 쉬운 내부 구조도 검수 상태를 수정하고 검수자를 기록한다")
+	void updateSimplifiedStationLayoutStatusStoresStatusAndReviewer() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-16T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var updated = service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"layout-sangnoksu-draft",
+			SimplifiedStationLayoutStatus.READY_FOR_REVIEW,
+			"admin-user"
+		));
+
+		assertThat(updated.status()).isEqualTo(SimplifiedStationLayoutStatus.READY_FOR_REVIEW);
+		assertThat(updated.reviewedBy()).isEqualTo("admin-user");
+		assertThat(updated.lastVerifiedAt()).isEqualTo(LocalDate.of(2026, 6, 16));
+		assertThat(service.listSimplifiedStationLayouts("station-sangnoksu").getFirst().status())
+			.isEqualTo(SimplifiedStationLayoutStatus.READY_FOR_REVIEW);
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 검수 상태 수정은 상태값과 관리자 식별자를 요구한다")
+	void updateSimplifiedStationLayoutStatusRequiresStatusAndReviewer() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"layout-sangnoksu-draft",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidSimplifiedStationLayoutException.class)
+			.hasMessage("구조도 상태를 선택해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"layout-sangnoksu-draft",
+			SimplifiedStationLayoutStatus.PUBLISHED,
+			""
+		)))
+			.isInstanceOf(InvalidSimplifiedStationLayoutException.class)
+			.hasMessage("확인 담당자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 쉬운 내부 구조도 상태는 수정할 수 없다")
+	void updateSimplifiedStationLayoutStatusRequiresExistingLayout() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"missing-layout",
+			SimplifiedStationLayoutStatus.PUBLISHED,
+			"admin-user"
+		)))
+			.isInstanceOf(SimplifiedStationLayoutNotFoundException.class)
+			.hasMessage("역 구조도 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 내부 이동 노드의 표시 위치와 안내 문구를 수정한다")
+	void updateRouteNodeDisplayStoresDisplayMetadata() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var updated = service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			"휠체어와 유모차 이동 가능",
+			"admin-user"
+		));
+
+		assertThat(updated.displayX()).isEqualTo(132);
+		assertThat(updated.displayY()).isEqualTo(256);
+		assertThat(updated.displayLabel()).isEqualTo("1번 출구 승강기");
+		assertThat(updated.accessibilityNote()).isEqualTo("휠체어와 유모차 이동 가능");
+		assertThat(service.listRouteNodes("station-sangnoksu").getFirst().displayLabel())
+			.isEqualTo("1번 출구 승강기");
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정은 표시 라벨과 음수가 아닌 좌표와 관리자 식별자를 요구한다")
+	void updateRouteNodeDisplayRequiresValidDisplayInputsAndUpdater() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			-1,
+			256,
+			"1번 출구 승강기",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteNodeException.class)
+			.hasMessage("노드 표시 좌표는 0 이상이어야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			" ",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteNodeException.class)
+			.hasMessage("노드 표시 라벨을 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			null,
+			""
+		)))
+			.isInstanceOf(InvalidRouteNodeException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정은 URL 역과 노드 소속이 일치해야 한다")
+	void updateRouteNodeDisplayRequiresNodeInStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sadang",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(RouteNodeNotFoundException.class)
+			.hasMessage("내부 이동 노드 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 내부 이동 간선의 이동 난이도와 접근성 제약을 수정한다")
+	void updateRouteEdgeStoresDifficultyAndAccessibilityMetadata() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var updated = service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			true,
+			false,
+			true,
+			2,
+			3,
+			76,
+			false,
+			"admin-user"
+		));
+
+		assertThat(updated.distanceMeters()).isEqualTo(34);
+		assertThat(updated.estimatedSeconds()).isEqualTo(90);
+		assertThat(updated.hasStairs()).isTrue();
+		assertThat(updated.requiresElevator()).isFalse();
+		assertThat(updated.requiresEscalator()).isTrue();
+		assertThat(updated.slopeLevel()).isEqualTo(2);
+		assertThat(updated.widthLevel()).isEqualTo(3);
+		assertThat(updated.reliabilityScore()).isEqualTo(76);
+		assertThat(updated.active()).isFalse();
+		assertThat(service.listRouteEdges("station-sangnoksu").getFirst().reliabilityScore())
+			.isEqualTo(76);
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정은 범위 안의 숫자와 관리자 식별자를 요구한다")
+	void updateRouteEdgeRequiresValidInputsAndUpdater() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			-1,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("간선 거리와 예상 시간은 0 이상이어야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			0,
+			2,
+			92,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("간선 경사와 폭 레벨은 1부터 5까지 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			101,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("내부 이동로 확인 정도는 0부터 100까지 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true,
+			""
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정은 URL 역과 간선 소속이 일치해야 한다")
+	void updateRouteEdgeRequiresEdgeInStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sadang",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(RouteEdgeNotFoundException.class)
+			.hasMessage("내부 이동 간선 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 접근성 시설을 등록하고 역 시설 목록에서 확인한다")
+	void createAccessibilityFacilityStoresFacility() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-15T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var created = service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-ramp-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-2",
+			AccessibilityFacilityType.RAMP,
+			"2번 출구 경사로",
+			"지상",
+			"대합실",
+			new BigDecimal("37.303041"),
+			new BigDecimal("126.866768"),
+			"2번 출구와 대합실 사이 경사로입니다.",
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.MEDIUM,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		));
+
+		assertThat(created.id()).isEqualTo("facility-sangnoksu-ramp-1");
+		assertThat(created.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 15));
+		assertThat(service.listStationFacilities("station-sangnoksu"))
+			.extracting(AccessibilityFacility::id)
+			.contains("facility-sangnoksu-ramp-1");
+	}
+
+	@Test
+	@DisplayName("관리자는 접근성 시설 전체 정보를 수정하고 상태 변경 알림을 요청한다")
+	void updateAccessibilityFacilityReplacesFacilityAndRequestsAlertWhenStatusChanges() {
+		var repository = new InMemoryTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-15T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var updated = service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-1",
+			AccessibilityFacilityType.ELEVATOR,
+			"1번 출구 엘리베이터 점검 반영",
+			"지상",
+			"대합실",
+			new BigDecimal("37.302430"),
+			new BigDecimal("126.866230"),
+			"관리자 검수 후 위치와 설명을 보정했습니다.",
+			AccessibilityFacilityStatus.UNDER_CONSTRUCTION,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		));
+
+		assertThat(updated.name()).isEqualTo("1번 출구 엘리베이터 점검 반영");
+		assertThat(updated.status()).isEqualTo(AccessibilityFacilityStatus.UNDER_CONSTRUCTION);
+		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 15));
+		assertThat(service.listStationFacilities("station-sangnoksu").getFirst().description())
+			.isEqualTo("관리자 검수 후 위치와 설명을 보정했습니다.");
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::facilityId)
+			.containsExactly("facility-sangnoksu-elevator-1");
+	}
+
+	@Test
+	@DisplayName("시설 등록은 중복 식별자와 다른 역의 출구를 거부한다")
+	void createAccessibilityFacilityRejectsDuplicateIdAndExitFromAnotherStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-1",
+			AccessibilityFacilityType.ELEVATOR,
+			"중복 시설",
+			"지상",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("이미 등록된 시설입니다.");
+
+		assertThatThrownBy(() -> service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-ramp-1",
+			"station-sangnoksu",
+			"exit-sadang-2",
+			AccessibilityFacilityType.RAMP,
+			"2번 출구 경사로",
+			"지상",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.MEDIUM,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("시설 출구가 역에 포함되어 있지 않습니다.");
+	}
+
+	@Test
+	@DisplayName("시설 전체 수정은 기존 시설과 필수값을 요구한다")
+	void updateAccessibilityFacilityRequiresExistingFacilityAndRequiredFields() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"missing-facility",
+			"station-sangnoksu",
+			null,
+			AccessibilityFacilityType.TOILET,
+			"화장실",
+			"대합실",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(AccessibilityFacilityNotFoundException.class)
+			.hasMessage("시설 정보를 찾을 수 없습니다.");
+
+		assertThatThrownBy(() -> service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			null,
+			null,
+			"",
+			"지상",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("시설 유형을 선택해야 합니다.");
+	}
+
+	private static class TransitMasterPortWithInactiveLine implements LoadTransitMasterPort {
+
+		@Override
+		public List<TransitOperator> loadOperators() {
+			return List.of(
+				new TransitOperator(
+					"seoul-metro",
+					"서울교통공사",
+					"수도권",
+					"https://www.seoulmetro.co.kr",
+					"https://www.seoulmetro.co.kr/kr/customerMain.do",
+					DataSourceType.OFFICIAL_FILE,
+					true
+				)
+			);
+		}
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("seoul-4", "seoul-metro", "수도권 4호선", "#00A5DE", "수도권", "4", true),
+				new SubwayLine("closed-line", "seoul-metro", "운영 종료 노선", "#999999", "수도권", "C", false)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				new Station(
+					"station-sangnoksu",
+					"상록수",
+					"Sangnoksu",
+					"수도권",
+					new BigDecimal("37.302795"),
+					new BigDecimal("126.866489"),
+					DataQualityLevel.LEVEL_1,
+					DataSourceType.OFFICIAL_FILE,
+					LocalDate.of(2026, 6, 12),
+					true
+				)
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-sangnoksu", "seoul-4", "448", 48, "당고개 방면 / 오이도 방면"),
+				new StationLine("station-sangnoksu", "closed-line", "999", 99, "운영 종료")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of();
+		}
+	}
+
+	private static class QualityPriorityTransitMasterPort implements LoadTransitMasterPort {
+
+		@Override
+		public List<TransitOperator> loadOperators() {
+			return List.of(
+				new TransitOperator(
+					"quality-operator",
+					"품질 운영기관",
+					"수도권",
+					"https://operator.easysubway.example",
+					"https://operator.easysubway.example/help",
+					DataSourceType.OFFICIAL_FILE,
+					true
+				)
+			);
+		}
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("quality-line-a", "quality-operator", "품질 A선", "#006D77", "수도권", "A", true),
+				new SubwayLine("quality-line-b", "quality-operator", "품질 B선", "#83C5BE", "수도권", "B", true)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-central-level-1", "중앙역", DataQualityLevel.LEVEL_1),
+				station("station-central-level-3", "중앙역", DataQualityLevel.LEVEL_3),
+				station("station-central-level-2", "중앙역", DataQualityLevel.LEVEL_2),
+				station("station-central-level-4", "중앙역", DataQualityLevel.LEVEL_4)
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-central-level-1", "quality-line-b", "101", 101, "상행 / 하행"),
+				new StationLine("station-central-level-2", "quality-line-a", "102", 102, "상행 / 하행"),
+				new StationLine("station-central-level-3", "quality-line-b", "103", 103, "상행 / 하행"),
+				new StationLine("station-central-level-4", "quality-line-a", "104", 104, "상행 / 하행")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of();
+		}
+
+		private Station station(String id, String nameKo, DataQualityLevel dataQualityLevel) {
+			return new Station(
+				id,
+				nameKo,
+				"Central",
+				"수도권",
+				new BigDecimal("37.300000"),
+				new BigDecimal("126.800000"),
+				dataQualityLevel,
+				DataSourceType.OFFICIAL_FILE,
+				LocalDate.of(2026, 6, 12),
+				true
+			);
+		}
+	}
+
+	private static class RecordingFacilityStatusAlertUseCase implements FacilityStatusAlertUseCase {
+
+		private final java.util.List<FacilityStatusChangedAlertCommand> commands = new java.util.ArrayList<>();
+
+		@Override
+		public void alertFacilityStatusChanged(FacilityStatusChangedAlertCommand command) {
+			commands.add(command);
+		}
+	}
+
+	private static class RecordingActorTransitMasterRepository extends InMemoryTransitMasterRepository {
+
+		private final java.util.List<String> updatedByValues = new java.util.ArrayList<>();
+
+		@Override
+		public void saveFacilityStatus(
+			String facilityId,
+			AccessibilityFacilityStatus status,
+			LocalDate updatedAt,
+			String updatedBy
+		) {
+			updatedByValues.add(updatedBy);
+			super.saveFacilityStatus(facilityId, status, updatedAt);
+		}
+
+		@Override
+		public void saveAccessibilityFacility(AccessibilityFacility facility, String updatedBy) {
+			updatedByValues.add(updatedBy);
+			super.saveAccessibilityFacility(facility);
+		}
+
+		@Override
+		public void saveStationLayoutSource(StationLayoutSource source, String updatedBy) {
+			updatedByValues.add(updatedBy);
+			super.saveStationLayoutSource(source);
+		}
+
+		@Override
+		public void saveRouteNode(RouteNode routeNode, String updatedBy) {
+			updatedByValues.add(updatedBy);
+			super.saveRouteNode(routeNode);
+		}
+
+		@Override
+		public void saveRouteEdge(RouteEdge routeEdge, String updatedBy) {
+			updatedByValues.add(updatedBy);
+			super.saveRouteEdge(routeEdge);
+		}
+	}
+
+	private static class CountingTransitMasterRepository extends InMemoryTransitMasterRepository {
+
+		private int stationLineLoadCount;
+		private int stationExitLoadCount;
+		private int facilityLoadCount;
+		private int layoutSourceLoadCount;
+		private int simplifiedLayoutLoadCount;
+		private int routeNodeLoadCount;
+		private int routeEdgeLoadCount;
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			stationLineLoadCount++;
+			return super.loadStationLines();
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			stationExitLoadCount++;
+			return super.loadStationExits();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			facilityLoadCount++;
+			return super.loadAccessibilityFacilities();
+		}
+
+		@Override
+		public List<StationLayoutSource> loadStationLayoutSources() {
+			layoutSourceLoadCount++;
+			return super.loadStationLayoutSources();
+		}
+
+		@Override
+		public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
+			simplifiedLayoutLoadCount++;
+			return super.loadSimplifiedStationLayouts();
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			routeNodeLoadCount++;
+			return super.loadRouteNodes();
+		}
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			routeEdgeLoadCount++;
+			return super.loadRouteEdges();
+		}
+	}
+
+	@Test
+	@DisplayName("시설 상태 갱신일은 UTC로는 전날인 한국 00~09시에도 한국 달력 날짜로 기록한다")
+	void updateFacilityStatusStampsKoreanCalendarDate() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-13T16:00:00Z"), ZoneOffset.UTC)
+		);
+
+		var updated = service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		));
+
+		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
+	}
+
+	@Test
+	@DisplayName("초기 시드 역에 0,0 가짜 좌표가 없고 인근 역 검색은 null 좌표 역을 안전하게 건너뛴다")
+	void seedStationsHaveNoZeroPlaceholderCoordinatesAndNearbySearchSkipsNullCoordinates() {
+		var repository = new InMemoryTransitMasterRepository();
+		var stations = repository.loadStations();
+
+		assertThat(stations)
+			.noneMatch(station ->
+				station.latitude() != null
+					&& station.longitude() != null
+					&& station.latitude().compareTo(BigDecimal.ZERO) == 0
+					&& station.longitude().compareTo(BigDecimal.ZERO) == 0
+			);
+		assertThat(repository.loadStation("station-c0679b9a6cf8")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.541653");
+			assertThat(station.longitude()).isEqualByComparingTo("127.017303");
+		});
+		assertThat(repository.loadStation("station-e5cf592cf355")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.561159");
+			assertThat(station.longitude()).isEqualByComparingTo("127.035505");
+		});
+		assertThat(repository.loadStation("station-b819702fa7d9")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.580148");
+			assertThat(station.longitude()).isEqualByComparingTo("127.045063");
+		});
+		assertThat(repository.loadStation("station-83bcb1eae340")).get().satisfies(station -> {
+			assertThat(station.latitude()).isEqualByComparingTo("37.595673");
+			assertThat(station.longitude()).isEqualByComparingTo("127.085708");
+		});
+		assertThat(repository.loadStation("station-8aa315864466")).get().satisfies(station -> {
+			assertThat(station.latitude()).isNull();
+			assertThat(station.longitude()).isNull();
+		});
+
+		var service = new TransitMasterService(repository, repository);
+		var nearOrigin = service.searchNearbyStations(new NearbyStationSearchCommand(
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			5_000,
+			20
+		));
+		assertThat(nearOrigin).isEmpty();
+
+		var nearWangsimni = service.searchNearbyStations(new NearbyStationSearchCommand(
+			new BigDecimal("37.561159"),
+			new BigDecimal("127.035505"),
+			1_000,
+			10
+		));
+		assertThat(nearWangsimni)
+			.extracting(item -> item.stationWithLines().station().id())
+			.contains("station-e5cf592cf355");
+	}
+}

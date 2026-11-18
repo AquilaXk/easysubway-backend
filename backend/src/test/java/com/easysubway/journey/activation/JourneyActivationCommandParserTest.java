@@ -1,0 +1,96 @@
+package com.easysubway.journey.activation;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.Test;
+
+class JourneyActivationCommandParserTest {
+
+	private static final String SHA_A = "a".repeat(64);
+	private final JourneyActivationCommandParser parser = new JourneyActivationCommandParser();
+
+	@Test
+	void parsesTheExactBoundedClosedCommand() {
+		var command = parser.parse(validCommand().getBytes(StandardCharsets.UTF_8));
+
+		assertThat(command.schemaVersion()).isOne();
+		assertThat(command.artifactKind()).isEqualTo("journey-v3-activation-command");
+		assertThat(command.activationRequestIdentity()).isEqualTo("activation-request-228");
+		assertThat(command.candidateManifestSha256()).isEqualTo(SHA_A);
+		assertThat(command.candidateGeneration()).isOne();
+		assertThat(command.expectedActiveGeneration()).isZero();
+		assertThat(command.trafficGeneration()).isEqualTo(31);
+	}
+
+	@Test
+	void rejectsDuplicateExtraTrailingAndMalformedInput() {
+		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"schemaVersion\":1"));
+		assertInvalid(validCommand().replace("}", ",\"extra\":true}"));
+		assertInvalid(validCommand().replace("\"trafficGeneration\"", "\"otherTrafficGeneration\""));
+		assertInvalid(validCommand() + "{}");
+		assertInvalid("{");
+		assertInvalid(" ");
+		assertInvalid("null");
+		assertInvalid("[]");
+	}
+
+	@Test
+	void rejectsWrongConstantsBoundsAndGenerationRelations() {
+		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":\"1\""));
+		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":2"));
+		assertInvalid(validCommand().replace(
+			"\"artifactKind\":\"journey-v3-activation-command\"", "\"artifactKind\":1"));
+		assertInvalid(validCommand().replace("journey-v3-activation-command", "other"));
+		assertInvalid(validCommand().replace(
+			"\"activationRequestIdentity\":\"activation-request-228\"", "\"activationRequestIdentity\":1"));
+		assertInvalid(validCommand().replace("activation-request-228", ""));
+		assertInvalid(validCommand().replace("activation-request-228", " activation-request-228"));
+		assertInvalid(validCommand().replace("activation-request-228", "activation\\u0000request"));
+		assertInvalid(validCommand().replace("activation-request-228", "activation\\u007frequest"));
+		assertInvalid(validCommand().replace("activation-request-228", "x".repeat(513)));
+		assertInvalid(validCommand().replace(
+			"\"candidateManifestSha256\":\"" + SHA_A + "\"", "\"candidateManifestSha256\":1"));
+		assertInvalid(validCommand().replace(SHA_A, "A".repeat(64)));
+		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":0"));
+		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":1.5"));
+		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":2"));
+		assertInvalid(validCommand().replace(
+			"\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":0.5"));
+		assertInvalid(validCommand().replace("\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":-1"));
+		assertInvalid(validCommand().replace("\"trafficGeneration\":31", "\"trafficGeneration\":1.5"));
+		assertInvalid(validCommand().replace(
+			"\"trafficGeneration\":31", "\"trafficGeneration\":9223372036854775808"));
+		assertInvalid(validCommand().replace("\"trafficGeneration\":31", "\"trafficGeneration\":0"));
+		assertInvalid(validCommand().replace(
+			"\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":9223372036854775807"));
+	}
+
+	@Test
+	void rejectsEmptyAndOversizedBodies() {
+		assertInvalidBytes(null);
+		assertInvalidBytes(new byte[0]);
+		assertInvalidBytes(new byte[4097]);
+	}
+
+	private void assertInvalidBytes(byte[] request) {
+		assertThatThrownBy(() -> parser.parse(request))
+			.isInstanceOf(JourneyActivationException.class)
+			.extracting("kind")
+			.isEqualTo(JourneyActivationException.Kind.INVALID_REQUEST);
+	}
+
+	private void assertInvalid(String request) {
+		assertThatThrownBy(() -> parser.parse(request.getBytes(StandardCharsets.UTF_8)))
+			.isInstanceOf(JourneyActivationException.class)
+			.extracting("kind")
+			.isEqualTo(JourneyActivationException.Kind.INVALID_REQUEST);
+	}
+
+	static String validCommand() {
+		return """
+			{"schemaVersion":1,"artifactKind":"journey-v3-activation-command","activationRequestIdentity":"activation-request-228","candidateManifestSha256":"%s","candidateGeneration":1,"expectedActiveGeneration":0,"trafficGeneration":31}
+			""".formatted(SHA_A).strip();
+	}
+}

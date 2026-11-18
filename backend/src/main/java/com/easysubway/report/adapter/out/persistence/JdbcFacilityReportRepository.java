@@ -1,0 +1,1174 @@
+package com.easysubway.report.adapter.out.persistence;
+
+import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportListQuery;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
+import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPort;
+import com.easysubway.report.application.port.out.PurgeFacilityReportPersonalDataPort;
+import com.easysubway.report.application.port.out.SaveFacilityReportPort;
+import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.FacilityReportSummary;
+import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.FacilityReportType;
+import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
+import com.easysubway.report.domain.ReportProcessingTimeSummary;
+import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
+import org.springframework.stereotype.Repository;
+
+@Repository
+@Profile("prod | staging | release | prod-like")
+public class JdbcFacilityReportRepository implements
+	LoadFacilityReportPort,
+	SaveFacilityReportPort,
+	AnonymizeUserFacilityReportPort,
+	PurgeFacilityReportPersonalDataPort {
+
+	private static final Logger log = LoggerFactory.getLogger(JdbcFacilityReportRepository.class);
+	private static final String DELETED_DESCRIPTION = "사용자 데이터 삭제로 신고 내용이 삭제되었습니다.";
+	private static final int PHOTO_DELETION_RETRY_BATCH_SIZE = 100;
+
+	private final JdbcTemplate jdbcTemplate;
+	private final DatabaseDialect databaseDialect;
+	private final DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort;
+
+	@Autowired
+	public JdbcFacilityReportRepository(
+		DataSource dataSource,
+		DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort
+	) {
+		this(new JdbcTemplate(dataSource), deleteFacilityReportPhotoPort);
+	}
+
+	JdbcFacilityReportRepository(JdbcTemplate jdbcTemplate) {
+		this(jdbcTemplate, objectKey -> {
+		});
+	}
+
+	JdbcFacilityReportRepository(
+		JdbcTemplate jdbcTemplate,
+		DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort
+	) {
+		this.jdbcTemplate = jdbcTemplate;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
+		this.deleteFacilityReportPhotoPort = deleteFacilityReportPhotoPort;
+	}
+
+	@Override
+	public Optional<FacilityReport> loadReport(String reportId) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject(
+				"""
+					SELECT report_id,
+						public_receipt_code,
+						user_id,
+						station_id,
+						facility_id,
+						report_type,
+						description,
+						photo_file_name,
+						photo_content_type,
+						photo_object_key,
+						photo_thumbnail_object_key,
+						photo_sha256,
+						photo_size_bytes,
+						latitude,
+						longitude,
+						duplicate_of_report_id,
+						status,
+						created_at,
+						reviewed_at,
+						reviewed_by,
+						client_submission_id,
+						receipt_token_hash
+					FROM facility_reports
+					WHERE report_id = ?
+					""",
+				this::mapFacilityReport,
+				reportId
+			));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	@Override
+	public Optional<FacilityReport> loadReportByClientSubmissionId(String clientSubmissionId) {
+		if (clientSubmissionId == null || clientSubmissionId.isBlank()) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject(
+				"""
+					SELECT report_id,
+						public_receipt_code,
+						user_id,
+						station_id,
+						facility_id,
+						report_type,
+						description,
+						photo_file_name,
+						photo_content_type,
+						photo_object_key,
+						photo_thumbnail_object_key,
+						photo_sha256,
+						photo_size_bytes,
+						latitude,
+						longitude,
+						duplicate_of_report_id,
+						status,
+						created_at,
+						reviewed_at,
+						reviewed_by,
+						client_submission_id,
+						receipt_token_hash
+					FROM facility_reports
+					WHERE client_submission_id = ?
+					""",
+				this::mapFacilityReport,
+				clientSubmissionId.trim()
+			));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	@Override
+	public List<FacilityReport> loadReports() {
+		return jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					photo_file_name,
+					photo_content_type,
+					photo_object_key,
+					photo_thumbnail_object_key,
+					photo_sha256,
+					photo_size_bytes,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by,
+					client_submission_id,
+					receipt_token_hash
+				FROM facility_reports
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT 5000
+				""",
+			this::mapFacilityReport
+		);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadUserReportSummaries(
+		String userId,
+		FacilityReportPageRequest pageRequest
+	) {
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				WHERE user_id = ?
+					AND user_id <> ?
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ? OFFSET ?
+				""",
+			this::mapFacilityReportSummary,
+			userId,
+			FacilityReport.ANONYMIZED_USER_ID,
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		return page(summaries, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadReportSummaries(
+		FacilityReportStatus status,
+		FacilityReportPageRequest pageRequest
+	) {
+		if (status == null) {
+			return loadAllReportSummaries(pageRequest);
+		}
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				WHERE status = ?
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ? OFFSET ?
+				""",
+			this::mapFacilityReportSummary,
+			status.name(),
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		return page(summaries, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadReportSummaries(FacilityReportListQuery query) {
+		List<Object> args = new ArrayList<>();
+		String where = buildReportSearchWhere(query, args);
+		// 정렬 컬럼·방향은 화이트리스트 enum(created_at|status, ASC|DESC)이라 SQL 주입 위험이 없다.
+		String orderBy = "ORDER BY " + query.sortField().column() + " " + query.sortDirection().sql()
+			+ ", report_id ASC";
+		args.add(query.limitForHasNext());
+		args.add(query.offset());
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				"""
+				+ where + "\n" + orderBy + "\nLIMIT ? OFFSET ?",
+			this::mapFacilityReportSummary,
+			args.toArray()
+		);
+		return page(summaries, query.toPageRequest());
+	}
+
+	@Override
+	public long countReports(FacilityReportListQuery query) {
+		List<Object> args = new ArrayList<>();
+		String where = buildReportSearchWhere(query, args);
+		Long count = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM facility_reports\n" + where,
+			Long.class,
+			args.toArray()
+		);
+		return count == null ? 0L : count;
+	}
+
+	// 사진 첨부 판정: 파일명·MIME·오브젝트 키가 모두 있어야 첨부로 본다(요약 has_photo 표현식과 동일).
+	private static final String HAS_PHOTO_PREDICATE =
+		"(photo_file_name IS NOT NULL AND photo_content_type IS NOT NULL AND photo_object_key IS NOT NULL)";
+
+	// 상태·키워드(신고 내용 부분일치)·역·유형·사진 유무·접수 기간을 동적 WHERE로 조립하고 바인딩 값을 args에 채운다.
+	private String buildReportSearchWhere(FacilityReportListQuery query, List<Object> args) {
+		List<String> clauses = new ArrayList<>();
+		if (query.status() != null) {
+			clauses.add("status = ?");
+			args.add(query.status().name());
+		}
+		if (query.hasKeyword()) {
+			// LIKE 메타문자(%,_,\)를 이스케이프해 부분일치를 리터럴로 맞춘다(InMemory .contains()와 시맨틱 일치).
+			clauses.add("LOWER(description) LIKE ? ESCAPE '\\'");
+			args.add("%" + escapeLike(query.keyword().toLowerCase(Locale.ROOT)) + "%");
+		}
+		if (query.hasStation()) {
+			clauses.add("station_id = ?");
+			args.add(query.stationId());
+		}
+		if (query.hasReportType()) {
+			clauses.add("report_type = ?");
+			args.add(query.reportType().name());
+		}
+		if (query.hasPhotoFilter()) {
+			// 첨부 유무 필터: 참이면 첨부된 신고, 거짓이면 첨부 없는 신고만. 바인딩 값이 없는 리터럴 술어다.
+			clauses.add(query.hasPhoto() ? HAS_PHOTO_PREDICATE : "NOT " + HAS_PHOTO_PREDICATE);
+		}
+		query.createdFromUtc().ifPresent(from -> {
+			clauses.add("created_at >= ?");
+			args.add(from);
+		});
+		query.createdBeforeUtc().ifPresent(before -> {
+			clauses.add("created_at < ?");
+			args.add(before);
+		});
+		if (clauses.isEmpty()) {
+			return "";
+		}
+		return "WHERE " + String.join(" AND ", clauses);
+	}
+
+	private static String escapeLike(String value) {
+		return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+	}
+
+	@Override
+	public Map<FacilityReportStatus, Long> loadReportStatusCounts() {
+		return jdbcTemplate.query(
+			"""
+				SELECT status,
+					COUNT(*) AS report_count
+				FROM facility_reports
+				GROUP BY status
+				""",
+			resultSet -> {
+				Map<FacilityReportStatus, Long> counts = new EnumMap<>(FacilityReportStatus.class);
+				while (resultSet.next()) {
+					counts.put(
+						FacilityReportStatus.valueOf(resultSet.getString("status")),
+						resultSet.getLong("report_count")
+					);
+				}
+				return Map.copyOf(counts);
+			}
+		);
+	}
+
+	@Override
+	public Map<String, Long> countPendingReportsByStation() {
+		return jdbcTemplate.query(
+			"""
+				SELECT station_id,
+					COUNT(*) AS report_count
+				FROM facility_reports
+				WHERE status IN ('SUBMITTED', 'UNDER_REVIEW')
+				GROUP BY station_id
+				""",
+			resultSet -> {
+				Map<String, Long> counts = new java.util.HashMap<>();
+				while (resultSet.next()) {
+					counts.put(resultSet.getString("station_id"), resultSet.getLong("report_count"));
+				}
+				return Map.copyOf(counts);
+			}
+		);
+	}
+
+	@Override
+	public long countReportsCreatedSince(LocalDateTime cutoff) {
+		Long count = jdbcTemplate.queryForObject(
+			"""
+				SELECT COUNT(*)
+				FROM facility_reports
+				WHERE created_at >= ?
+				""",
+			Long.class,
+			cutoff
+		);
+		return count == null ? 0 : count;
+	}
+
+	@Override
+	public ReportProcessingTimeSummary loadReportProcessingTimeSummary() {
+		return Objects.requireNonNull(jdbcTemplate.query(
+			"""
+				SELECT created_at,
+					reviewed_at
+				FROM facility_reports
+				WHERE reviewed_at IS NOT NULL
+				""",
+			(ResultSetExtractor<ReportProcessingTimeSummary>) resultSet -> {
+				long reviewedCount = 0L;
+				long totalMinutes = 0L;
+				while (resultSet.next()) {
+					LocalDateTime createdAt = resultSet.getObject("created_at", LocalDateTime.class);
+					LocalDateTime reviewedAt = resultSet.getObject("reviewed_at", LocalDateTime.class);
+					long minutes = Duration.between(createdAt, reviewedAt).toMinutes();
+					if (minutes >= 0L) {
+						reviewedCount++;
+						totalMinutes += minutes;
+					}
+				}
+				if (reviewedCount == 0L) {
+					return ReportProcessingTimeSummary.empty();
+				}
+				return new ReportProcessingTimeSummary(reviewedCount, totalMinutes / reviewedCount);
+			}
+		));
+	}
+
+	@Override
+	public List<RepeatedBrokenFacilityReportSummary> loadRepeatedBrokenReportFacilities() {
+		return jdbcTemplate.query(
+			"""
+				SELECT station_id,
+					facility_id,
+					COUNT(*) AS report_count
+				FROM facility_reports
+				WHERE report_type = ?
+				GROUP BY station_id, facility_id
+				HAVING COUNT(*) >= 2
+				ORDER BY report_count DESC, station_id ASC, facility_id ASC
+				""",
+			(resultSet, rowNumber) -> new RepeatedBrokenFacilityReportSummary(
+				resultSet.getString("station_id"),
+				resultSet.getString("facility_id"),
+				resultSet.getLong("report_count")
+			),
+			FacilityReportType.BROKEN.name()
+		);
+	}
+
+	@Override
+	public List<FacilityReportSummary> loadReportsForFacility(String stationId, String facilityId, int limit) {
+		return jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				WHERE station_id = ?
+					AND facility_id = ?
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ?
+				""",
+			this::mapFacilityReportSummary,
+			stationId,
+			facilityId,
+			limit
+		);
+	}
+
+	@Override
+	public FacilityReport saveReport(FacilityReport report) {
+		upsertReport(report);
+		return loadReport(report.id())
+			.orElseThrow(() -> new IllegalStateException("Saved facility report is missing: " + report.id()));
+	}
+
+	@Override
+	public Optional<FacilityReport> saveReviewedReportIfStatus(
+		FacilityReport report,
+		FacilityReportStatus expectedStatus
+	) {
+		int anonymizedUpdatedCount = updateAnonymizedReportOperationalFields(report, expectedStatus);
+		if (anonymizedUpdatedCount > 0) {
+			return loadReport(report.id());
+		}
+		int updatedCount = jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET public_receipt_code = ?,
+					user_id = ?,
+					station_id = ?,
+					facility_id = ?,
+					report_type = ?,
+					description = ?,
+					photo_file_name = ?,
+					photo_content_type = ?,
+					photo_object_key = ?,
+					photo_thumbnail_object_key = ?,
+					photo_sha256 = ?,
+					photo_size_bytes = ?,
+					latitude = ?,
+					longitude = ?,
+					duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?,
+					client_submission_id = ?,
+					receipt_token_hash = ?
+				WHERE report_id = ?
+					AND status = ?
+					AND user_id <> ?
+				""",
+			report.publicReceiptCode(),
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType().name(),
+			report.description(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
+			report.latitude(),
+			report.longitude(),
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash(),
+			report.id(),
+			expectedStatus.name(),
+			FacilityReport.ANONYMIZED_USER_ID
+		);
+		if (updatedCount == 0) {
+			updatedCount = updateAnonymizedReportOperationalFields(report, expectedStatus);
+		}
+		if (updatedCount == 0) {
+			return Optional.empty();
+		}
+		return loadReport(report.id());
+	}
+
+	@Override
+	public int anonymizeFacilityReportsByUserId(String userId) {
+		List<AnonymizedPhotoObjects> targetPhotoObjects = loadPhotoObjectsByUserId(userId);
+		int anonymizedCount = jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET user_id = ?,
+					description = ?,
+					photo_file_name = NULL,
+					photo_content_type = NULL,
+					photo_sha256 = NULL,
+					photo_size_bytes = NULL,
+					latitude = NULL,
+					longitude = NULL,
+					client_submission_id = NULL,
+					receipt_token_hash = NULL
+				WHERE user_id = ?
+				""",
+			FacilityReport.ANONYMIZED_USER_ID,
+			DELETED_DESCRIPTION,
+			userId
+		);
+		deleteUserRequestedPhotoObjects(targetPhotoObjects);
+		return anonymizedCount;
+	}
+
+	private void deleteUserRequestedPhotoObjects(List<AnonymizedPhotoObjects> targetPhotoObjects) {
+		for (AnonymizedPhotoObjects objects : targetPhotoObjects) {
+			deletePrimaryPhotoObject(objects.reportId(), objects.primaryObjectKey());
+			deleteThumbnailPhotoObject(objects.reportId(), objects.thumbnailObjectKey());
+		}
+	}
+
+	@Override
+	public int purgePersonalDataCreatedBefore(LocalDateTime cutoff) {
+		int purgedCount = jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET user_id = ?,
+					description = ?,
+					photo_file_name = NULL,
+					photo_content_type = NULL,
+					photo_sha256 = NULL,
+					photo_size_bytes = NULL,
+					latitude = NULL,
+					longitude = NULL,
+					client_submission_id = NULL,
+					receipt_token_hash = NULL
+				WHERE created_at < ?
+					AND (
+						user_id <> ?
+						OR description IS NULL
+						OR description <> ?
+						OR photo_file_name IS NOT NULL
+						OR photo_content_type IS NOT NULL
+						OR photo_sha256 IS NOT NULL
+						OR photo_size_bytes IS NOT NULL
+						OR latitude IS NOT NULL
+						OR longitude IS NOT NULL
+						OR client_submission_id IS NOT NULL
+						OR receipt_token_hash IS NOT NULL
+					)
+				""",
+			FacilityReport.ANONYMIZED_USER_ID,
+			DELETED_DESCRIPTION,
+			cutoff,
+			FacilityReport.ANONYMIZED_USER_ID,
+			DELETED_DESCRIPTION
+		);
+		deletePendingAnonymizedPhotoObjects();
+		return purgedCount;
+	}
+
+	private void deletePendingAnonymizedPhotoObjects() {
+		AnonymizedPhotoObjects cursor = null;
+		while (true) {
+			List<AnonymizedPhotoObjects> pendingObjects = loadPendingAnonymizedPhotoObjectsAfter(cursor);
+			if (pendingObjects.isEmpty()) {
+				return;
+			}
+			deletePendingPhotoObjects(pendingObjects);
+			cursor = pendingObjects.get(pendingObjects.size() - 1);
+			if (pendingObjects.size() < PHOTO_DELETION_RETRY_BATCH_SIZE) {
+				return;
+			}
+		}
+	}
+
+	private List<AnonymizedPhotoObjects> loadPendingAnonymizedPhotoObjectsAfter(
+		AnonymizedPhotoObjects cursor
+	) {
+		if (cursor == null) {
+			return jdbcTemplate.query(
+				"""
+					SELECT report_id,
+						created_at,
+						photo_object_key,
+						photo_thumbnail_object_key
+					FROM facility_reports
+					WHERE user_id = ?
+						AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+					ORDER BY created_at ASC, report_id ASC
+					LIMIT ?
+					""",
+				this::mapAnonymizedPhotoObjects,
+				FacilityReport.ANONYMIZED_USER_ID,
+				PHOTO_DELETION_RETRY_BATCH_SIZE
+			);
+		}
+		return jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					created_at,
+					photo_object_key,
+					photo_thumbnail_object_key
+				FROM facility_reports
+				WHERE user_id = ?
+					AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+					AND (created_at > ? OR (created_at = ? AND report_id > ?))
+				ORDER BY created_at ASC, report_id ASC
+				LIMIT ?
+				""",
+			this::mapAnonymizedPhotoObjects,
+			FacilityReport.ANONYMIZED_USER_ID,
+			cursor.createdAt(),
+			cursor.createdAt(),
+			cursor.reportId(),
+			PHOTO_DELETION_RETRY_BATCH_SIZE
+		);
+	}
+
+	private List<AnonymizedPhotoObjects> loadPhotoObjectsByUserId(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					created_at,
+					photo_object_key,
+					photo_thumbnail_object_key
+				FROM facility_reports
+				WHERE user_id = ?
+					AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+				ORDER BY created_at ASC, report_id ASC
+				""",
+			this::mapAnonymizedPhotoObjects,
+			userId
+		);
+	}
+
+	private AnonymizedPhotoObjects mapAnonymizedPhotoObjects(ResultSet resultSet, int rowNumber)
+		throws SQLException {
+		return new AnonymizedPhotoObjects(
+			resultSet.getString("report_id"),
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getString("photo_object_key"),
+			resultSet.getString("photo_thumbnail_object_key")
+		);
+	}
+
+	private void deletePendingPhotoObjects(List<AnonymizedPhotoObjects> pendingObjects) {
+		for (AnonymizedPhotoObjects objects : pendingObjects) {
+			tryDeletePendingPhotoObject(
+				() -> deletePrimaryPhotoObject(objects.reportId(), objects.primaryObjectKey()),
+				"primary"
+			);
+			tryDeletePendingPhotoObject(
+				() -> deleteThumbnailPhotoObject(objects.reportId(), objects.thumbnailObjectKey()),
+				"thumbnail"
+			);
+		}
+	}
+
+	private void tryDeletePendingPhotoObject(Runnable deletion, String kind) {
+		try {
+			deletion.run();
+		} catch (RuntimeException exception) {
+			log.warn(
+				"Failed to delete anonymized facility report {} photo; it remains queued for retry",
+				kind,
+				exception
+			);
+		}
+	}
+
+	private void deletePrimaryPhotoObject(String reportId, String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(objectKey);
+		jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET photo_object_key = NULL
+				WHERE report_id = ?
+					AND user_id = ?
+					AND photo_object_key = ?
+				""",
+			reportId,
+			FacilityReport.ANONYMIZED_USER_ID,
+			objectKey
+		);
+	}
+
+	private void deleteThumbnailPhotoObject(String reportId, String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(objectKey);
+		jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET photo_thumbnail_object_key = NULL
+				WHERE report_id = ?
+					AND user_id = ?
+					AND photo_thumbnail_object_key = ?
+				""",
+			reportId,
+			FacilityReport.ANONYMIZED_USER_ID,
+			objectKey
+		);
+	}
+
+	private record AnonymizedPhotoObjects(
+		String reportId,
+		LocalDateTime createdAt,
+		String primaryObjectKey,
+		String thumbnailObjectKey
+	) {
+	}
+
+	private void upsertReport(FacilityReport report) {
+		if (updateAnonymizedReportOperationalFields(report) > 0) {
+			return;
+		}
+		if (databaseDialect == DatabaseDialect.H2) {
+			if (updateReportPreservingCreatedAt(report) == 0) {
+				if (updateAnonymizedReportOperationalFields(report) == 0) {
+					insertReport(report);
+				}
+			}
+			return;
+		}
+		upsertReportWithPostgresql(report);
+	}
+
+	private void upsertReportWithPostgresql(FacilityReport report) {
+		// 확인 상태 갱신과 재저장을 같은 SQL 경로로 처리해 운영 저장소의 행 단위 일관성을 유지한다.
+		int updatedCount = jdbcTemplate.update(
+			"""
+				INSERT INTO facility_reports (
+					report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					photo_file_name,
+					photo_content_type,
+					photo_object_key,
+					photo_thumbnail_object_key,
+					photo_sha256,
+					photo_size_bytes,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by,
+					client_submission_id,
+					receipt_token_hash
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (report_id) DO UPDATE
+				SET public_receipt_code = EXCLUDED.public_receipt_code,
+					user_id = EXCLUDED.user_id,
+					station_id = EXCLUDED.station_id,
+					facility_id = EXCLUDED.facility_id,
+					report_type = EXCLUDED.report_type,
+					description = EXCLUDED.description,
+					photo_file_name = EXCLUDED.photo_file_name,
+					photo_content_type = EXCLUDED.photo_content_type,
+					photo_object_key = EXCLUDED.photo_object_key,
+					photo_thumbnail_object_key = EXCLUDED.photo_thumbnail_object_key,
+					photo_sha256 = EXCLUDED.photo_sha256,
+					photo_size_bytes = EXCLUDED.photo_size_bytes,
+					latitude = EXCLUDED.latitude,
+					longitude = EXCLUDED.longitude,
+					duplicate_of_report_id = EXCLUDED.duplicate_of_report_id,
+					status = EXCLUDED.status,
+					reviewed_at = EXCLUDED.reviewed_at,
+					reviewed_by = EXCLUDED.reviewed_by,
+					client_submission_id = EXCLUDED.client_submission_id,
+					receipt_token_hash = EXCLUDED.receipt_token_hash
+				WHERE facility_reports.user_id <> ?
+				""",
+			append(reportParameters(report), FacilityReport.ANONYMIZED_USER_ID)
+		);
+		if (updatedCount == 0) {
+			updateAnonymizedReportOperationalFields(report);
+		}
+	}
+
+	private int updateReportPreservingCreatedAt(FacilityReport report) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET public_receipt_code = ?,
+					user_id = ?,
+					station_id = ?,
+					facility_id = ?,
+					report_type = ?,
+					description = ?,
+					photo_file_name = ?,
+					photo_content_type = ?,
+					photo_object_key = ?,
+					photo_thumbnail_object_key = ?,
+					photo_sha256 = ?,
+					photo_size_bytes = ?,
+					latitude = ?,
+					longitude = ?,
+					duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?,
+					client_submission_id = ?,
+					receipt_token_hash = ?
+				WHERE report_id = ?
+					AND user_id <> ?
+				""",
+			report.publicReceiptCode(),
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType().name(),
+			report.description(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
+			report.latitude(),
+			report.longitude(),
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash(),
+			report.id(),
+			FacilityReport.ANONYMIZED_USER_ID
+		);
+	}
+
+	private int updateAnonymizedReportOperationalFields(FacilityReport report) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?
+				WHERE report_id = ?
+					AND user_id = ?
+				""",
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.id(),
+			FacilityReport.ANONYMIZED_USER_ID
+		);
+	}
+
+	private int updateAnonymizedReportOperationalFields(
+		FacilityReport report,
+		FacilityReportStatus expectedStatus
+	) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?
+				WHERE report_id = ?
+					AND status = ?
+					AND user_id = ?
+				""",
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.id(),
+			expectedStatus.name(),
+			FacilityReport.ANONYMIZED_USER_ID
+		);
+	}
+
+	private void insertReport(FacilityReport report) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO facility_reports (
+					report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					photo_file_name,
+					photo_content_type,
+					photo_object_key,
+					photo_thumbnail_object_key,
+					photo_sha256,
+					photo_size_bytes,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by,
+					client_submission_id,
+					receipt_token_hash
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+			reportParameters(report)
+		);
+	}
+
+	private PageResult<FacilityReportSummary> loadAllReportSummaries(FacilityReportPageRequest pageRequest) {
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ? OFFSET ?
+				""",
+			this::mapFacilityReportSummary,
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		return page(summaries, pageRequest);
+	}
+
+	private PageResult<FacilityReportSummary> page(
+		List<FacilityReportSummary> summaries,
+		FacilityReportPageRequest pageRequest
+	) {
+		boolean hasNext = summaries.size() > pageRequest.size();
+		List<FacilityReportSummary> items = hasNext
+			? summaries.subList(0, pageRequest.size())
+			: summaries;
+		return new PageResult<>(items, pageRequest.page(), pageRequest.size(), hasNext);
+	}
+
+	private Object[] reportParameters(FacilityReport report) {
+		return new Object[] {
+			report.id(),
+			report.publicReceiptCode(),
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType().name(),
+			report.description(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
+			report.latitude(),
+			report.longitude(),
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.createdAt(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash()
+		};
+	}
+
+	private Object[] append(Object[] parameters, Object value) {
+		Object[] appended = Arrays.copyOf(parameters, parameters.length + 1);
+		appended[parameters.length] = value;
+		return appended;
+	}
+
+	private FacilityReportSummary mapFacilityReportSummary(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new FacilityReportSummary(
+			resultSet.getString("report_id"),
+			resultSet.getString("public_receipt_code"),
+			resultSet.getString("user_id"),
+			resultSet.getString("station_id"),
+			resultSet.getString("facility_id"),
+			FacilityReportType.valueOf(resultSet.getString("report_type")),
+			resultSet.getString("description"),
+			resultSet.getBoolean("has_photo"),
+			resultSet.getBigDecimal("latitude"),
+			resultSet.getBigDecimal("longitude"),
+			resultSet.getString("duplicate_of_report_id"),
+			FacilityReportStatus.valueOf(resultSet.getString("status")),
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("reviewed_at", LocalDateTime.class),
+			resultSet.getString("reviewed_by")
+		);
+	}
+
+	private FacilityReport mapFacilityReport(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new FacilityReport(
+			resultSet.getString("report_id"),
+			resultSet.getString("public_receipt_code"),
+			resultSet.getString("user_id"),
+			resultSet.getString("station_id"),
+			resultSet.getString("facility_id"),
+			FacilityReportType.valueOf(resultSet.getString("report_type")),
+			resultSet.getString("description"),
+			resultSet.getString("photo_file_name"),
+			resultSet.getString("photo_content_type"),
+			resultSet.getString("photo_object_key"),
+			resultSet.getString("photo_thumbnail_object_key"),
+			resultSet.getString("photo_sha256"),
+			photoSizeBytes(resultSet),
+			resultSet.getBigDecimal("latitude"),
+			resultSet.getBigDecimal("longitude"),
+			resultSet.getString("duplicate_of_report_id"),
+			FacilityReportStatus.valueOf(resultSet.getString("status")),
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getObject("reviewed_at", LocalDateTime.class),
+			resultSet.getString("reviewed_by"),
+			resultSet.getString("client_submission_id"),
+			resultSet.getString("receipt_token_hash")
+		);
+	}
+
+	private Long photoSizeBytes(ResultSet resultSet) throws SQLException {
+		Number sizeBytes = (Number) resultSet.getObject("photo_size_bytes");
+		return sizeBytes == null ? null : sizeBytes.longValue();
+	}
+
+	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
+	}
+}

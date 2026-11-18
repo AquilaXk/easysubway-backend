@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>운영기관 빈 상태 fragment</title>
+</head>
+<body>
+<!--
+  운영기관 표준 빈 상태(#2349 PR⑩e, admin/fragments/empty-state.html 문법 이관 — 아이콘 없는 텍스트
+  중심, 과장 박스 금지). message는 상황 설명, hint는 다음 행동 안내(선택). 5개 리포트 화면의 차트·표
+  빈 상태가 재사용한다.
+  사용: <div th:replace="~{operator/fragments/empty-state :: panel('최근 실행 기록이 없습니다.', '실행되면 여기에 표시됩니다.')}"></div>
+-->
+<div th:fragment="panel(message, hint)" class="empty-state">
+	<p class="empty-state-message" th:text="${message}">표시할 항목이 없습니다.</p>
+	<p class="empty-state-hint" th:if="${hint != null and !hint.isEmpty()}" th:text="${hint}">다음 행동 안내</p>
+</div>
+</body>
+</html>

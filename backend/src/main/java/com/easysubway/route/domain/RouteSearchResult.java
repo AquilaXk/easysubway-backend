@@ -1,0 +1,195 @@
+package com.easysubway.route.domain;
+
+import com.easysubway.profile.domain.MobilityType;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+public record RouteSearchResult(
+	String routeSearchId,
+	String originStationId,
+	String originStationName,
+	String destinationStationId,
+	String destinationStationName,
+	MobilityType mobilityType,
+	RouteSearchStatus status,
+	String lineId,
+	String lineName,
+	int score,
+	List<RouteStep> steps,
+	List<RouteWarning> warnings,
+	List<String> blockedReasons,
+	LocalDateTime createdAt,
+	List<String> objectiveTags,
+	OfficialFare officialFare
+) {
+	public RouteSearchResult(
+		String routeSearchId,
+		String originStationId,
+		String originStationName,
+		String destinationStationId,
+		String destinationStationName,
+		MobilityType mobilityType,
+		RouteSearchStatus status,
+		String lineId,
+		String lineName,
+		int score,
+		List<RouteStep> steps,
+		List<RouteWarning> warnings,
+		List<String> blockedReasons,
+		LocalDateTime createdAt
+	) {
+		this(routeSearchId, originStationId, originStationName, destinationStationId, destinationStationName,
+			mobilityType, status, lineId, lineName, score, steps, warnings, blockedReasons, createdAt,
+			List.of(), null);
+	}
+
+	public RouteSearchResult {
+		steps = List.copyOf(steps);
+		warnings = List.copyOf(warnings);
+		blockedReasons = List.copyOf(blockedReasons);
+		objectiveTags = objectiveTags == null ? List.of() : List.copyOf(objectiveTags);
+	}
+
+	public record OfficialFare(
+		int adultFareWon,
+		String currency,
+		String policy,
+		List<String> sourceIds,
+		List<String> sourceSnapshotIds
+	) {
+		public OfficialFare {
+			if (adultFareWon <= 0 || !"KRW".equals(currency) || !"SUM_OF_OFFICIAL_RIDE_OD_FARES".equals(policy)) {
+				throw new IllegalArgumentException("route official fare is invalid");
+			}
+			sourceIds = List.copyOf(sourceIds);
+			sourceSnapshotIds = List.copyOf(sourceSnapshotIds);
+		}
+	}
+
+	public List<String> recommendationReasons() {
+		if (status != RouteSearchStatus.FOUND) {
+			return List.of();
+		}
+		List<String> reasons = new ArrayList<>();
+		if (hasStepFreeAccessibilityStep()) {
+			reasons.add("선택된 경로에서 접근성 확인이 필요한 구간을 표시합니다.");
+			reasons.add("출구와 시설 상태는 현장 안내를 함께 확인해 주세요.");
+		}
+		if (hasStairWarning()) {
+			reasons.add("계단 포함 구간을 미리 표시했어요");
+		}
+		reasons.add(mobilityReason());
+		return List.copyOf(reasons.stream().distinct().limit(3).toList());
+	}
+
+	public int burdenCost() {
+		return score;
+	}
+
+	public int estimatedDurationSeconds() {
+		return steps.stream()
+			.mapToInt(step -> Math.max(0, step.estimatedMinutes()) * 60)
+			.sum();
+	}
+
+	public EtaSource etaSource() {
+		if (steps.isEmpty()) {
+			return EtaSource.PLANNED;
+		}
+		long realtimeSteps = steps.stream()
+			.filter(step -> EtaSource.REALTIME.name().equals(step.timeSource()))
+			.count();
+		boolean plannedWithoutRealtime = steps.stream()
+			.anyMatch(step -> isPlannedWithoutRealtime(step.timeSource()));
+		if (plannedWithoutRealtime) {
+			return EtaSource.PLANNED_WITHOUT_REALTIME;
+		}
+		if (realtimeSteps == 0) {
+			return steps.stream().allMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource()))
+				? EtaSource.PLANNED
+				: EtaSource.STATIC_BACKEND_ESTIMATE;
+		}
+		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
+	}
+
+	private static boolean isPlannedWithoutRealtime(String timeSource) {
+		return "FALLBACK".equals(timeSource) || EtaSource.PLANNED_WITHOUT_REALTIME.name().equals(timeSource);
+	}
+
+	public int walkingDistanceMeters() {
+		return steps.stream()
+			.filter(this::isWalkingStep)
+			.mapToInt(step -> Math.max(0, step.distanceMeters()))
+			.sum();
+	}
+
+	public int transferCount() {
+		long typedTransfers = steps.stream()
+			.filter(step -> "transfer".equals(step.stepType()))
+			.count();
+		if (typedTransfers > 0) {
+			return Math.toIntExact(typedTransfers);
+		}
+		String previousLine = "";
+		int changes = 0;
+		for (RouteStep step : steps) {
+			String line = !step.lineId().isBlank() ? step.lineId() : step.lineName();
+			if (line.isBlank()) {
+				continue;
+			}
+			if (!previousLine.isBlank() && !previousLine.equals(line)) {
+				changes++;
+			}
+			previousLine = line;
+		}
+		return changes;
+	}
+
+	public List<String> evidenceSummary() {
+		if (steps.isEmpty()) {
+			return List.of();
+		}
+		boolean requiresAccessibilityCheck = steps.stream()
+			.anyMatch(step -> step.requiresAccessibilityCheck() || "UNKNOWN".equals(step.stairAccessState()));
+		boolean hasDurationEstimate = steps.stream()
+			.allMatch(step -> step.estimatedMinutes() > 0);
+		boolean hasDistanceMeasure = steps.stream()
+			.allMatch(step -> step.distanceMeters() > 0);
+		return List.of(
+			requiresAccessibilityCheck ? "ACCESSIBILITY_CHECK_REQUIRED" : "ACCESSIBILITY_VERIFIED",
+			hasDurationEstimate ? "DURATION_ESTIMATED" : "DURATION_UNKNOWN",
+			hasDistanceMeasure ? "DISTANCE_MEASURED" : "DISTANCE_UNKNOWN"
+		);
+	}
+
+	private boolean hasStepFreeAccessibilityStep() {
+		return steps.stream()
+			.filter(RouteStep::requiresAccessibilityCheck)
+			.anyMatch(step -> !step.includesStairs());
+	}
+
+	private boolean hasStairWarning() {
+		return warnings.stream()
+			.anyMatch(warning -> warning.code() == RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	private String mobilityReason() {
+		return switch (mobilityType) {
+			case WHEELCHAIR -> "휠체어 이동 조건을 반영해 계단 부담이 낮은 경로를 우선했습니다.";
+			case STROLLER -> "유모차 이동 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
+			case SENIOR -> "천천히 이동하기 쉬운 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
+			case PREGNANT -> "짧게 걷는 동선을 우선했어요";
+			case TEMPORARY_INJURY -> "계단 부담이 적은 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
+			case LUGGAGE -> "큰 짐을 들고 이동하기 쉬운 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
+		};
+	}
+
+	private boolean isWalkingStep(RouteStep step) {
+		return switch (step.stepType()) {
+			case "entry", "exit", "transfer", "internal" -> true;
+			case "ride" -> false;
+			default -> step.requiresAccessibilityCheck();
+		};
+	}
+}

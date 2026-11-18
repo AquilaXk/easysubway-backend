@@ -1,0 +1,262 @@
+package com.easysubway.admin.adapter.in.web;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrlPattern;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import jakarta.servlet.http.HttpSession;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+
+@SpringBootTest(properties = {
+	"easysubway.admin.username=admin-user",
+	"easysubway.admin.password=admin-test-password"
+})
+@AutoConfigureMockMvc
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
+@DisplayName("관리자 접근성 smoke")
+class AdminAccessibilitySmokeTest {
+
+	private static final Pattern COMMAND_TOKEN = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"");
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Test
+	@DisplayName("관리자 로그인 화면은 모바일 viewport와 form label, CSRF를 제공한다")
+	void adminLoginPageHasAccessibleFormBaseline() throws Exception {
+		String html = mockMvc.perform(get("/admin/login"))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("<html lang=\"ko\"")
+			.contains("name=\"viewport\"")
+			.contains("class=\"login-screen\"")
+			.contains("src=\"/images/admin-app-icon.png\"")
+			.contains("쉬운 지하철 관리자")
+			.contains("<h1>관리자 로그인</h1>")
+			.contains("for=\"username\"")
+			.contains("id=\"username\"")
+			.contains("autocomplete=\"username\"")
+			.contains("for=\"password\"")
+			.contains("id=\"password\"")
+			.contains("autocomplete=\"current-password\"")
+			.contains("name=\"remember-me\"")
+			.contains("로그인 유지")
+			.contains("name=\"_csrf\"");
+	}
+
+	@Test
+	@DisplayName("관리자 로그인 입력과 제출 버튼은 48px 터치 높이를 유지한다")
+	void adminLoginControlsKeepLargeTouchHeight() throws Exception {
+		String css = mockMvc.perform(get("/css/admin-components.css"))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(css).containsPattern(
+			"(?s)\\.login-field input,\\s*\\.login-submit\\s*\\{[^}]*min-height:\\s*48px"
+		);
+	}
+
+	@Test
+	@DisplayName("관리자 주요 화면은 skip link, landmark, 로그아웃 form을 유지한다")
+	void adminPagesKeepAccessibleShell() throws Exception {
+		RequestPostProcessor admin = fullAdmin();
+
+		assertAdminShell("/admin/dashboard/page", "오늘의 운영 현황", admin);
+		assertAdminShell("/admin/reports/page", "제보 확인 대기열", admin);
+		assertAdminShell("/admin/facilities/page", "시설 상태판", admin);
+		assertAdminShell("/admin/batches/page", "배치 운영", admin);
+		assertAdminShell("/admin/audits/privacy/page", "개인정보 조회 로그", admin);
+	}
+
+	@Test
+	@DisplayName("htmx 세션 만료는 fragment swap 대신 전체 새로고침 로그인으로 보낸다")
+	void htmxExpiredSessionRequestsRefreshTheWholePage() throws Exception {
+		mockMvc.perform(get("/admin/search")
+				.header("HX-Request", "true")
+				.header("Accept", MediaType.TEXT_HTML_VALUE))
+			.andExpect(status().isNoContent())
+			.andExpect(header().string("HX-Refresh", "true"));
+
+		mockMvc.perform(get("/operator/accessibility-report/page")
+				.header("HX-Request", "true")
+				.header("Accept", MediaType.TEXT_HTML_VALUE))
+			.andExpect(status().isNoContent())
+			.andExpect(header().string("HX-Refresh", "true"));
+	}
+
+	@Test
+	@DisplayName("일반 세션 만료 요청은 기존 로그인 redirect만 사용한다")
+	void normalExpiredSessionRequestsStillRedirectToLogin() throws Exception {
+		mockMvc.perform(get("/admin/search")
+				.header("Accept", MediaType.TEXT_HTML_VALUE))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().doesNotExist("HX-Refresh"))
+			.andExpect(redirectedUrlPattern("**/admin/login"));
+
+		mockMvc.perform(get("/operator/accessibility-report/page")
+				.header("Accept", MediaType.TEXT_HTML_VALUE))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().doesNotExist("HX-Refresh"))
+			.andExpect(redirectedUrlPattern("**/operator/login"));
+	}
+
+	@Test
+	@DisplayName("제보 대기열은 드로어 dialog 마크업 계약을 유지한다")
+	void reportsPageKeepsDrawerDialogMarkup() throws Exception {
+		String html = getAdminHtml("/admin/reports/page", new MockHttpSession(), fullAdmin());
+
+		assertThat(html)
+			.contains("class=\"admin-drawer\"")
+			.contains("role=\"dialog\" aria-modal=\"true\" aria-label=\"상세 패널\"")
+			.contains("x-on:keydown=\"trapFocusKey\"")
+			.contains("id=\"admin-drawer-body\"");
+	}
+
+	@Test
+	@DisplayName("관리자 오류와 validation 화면은 alert 의미와 기존 입력 확인 문구를 제공한다")
+	void adminErrorAndValidationPagesExposeAlertSemantics() throws Exception {
+		RequestPostProcessor admin = fullAdmin();
+
+		String methodErrorHtml = mockMvc.perform(get("/admin/batches/transit-master-collection/runs/missing-run/retry")
+				.with(admin))
+			.andExpect(status().isMethodNotAllowed())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(methodErrorHtml)
+			.contains("class=\"admin-shell\"")
+			.contains("role=\"alert\"")
+			.contains("aria-labelledby=\"admin-error-title\"")
+			.contains("허용되지 않는 요청입니다");
+
+		MockHttpSession session = new MockHttpSession();
+		String token = commandTokenFrom(getAdminHtml("/admin/facilities/page", session, admin));
+		String validationHtml = mockMvc.perform(post("/admin/facilities/facility-sangnoksu-elevator-1/page/status")
+				.session(session)
+				.with(admin)
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(validationHtml)
+			.contains("class=\"admin-shell\"")
+			.contains("role=\"alert\"")
+			.contains("aria-labelledby=\"form-error-summary-title\"")
+			.contains("입력값을 확인해 주세요")
+			.contains("시설 상태를 선택해야 합니다.");
+	}
+
+	private void assertAdminShell(String path, String expectedHeading, RequestPostProcessor admin) throws Exception {
+		String html = getAdminHtml(path, new MockHttpSession(), admin);
+
+		assertThat(html)
+			.contains("<html lang=\"ko\"")
+			.contains("name=\"viewport\"")
+			.contains("href=\"#admin-content\"")
+			.contains("class=\"admin-shell\"")
+			.contains("aria-label=\"통합 관리자 화면\"")
+			.contains("class=\"admin-brand-icon\" src=\"/images/admin-app-icon.png\" alt=\"\"")
+			// #2277: sidebar는 workspace disclosure로 렌더되고, no-JS 폴백을 위해 toggle은 정적
+			// aria-expanded="true"로 모든 허용 program을 노출한다.
+			.contains("class=\"admin-nav-workspace-toggle\"")
+			.contains("class=\"admin-nav-workspace-icon\"")
+			.contains("class=\"admin-nav-scroll\"")
+			.contains("x-data=\"navWorkspaceList\"")
+			.contains("aria-current=\"page\"")
+			.contains("class=\"admin-topbar-row\" aria-label=\"관리자 실행 환경\"")
+			.contains("class=\"admin-topbar-brand\">쉬운 지하철 관리자</strong>")
+			.contains("class=\"admin-topbar-search\" role=\"search\"")
+			.contains("type=\"submit\" class=\"sr-only\" tabindex=\"-1\"")
+			.contains("class=\"admin-mobile-search\"")
+			.contains("aria-label=\"검색\"")
+			.contains("id=\"admin-content\" class=\"admin-content-anchor\" tabindex=\"-1\"")
+			.contains("<main class=\"admin-main\">")
+			.contains("<h1>" + expectedHeading + "</h1>")
+			.contains("aria-label=\"관리자 로그아웃\"")
+			.contains("class=\"admin-topbar-logout-form\"")
+			.contains("action=\"/admin/logout\"")
+			.contains("name=\"_csrf\"")
+			// #2416: 커맨드 팔레트·htmx 인디케이터 마크업 계약(포커스 트랩 동작은 JS 런타임).
+			.contains("class=\"command-palette\"")
+			.contains("x-bind:aria-expanded=\"ariaExpanded\"")
+			.contains("id=\"command-palette-overlay\"")
+			.contains("role=\"dialog\" aria-modal=\"true\" aria-label=\"통합 검색\"")
+			.contains("id=\"admin-htmx-indicator\"")
+			.contains("class=\"htmx-indicator admin-htmx-indicator\"")
+			.doesNotContain("<main id=\"admin-content\"");
+		assertThat(html.indexOf("href=\"#admin-content\"")).isLessThan(html.indexOf("class=\"admin-shell\""));
+		assertThat(html.indexOf("class=\"admin-topbar-row\"")).isLessThan(html.indexOf("id=\"admin-content\""));
+		assertThat(html.indexOf("class=\"admin-sidebar-nav-control\""))
+			.isLessThan(html.indexOf("class=\"admin-topbar-brand\""));
+		assertThat(html.indexOf("class=\"admin-topbar-brand\""))
+			.isLessThan(html.indexOf("class=\"admin-mobile-search\""));
+		assertThat(html.indexOf("class=\"admin-mobile-search\""))
+			.isLessThan(html.indexOf("class=\"admin-alert-center\""));
+		assertThat(html.indexOf("class=\"admin-alert-center\""))
+			.isLessThan(html.indexOf("class=\"admin-user-menu\""));
+		assertThat(html.indexOf("class=\"admin-user-menu\""))
+			.isLessThan(html.indexOf("class=\"admin-topbar-logout-form\""));
+		assertThat(html.indexOf("id=\"admin-content\"")).isLessThan(html.indexOf("<header class=\"admin-page-head\">"));
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session, RequestPostProcessor admin) throws Exception {
+		return mockMvc.perform(get(path)
+				.session(session)
+				.with(admin))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = COMMAND_TOKEN.matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
+	}
+
+	private static RequestPostProcessor fullAdmin() {
+		return user("admin-accessibility").authorities(
+			List.of(
+				"admin.view",
+				"admin.report.review",
+				"admin.master.edit",
+				"admin.data.operate",
+				"admin.audit.read",
+				"admin.privacy-log.read",
+				"admin.batch.retry"
+			)
+				.stream()
+				.map(SimpleGrantedAuthority::new)
+				.toList()
+		);
+	}
+}

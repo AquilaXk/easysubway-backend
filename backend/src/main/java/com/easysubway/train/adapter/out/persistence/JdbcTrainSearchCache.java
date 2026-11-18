@@ -1,0 +1,266 @@
+package com.easysubway.train.adapter.out.persistence;
+
+import com.easysubway.train.application.TrainSearchCache;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+@Repository
+public class JdbcTrainSearchCache implements TrainSearchCache {
+	private static final int QUERY_TIMEOUT_SECONDS = 2;
+	private static final int PURGE_BATCH_SIZE = 1000;
+	private static final int MAX_PURGE_BATCHES = 50;
+
+	private final JdbcTemplate jdbcTemplate;
+	private volatile DatabaseDialect databaseDialect;
+
+	@Autowired
+	public JdbcTrainSearchCache(DataSource dataSource) {
+		this(new JdbcTemplate(dataSource));
+	}
+
+	JdbcTrainSearchCache(JdbcTemplate jdbcTemplate) {
+		this.jdbcTemplate = jdbcTemplate;
+		this.jdbcTemplate.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+	}
+
+	@Override
+	public Optional<CachedCatalog> freshCatalog(String kind, Instant now) {
+		Objects.requireNonNull(kind, "kind must not be null");
+		Objects.requireNonNull(now, "now must not be null");
+		return jdbcTemplate.query(
+			"""
+				SELECT catalog_kind, payload_json, payload_sha256, observed_at, expires_at
+				FROM train_catalog_cache
+				WHERE catalog_kind = ? AND expires_at > CURRENT_TIMESTAMP
+				""",
+			(rs, rowNum) -> new CachedCatalog(
+				rs.getString("catalog_kind"),
+				rs.getString("payload_json"),
+				rs.getString("payload_sha256"),
+				rs.getTimestamp("observed_at").toInstant(),
+				rs.getTimestamp("expires_at").toInstant()
+			),
+			kind
+		).stream().findFirst();
+	}
+
+	@Override
+	@Transactional(timeout = 2)
+	public void replaceCatalog(List<CachedCatalog> catalogs) {
+		Objects.requireNonNull(catalogs, "catalogs must not be null");
+		jdbcTemplate.update("DELETE FROM train_catalog_cache");
+		if (catalogs.isEmpty()) {
+			return;
+		}
+		jdbcTemplate.batchUpdate(
+			"""
+				INSERT INTO train_catalog_cache
+				(catalog_kind, payload_json, payload_sha256, observed_at, expires_at)
+				VALUES (?, ?, ?, ?, ?)
+				""",
+			catalogs,
+			catalogs.size(),
+			(ps, catalog) -> {
+				ps.setString(1, catalog.kind());
+				ps.setString(2, catalog.payloadJson());
+				ps.setString(3, catalog.payloadSha256());
+				ps.setTimestamp(4, Timestamp.from(catalog.observedAt()));
+				ps.setTimestamp(5, Timestamp.from(catalog.expiresAt()));
+			}
+		);
+	}
+
+	@Override
+	@Transactional(timeout = 2)
+	public Optional<CachedLeg> freshLeg(String key, Instant now) {
+		Objects.requireNonNull(key, "key must not be null");
+		Objects.requireNonNull(now, "now must not be null");
+		List<CachedLeg> rows = jdbcTemplate.query(
+			"""
+				SELECT cache_key, normalized_query_json, payload_json, payload_sha256, observed_at, expires_at
+				FROM train_search_cache
+				WHERE cache_key = ? AND payload_json IS NOT NULL AND expires_at > CURRENT_TIMESTAMP
+				""",
+			(rs, rowNum) -> new CachedLeg(
+				rs.getString("cache_key"),
+				rs.getString("normalized_query_json"),
+				rs.getString("payload_json"),
+				rs.getString("payload_sha256"),
+				rs.getTimestamp("observed_at").toInstant(),
+				rs.getTimestamp("expires_at").toInstant()
+			),
+			key
+		);
+		return rows.stream().findFirst();
+	}
+
+	@Override
+	@Transactional(timeout = 2)
+	public boolean tryAcquireLease(String key, String owner, Instant now, Duration ttl) {
+		Objects.requireNonNull(key, "key must not be null");
+		Objects.requireNonNull(owner, "owner must not be null");
+		Objects.requireNonNull(now, "now must not be null");
+		Objects.requireNonNull(ttl, "ttl must not be null");
+		if (ttl.isZero() || ttl.isNegative()) {
+			throw new IllegalArgumentException("ttl must be positive");
+		}
+		if (databaseDialect() == DatabaseDialect.POSTGRESQL) {
+			long ttlMicros = Math.max(1L, (ttl.toNanos() + 999L) / 1000L);
+			return jdbcTemplate.update(
+				"""
+					INSERT INTO train_search_cache (
+						cache_key,
+						last_access_at,
+						lease_owner,
+						lease_expires_at
+					)
+					VALUES (?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP + (? * INTERVAL '1 microsecond'))
+					ON CONFLICT (cache_key) DO UPDATE SET
+						last_access_at = CURRENT_TIMESTAMP,
+						lease_owner = EXCLUDED.lease_owner,
+						lease_expires_at = EXCLUDED.lease_expires_at
+					WHERE (train_search_cache.lease_owner IS NULL OR train_search_cache.lease_expires_at <= CURRENT_TIMESTAMP)
+						AND (train_search_cache.payload_json IS NULL OR train_search_cache.expires_at <= CURRENT_TIMESTAMP)
+					""",
+				key,
+				owner,
+				ttlMicros
+			) == 1;
+		}
+		Instant databaseNow = databaseNow();
+		jdbcTemplate.update(
+			"""
+				INSERT INTO train_search_cache (cache_key, last_access_at)
+				VALUES (?, ?)
+				ON CONFLICT DO NOTHING
+				""",
+			key,
+			Timestamp.from(databaseNow)
+		);
+		return jdbcTemplate.update(
+			"""
+				UPDATE train_search_cache
+				SET lease_owner = ?, lease_expires_at = ?
+				WHERE cache_key = ?
+					AND (lease_owner IS NULL OR lease_expires_at <= ?)
+					AND (payload_json IS NULL OR expires_at <= ?)
+				""",
+			owner,
+			Timestamp.from(databaseNow.plus(ttl)),
+			key,
+			Timestamp.from(databaseNow),
+			Timestamp.from(databaseNow)
+		) == 1;
+	}
+
+	@Override
+	@Transactional(timeout = 2)
+	public void releaseLease(String key, String owner) {
+		jdbcTemplate.update(
+			"""
+				UPDATE train_search_cache SET lease_owner = NULL, lease_expires_at = NULL
+				WHERE cache_key = ? AND lease_owner = ?
+				""",
+			key,
+			owner
+		);
+	}
+
+	@Override
+	@Transactional(timeout = 2)
+	public boolean storeLegAndRelease(String key, String owner, CachedLeg leg) {
+		Objects.requireNonNull(leg, "leg must not be null");
+		if (!Objects.equals(key, leg.key())) {
+			throw new IllegalArgumentException("leg key must match lease key");
+		}
+		return jdbcTemplate.update(
+			"""
+				UPDATE train_search_cache
+				SET normalized_query_json = ?, payload_json = ?, payload_sha256 = ?, observed_at = ?, expires_at = ?,
+					last_access_at = CURRENT_TIMESTAMP, lease_owner = NULL, lease_expires_at = NULL
+				WHERE cache_key = ? AND lease_owner = ?
+				""",
+			leg.normalizedQueryJson(),
+			leg.payloadJson(),
+			leg.payloadSha256(),
+			Timestamp.from(leg.observedAt()),
+			Timestamp.from(leg.expiresAt()),
+			key,
+			owner
+		) == 1;
+	}
+
+
+	@Override
+	@Transactional(timeout = 2)
+	public int purgeExpiredBefore(Instant cutoff) {
+		Objects.requireNonNull(cutoff, "cutoff must not be null");
+		Timestamp cutoffTs = Timestamp.from(cutoff);
+		int totalDeleted = 0;
+		for (int batch = 0; batch < MAX_PURGE_BATCHES; batch++) {
+			int deleted = jdbcTemplate.update(
+				"""
+					DELETE FROM train_search_cache
+					WHERE cache_key IN (
+						SELECT cache_key
+						FROM train_search_cache
+						WHERE ((expires_at IS NOT NULL AND expires_at < ?)
+								OR (expires_at IS NULL AND last_access_at < ?))
+							AND (lease_owner IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+						LIMIT ?
+					)
+					""",
+				cutoffTs,
+				cutoffTs,
+				PURGE_BATCH_SIZE
+			);
+			totalDeleted += deleted;
+			if (deleted < PURGE_BATCH_SIZE) {
+				break;
+			}
+		}
+		return totalDeleted;
+	}
+
+	private Instant databaseNow() {
+		return requireDatabaseTimestamp(
+			jdbcTemplate.queryForObject("SELECT CURRENT_TIMESTAMP", Timestamp.class)
+		);
+	}
+
+	static Instant requireDatabaseTimestamp(Timestamp value) {
+		if (value == null) {
+			throw new IllegalStateException("database timestamp query returned null");
+		}
+		return value.toInstant();
+	}
+
+	private DatabaseDialect databaseDialect() {
+		DatabaseDialect cached = this.databaseDialect;
+		if (cached != null) {
+			return cached;
+		}
+		DatabaseDialect detected = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		DatabaseDialect resolved = detected == null ? DatabaseDialect.POSTGRESQL : detected;
+		this.databaseDialect = resolved;
+		return resolved;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
+	}
+}

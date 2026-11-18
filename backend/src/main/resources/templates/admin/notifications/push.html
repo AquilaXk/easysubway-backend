@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>푸시 알림 현황</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-push')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>푸시 알림</h1>
+		</div>
+	</header>
+
+	<div id="push-delivery-unavailable" class="api-error-alert warning" role="status"
+	     th:if="${!deliveryAvailability.available}">
+		<strong>푸시 발송 불가</strong>
+		<p>지금은 푸시가 사용자에게 나가지 않습니다. 대기 중으로 보이는 알림은 처리되지 않고 쌓여 있습니다.</p>
+		<ul>
+			<li th:each="reason : ${deliveryAvailability.reasons}" th:text="${reason}">푸시 자동 발송이 꺼져 있습니다.</li>
+		</ul>
+	</div>
+
+	<section class="admin-panel" aria-labelledby="push-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="push-metric-panel-title">푸시 알림 outbox 요약</h2>
+		</div>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>전체 알림</span>
+				<strong class="cell-num" th:text="${summary.totalCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span th:text="${deliveryAvailability.available} ? '대기 중' : '발송 불가'">대기 중</span>
+				<strong class="cell-num" th:text="${summary.pendingCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 완료</span>
+				<strong class="cell-num" th:text="${summary.sentCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 실패</span>
+				<strong class="cell-num" th:text="${summary.failedCount}">0</strong>
+				<svg th:if="${failedSparkline != ''}" class="card-sparkline" viewBox="0 0 100 24"
+				     preserveAspectRatio="none" role="img" aria-label="발송 실패 최근 7일 추이">
+					<polyline th:attr="points=${failedSparkline}" fill="none"></polyline>
+				</svg>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 시도</span>
+				<strong class="cell-num" th:text="${summary.deliveryAttemptCount}">0</strong>
+				<svg th:if="${attemptedSparkline != ''}" class="card-sparkline" viewBox="0 0 100 24"
+				     preserveAspectRatio="none" role="img" aria-label="발송 시도 최근 7일 추이">
+					<polyline th:attr="points=${attemptedSparkline}" fill="none"></polyline>
+				</svg>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 성공률</span>
+				<strong class="cell-num" th:text="${summary.successRateLabel}">0.0%</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 실패율</span>
+				<strong class="cell-num" th:text="${summary.failureRateLabel}">0.0%</strong>
+			</div>
+		</div>
+	</section>
+
+	<p th:class="'delivery-alert ' + ${summary.failureAlertClass}"
+	   th:text="${summary.failureAlertLabel} + ': ' + ${summary.failureAlertDescription}">
+		점검 필요: 발송 실패가 있어 푸시 어댑터와 provider 상태를 확인하세요.
+	</p>
+
+	<p class="delivery-alert-link" th:if="${summary.failedCount > 0}">
+		<a th:href="${failedHistoryHref}">실패 발송 목록 보기</a>
+	</p>
+
+	<p class="failure-reason"
+	   th:if="${summary.latestFailureReason != null}"
+	   th:text="'최근 실패: ' + ${summary.latestFailureReason}">최근 실패: 외부 푸시 발송 어댑터가 설정되지 않았습니다.</p>
+
+	<div id="push-trends" th:fragment="trends" class="dashboard-trends-section">
+		<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+			<a th:each="d : ${ {7, 30, 90} }"
+			   th:href="@{/admin/notifications/push/page(days=${d})}"
+			   th:attr="hx-get=@{/admin/notifications/push/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+			   hx-target="#push-trends" hx-swap="outerHTML"
+			   th:classappend="${trendDays == d} ? ' is-active'"
+			   th:text="|${d}일|">7일</a>
+		</div>
+
+		<p class="admin-export">
+			<a class="admin-export-link" th:href="@{/admin/analytics/metrics/export(keys=${exportKeys},days=${trendDays})}"
+			   download>CSV 내보내기</a>
+		</p>
+
+		<section class="admin-panel" aria-labelledby="push-comparison-panel-title">
+			<div class="admin-panel-head">
+				<h2 id="push-comparison-panel-title">전 기간 대비 증감</h2>
+			</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
+
+		<div class="trend-charts">
+			<section class="admin-panel trend-chart-panel">
+				<h2 th:text="|발송 시도·실패 최근 ${trendDays}일 추이|">발송 시도·실패 추이</h2>
+				<div class="trend-canvas-wrap">
+					<canvas id="push-trend-canvas" class="trend-canvas" role="img"
+					        th:attr="aria-label=|푸시 발송 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
+				</div>
+				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
+			</section>
+		</div>
+	</div>
+
+	<section class="admin-panel">
+		<h2>상태별 알림</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">상태</th>
+				<th scope="col">설명</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.statusRows}">
+				<td th:text="${row.label}">대기 중</td>
+				<td th:text="${row.description}">아직 발송 처리 전</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	<section class="admin-panel" aria-labelledby="push-history-heading">
+		<h2 id="push-history-heading">발송 이력</h2>
+		<p class="section-hint">수신자 식별자는 개인정보 보호를 위해 마스킹됩니다. 열람 기록은 감사 로그에 남습니다.</p>
+
+		<!--
+		  발송 이력 표준 테이블(#1746): 기간·상태·유형 필터·내용 검색·페이지네이션을 historyResults fragment로 묶는다.
+		  필터·페이지 링크는 th:href(진화형 향상 fallback)와 hx-get을 함께 갖는다. JS가 있으면 htmx가
+		  이 컨테이너만 부분 갱신하고, 없으면 링크·폼 제출로 풀페이지가 동작한다.
+		  hx-target·hx-swap·hx-push-url은 이 컨테이너에서 하위 링크로 상속된다.
+		-->
+		<div id="push-history" th:fragment="historyResults"
+		     hx-target="#push-history" hx-swap="outerHTML" hx-push-url="true">
+			<!-- V6-06 공통 툴바(#2282 V6-10 이관): 검색은 direct, 상태·유형·기간 필터는 필터 시트로 접고
+			     활성 필터를 search.hidden으로 보존한다(#2279 null-safe get('hidden')). #1746 발송 이력 필터
+			     컨텍스트·hx-target·no-JS 폴백 계약 불변. 저장된 뷰·보기 설정 없음 → ~{}. -->
+			<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
+			         '/admin/notifications/push/page/history', 'push-history',
+			         ${ {'name':'keyword','value':historyKeyword,'placeholder':'제목·본문 검색','label':'발송 내용 검색',
+			            'hidden': {'status':historySelectedStatus,'type':historySelectedType,
+			                       'from':historyFrom,'to':historyTo}} },
+			         ~{}, ~{::pushHistoryFilters}, ~{})}">
+				<form th:fragment="pushHistoryFilters" class="admin-toolbar-form" method="get"
+				      th:action="@{/admin/notifications/push/page/history}" role="group" aria-label="상태·유형·기간 필터"
+				      th:attr="hx-get=@{/admin/notifications/push/page/history}" hx-target="#push-history"
+				      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+					<input type="hidden" name="keyword" th:value="${historyKeyword}">
+					<select name="status" aria-label="발송 상태 필터">
+						<option th:each="opt : ${historyStatusOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">상태 전체</option>
+					</select>
+					<select name="type" aria-label="알림 유형 필터">
+						<option th:each="opt : ${historyTypeOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">유형 전체</option>
+					</select>
+					<input type="date" name="from" th:value="${historyFrom}" aria-label="발송 기간 시작">
+					<input type="date" name="to" th:value="${historyTo}" aria-label="발송 기간 종료">
+					<button type="submit" class="outline admin-filter-apply">필터 적용</button>
+				</form>
+			</div>
+
+			<p class="table-summary" aria-live="polite">
+				전체 <strong th:text="${historyTotal}">0</strong>건
+				<span th:if="${hasReasonFilter}">
+					· 사유: <strong th:text="${selectedReason}">실패 사유</strong>
+					<a th:href="${clearReasonHref}" th:attr="hx-get=${clearReasonHref}" class="filter-clear">해제</a>
+				</span>
+			</p>
+
+			<!--
+			  실패 사유별 분해(#1746): 같은 필터 컨텍스트에서 status=FAILED 를 사유별로 GROUP BY 한 막대.
+			  막대는 CSP-safe한 서버 SVG(인라인 style 금지)로 그리며, 각 막대는 사유 드릴다운 링크다.
+			  분해 수치 = 해당 사유로 필터한 목록 건수(같은 질의 공유).
+			-->
+			<section class="admin-section-flat failure-breakdown" th:if="${!failureBreakdown.isEmpty()}"
+			         aria-labelledby="push-failure-breakdown-heading">
+				<h3 id="push-failure-breakdown-heading">실패 사유별 분해</h3>
+				<ul class="breakdown-bars">
+					<li th:each="bar : ${failureBreakdown}">
+						<a th:href="${bar.href}"
+						   th:attr="hx-get=${bar.href},aria-current=${bar.active ? 'true' : null}"
+						   th:title="|${bar.reason} · ${bar.count}건|">
+							<span class="breakdown-reason" th:text="${bar.reason}">발송 어댑터 미설정</span>
+							<svg class="breakdown-bar" viewBox="0 0 100 12" preserveAspectRatio="none"
+							     role="img" th:attr="aria-label=|${bar.reason} ${bar.count}건|">
+								<rect x="0" y="0" height="12" th:attr="width=${bar.percent}"></rect>
+							</svg>
+							<span class="breakdown-count" th:text="${bar.count}">0</span>
+						</a>
+					</li>
+				</ul>
+			</section>
+
+			<!--
+			  재발송 안전장치(#1746): 실패 행을 선택 → 재발송. no-JS 폼 기준선(command token + CSRF는 인터셉터가 검증).
+			  멱등(이미 성공한 건 서버가 제외)·1회 상한(대량 오발송 방지)은 유스케이스가 보장한다. 확인 단계는
+			  네이티브 details 안의 제출 버튼이며, JS가 있으면 선택 건수를 보여주고 선택이 없으면 제출을 막는다.
+			-->
+			<form th:if="${!historyRows.isEmpty()}" method="post"
+			      th:action="@{/admin/notifications/push/resend}" class="resend-form"
+			      x-data="pushResendSelection" x-on:change="recount">
+				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+				<input type="hidden" name="returnTo" th:value="${currentListHref}">
+				<div class="admin-table-scroll" tabindex="0" role="group"
+				     aria-label="가로로 스크롤 가능한 데이터 표">
+				<table>
+					<caption class="sr-only">푸시 발송 이력</caption>
+					<thead>
+					<tr>
+						<th scope="col"><span class="sr-only">재발송 선택</span></th>
+						<th scope="col">발송 시각</th>
+						<th scope="col">유형</th>
+						<th scope="col">상태</th>
+						<th scope="col">수신자</th>
+						<th scope="col">제목</th>
+						<th scope="col">상세</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="row : ${historyRows}">
+						<td>
+							<input type="checkbox" name="notificationIds" th:value="${row.notificationId}"
+							       th:if="${row.statusTone == 'failure'}"
+							       aria-label="재발송 대상 선택">
+						</td>
+						<td th:text="${#temporals.format(row.createdAt, 'yyyy-MM-dd HH:mm')}">2026-07-06 09:00</td>
+						<td th:text="${row.typeLabel}">제보 처리 상태</td>
+						<td>
+							<span th:replace="~{admin/fragments/shell :: status(${row.statusLabel}, ${row.statusTone == 'failure'} ? 'bad' : (${row.statusTone == 'pending'} ? 'warn' : 'good'))}">발송 완료</span>
+						</td>
+						<td th:text="${row.maskedUserId}">ano••••</td>
+						<td th:text="${row.title}">알림 제목</td>
+						<td>
+							<details class="row-detail">
+								<summary>시도 이력</summary>
+								<dl class="row-detail-list">
+									<dt>기기 토큰</dt>
+									<dd th:text="${row.maskedDeviceToken}">device••••</dd>
+									<dt>플랫폼</dt>
+									<dd th:text="${row.platformLabel}">안드로이드</dd>
+									<dt>발송 상태</dt>
+									<dd th:text="${row.statusLabel}">발송 완료</dd>
+									<dt th:if="${row.failureReason != null}">실패 사유</dt>
+									<dd th:if="${row.failureReason != null}" class="failure-reason"
+									    th:text="${row.failureReason}">외부 발송 어댑터가 설정되지 않았습니다.</dd>
+								</dl>
+							</details>
+						</td>
+					</tr>
+					</tbody>
+				</table>
+				</div>
+
+				<details class="resend-confirm">
+					<summary><span x-text="selectionLabel">선택한 실패 건 재발송</span></summary>
+					<p>선택한 실패 알림을 재발송합니다. 이미 발송 성공한 건은 자동으로 제외되며,
+						한 번에 최대 <strong th:text="${resendLimit}">50</strong>건까지 처리합니다.
+						상한을 넘으면 재발송되지 않으니 나눠서 처리하세요.</p>
+					<button type="submit" class="primary" x-bind:disabled="submitDisabled">선택한 실패 건 재발송</button>
+				</details>
+			</form>
+
+			<div th:if="${historyRows.isEmpty()}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 발송 이력이 없습니다.', '필터를 변경하거나 기간을 넓혀 보세요.')}"></div>
+			</div>
+
+			<div th:replace="~{admin/fragments/pagination :: pager('발송 이력 페이지', ${historyPage}, ${historyPaginationLinks})}"></div>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: chartScripts}"></th:block>
+<script th:src="@{/js/admin/dashboard-charts.js}" defer></script>
+</body>
+</html>
