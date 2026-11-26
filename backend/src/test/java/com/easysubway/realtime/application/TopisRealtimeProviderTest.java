@@ -319,6 +319,43 @@ class TopisRealtimeProviderTest {
 	}
 
 	@Test
+	@DisplayName("노선 열차 위치 조회는 10건으로 자르지 않고 0~199 범위를 요청하며 여러 페이지를 이어 받는다")
+	void trainPositionsPaginatesPastTenItems() throws Exception {
+		List<URI> requested = new CopyOnWriteArrayList<>();
+		HttpClient httpClient = mock(HttpClient.class);
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			HttpRequest request = invocation.getArgument(0);
+			requested.add(request.uri());
+			String[] segments = request.uri().getRawPath().split("/");
+			int startIndex = Integer.parseInt(segments[segments.length - 3]);
+			int total = 25;
+			int pageEnd = Math.min(startIndex + 10, total);
+			List<String> rows = new ArrayList<>();
+			for (int i = startIndex; i < pageEnd; i++) {
+				rows.add(("{\"subwayId\":\"1003\",\"statnNm\":\"충무로\",\"trainNo\":\"%d\","
+					+ "\"trainSttus\":\"1\",\"updnLine\":\"0\",\"statnTnm\":\"대화\",\"recptnDt\":\"2026-09-29 08:00:00\"}")
+					.formatted(3100 + i));
+			}
+			String body = "{\"errorMessage\":{\"status\":200,\"code\":\"INFO-000\",\"message\":\"정상 처리되었습니다.\",\"total\":"
+				+ total + "},\"realtimePositionList\":[" + String.join(",", rows) + "]}";
+			return new StubResponse<>(request, 200, new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+		});
+
+		List<RealtimeTrainPosition> positions = provider(httpClient).trainPositions(LINE_3_POSITIONS);
+
+		assertThat(positions).hasSize(25);
+		assertThat(positions.getFirst().trainNo()).isEqualTo("3100");
+		assertThat(positions.getLast().trainNo()).isEqualTo("3124");
+		assertThat(requested)
+			.extracting(URI::getRawPath)
+			.containsExactly(
+				"/api/subway/backend-key/json/realtimePosition/0/199/3%ED%98%B8%EC%84%A0",
+				"/api/subway/backend-key/json/realtimePosition/10/209/3%ED%98%B8%EC%84%A0",
+				"/api/subway/backend-key/json/realtimePosition/20/219/3%ED%98%B8%EC%84%A0"
+			);
+	}
+
+	@Test
 	@DisplayName("환승역 응답에서 다른 노선 행이 6행 이상 앞서도 조회 노선 행을 받아 조회 노선만 FRESH로 낸다")
 	void transferStationWithSixOtherLineRowsFirstStillYieldsQueriedLineFresh() throws Exception {
 		List<String> stationRows = new ArrayList<>();

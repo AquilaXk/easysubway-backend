@@ -275,6 +275,7 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 	private static JourneyReadinessProperties readinessProperties(String deploymentRevision) {
 		return new JourneyReadinessProperties(
 			"readiness-token-with-at-least-32-characters",
+			"control-token-with-at-least-32-characters",
 			"backend-a",
 			RELEASE_TUPLE_SHA,
 			"sha256:" + "6".repeat(64),

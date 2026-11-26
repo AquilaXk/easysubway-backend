@@ -128,9 +128,9 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 		var resolver = new JourneyTimetableRealtimeArrivalResolver(gateway);
 		Query valid = query(
 			departure("trip", "T1", "2026-08-12T10:03:00Z", "2026-08-12T10:04:00Z"));
-		Query duplicateTrain = query(
+		Query duplicateOccurrence = query(
 			departure("trip-1", "T1", "2026-08-12T10:03:00Z", "2026-08-12T10:04:00Z"),
-			departure("trip-2", "T1", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"));
+			departure("trip-1", "T1", "2026-08-12T10:03:00Z", "2026-08-12T10:04:00Z"));
 		Query mismatchedOccurrence = new Query("station-a", "line-4", READY_AT, List.of(
 			new Departure("station-other", "line-4", "trip", "T2", "LOCAL", LocalDate.of(2026, 8, 12), 7,
 				Instant.parse("2026-08-12T10:03:00Z"), Instant.parse("2026-08-12T10:04:00Z"))));
@@ -140,9 +140,65 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 		assertUnavailable(resolver.resolve(List.of(valid, valid)));
 		assertUnavailable(resolver.resolve(Arrays.asList((Query) null)));
 		assertUnavailable(resolver.resolve(List.of(query())));
-		assertUnavailable(resolver.resolve(List.of(duplicateTrain)));
+		assertUnavailable(resolver.resolve(List.of(duplicateOccurrence)));
 		assertUnavailable(resolver.resolve(List.of(mismatchedOccurrence)));
 		assertThat(gateway.calls).hasValue(0);
+	}
+
+	@Test
+	void resolvesMultiLineHubCircularAndAdjacentServiceDayDepartures() {
+		Query line2Query = new Query("station-a", "line-2", READY_AT, List.of(
+			new Departure("station-a", "line-2", "trip-loop", "2001", "LOCAL", LocalDate.of(2026, 8, 12), 2,
+				Instant.parse("2026-08-12T10:03:00Z"), Instant.parse("2026-08-12T10:04:00Z")),
+			new Departure("station-a", "line-2", "trip-loop", "2001", "LOCAL", LocalDate.of(2026, 8, 12), 20,
+				Instant.parse("2026-08-12T11:33:00Z"), Instant.parse("2026-08-12T11:34:00Z"))));
+		Query line4Query = query(
+			new Departure("station-a", "line-4", "trip-night", "T1", "LOCAL", LocalDate.of(2026, 8, 11), 7,
+				Instant.parse("2026-08-11T17:55:00Z"), Instant.parse("2026-08-11T17:56:00Z")),
+			new Departure("station-a", "line-4", "trip-night", "T1", "LOCAL", LocalDate.of(2026, 8, 12), 7,
+				Instant.parse("2026-08-12T17:55:00Z"), Instant.parse("2026-08-12T17:56:00Z")));
+
+		RealtimeArrivalResolver perLineGateway = q -> switch (q.lineId()) {
+			case "line-2" -> new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME, null, "snap-2", SNAPSHOT_RECEIVED_AT,
+				List.of(new ArrivalCandidate(
+					"2001", "line-2", "", "", 0,
+					Instant.parse("2026-08-12T10:04:00Z"), SNAPSHOT_RECEIVED_AT,
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH)),
+				List.of());
+			case "line-4" -> new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME, null, "snap-4", SNAPSHOT_RECEIVED_AT,
+				List.of(candidate("T1", "2026-08-12T17:56:00Z", "2026-08-12T09:59:58Z")),
+				List.of());
+			default -> throw new AssertionError("unexpected line: " + q.lineId());
+		};
+
+		Updates updates = new JourneyTimetableRealtimeArrivalResolver(perLineGateway).resolve(List.of(line2Query, line4Query));
+		assertThat(updates.available()).isTrue();
+		assertThat(updates.version()).isEqualTo("snap-2|snap-4");
+		assertThat(updates.updates()).hasSize(2);
+		assertThat(updates.updates())
+			.extracting(u -> u.departure().tripId(), u -> u.departure().stopSequence(),
+				u -> u.departure().serviceDate(), Update::arrivalDeltaSeconds, Update::providerSnapshotId)
+			.containsExactlyInAnyOrder(
+				org.assertj.core.groups.Tuple.tuple("trip-loop", 2, LocalDate.of(2026, 8, 12), 60, "snap-2"),
+				org.assertj.core.groups.Tuple.tuple("trip-night", 7, LocalDate.of(2026, 8, 12), 60, "snap-4"));
+
+		RealtimeArrivalResolver partialGateway = q -> "line-2".equals(q.lineId())
+			? new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME, null, "snap-2", SNAPSHOT_RECEIVED_AT,
+				List.of(new ArrivalCandidate(
+					"2001", "line-2", "", "", 0,
+					Instant.parse("2026-08-12T10:04:00Z"), SNAPSHOT_RECEIVED_AT,
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH)),
+				List.of())
+			: new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.UNAVAILABLE, "STALE", null, null, List.of(), List.of());
+
+		Updates partial = new JourneyTimetableRealtimeArrivalResolver(partialGateway).resolve(List.of(line2Query, line4Query));
+		assertThat(partial.available()).isTrue();
+		assertThat(partial.version()).isEqualTo("snap-2");
+		assertThat(partial.updates()).hasSize(1);
 	}
 
 	private static void assertProviderUnavailable(

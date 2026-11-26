@@ -272,7 +272,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       # PR이 바꾼 경로로 무거운 단계 실행 여부를 정한다. 분류 밖 경로와 push·dispatch는 전체 실행이다.
       # 판정기는 PR head가 아니라 merge commit의 first parent(base)에서 꺼낸 사본으로 실행한다.
@@ -340,7 +340,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       - name: Check documentation fragment preflight sync
         env:
@@ -360,6 +360,7 @@ jobs:
           node --test tools/ci/*.test.mjs
           node --test tools/routes/*.test.mjs
           node --test tools/realtime/*.test.mjs
+          node tools/ci/guard-anti-cheat.mjs
 
       - name: Check migration DDL compatibility
         run: node tools/ci/check-migration-ddl-compat.mjs
@@ -431,7 +432,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       # 집계 판정기도 PR head가 약화할 수 없도록 base 커밋의 사본으로 실행한다.
       # base에 판정기가 없을 때(이 판정기를 처음 들여오는 PR)만 head 사본을 쓰고 그 사실을 기록한다.

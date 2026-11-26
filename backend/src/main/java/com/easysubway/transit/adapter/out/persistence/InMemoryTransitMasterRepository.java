@@ -31,6 +31,9 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
@@ -330,6 +333,8 @@ public class InMemoryTransitMasterRepository implements
 		)
 	);
 
+	private final Map<String, Station> stationsById = STATIONS.stream()
+		.collect(Collectors.toUnmodifiableMap(Station::id, Function.identity()));
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 	private final Map<String, StationLayoutSource> stationLayoutSources = new LinkedHashMap<>();
 	private final Map<String, SimplifiedStationLayout> simplifiedStationLayouts = new LinkedHashMap<>();
@@ -360,6 +365,11 @@ public class InMemoryTransitMasterRepository implements
 	}
 
 	@Override
+	public Optional<Station> loadStation(String stationId) {
+		return stationId == null ? Optional.empty() : Optional.ofNullable(stationsById.get(stationId));
+	}
+
+	@Override
 	public List<StationLine> loadStationLines() {
 		return STATION_LINES;
 	}
@@ -372,6 +382,11 @@ public class InMemoryTransitMasterRepository implements
 	@Override
 	public List<AccessibilityFacility> loadAccessibilityFacilities() {
 		return List.copyOf(accessibilityFacilities.values());
+	}
+
+	@Override
+	public Optional<AccessibilityFacility> loadAccessibilityFacility(String facilityId) {
+		return facilityId == null ? Optional.empty() : Optional.ofNullable(accessibilityFacilities.get(facilityId));
 	}
 
 	@Override

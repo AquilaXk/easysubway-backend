@@ -6,9 +6,11 @@ import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableReal
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeView {
 
@@ -31,14 +33,32 @@ public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeVie
 		RaptorRouteBundleRuntimeView routeRuntimeView,
 		JourneyTimetableRealtimeResolver.Updates updates
 	) {
+		return compile(identity, routeRuntimeView, updates, Set.of());
+	}
+
+	static RaptorRealtimeRuntimeView compile(
+		String identity,
+		RaptorRouteBundleRuntimeView routeRuntimeView,
+		JourneyTimetableRealtimeResolver.Updates updates,
+		Set<LocalDate> coveredServiceDates
+	) {
 		String requiredIdentity = requireText(identity, "identity");
+		Set<String> allowedIdentities = parseAllowedIdentities(requiredIdentity);
 		routeRuntimeView = Objects.requireNonNull(routeRuntimeView, "routeRuntimeView");
 		updates = Objects.requireNonNull(updates, "updates");
+		Objects.requireNonNull(coveredServiceDates, "coveredServiceDates");
 		if (!updates.available() || updates.updates().stream()
-			.anyMatch(update -> update == null || !requiredIdentity.equals(update.providerSnapshotId()))) {
+			.anyMatch(update -> update == null || !allowedIdentities.contains(update.providerSnapshotId()))) {
 			throw new IllegalArgumentException("realtime updates do not match runtime identity");
 		}
 		Map<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> updatesByDate = updatesByServiceDate(updates);
+		if (!coveredServiceDates.isEmpty()) {
+			for (LocalDate updateDate : updatesByDate.keySet()) {
+				if (!coveredServiceDates.contains(updateDate)) {
+					throw new IllegalArgumentException("realtime updates cover unexpected service date");
+				}
+			}
+		}
 		Map<LocalDate, RouteTimetableRaptorPlanner.RealtimeOverlay> overlays = new LinkedHashMap<>();
 		for (Map.Entry<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> entry : updatesByDate.entrySet()) {
 			TimetableRealtimeUpdates compilerInput = verifiedCompilerInput(
@@ -50,7 +70,34 @@ public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeVie
 			}
 			overlays.put(entry.getKey(), overlay);
 		}
+		for (LocalDate coveredDate : coveredServiceDates) {
+			if (coveredDate == null) {
+				throw new IllegalArgumentException("coveredServiceDates must not contain null");
+			}
+			overlays.putIfAbsent(
+				coveredDate, RouteTimetableRaptorPlanner.RealtimeOverlay.emptyAvailable(requiredIdentity));
+		}
 		return new RaptorRealtimeRuntimeView(requiredIdentity, routeRuntimeView, overlays);
+	}
+
+	private static Set<String> parseAllowedIdentities(String identity) {
+		if (identity.indexOf('+') >= 0) {
+			throw new IllegalArgumentException("realtime updates require valid runtime identity");
+		}
+		if (identity.indexOf('|') < 0) {
+			return Set.of(identity);
+		}
+		String[] parts = identity.split("\\|", -1);
+		if (parts.length < 2) {
+			throw new IllegalArgumentException("realtime updates require valid runtime identity");
+		}
+		Set<String> tokens = new LinkedHashSet<>(parts.length);
+		for (String part : parts) {
+			if (part.isBlank() || !tokens.add(part)) {
+				throw new IllegalArgumentException("realtime updates require valid runtime identity");
+			}
+		}
+		return Set.copyOf(tokens);
 	}
 
 	@Override

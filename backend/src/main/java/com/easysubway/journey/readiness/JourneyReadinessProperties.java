@@ -1,11 +1,14 @@
 package com.easysubway.journey.readiness;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.regex.Pattern;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "easysubway.journey-v3.readiness", ignoreUnknownFields = false)
 public record JourneyReadinessProperties(
 	String serviceToken,
+	String controlToken,
 	String instanceId,
 	String releaseTupleSha256,
 	String backendImageDigest,
@@ -20,7 +23,13 @@ public record JourneyReadinessProperties(
 	private static final Pattern GIT_REVISION = Pattern.compile("[0-9a-f]{40}");
 
 	public JourneyReadinessProperties {
-		requireToken(serviceToken);
+		requireToken(serviceToken, "serviceToken");
+		requireToken(controlToken, "controlToken");
+		if (MessageDigest.isEqual(
+			serviceToken.getBytes(StandardCharsets.UTF_8),
+			controlToken.getBytes(StandardCharsets.UTF_8))) {
+			throw new IllegalArgumentException("controlToken must differ from serviceToken");
+		}
 		if (instanceId == null || !INSTANCE_ID.matcher(instanceId).matches()) {
 			throw new IllegalArgumentException("instanceId must be a bounded safe runtime identity");
 		}
@@ -37,10 +46,10 @@ public record JourneyReadinessProperties(
 		}
 	}
 
-	private static void requireToken(String value) {
+	private static void requireToken(String value, String fieldName) {
 		if (value == null || value.length() < 32 || value.length() > 512
 			|| value.codePoints().anyMatch(codePoint -> codePoint < 0x21 || codePoint == 0x7f)) {
-			throw new IllegalArgumentException("serviceToken must be a bounded non-blank secret");
+			throw new IllegalArgumentException(fieldName + " must be a bounded non-blank secret");
 		}
 	}
 

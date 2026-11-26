@@ -2591,6 +2591,31 @@ public final class RouteTimetableRaptorPlanner {
 		return OptionalIntValue.of(event.effectiveDepartureSeconds() - slackSeconds);
 	}
 
+	List<LocalDate> realtimeQueryServiceDates(JourneyRaptorQuery query) {
+		ScanInput input = scanInput(query);
+		return realtimeQueryServiceDates(input.serviceDay().date(), input.readyAtSeconds());
+	}
+
+	private static List<LocalDate> realtimeQueryServiceDates(LocalDate primaryDate, int readyAtSeconds) {
+		Instant readyAt = serviceInstant(new ServiceDay(primaryDate, 0), readyAtSeconds);
+		LocalTime localTime = readyAt.atZone(SERVICE_ZONE).toLocalTime();
+		LocalTime cutoff = LocalTime.parse(ServiceDayResolver.CUTOFF_LOCAL_TIME);
+		int cutoffSeconds = cutoff.toSecondOfDay();
+		List<LocalDate> dates = new ArrayList<>(2);
+		dates.add(primaryDate);
+		if (localTime.isBefore(cutoff)) {
+			// 00:00..02:59 KST: 03:00 이후 당일 첫차·환승 연계까지 포함하도록 다음 운행일을 함께 질의한다.
+			dates.add(primaryDate.plusDays(1));
+		} else {
+			int elapsedAfterCutoff = readyAtSeconds - cutoffSeconds;
+			if (elapsedAfterCutoff >= 0 && elapsedAfterCutoff < 3600) {
+				// 03:00..03:59 KST: 직전 운행일의 27:00 이후 심야 연장 열차를 놓치지 않도록 직전 운행일을 함께 본다.
+				dates.add(primaryDate.minusDays(1));
+			}
+		}
+		return List.copyOf(dates);
+	}
+
 	List<JourneyTimetableRealtimeResolver.Query> realtimeQueries(
 		JourneyRaptorQuery query,
 		CompiledTimetable timetable
@@ -2599,22 +2624,32 @@ public final class RouteTimetableRaptorPlanner {
 		List<CompiledTimetable.StationDepartureOccurrence> occurrences =
 			timetable.stationDepartures(input.originStationId());
 		Map<String, List<JourneyTimetableRealtimeResolver.Departure>> departuresByLine = new LinkedHashMap<>();
+		Instant readyAt = serviceInstant(input.serviceDay(), input.readyAtSeconds());
 		if (!occurrences.isEmpty()) {
-			ActiveServiceDay activeDay = timetable.activeServiceDay(input.serviceDay().date());
-			for (CompiledTimetable.StationDepartureOccurrence occ : occurrences) {
-				if (!activeDay.hasTrip(occ.tripIndex())) {
-					continue;
+			LocalDate primaryDate = input.serviceDay().date();
+			List<LocalDate> queryDates = realtimeQueryServiceDates(primaryDate, input.readyAtSeconds());
+			Instant previousDayFloor = readyAt.minusSeconds(3600);
+			for (LocalDate serviceDate : queryDates) {
+				ActiveServiceDay activeDay = timetable.activeServiceDay(serviceDate);
+				ServiceDay occurrenceDay = new ServiceDay(serviceDate, 0);
+				boolean previousBoundaryDay = serviceDate.isBefore(primaryDate);
+				for (CompiledTimetable.StationDepartureOccurrence occ : occurrences) {
+					if (!activeDay.hasTrip(occ.tripIndex())) {
+						continue;
+					}
+					ScheduledTrip trip = timetable.scheduledTrip(occ.tripIndex());
+					Instant arrivalAt = serviceInstant(occurrenceDay, trip.arrivalSeconds(occ.stopIndex()));
+					Instant departureAt = serviceInstant(occurrenceDay, trip.departureSeconds(occ.stopIndex()));
+					if (previousBoundaryDay && departureAt.isBefore(previousDayFloor)) {
+						continue;
+					}
+					departuresByLine.computeIfAbsent(occ.lineId(), ignored -> new ArrayList<>())
+						.add(new JourneyTimetableRealtimeResolver.Departure(
+							input.originStationId(), occ.lineId(), trip.trip().id(), occ.trainNo(), occ.servicePattern(),
+							serviceDate, occ.stopSequence(), arrivalAt, departureAt));
 				}
-				ScheduledTrip trip = timetable.scheduledTrip(occ.tripIndex());
-				departuresByLine.computeIfAbsent(occ.lineId(), ignored -> new ArrayList<>())
-					.add(new JourneyTimetableRealtimeResolver.Departure(
-						input.originStationId(), occ.lineId(), trip.trip().id(), occ.trainNo(), occ.servicePattern(),
-						input.serviceDay().date(), occ.stopSequence(),
-						serviceInstant(input.serviceDay(), trip.arrivalSeconds(occ.stopIndex())),
-						serviceInstant(input.serviceDay(), trip.departureSeconds(occ.stopIndex()))));
 			}
 		}
-		Instant readyAt = serviceInstant(input.serviceDay(), input.readyAtSeconds());
 		return departuresByLine.entrySet().stream()
 			.map(entry -> new JourneyTimetableRealtimeResolver.Query(
 				input.originStationId(), entry.getKey(), readyAt, entry.getValue()))
@@ -3178,16 +3213,15 @@ public final class RouteTimetableRaptorPlanner {
 
 			Map<String, List<StationDepartureOccurrence>> depTemp = new HashMap<>();
 			for (ScheduledTrip trip : scheduledTrips) {
-				if (trip.trip().trainNo() == null) continue;
+				String trainNo = trip.trip().trainNo();
+				if (trainNo == null || trainNo.isBlank()) continue;
 				List<TransitStopTime> stopTimes = trip.stopTimes();
-				Set<String> seenStations = new HashSet<>(stopTimes.size());
 				for (int stopIndex = 0; stopIndex < stopTimes.size(); stopIndex++) {
 					if (!trip.allowsPickup(stopIndex)) continue;
 					TransitStopTime stop = stopTimes.get(stopIndex);
-					if (!seenStations.add(stop.stationId())) continue;
 					depTemp.computeIfAbsent(stop.stationId(), ignored -> new ArrayList<>())
 						.add(new StationDepartureOccurrence(
-							trip.index(), stopIndex, stop.lineId(), trip.trip().trainNo(),
+							trip.index(), stopIndex, stop.lineId(), trainNo,
 							trip.trip().servicePattern(), stop.stopSequence()));
 				}
 			}
@@ -3343,6 +3377,9 @@ public final class RouteTimetableRaptorPlanner {
 			return lineIndex.getOrDefault(lineId, -1);
 		}
 
+		boolean hasExplicitTransferRule(int station, int fromLine, int toLine) {
+			return accessTransitions.hasExplicitTransferRule(station, fromLine, toLine);
+		}
 		int[] transitionIdsForEdge(String edgeId) {
 			return accessTransitions.transitionIdsForEdge(edgeId);
 		}
@@ -3472,10 +3509,10 @@ public final class RouteTimetableRaptorPlanner {
 				.filter(h -> {
 					if (selectedStepFreeFacilityType != null) {
 						return selectedStepFreeFacilityType.equals(h.targetFacilityType());
-					} else if (nextIsTransfer) {
-						return TARGET_FACILITY_TRANSFER.equals(h.targetFacilityType());
 					} else if (stepFree) {
 						return false;
+					} else if (nextIsTransfer) {
+						return TARGET_FACILITY_TRANSFER.equals(h.targetFacilityType());
 					} else {
 						return "ELEVATOR".equals(h.targetFacilityType())
 							|| "ESCALATOR".equals(h.targetFacilityType())
@@ -3865,6 +3902,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final int stationCount;
 		private final int lineCount;
 		private final long[] transferKeys;
+		private final long[] explicitTransferKeys;
 		/**
 		 * #462: (역, 출발 노선)마다 정렬된 {@link #transferKeys}에서 그 접두사가 시작하는 칸. 칸 {@code p}의 범위는
 		 * {@code [transferRangeStart[p], transferRangeStart[p + 1])}이고 그 안에서 도착 노선만 찾는다.
@@ -3891,6 +3929,7 @@ public final class RouteTimetableRaptorPlanner {
 			int stationCount,
 			int lineCount,
 			long[] transferKeys,
+			long[] explicitTransferKeys,
 			int[][] transferTransitions,
 			List<Candidate> candidates,
 			boolean[] outOfStation,
@@ -3900,6 +3939,7 @@ public final class RouteTimetableRaptorPlanner {
 			this.stationCount = stationCount;
 			this.lineCount = lineCount;
 			this.transferKeys = transferKeys;
+			this.explicitTransferKeys = explicitTransferKeys;
 			this.transferRangeStart = new int[stationCount * lineCount + 1];
 			for (long key : transferKeys) {
 				transferRangeStart[(int) (key / lineCount) + 1] += 1;
@@ -4040,6 +4080,7 @@ public final class RouteTimetableRaptorPlanner {
 					));
 				}
 			}
+			long[] explicitTransferKeys = transfers.keySet().stream().mapToLong(Long::longValue).sorted().toArray();
 			boolean[][] served = new boolean[stationCount][lineCount];
 			for (TransitStopTime stopTime : timetable.transitStopTimes()) {
 				Integer station = stationIndex.get(stopTime.stationId());
@@ -4104,7 +4145,8 @@ public final class RouteTimetableRaptorPlanner {
 			for (int i = inStationCount; i < flattened.size(); i += 1) {
 				outOfStation[i] = true;
 			}
-			return new AccessTransitions(stationCount, lineCount, transferKeys, transferIds, flattened, outOfStation, outOfStationFootpaths, unsupported);
+			return new AccessTransitions(
+				stationCount, lineCount, transferKeys, explicitTransferKeys, transferIds, flattened, outOfStation, outOfStationFootpaths, unsupported);
 		}
 		private static void indexEdge(Map<String, PathwayEdge> edges, Set<String> ambiguous, String id, PathwayEdge edge) {
 			if (id == null || id.isBlank() || ambiguous.contains(id)) {
@@ -4248,6 +4290,12 @@ public final class RouteTimetableRaptorPlanner {
 		}
 		private static long transferKey(int station, int fromLine, int toLine, int lineCount) {
 			return (((long) station) * lineCount + fromLine) * lineCount + toLine;
+		}
+		private boolean hasExplicitTransferRule(int station, int fromLine, int toLine) {
+			if (station < 0 || station >= stationCount || fromLine < 0 || fromLine >= lineCount || toLine < 0 || toLine >= lineCount) {
+				return false;
+			}
+			return Arrays.binarySearch(explicitTransferKeys, transferKey(station, fromLine, toLine, lineCount)) >= 0;
 		}
 		int[] transitionIdsForEdge(String edgeId) {
 			if (edgeId == null) {
@@ -6751,6 +6799,14 @@ public final class RouteTimetableRaptorPlanner {
 			return EMPTY;
 		}
 
+		static RealtimeOverlay emptyAvailable(String version) {
+			if (version == null || version.isBlank()) {
+				throw new IllegalArgumentException("realtime overlay version must not be blank");
+			}
+			return new RealtimeOverlay(
+				version, true, new int[0], new int[0], new int[0], new boolean[0], new RealtimeEvidence[0], new int[0], new BitSet(0));
+		}
+
 		static RealtimeOverlay blockedOnly(BitSet blockedTransitions) {
 			if (blockedTransitions == null || blockedTransitions.isEmpty()) {
 				return EMPTY;
@@ -6760,10 +6816,10 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		static RealtimeOverlay combine(RealtimeOverlay a, RealtimeOverlay b) {
-			if (a == null || a.isEmpty()) {
+			if (a == null || (!a.available && a.isEmpty())) {
 				return b != null ? b : EMPTY;
 			}
-			if (b == null || b.isEmpty()) {
+			if (b == null || (!b.available && b.isEmpty())) {
 				return a;
 			}
 			if (a == b) {

@@ -167,8 +167,11 @@ class RealtimeGatewayServiceTest {
 
 		assertThat(arrivalAtTtl.status()).hasToString("FRESH");
 		assertThat(positionAtTtl.status()).hasToString("FRESH");
-		assertThat(arrivalAtTtl.receivedAt()).isEqualTo(initialArrivals.receivedAt());
-		assertThat(arrivalAtTtl.arrivals()).isEqualTo(initialArrivals.arrivals());
+		assertThat(arrivalAtTtl.receivedAt()).isEqualTo("2026-06-26T08:00:20Z");
+		assertThat(arrivalAtTtl.arrivals()).singleElement().satisfies(arrival -> {
+			assertThat(arrival.etaSeconds()).isEqualTo(160);
+			assertThat(arrival.providerReceivedAt()).isEqualTo("2026-06-26T08:00:00Z");
+		});
 		assertThat(positionAtTtl.receivedAt()).isEqualTo(initialPositions.receivedAt());
 		assertThat(positionAtTtl.trainPositions()).isEqualTo(initialPositions.trainPositions());
 		assertThat(arrivalAfterTtl.status()).hasToString("FRESH");
@@ -540,6 +543,43 @@ class RealtimeGatewayServiceTest {
 		assertThat(result.status()).hasToString("UNAVAILABLE");
 		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_ERROR");
 		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isEqualTo(1.0);
+	}
+
+	@Test
+	@DisplayName("cache hit 시 경과 시간만큼 etaSeconds·안내 문구와 receivedAt을 보정하고 0초 아래로 내리지 않는다")
+	void cacheHitSubtractsElapsedSecondsFromEtaAndClampsAtZero() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		AtomicInteger providerCalls = new AtomicInteger();
+		RealtimeProvider provider = query -> {
+			providerCalls.incrementAndGet();
+			return List.of(
+				new RealtimeArrival("1004", "상록수", "당고개", "상행", "4123", 130, "3분 후", "전역 출발", "2026-06-26T08:00:00Z"),
+				new RealtimeArrival("1004", "상록수", "오이도", "하행", "4124", 10, "1분 이내", "전역 도착", "2026-06-26T08:00:00Z")
+			);
+		};
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		RealtimeArrivalResult initial = service.arrivals(sangnoksuQuery());
+		clock.instant = Instant.parse("2026-06-26T08:00:15Z");
+		RealtimeArrivalResult cachedHit = service.arrivals(sangnoksuQuery());
+
+		assertThat(providerCalls).hasValue(1);
+		assertThat(initial.receivedAt()).isEqualTo("2026-06-26T08:00:00Z");
+		assertThat(cachedHit.status()).hasToString("FRESH");
+		assertThat(cachedHit.receivedAt()).isEqualTo("2026-06-26T08:00:15Z");
+		assertThat(cachedHit.arrivals()).satisfiesExactly(
+			first -> {
+				assertThat(first.etaSeconds()).isEqualTo(115);
+				assertThat(first.message()).isEqualTo("2분 후");
+				assertThat(first.providerReceivedAt()).isEqualTo("2026-06-26T08:00:00Z");
+			},
+			second -> {
+				assertThat(second.etaSeconds()).isZero();
+				assertThat(second.message()).isEqualTo("곧 도착");
+				assertThat(second.providerReceivedAt()).isEqualTo("2026-06-26T08:00:00Z");
+			}
+		);
 	}
 
 	@Test

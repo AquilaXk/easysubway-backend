@@ -65,11 +65,14 @@ public final class TrustedClientIpResolver {
 		if (!isTrustedProxy(remoteBytes)) {
 			return remoteBytes;
 		}
-		List<String> headerValues = collectForwardedForHeaders(request);
-		if (headerValues.isEmpty()) {
+		ForwardedForExtraction forwarded = extractForwardedForHeaders(request);
+		if (!forwarded.headerPresent()) {
 			return remoteBytes;
 		}
-		return walkForwardedChainRightToLeft(headerValues);
+		if (forwarded.values().isEmpty()) {
+			return null;
+		}
+		return walkForwardedChainRightToLeft(forwarded.values());
 	}
 
 	public static boolean isValidIpLiteral(String value) {
@@ -143,24 +146,32 @@ public final class TrustedClientIpResolver {
 		return null;
 	}
 
-	private static List<String> collectForwardedForHeaders(HttpServletRequest request) {
+	private record ForwardedForExtraction(boolean headerPresent, List<String> values) {
+	}
+
+	private static ForwardedForExtraction extractForwardedForHeaders(HttpServletRequest request) {
 		List<String> values = new ArrayList<>(2);
+		boolean headerPresent = false;
 		Enumeration<String> headers = request.getHeaders("X-Forwarded-For");
 		if (headers != null) {
 			while (headers.hasMoreElements()) {
+				headerPresent = true;
 				String value = headers.nextElement();
 				if (value != null && !value.isBlank()) {
 					values.add(value);
 				}
 			}
 		}
-		if (values.isEmpty()) {
+		if (!headerPresent) {
 			String single = request.getHeader("X-Forwarded-For");
-			if (single != null && !single.isBlank()) {
-				values.add(single);
+			if (single != null) {
+				headerPresent = true;
+				if (!single.isBlank()) {
+					values.add(single);
+				}
 			}
 		}
-		return values;
+		return new ForwardedForExtraction(headerPresent, values);
 	}
 
 	private boolean isTrustedProxy(byte[] addressBytes) {

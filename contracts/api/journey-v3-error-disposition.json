@@ -66,7 +66,7 @@
       "exposure": "MOBILE_USER_VISIBLE",
       "userVisible": true,
       "publicMessageKey": "journey.error.accessibility_constraint_unsatisfied",
-      "canonicalKoreanCopy": "요청한 접근성 조건을 만족하는 검증된 경로가 없어요.",
+      "canonicalKoreanCopy": "요청한 접근성 조건을 만족하는 경로가 없어요.",
       "mobileResourceKey": "journeyErrorAccessibilityConstraintUnsatisfied",
       "mobilePresentation": "FAILURE_SCREEN",
       "retryDisposition": "FORBIDDEN",

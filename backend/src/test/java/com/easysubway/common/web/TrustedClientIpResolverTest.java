@@ -102,4 +102,31 @@ class TrustedClientIpResolverTest {
 			.hasSize(TrustedClientIpResolver.MAX_USER_AGENT_LENGTH)
 			.isEqualTo("A".repeat(256));
 	}
+
+	@Test
+	@DisplayName("K3s NodePort SNAT CIDR에서는 실제 클라이언트 IP를 복원하고, 빈 X-Forwarded-For 헤더는 Fail-Closed 처리한다")
+	void resolvesK3sNodePortSnatAndFailsClosedOnBlankForwardedHeader() {
+		var resolver = TrustedClientIpResolver.fromCidrs("172.16.0.0/12,10.42.0.0/16,10.0.0.17/32,127.0.0.1/32");
+
+		var snatRequest = new MockHttpServletRequest();
+		snatRequest.setRemoteAddr("10.42.0.1");
+		snatRequest.addHeader("X-Forwarded-For", "203.0.113.9, 10.0.0.17, 172.17.0.1");
+		assertThat(resolver.resolve(snatRequest)).isEqualTo("203.0.113.9");
+
+		var loopbackSnat = new MockHttpServletRequest();
+		loopbackSnat.setRemoteAddr("127.0.0.1");
+		loopbackSnat.addHeader("X-Forwarded-For", "198.51.100.42");
+		assertThat(resolver.resolve(loopbackSnat)).isEqualTo("198.51.100.42");
+
+		var directInternal = new MockHttpServletRequest();
+		directInternal.setRemoteAddr("10.42.0.1");
+		assertThat(resolver.resolve(directInternal)).isEqualTo("10.42.0.1");
+
+		for (String blankHeader : new String[] {"", "   ", ","}) {
+			var blankForwarded = new MockHttpServletRequest();
+			blankForwarded.setRemoteAddr("10.42.0.1");
+			blankForwarded.addHeader("X-Forwarded-For", blankHeader);
+			assertThat(resolver.resolve(blankForwarded)).isEqualTo(TrustedClientIpResolver.UNKNOWN);
+		}
+	}
 }

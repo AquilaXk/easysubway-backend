@@ -35,7 +35,7 @@ class JourneyV3ErrorDispositionContractTest {
 		entry("searchJourneys", 422, "ROUTE_NOT_FOUND", "ROUTE_ABSENT",
 			"현재 조건에 맞는 경로가 없어요.", "journey.action.editRequest"),
 		entry("searchJourneys", 422, "ACCESSIBILITY_CONSTRAINT_UNSATISFIED", "ACCESSIBILITY_UNSATISFIED",
-			"요청한 접근성 조건을 만족하는 검증된 경로가 없어요.", "journey.action.editAccessibility"),
+			"요청한 접근성 조건을 만족하는 경로가 없어요.", "journey.action.editAccessibility"),
 		entry("searchJourneys", 503, "ROUTING_BUNDLE_UNAVAILABLE", "ROUTING_DATA_UNAVAILABLE",
 			"경로 데이터를 준비하지 못했어요.", "journey.action.newSearch"),
 		entry("searchJourneys", 503, "ROUTING_BUNDLE_STALE", "ROUTING_DATA_STALE",

@@ -243,6 +243,71 @@ class ActiveRouteBundleFacilityAvailabilityAdapterTest {
 	}
 
 	@Test
+	void keepsAdminVerifiedBlockActiveWhenExternalFeedHeartbeatIsMissingOrStale() throws Exception {
+		RaptorRouteBundleRuntimeView runtime = compileRealBundle();
+		var clock = new MutableClock(DEPARTURE);
+		var registry = activatedRegistry(clock, runtime);
+		var preferStepFreeRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-c",
+			new JourneyRequest.Departure.Scheduled(DEPARTURE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE,
+			JourneyRequest.ConstraintMode.NONE,
+			2, 1, () -> false);
+		var requireStepFreeRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-c",
+			new JourneyRequest.Departure.Scheduled(DEPARTURE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			2, 1, () -> false);
+
+		// 1) 외부 피드 heartbeat 자체가 없어도 ADMIN_VERIFIED 차단 간선은 유지되어야 한다.
+		var missingHeartbeatStore = mock(FacilityOperationalStatusStore.class);
+		when(missingHeartbeatStore.lastSuccessfulCollectionAt(FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED))
+			.thenReturn(Optional.empty());
+		when(missingHeartbeatStore.loadStatuses()).thenReturn(List.of(
+			new FacilityOperationalStatus(FAST_ELEVATOR_ID, FacilityOperationalState.OUT_OF_SERVICE,
+				FacilityStatusSource.ADMIN_VERIFIED, null, DEPARTURE.minusSeconds(10), DEPARTURE.minusSeconds(10))));
+		var missingAdapter = new ActiveRouteBundleFacilityAvailabilityAdapter(registry, missingHeartbeatStore);
+		var missingView = missingAdapter.currentView();
+		assertThat(missingView.available()).isFalse();
+		assertThat(missingView.internalBlockedPathwayEdgeIds()).containsExactly("transfer-fast-elev");
+
+		var missingRaptor = new JourneyRaptorAdapter(ScanWorkspacePool.shared(), missingAdapter, true, clock);
+		var preferWhenMissing = missingRaptor.plan(
+			preferStepFreeRequest, snapshot(runtime), DEPARTURE, null, new JourneyRequestMeasurement(REQUEST_ID));
+		assertThat(preferWhenMissing.stairFreeAlternative().facilityStatus())
+			.isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		assertThat(preferWhenMissing.candidates()).singleElement()
+			.satisfies(candidate -> assertThat(candidate.plannedArrivalTime())
+				.isEqualTo(Instant.parse("2026-08-12T01:30:00Z")));
+		assertThatThrownBy(() -> missingRaptor.plan(
+			requireStepFreeRequest, snapshot(runtime), DEPARTURE, null, new JourneyRequestMeasurement(REQUEST_ID)))
+			.isInstanceOf(FacilityStatusUnavailableException.class);
+
+		// 2) 외부 피드가 5분 이상 지연돼도 PREFER_STEP_FREE 경로는 ADMIN_VERIFIED 고장 엘리베이터를 우회한다.
+		var staleHeartbeatStore = mock(FacilityOperationalStatusStore.class);
+		Instant staleHeartbeat = DEPARTURE.minusSeconds(301);
+		when(staleHeartbeatStore.lastSuccessfulCollectionAt(FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED))
+			.thenReturn(Optional.of(staleHeartbeat));
+		when(staleHeartbeatStore.loadStatuses()).thenReturn(List.of(
+			new FacilityOperationalStatus(FAST_ELEVATOR_ID, FacilityOperationalState.OUT_OF_SERVICE,
+				FacilityStatusSource.ADMIN_VERIFIED, null, DEPARTURE.minusSeconds(10), DEPARTURE.minusSeconds(10))));
+		var staleAdapter = new ActiveRouteBundleFacilityAvailabilityAdapter(registry, staleHeartbeatStore);
+		var staleRaptor = new JourneyRaptorAdapter(ScanWorkspacePool.shared(), staleAdapter, true, clock);
+		var preferWhenStale = staleRaptor.plan(
+			preferStepFreeRequest, snapshot(runtime), DEPARTURE, null, new JourneyRequestMeasurement(REQUEST_ID));
+		assertThat(preferWhenStale.stairFreeAlternative().facilityStatus())
+			.isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		assertThat(preferWhenStale.candidates()).singleElement()
+			.satisfies(candidate -> assertThat(candidate.plannedArrivalTime())
+				.isEqualTo(Instant.parse("2026-08-12T01:30:00Z")));
+	}
+
+	@Test
 	void coversUnexpectedRegistryFailureNullStatusListAndCatalogDefaultContracts() throws Exception {
 		var throwingRegistry = mock(RouteBundleActivationRegistry.class);
 		when(throwingRegistry.activeSnapshot()).thenThrow(new IllegalStateException("registry broken"));
@@ -365,7 +430,7 @@ class ActiveRouteBundleFacilityAvailabilityAdapterTest {
 				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
 				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
 				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
-				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT,
 				 service_day_start_seconds INTEGER NOT NULL);
 				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
 				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
@@ -382,12 +447,12 @@ class ActiveRouteBundleFacilityAvailabilityAdapterTest {
 				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
 			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
 				"route-2", "line-2", "2", "Line 2", "station-c", "Asia/Seoul");
-			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
-				"trip-1", "route-1", "daily", "station-b", "0", "LOCAL", "SUBWAY", 0);
-			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
-				"trip-2-fast", "route-2", "daily", "station-c", "0", "LOCAL", "SUBWAY", 0);
-			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
-				"trip-2-slow", "route-2", "daily", "station-c", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-1", "route-1", "daily", "station-b", "0", "LOCAL", "SUBWAY", null, 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-2-fast", "route-2", "daily", "station-c", "0", "LOCAL", "SUBWAY", null, 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-2-slow", "route-2", "daily", "station-c", "0", "LOCAL", "SUBWAY", null, 0);
 			// trip-1: 10:00 station-a -> 10:10 station-b
 			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
 				"trip-1", 1, "station-a", "line-1", 36_000, 36_000, 0, 0);

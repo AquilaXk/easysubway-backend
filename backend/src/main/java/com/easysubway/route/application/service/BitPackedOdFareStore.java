@@ -109,6 +109,118 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 		);
 	}
 
+	public static Builder builder(Collection<String> canonicalStations) {
+		return new Builder(canonicalStations);
+	}
+
+	public static final class Builder {
+		private final Map<String, Integer> stationIdxMap;
+		private final String[] stationIds;
+		private final int stationCount;
+		private final boolean matrixEnabled;
+		private final long[] words;
+		private final Map<MetadataTuple, Integer> metaMap = new LinkedHashMap<>();
+		private final Map<String, OfficialFareQuote> overflows = new HashMap<>();
+		private MetadataTuple lastMeta;
+		private int lastMetaIdx = -1;
+		private int packedCount;
+
+		private Builder(Collection<String> canonicalStations) {
+			Map<String, Integer> idxMap = buildStationIndex(canonicalStations, List.of());
+			int rawCount = idxMap.size();
+			this.matrixEnabled = rawCount > 0 && rawCount <= MAX_MATRIX_STATIONS;
+			this.stationCount = matrixEnabled ? rawCount : 0;
+			this.stationIdxMap = Map.copyOf(idxMap);
+			this.stationIds = buildStationIdArray(idxMap, stationCount, matrixEnabled);
+			this.words = matrixEnabled ? new long[stationCount * stationCount] : new long[0];
+		}
+
+		public Builder add(
+			String originStationId,
+			String destinationStationId,
+			String sourceId,
+			String snapshotId,
+			String mappingLedgerHash,
+			int gnrlCardFare,
+			int gnrlCashFare,
+			int yungCardFare,
+			int yungCashFare,
+			int childCardFare,
+			int childCashFare
+		) {
+			Integer origIdx = matrixEnabled ? stationIdxMap.get(originStationId) : null;
+			Integer destIdx = matrixEnabled ? stationIdxMap.get(destinationStationId) : null;
+			int slot = -1;
+			if (origIdx != null && destIdx != null) {
+				slot = origIdx * stationCount + destIdx;
+				if ((words[slot] & PRESENCE_BIT) != 0L) {
+					throw new IllegalArgumentException(
+						"duplicate official_od_fare_quotes key: "
+							+ OfficialFareQuote.fareKey(originStationId, destinationStationId));
+				}
+			}
+			if (slot >= 0 && canPack(gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare)) {
+				int metaIdx = resolveMetaIdx(sourceId, snapshotId, mappingLedgerHash);
+				if (metaIdx >= 0) {
+					if (!overflows.isEmpty()
+						&& overflows.containsKey(OfficialFareQuote.fareKey(originStationId, destinationStationId))) {
+						throw new IllegalArgumentException(
+							"duplicate official_od_fare_quotes key: "
+								+ OfficialFareQuote.fareKey(originStationId, destinationStationId));
+					}
+					words[slot] = pack(
+						gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare, metaIdx);
+					packedCount++;
+					return this;
+				}
+			}
+			String key = OfficialFareQuote.fareKey(originStationId, destinationStationId);
+			OfficialFareQuote quote = new OfficialFareQuote(
+				originStationId, destinationStationId, sourceId, snapshotId, mappingLedgerHash,
+				gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare);
+			if (overflows.putIfAbsent(key, quote) != null) {
+				throw new IllegalArgumentException("duplicate official_od_fare_quotes key: " + key);
+			}
+			return this;
+		}
+
+		private int resolveMetaIdx(String sourceId, String snapshotId, String mappingLedgerHash) {
+			if (lastMeta != null
+				&& lastMeta.sourceId().equals(sourceId)
+				&& lastMeta.snapshotId().equals(snapshotId)
+				&& lastMeta.mappingLedgerHash().equals(mappingLedgerHash)) {
+				return lastMetaIdx;
+			}
+			MetadataTuple meta = new MetadataTuple(sourceId, snapshotId, mappingLedgerHash);
+			Integer existing = metaMap.get(meta);
+			if (existing != null) {
+				lastMeta = meta;
+				lastMetaIdx = existing;
+				return existing;
+			}
+			if (metaMap.size() >= MAX_METADATA_COMBINATIONS) {
+				return -1;
+			}
+			int index = metaMap.size();
+			metaMap.put(meta, index);
+			lastMeta = meta;
+			lastMetaIdx = index;
+			return index;
+		}
+
+		public BitPackedOdFareStore build() {
+			return new BitPackedOdFareStore(
+				stationIdxMap,
+				stationIds,
+				stationCount,
+				words,
+				List.copyOf(metaMap.keySet()),
+				overflows,
+				packedCount + overflows.size()
+			);
+		}
+	}
+
 	private static Map<String, Integer> buildStationIndex(
 		Collection<String> canonicalStations,
 		Collection<OfficialFareQuote> quotes
@@ -175,12 +287,19 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 	}
 
 	private static boolean canPack(OfficialFareQuote q) {
-		return isPackableFare(q.gnrlCardFare())
-			&& isPackableFare(q.gnrlCashFare())
-			&& isPackableFare(q.yungCardFare())
-			&& isPackableFare(q.yungCashFare())
-			&& isPackableFare(q.childCardFare())
-			&& isPackableFare(q.childCashFare());
+		return canPack(q.gnrlCardFare(), q.gnrlCashFare(), q.yungCardFare(), q.yungCashFare(),
+			q.childCardFare(), q.childCashFare());
+	}
+
+	private static boolean canPack(
+		int gnrlCard, int gnrlCash, int yungCard, int yungCash, int childCard, int childCash
+	) {
+		return isPackableFare(gnrlCard)
+			&& isPackableFare(gnrlCash)
+			&& isPackableFare(yungCard)
+			&& isPackableFare(yungCash)
+			&& isPackableFare(childCard)
+			&& isPackableFare(childCash);
 	}
 
 	private static boolean isPackableFare(int fare) {
@@ -188,13 +307,20 @@ public final class BitPackedOdFareStore implements Map<String, OfficialFareQuote
 	}
 
 	private static long pack(OfficialFareQuote q, int metaIdx) {
+		return pack(q.gnrlCardFare(), q.gnrlCashFare(), q.yungCardFare(), q.yungCashFare(),
+			q.childCardFare(), q.childCashFare(), metaIdx);
+	}
+
+	private static long pack(
+		int gnrlCard, int gnrlCash, int yungCard, int yungCash, int childCard, int childCash, int metaIdx
+	) {
 		long w = PRESENCE_BIT;
-		w |= ((long) (q.gnrlCardFare() / 10) & FARE_MASK_10BIT);
-		w |= (((long) (q.gnrlCashFare() / 10) & FARE_MASK_10BIT) << 10);
-		w |= (((long) (q.yungCardFare() / 10) & FARE_MASK_10BIT) << 20);
-		w |= (((long) (q.yungCashFare() / 10) & FARE_MASK_10BIT) << 30);
-		w |= (((long) (q.childCardFare() / 10) & FARE_MASK_10BIT) << 40);
-		w |= (((long) (q.childCashFare() / 10) & FARE_MASK_10BIT) << 50);
+		w |= ((long) (gnrlCard / 10) & FARE_MASK_10BIT);
+		w |= (((long) (gnrlCash / 10) & FARE_MASK_10BIT) << 10);
+		w |= (((long) (yungCard / 10) & FARE_MASK_10BIT) << 20);
+		w |= (((long) (yungCash / 10) & FARE_MASK_10BIT) << 30);
+		w |= (((long) (childCard / 10) & FARE_MASK_10BIT) << 40);
+		w |= (((long) (childCash / 10) & FARE_MASK_10BIT) << 50);
 		w |= ((metaIdx & 0x7L) << 60);
 		return w;
 	}

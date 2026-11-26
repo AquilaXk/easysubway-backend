@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { verifyFlywayMigrationInventory } from "./verify-flyway-migration-inventory.mjs";
+import { verifyFlywayMigrationInventory, verifyH2MigrationParity } from "./verify-flyway-migration-inventory.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 
@@ -21,6 +21,40 @@ test("Flyway migration inventory는 committed lock과 PostgreSQL migration tree�
   assert.ok(first.migrations.length > 0);
   assert.match(first.inventorySha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(first, second);
+
+  const parity = verifyH2MigrationParity({
+    pgMigrationRoot: input.migrationRoot,
+    h2MigrationRoot: join(repositoryRoot, "backend/src/main/resources/db/migration/h2"),
+  });
+  assert.equal(parity.count, first.migrations.length);
+});
+
+test("H2 migration parity 검증은 누락, 추가, 버전 이름 충돌을 fail closed한다", () => {
+  const dir = mkdtempSync(join(tmpdir(), "flyway-h2-parity-"));
+  try {
+    const pgDir = join(dir, "pg");
+    const h2Dir = join(dir, "h2");
+    mkdirSync(pgDir);
+    mkdirSync(h2Dir);
+    writeFileSync(join(pgDir, "V1__baseline.sql"), "select 1;\n");
+    writeFileSync(join(pgDir, "V64__data_collection_active_source_index.sql"), "select 64;\n");
+    writeFileSync(join(h2Dir, "V1__baseline.sql"), "select 1;\n");
+
+    assert.throws(() => verifyH2MigrationParity({ pgMigrationRoot: pgDir, h2MigrationRoot: h2Dir }), /missing version V64/);
+
+    writeFileSync(join(h2Dir, "V64__train_search_cache.sql"), "select 64;\n");
+    assert.throws(() => verifyH2MigrationParity({ pgMigrationRoot: pgDir, h2MigrationRoot: h2Dir }), /description mismatch/);
+
+    rmSync(join(h2Dir, "V64__train_search_cache.sql"));
+    writeFileSync(join(h2Dir, "V64__data_collection_active_source_index.sql"), "select 64;\n");
+    writeFileSync(join(h2Dir, "V65__extra.sql"), "select 65;\n");
+    assert.throws(() => verifyH2MigrationParity({ pgMigrationRoot: pgDir, h2MigrationRoot: h2Dir }), /extra version V65/);
+
+    rmSync(join(h2Dir, "V65__extra.sql"));
+    assert.equal(verifyH2MigrationParity({ pgMigrationRoot: pgDir, h2MigrationRoot: h2Dir }).count, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("Flyway migration inventory는 canonical numeric version 순서의 lock과 raw migration을 검증하고 stable digest를 반환한다", () => {

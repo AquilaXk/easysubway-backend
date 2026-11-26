@@ -390,7 +390,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		int fromLine = timetable.lineIndex(lastRide1.lineId());
 		int toLine = timetable.lineIndex(firstRide2.lineId());
-		if (fromLine != toLine) {
+		if (requiresJunctionTransition(timetable, station, fromLine, toLine)) {
 			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
 			// #453: 같은 환승 쌍에 비검증 후보가 앞서도 검증 후보를 먼저 고른다. 검증 후보가 없으면 역 밖 보행을 보고, 그래도 없으면 버린다.
 			int transition = resolveJunctionTransition(timetable, station, fromLine, toLine, profileBit, realtimeOverlay);
@@ -609,7 +609,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
 		int lineCount = timetable.lineCount();
 		for (int toLine = 0; toLine < lineCount; toLine++) {
-			if (toLine == fromLine) {
+			if (toLine == fromLine && !requiresJunctionTransition(timetable, station, fromLine, toLine)) {
 				continue;
 			}
 			int transition = resolveJunctionTransition(timetable, station, fromLine, toLine, profileBit, facilityOverlay);
@@ -623,6 +623,26 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			}
 		}
 		return slacks;
+	}
+
+	private static boolean requiresJunctionTransition(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		int station,
+		int fromLine,
+		int toLine
+	) {
+		if (fromLine != toLine || timetable.hasExplicitTransferRule(station, fromLine, toLine)) {
+			return true;
+		}
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths = timetable.footpathsFromStation(station);
+		if (footpaths != null) {
+			for (RouteTimetableRaptorPlanner.OutOfStationFootpath footpath : footpaths) {
+				if (footpath.fromLine() == fromLine && footpath.toLine() == toLine) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private static int resolveJunctionTransition(
@@ -911,10 +931,19 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Map<String, OfficialFareQuote> fareQuotes
 	) {
 		Objects.requireNonNull(fareQuotes, "fareQuotes");
-		record Section(String from, String to) {}
-		List<Section> sections = new ArrayList<>();
+		BitPackedOdFareStore bitPacked = fareQuotes instanceof BitPackedOdFareStore store ? store : null;
 		RouteTimetableRaptorPlanner.JourneyRideProjection sectionFirstRide = null;
 		RouteTimetableRaptorPlanner.JourneyRideProjection sectionLastRide = null;
+		int adultCard = 0;
+		int adultCash = 0;
+		int youthCard = 0;
+		int youthCash = 0;
+		int childCard = 0;
+		int childCash = 0;
+		String singleSnapshotId = null;
+		Set<String> multipleSnapshotIds = null;
+		boolean unavailable = false;
+
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
 			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
 				if (sectionFirstRide == null) sectionFirstRide = ride;
@@ -925,40 +954,73 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				if (sectionFirstRide == null) {
 					throw new IllegalArgumentException("Journey re-boarding transfer must follow a ride");
 				}
-				sections.add(new Section(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
+				if (!unavailable) {
+					OfficialFareQuote quote = lookupFareQuote(
+						fareQuotes, bitPacked, sectionFirstRide.fromStationId(), sectionLastRide.toStationId());
+					if (quote == null) {
+						unavailable = true;
+					} else {
+						adultCard = Math.addExact(adultCard, quote.gnrlCardFare());
+						adultCash = Math.addExact(adultCash, quote.gnrlCashFare());
+						youthCard = Math.addExact(youthCard, quote.yungCardFare());
+						youthCash = Math.addExact(youthCash, quote.yungCashFare());
+						childCard = Math.addExact(childCard, quote.childCardFare());
+						childCash = Math.addExact(childCash, quote.childCashFare());
+						String snapshotId = quote.snapshotId();
+						if (singleSnapshotId == null) {
+							singleSnapshotId = snapshotId;
+						} else if (multipleSnapshotIds != null) {
+							multipleSnapshotIds.add(snapshotId);
+						} else if (!singleSnapshotId.equals(snapshotId)) {
+							multipleSnapshotIds = new LinkedHashSet<>();
+							multipleSnapshotIds.add(singleSnapshotId);
+							multipleSnapshotIds.add(snapshotId);
+						}
+					}
+				}
 				sectionFirstRide = null;
 			}
 		}
 		if (sectionFirstRide == null) {
 			throw new IllegalArgumentException("Journey itinerary must contain a ride to quote a fare");
 		}
-		sections.add(new Section(sectionFirstRide.fromStationId(), sectionLastRide.toStationId()));
-
-		int adultCard = 0;
-		int adultCash = 0;
-		int youthCard = 0;
-		int youthCash = 0;
-		int childCard = 0;
-		int childCash = 0;
-		Set<String> snapshotIds = new LinkedHashSet<>();
-		BitPackedOdFareStore bitPacked = fareQuotes instanceof BitPackedOdFareStore store ? store : null;
-		for (Section section : sections) {
-			OfficialFareQuote quote = bitPacked != null
-				? bitPacked.getQuote(section.from(), section.to())
-				: fareQuotes.get(OfficialFareQuote.fareKey(section.from(), section.to()));
-			if (quote == null) {
-				return JourneyCandidate.Fare.unavailable();
-			}
-			adultCard = Math.addExact(adultCard, quote.gnrlCardFare());
-			adultCash = Math.addExact(adultCash, quote.gnrlCashFare());
-			youthCard = Math.addExact(youthCard, quote.yungCardFare());
-			youthCash = Math.addExact(youthCash, quote.yungCashFare());
-			childCard = Math.addExact(childCard, quote.childCardFare());
-			childCash = Math.addExact(childCash, quote.childCashFare());
-			snapshotIds.add(quote.snapshotId());
+		if (unavailable) {
+			return JourneyCandidate.Fare.unavailable();
+		}
+		OfficialFareQuote quote = lookupFareQuote(
+			fareQuotes, bitPacked, sectionFirstRide.fromStationId(), sectionLastRide.toStationId());
+		if (quote == null) {
+			return JourneyCandidate.Fare.unavailable();
+		}
+		adultCard = Math.addExact(adultCard, quote.gnrlCardFare());
+		adultCash = Math.addExact(adultCash, quote.gnrlCashFare());
+		youthCard = Math.addExact(youthCard, quote.yungCardFare());
+		youthCash = Math.addExact(youthCash, quote.yungCashFare());
+		childCard = Math.addExact(childCard, quote.childCardFare());
+		childCash = Math.addExact(childCash, quote.childCashFare());
+		String snapshotId = quote.snapshotId();
+		List<String> snapshotIds;
+		if (multipleSnapshotIds != null) {
+			multipleSnapshotIds.add(snapshotId);
+			snapshotIds = List.copyOf(multipleSnapshotIds);
+		} else if (singleSnapshotId == null || singleSnapshotId.equals(snapshotId)) {
+			snapshotIds = List.of(snapshotId);
+		} else {
+			snapshotIds = List.of(singleSnapshotId, snapshotId);
 		}
 		return JourneyCandidate.Fare.available(
-			adultCard, adultCash, youthCard, youthCash, childCard, childCash, List.copyOf(snapshotIds));
+			adultCard, adultCash, youthCard, youthCash, childCard, childCash, snapshotIds);
+	}
+
+	private static OfficialFareQuote lookupFareQuote(
+		Map<String, OfficialFareQuote> fareQuotes,
+		BitPackedOdFareStore bitPacked,
+		String fromStationId,
+		String toStationId
+	) {
+		return bitPacked != null
+			? bitPacked.getQuote(fromStationId, toStationId)
+			: fareQuotes.get(OfficialFareQuote.fareKey(fromStationId, toStationId));
 	}
 
 	private static void requireLegOrder(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {

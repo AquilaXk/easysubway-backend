@@ -34,16 +34,20 @@ import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCas
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.notification.application.port.in.ReportStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.ReportStatusChangedAlertCommand;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.FacilityOperationalState;
 import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -53,6 +57,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -61,7 +67,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class FacilityReportService implements FacilityReportUseCase {
+public class FacilityReportService implements FacilityReportUseCase, InitializingBean {
 
 	private static final Logger log = LoggerFactory.getLogger(FacilityReportService.class);
 	private static final String LOCAL_DEV_RECEIPT_TOKEN_PEPPER = "local-dev-report-receipt-pepper";
@@ -72,6 +78,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
+	private final FacilityOperationalStatusStore facilityOperationalStatusStore;
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
 	private final StoreFacilityReportPhotoPort storeFacilityReportPhotoPort;
@@ -83,6 +90,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private final FacilityReportPhotoProcessor photoProcessor;
 	private final Clock clock;
 	private final FacilityReportReceiptTokens receiptTokens;
+	private final boolean receiptTokenPepperInvalidInProd;
 
 	@Autowired
 	public FacilityReportService(
@@ -97,11 +105,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
 		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
 		@Value("${easysubway.report.receipt-token-pepper:local-dev-report-receipt-pepper}") String receiptTokenPepper,
-		Environment environment
+		Environment environment,
+		ObjectProvider<FacilityOperationalStatusStore> facilityOperationalStatusStoreProvider
 	) {
 		this(
 			loadTransitMasterPort,
 			saveAccessibilityFacilityStatusPort,
+			facilityOperationalStatusStoreProvider == null ? null : facilityOperationalStatusStoreProvider.getIfAvailable(),
 			loadFacilityReportPort,
 			saveFacilityReportPort,
 			storeFacilityReportPhotoPort,
@@ -111,7 +121,67 @@ public class FacilityReportService implements FacilityReportUseCase {
 			loadFacilityReportReviewAuditPort,
 			loadFacilityReportPhotoPort,
 			Clock.systemUTC(),
-			validateReceiptTokenPepper(receiptTokenPepper, environment)
+			normalizedReceiptTokenPepper(receiptTokenPepper),
+			isReceiptTokenPepperInvalidInProd(receiptTokenPepper, environment)
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		String receiptTokenPepper,
+		Environment environment
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			null,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			loadFacilityReportPhotoPort,
+			Clock.systemUTC(),
+			normalizedReceiptTokenPepper(receiptTokenPepper),
+			isReceiptTokenPepperInvalidInProd(receiptTokenPepper, environment)
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		FacilityOperationalStatusStore facilityOperationalStatusStore,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		Clock clock
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			facilityOperationalStatusStore,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
+			facilityStatusAlertUseCase,
+			command -> {
+			},
+			audit -> audit,
+			reportId -> List.of(),
+			defaultUploadedPhotoLoader(),
+			clock,
+			LOCAL_DEV_RECEIPT_TOKEN_PEPPER
 		);
 	}
 
@@ -283,17 +353,34 @@ public class FacilityReportService implements FacilityReportUseCase {
 		);
 	}
 
-	private static String validateReceiptTokenPepper(String receiptTokenPepper, Environment environment) {
-		if (!java.util.Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
-			return receiptTokenPepper;
+	private static boolean isReceiptTokenPepperInvalidInProd(String receiptTokenPepper, Environment environment) {
+		if (environment == null || !java.util.Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
+			return false;
 		}
-		if (receiptTokenPepper == null
+		return receiptTokenPepper == null
 			|| receiptTokenPepper.isBlank()
 			|| LOCAL_DEV_RECEIPT_TOKEN_PEPPER.equals(receiptTokenPepper.trim())
-			|| receiptTokenPepper.trim().length() < 32) {
+			|| receiptTokenPepper.trim().length() < 32;
+	}
+
+	private static String normalizedReceiptTokenPepper(String receiptTokenPepper) {
+		return receiptTokenPepper == null ? "" : receiptTokenPepper.trim();
+	}
+
+	@Override
+	public void afterPropertiesSet() {
+		requireValidReceiptTokenPepper();
+	}
+
+	private FacilityReportReceiptTokens receiptTokens() {
+		requireValidReceiptTokenPepper();
+		return receiptTokens;
+	}
+
+	private void requireValidReceiptTokenPepper() {
+		if (receiptTokenPepperInvalidInProd) {
 			throw new IllegalStateException("운영 receipt token pepper 설정이 필요합니다.");
 		}
-		return receiptTokenPepper.trim();
 	}
 
 	FacilityReportService(
@@ -339,8 +426,75 @@ public class FacilityReportService implements FacilityReportUseCase {
 		Clock clock,
 		String receiptTokenPepper
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			null,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			loadFacilityReportPhotoPort,
+			clock,
+			receiptTokenPepper
+		);
+	}
+
+	FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		FacilityOperationalStatusStore facilityOperationalStatusStore,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		Clock clock,
+		String receiptTokenPepper
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			facilityOperationalStatusStore,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			loadFacilityReportPhotoPort,
+			clock,
+			receiptTokenPepper,
+			false
+		);
+	}
+
+	private FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		FacilityOperationalStatusStore facilityOperationalStatusStore,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		Clock clock,
+		String receiptTokenPepper,
+		boolean receiptTokenPepperInvalidInProd
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
+		this.facilityOperationalStatusStore = facilityOperationalStatusStore;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
 		this.storeFacilityReportPhotoPort = storeFacilityReportPhotoPort;
@@ -352,6 +506,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		this.photoProcessor = new FacilityReportPhotoProcessor();
 		this.clock = clock;
 		this.receiptTokens = new FacilityReportReceiptTokens(receiptTokenPepper);
+		this.receiptTokenPepperInvalidInProd = receiptTokenPepperInvalidInProd;
 	}
 
 	@Override
@@ -366,7 +521,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	@Override
 	public CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command) {
 		requireClientSubmissionId(command.clientSubmissionId());
-		FacilityReportReceiptTokens.IssuedReceiptToken receiptToken = receiptTokens.issue(command.clientSubmissionId());
+		FacilityReportReceiptTokens.IssuedReceiptToken receiptToken = receiptTokens().issue(command.clientSubmissionId());
 		Optional<FacilityReport> existing = findReportByClientSubmissionId(command.clientSubmissionId());
 		if (existing.isPresent()) {
 			return new CreatedFacilityReport(existing.get(), null);
@@ -411,27 +566,66 @@ public class FacilityReportService implements FacilityReportUseCase {
 			? hasText(command.photoContentType()) ? command.photoContentType().trim() : null
 			: photo.contentType();
 
-		FacilityReport saved = saveNewReportWithReceiptCodeRetry(
-			reportId,
-			storedUserId,
-			command.stationId(),
-			command.facilityId(),
-			command.reportType(),
-			command.description(),
-			photoFileName,
-			photoContentType,
-			photoObjectKey,
-			storedPhoto == null ? null : storedPhoto.thumbnailObjectKey(),
-			photoSha256,
-			photoSizeBytes,
-			command.latitude(),
-			command.longitude(),
-			LocalDateTime.now(clock),
-			hasText(command.clientSubmissionId()) ? command.clientSubmissionId().trim() : null,
-			receiptTokenHash
-		);
+		FacilityReport saved;
+		try {
+			saved = saveNewReportWithReceiptCodeRetry(
+				reportId,
+				storedUserId,
+				command.stationId(),
+				command.facilityId(),
+				command.reportType(),
+				command.description(),
+				photoFileName,
+				photoContentType,
+				photoObjectKey,
+				storedPhoto == null ? null : storedPhoto.thumbnailObjectKey(),
+				photoSha256,
+				photoSizeBytes,
+				command.latitude(),
+				command.longitude(),
+				LocalDateTime.now(clock),
+				hasText(command.clientSubmissionId()) ? command.clientSubmissionId().trim() : null,
+				receiptTokenHash
+			);
+		} catch (RuntimeException exception) {
+			deleteStoredPhotoOnSaveFailure(storedPhoto);
+			throw exception;
+		}
 		claimUploadedPhotoObject(command, storedPhoto);
 		return saved;
+	}
+
+	private void deleteStoredPhotoOnSaveFailure(StoredFacilityReportPhoto storedPhoto) {
+		if (storedPhoto == null) {
+			return;
+		}
+		DeleteFacilityReportPhotoPort deletePort = resolveDeletePhotoPort();
+		if (deletePort == null) {
+			return;
+		}
+		deleteStoredPhotoKeyQuietly(deletePort, storedPhoto.objectKey());
+		deleteStoredPhotoKeyQuietly(deletePort, storedPhoto.thumbnailObjectKey());
+	}
+
+	private DeleteFacilityReportPhotoPort resolveDeletePhotoPort() {
+		if (storeFacilityReportPhotoPort instanceof DeleteFacilityReportPhotoPort deletePort) {
+			return deletePort;
+		}
+		if (loadFacilityReportPhotoPort instanceof DeleteFacilityReportPhotoPort deletePort) {
+			return deletePort;
+		}
+		return null;
+	}
+
+	private void deleteStoredPhotoKeyQuietly(DeleteFacilityReportPhotoPort deletePort, String objectKey) {
+		if (!hasText(objectKey)) {
+			return;
+		}
+		try {
+			deletePort.deleteFacilityReportPhoto(objectKey);
+		} catch (RuntimeException exception) {
+			log.warn("Failed to delete facility report photo after save failure: {}", objectKey, exception);
+		}
 	}
 
 	private FacilityReport saveNewReportWithReceiptCodeRetry(
@@ -535,7 +729,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	@Override
 	public FacilityReport getReportByReceiptToken(String reportId, String receiptToken) {
 		FacilityReport report = getReport(reportId);
-		if (!receiptTokens.matches(receiptToken, report.receiptTokenHash())) {
+		if (!receiptTokens().matches(receiptToken, report.receiptTokenHash())) {
 			throw new FacilityReportNotFoundException();
 		}
 		return report;
@@ -654,7 +848,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		);
 
 		if (command.decision() == FacilityReportReviewDecision.ACCEPT && toFacilityStatus(report.reportType()).isPresent()) {
-			requireWritableMasterData();
+			requireOperationalStatusWritable();
 		}
 		// 감사 로그 저장 실패가 신고 상태 변경을 남기지 않도록 같은 트랜잭션에서 먼저 기록한다.
 		saveFacilityReportReviewAuditPort.saveAudit(new FacilityReportReviewAudit(
@@ -914,18 +1108,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private void requireActiveStation(String stationId) {
-		loadTransitMasterPort.loadStations()
-			.stream()
+		loadTransitMasterPort.loadStation(stationId)
 			.filter(Station::active)
-			.filter(station -> station.id().equals(stationId))
-			.findFirst()
 			.orElseThrow(StationNotFoundException::new);
 	}
 
 	private void requireFacilityInStation(String stationId, String facilityId) {
-		boolean exists = loadTransitMasterPort.loadAccessibilityFacilities()
-			.stream()
-			.anyMatch(facility -> facility.id().equals(facilityId) && facility.stationId().equals(stationId));
+		boolean exists = loadTransitMasterPort.loadAccessibilityFacility(facilityId)
+			.filter(facility -> facility.stationId().equals(stationId))
+			.isPresent();
 
 		if (!exists) {
 			throw new FacilityReportTargetNotFoundException();
@@ -947,13 +1138,38 @@ public class FacilityReportService implements FacilityReportUseCase {
 		}
 
 		toFacilityStatus(report.reportType()).ifPresent(status -> {
+			if (!isMasterDataWritable()) {
+				if (facilityOperationalStatusStore == null) {
+					throw new MasterDataWriteNotAllowedException();
+				}
+				FacilityOperationalState targetState = toOperationalState(status);
+				Instant verifiedAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+				FacilityOperationalStatusStore.AdminVerifiedResult result =
+					facilityOperationalStatusStore.recordAdminVerified(report.facilityId(), targetState, verifiedAt);
+				boolean statusChanged = result.recorded() && result.previousState()
+					.map(previous -> previous != targetState)
+					.orElse(targetState == FacilityOperationalState.OUT_OF_SERVICE);
+				if (!statusChanged) {
+					return;
+				}
+				facilityStatusAlertUseCase.alertFacilityStatusChanged(
+					new FacilityStatusChangedAlertCommand(report.facilityId(), status)
+				);
+				return;
+			}
 			boolean statusChanged = isFacilityStatusChanged(report.facilityId(), status);
-			requireWritableMasterData();
 			saveAccessibilityFacilityStatusPort.saveFacilityStatus(
 				report.facilityId(),
 				status,
 				BusinessTime.today(clock)
 			);
+			if (facilityOperationalStatusStore != null) {
+				facilityOperationalStatusStore.recordAdminVerified(
+					report.facilityId(),
+					toOperationalState(status),
+					Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
+				);
+			}
 			if (!statusChanged) {
 				return;
 			}
@@ -966,19 +1182,35 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private boolean isFacilityStatusChanged(String facilityId, AccessibilityFacilityStatus status) {
-		return loadTransitMasterPort.loadAccessibilityFacilities()
-			.stream()
-			.filter(facility -> facility.id().equals(facilityId))
-			.findFirst()
+		return loadTransitMasterPort.loadAccessibilityFacility(facilityId)
 			.map(facility -> facility.status() != status)
 			.orElseThrow(FacilityReportTargetNotFoundException::new);
 	}
 
+	private boolean isMasterDataWritable() {
+		return !(loadTransitMasterPort instanceof MasterDataCapabilityPort capabilityPort)
+			|| capabilityPort.masterDataCapability().writable();
+	}
+
+	private void requireOperationalStatusWritable() {
+		if (facilityOperationalStatusStore == null) {
+			requireWritableMasterData();
+		}
+	}
+
 	private void requireWritableMasterData() {
-		if (loadTransitMasterPort instanceof MasterDataCapabilityPort capabilityPort
-			&& !capabilityPort.masterDataCapability().writable()) {
+		if (!isMasterDataWritable()) {
 			throw new MasterDataWriteNotAllowedException();
 		}
+	}
+
+	private static FacilityOperationalState toOperationalState(AccessibilityFacilityStatus status) {
+		return switch (status) {
+			case BROKEN, UNDER_CONSTRUCTION, CLOSED -> FacilityOperationalState.OUT_OF_SERVICE;
+			case NORMAL, ADMIN_VERIFIED -> FacilityOperationalState.OPERATING;
+			case UNKNOWN, USER_REPORTED -> throw new IllegalArgumentException(
+				"Unsupported operational facility status: " + status);
+		};
 	}
 
 	private Optional<AccessibilityFacilityStatus> toFacilityStatus(FacilityReportType reportType) {

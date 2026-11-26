@@ -8,6 +8,7 @@ import com.easysubway.journey.bundle.RouteBundleFacilityCatalog;
 import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
 import com.easysubway.transit.domain.FacilityOperationalState;
 import com.easysubway.transit.domain.FacilityOperationalStatus;
+import com.easysubway.transit.domain.FacilityStatusSource;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -83,17 +84,11 @@ public final class ActiveRouteBundleFacilityAvailabilityAdapter implements Facil
 			return FacilityAvailabilityView.unavailable();
 		}
 
-		Instant heartbeatAt;
+		Optional<Instant> observed;
 		List<FacilityOperationalStatus> statuses;
 		try {
-			Optional<Instant> observed = statusStore.lastSuccessfulCollectionAt(
+			observed = statusStore.lastSuccessfulCollectionAt(
 				FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED);
-			if (observed.isEmpty()) {
-				log.warn("Missing successful collection heartbeat for feed={} — returning unavailable facility view",
-					FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED);
-				return FacilityAvailabilityView.unavailable();
-			}
-			heartbeatAt = observed.get();
 			statuses = statusStore.loadStatuses();
 		} catch (RuntimeException exception) {
 			log.warn("Failed to query facility operational statuses — returning unavailable facility view", exception);
@@ -105,18 +100,35 @@ public final class ActiveRouteBundleFacilityAvailabilityAdapter implements Facil
 		}
 
 		Set<String> blockedEdgeIds = new LinkedHashSet<>();
+		Set<String> internalBlockedEdgeIds = new LinkedHashSet<>();
 		for (FacilityOperationalStatus status : statuses) {
 			if (status.status() != FacilityOperationalState.OUT_OF_SERVICE) {
 				continue;
 			}
 			Set<String> edgeIds = catalog.transitionEdgeIdsForFacility(status.facilityId());
 			if (!edgeIds.isEmpty()) {
-				blockedEdgeIds.addAll(edgeIds);
+				if (observed.isPresent()) {
+					blockedEdgeIds.addAll(edgeIds);
+				}
+				if (status.source() == FacilityStatusSource.ADMIN_VERIFIED) {
+					internalBlockedEdgeIds.addAll(edgeIds);
+				}
 			}
 		}
-		if (blockedEdgeIds.isEmpty()) {
+		if (observed.isEmpty()) {
+			log.warn(
+				"Missing successful collection heartbeat for feed={} — external feed unavailable (internalBlocked={})",
+				FacilityOperationalStatusStore.SEOUL_METRO_ELEVATOR_FEED,
+				internalBlockedEdgeIds.size());
+			return internalBlockedEdgeIds.isEmpty()
+				? FacilityAvailabilityView.unavailable()
+				: FacilityAvailabilityView.unavailable(Set.copyOf(internalBlockedEdgeIds));
+		}
+		Instant heartbeatAt = observed.get();
+		if (blockedEdgeIds.isEmpty() && internalBlockedEdgeIds.isEmpty()) {
 			return FacilityAvailabilityView.empty(heartbeatAt);
 		}
-		return FacilityAvailabilityView.blocked(heartbeatAt, Set.copyOf(blockedEdgeIds));
+		return FacilityAvailabilityView.blocked(
+			heartbeatAt, Set.copyOf(blockedEdgeIds), Set.copyOf(internalBlockedEdgeIds));
 	}
 }

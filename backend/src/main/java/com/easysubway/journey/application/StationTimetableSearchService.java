@@ -206,12 +206,19 @@ public final class StationTimetableSearchService {
 			appendForDate(result, candidates, timetable, dayType.referenceDate());
 		} else {
 			Selector.NextDeparturesSelector next = (Selector.NextDeparturesSelector) selector;
-			LocalDate first = next.asOf().atZone(SERVICE_ZONE).toLocalDate().minusDays(1);
-			LocalDate last = next.asOf().plusSeconds((long) next.horizonDays() * 86_400).atZone(SERVICE_ZONE).toLocalDate();
+			LocalDate referenceDate = ServiceDayResolver.resolve(next.asOf()).serviceDate();
+			if (timetable.feedEndDate() != null && referenceDate.isAfter(timetable.feedEndDate())) {
+				throw failure(Failure.TIMETABLE_STALE);
+			}
+			Instant until = next.asOf().plusSeconds((long) next.horizonDays() * 86_400);
+			LocalDate first = referenceDate.minusDays(1);
+			LocalDate last = until.atZone(SERVICE_ZONE).toLocalDate();
+			if (timetable.feedEndDate() != null && last.isAfter(timetable.feedEndDate())) {
+				last = timetable.feedEndDate();
+			}
 			for (LocalDate date = first; !date.isAfter(last); date = date.plusDays(1)) {
 				appendForDate(result, candidates, timetable, date);
 			}
-			Instant until = next.asOf().plusSeconds((long) next.horizonDays() * 86_400);
 			result.removeIf(value -> value.departureAt().isBefore(next.asOf()) || !value.departureAt().isBefore(until));
 			validateDepartureOrderAndIdentity(result);
 			Map<String, Departure> firstByDirection = new HashMap<>();
@@ -274,7 +281,7 @@ public final class StationTimetableSearchService {
 		return switch (selector) {
 			case Selector.ServiceDateSelector value -> value.serviceDate();
 			case Selector.DayTypeSelector value -> value.referenceDate();
-			case Selector.NextDeparturesSelector value -> value.asOf().atZone(SERVICE_ZONE).toLocalDate();
+			case Selector.NextDeparturesSelector value -> ServiceDayResolver.resolve(value.asOf()).serviceDate();
 		};
 	}
 
@@ -430,7 +437,7 @@ public final class StationTimetableSearchService {
 		}
 		record NextDeparturesSelector(Instant asOf, int horizonDays) implements Selector {
 			public NextDeparturesSelector { asOf = Objects.requireNonNull(asOf, "asOf"); if (horizonDays < 1 || horizonDays > 8) throw failure(Failure.INVALID_JOURNEY_REQUEST); }
-			@Override public DayType resolvedDayType() { return DayType.from(asOf.atZone(SERVICE_ZONE).toLocalDate()); }
+			@Override public DayType resolvedDayType() { return DayType.from(ServiceDayResolver.resolve(asOf).serviceDate()); }
 		}
 	}
 

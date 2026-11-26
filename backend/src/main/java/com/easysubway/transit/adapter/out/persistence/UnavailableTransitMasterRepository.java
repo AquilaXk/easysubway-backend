@@ -23,6 +23,7 @@ import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public class UnavailableTransitMasterRepository implements
 	LoadTransitMasterPort,
@@ -57,6 +58,11 @@ public class UnavailableTransitMasterRepository implements
 	}
 
 	@Override
+	public Optional<Station> loadStation(String stationId) {
+		return seedRepository.loadStation(stationId);
+	}
+
+	@Override
 	public List<StationLine> loadStationLines() {
 		return seedRepository.loadStationLines();
 	}
@@ -69,6 +75,11 @@ public class UnavailableTransitMasterRepository implements
 	@Override
 	public List<AccessibilityFacility> loadAccessibilityFacilities() {
 		return seedRepository.loadAccessibilityFacilities();
+	}
+
+	@Override
+	public Optional<AccessibilityFacility> loadAccessibilityFacility(String facilityId) {
+		return seedRepository.loadAccessibilityFacility(facilityId);
 	}
 
 	@Override

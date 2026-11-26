@@ -197,9 +197,10 @@ public class RealtimeGatewayService {
 			normalizedQuery.query().stationQueryName()
 		);
 		cacheKey = "%s:%d".formatted(cacheKey, normalizedQuery.cacheVersion());
+		Instant now = clock.instant();
 		CachedArrival cached = arrivalCache.get(cacheKey);
-		if (cached != null && canReuseCache(arrivalCache, cacheKey, cached, cached.cachedAt())) {
-			return recordArrivalResult(cached.result());
+		if (cached != null && canReuseCache(arrivalCache, cacheKey, cached, cached.cachedAt(), now)) {
+			return recordArrivalResult(adjustCachedArrivalResult(cached, now));
 		}
 		if (isQuotaCircuitOpen()) {
 			return recordArrivalResult(RealtimeArrivalResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
@@ -232,6 +233,9 @@ public class RealtimeGatewayService {
 			Instant receivedAt = clock.instant();
 			ProcessedArrivals processed = freshArrivals(arrivals, receivedAt, normalizedQuery);
 			if (processed.arrivals().isEmpty()) {
+				if (processed.sawStaleMatchedLineItem()) {
+					providerMetrics.recordStaleResult();
+				}
 				return RealtimeArrivalResult.unavailable("PROVIDER_ERROR");
 			}
 			dispatchArchiveArrivals(processed.observations());
@@ -276,7 +280,7 @@ public class RealtimeGatewayService {
 			normalizedQuery.cacheVersion()
 		);
 		CachedTrainPosition cached = trainPositionCache.get(cacheKey);
-		if (cached != null && canReuseCache(trainPositionCache, cacheKey, cached, cached.cachedAt())) {
+		if (cached != null && canReuseCache(trainPositionCache, cacheKey, cached, cached.cachedAt(), clock.instant())) {
 			return recordTrainPositionResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
@@ -311,9 +315,12 @@ public class RealtimeGatewayService {
 				return RealtimeTrainPositionResult.unavailable("EMPTY_PROVIDER_RESULT");
 			}
 			Instant receivedAt = clock.instant();
-			List<RealtimeTrainPosition> freshTrainPositions = freshTrainPositions(trainPositions, receivedAt);
-			List<RealtimeTrainPosition> orderedTrainPositions = orderedTrainPositions(freshTrainPositions, receivedAt);
+			ProcessedTrainPositions processedPositions = freshTrainPositions(trainPositions, receivedAt);
+			List<RealtimeTrainPosition> orderedTrainPositions = orderedTrainPositions(processedPositions.positions(), receivedAt);
 			if (orderedTrainPositions.isEmpty()) {
+				if (processedPositions.sawStaleItem()) {
+					providerMetrics.recordStaleResult();
+				}
 				return RealtimeTrainPositionResult.unavailable("PROVIDER_ERROR");
 			}
 			RealtimeTrainPositionResult result = RealtimeTrainPositionResult.fresh(
@@ -363,6 +370,7 @@ public class RealtimeGatewayService {
 	) {
 		List<RealtimeArrival> freshArrivals = new ArrayList<>();
 		List<RealtimeArrivalObservation> observations = new ArrayList<>();
+		boolean sawStaleMatchedLineItem = false;
 		for (RealtimeArrival arrival : arrivals) {
 			// TOPIS 도착은 역 단위라 환승역 응답에 다른 노선 열차도 섞인다. arrival.lineId()는 원천 subwayId이고
 			// normalized query의 providerLineId는 mapping의 provider_line_id(같은 TOPIS subwayId)다.
@@ -372,6 +380,9 @@ public class RealtimeGatewayService {
 			}
 			Instant providerReceivedAt = parseProviderReceivedAt(arrival.providerReceivedAt());
 			if (providerReceivedAt == null || !isProviderFresh(providerReceivedAt, receivedAt)) {
+				if (providerReceivedAt != null) {
+					sawStaleMatchedLineItem = true;
+				}
 				continue;
 			}
 			// provider 로컬(예: TOPIS KST "yyyy-MM-dd HH:mm:ss") timestamp를 경계에서 ISO(Instant)로
@@ -406,7 +417,7 @@ public class RealtimeGatewayService {
 				);
 			}
 		}
-		return new ProcessedArrivals(List.copyOf(freshArrivals), List.copyOf(observations));
+		return new ProcessedArrivals(List.copyOf(freshArrivals), List.copyOf(observations), sawStaleMatchedLineItem);
 	}
 
 	private void archiveArrivals(List<RealtimeArrivalObservation> observations) {
@@ -443,19 +454,23 @@ public class RealtimeGatewayService {
 		}
 	}
 
-	private List<RealtimeTrainPosition> freshTrainPositions(
+	private ProcessedTrainPositions freshTrainPositions(
 		List<RealtimeTrainPosition> trainPositions,
 		Instant receivedAt
 	) {
 		List<RealtimeTrainPosition> freshTrainPositions = new ArrayList<>();
+		boolean sawStaleItem = false;
 		for (RealtimeTrainPosition trainPosition : trainPositions) {
 			Instant providerReceivedAt = parseProviderReceivedAt(trainPosition.providerReceivedAt());
 			if (providerReceivedAt == null || !isProviderFresh(providerReceivedAt, receivedAt)) {
+				if (providerReceivedAt != null) {
+					sawStaleItem = true;
+				}
 				continue;
 			}
 			freshTrainPositions.add(trainPosition.withProviderReceivedAt(providerReceivedAt.toString()));
 		}
-		return List.copyOf(freshTrainPositions);
+		return new ProcessedTrainPositions(List.copyOf(freshTrainPositions), sawStaleItem);
 	}
 
 	private List<RealtimeTrainPosition> orderedTrainPositions(
@@ -668,8 +683,35 @@ public class RealtimeGatewayService {
 		return mapping.matchesProviderLine(query.providerLineId());
 	}
 
-	private <T> boolean canReuseCache(Map<String, T> cache, String cacheKey, T cached, java.time.Instant cachedAt) {
-		Duration age = Duration.between(cachedAt, clock.instant());
+	private RealtimeArrivalResult adjustCachedArrivalResult(CachedArrival cached, Instant now) {
+		RealtimeArrivalResult result = cached.result();
+		long elapsedSeconds = Math.max(0L, Duration.between(cached.cachedAt(), now).toSeconds());
+		if (elapsedSeconds == 0L || result.status() != RealtimeStatus.FRESH) {
+			return result;
+		}
+		List<RealtimeArrival> originalArrivals = result.arrivals();
+		List<RealtimeArrival> adjustedArrivals = new ArrayList<>(originalArrivals.size());
+		for (RealtimeArrival arrival : originalArrivals) {
+			Integer etaSeconds = arrival.etaSeconds();
+			if (etaSeconds == null) {
+				adjustedArrivals.add(arrival);
+			} else {
+				int adjustedEtaSeconds = (int) Math.max(0L, etaSeconds - elapsedSeconds);
+				adjustedArrivals.add(arrival.withEtaAndMessage(adjustedEtaSeconds, arrivalMessage(adjustedEtaSeconds)));
+			}
+		}
+		return new RealtimeArrivalResult(
+			RealtimeStatus.FRESH,
+			result.fallbackCode(),
+			result.message(),
+			cached.cachedAt().plusSeconds(elapsedSeconds).toString(),
+			result.providerId(),
+			adjustedArrivals
+		);
+	}
+
+	private <T> boolean canReuseCache(Map<String, T> cache, String cacheKey, T cached, java.time.Instant cachedAt, Instant now) {
+		Duration age = Duration.between(cachedAt, now);
 		if (age.isNegative()) {
 			cache.remove(cacheKey, cached);
 			return false;
@@ -755,6 +797,10 @@ public class RealtimeGatewayService {
 			archiveFailureCount.incrementAndGet();
 		}
 
+		private void recordStaleResult() {
+			staleResultCount.incrementAndGet();
+		}
+
 		private void recordResult(RealtimeStatus status) {
 			resultCount.incrementAndGet();
 			if (status == RealtimeStatus.FRESH) {
@@ -799,7 +845,14 @@ public class RealtimeGatewayService {
 
 	private record ProcessedArrivals(
 		List<RealtimeArrival> arrivals,
-		List<RealtimeArrivalObservation> observations
+		List<RealtimeArrivalObservation> observations,
+		boolean sawStaleMatchedLineItem
+	) {
+	}
+
+	private record ProcessedTrainPositions(
+		List<RealtimeTrainPosition> positions,
+		boolean sawStaleItem
 	) {
 	}
 

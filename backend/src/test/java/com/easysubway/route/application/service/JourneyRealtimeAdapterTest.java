@@ -171,17 +171,70 @@ class JourneyRealtimeAdapterTest {
 			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-missing", () -> false),
 			snapshot(directRuntime), EFFECTIVE))
 			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("exactly one");
-
-		var multiLineRuntime = RaptorRouteBundleRuntimeView.compile(
-			ROUTE_BUNDLE_SHA, GENERATION, multiLineTimetable());
-		assertThatThrownBy(() -> adapter.requireFresh(
-			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
-			snapshot(multiLineRuntime), EFFECTIVE))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("exactly one");
+			.hasMessageContaining("at least one origin query");
 
 		assertThat(calls).hasValue(0);
+	}
+
+	@Test
+	void supportsMultiLineHubCircularRevisitsAndEarlyMorningBoundaryQueries() {
+		var observedQueries = new AtomicReference<List<JourneyTimetableRealtimeResolver.Query>>();
+		var multiLineRuntime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, multiLineTimetable());
+		var multiAdapter = new JourneyRealtimeAdapter(queries -> {
+			observedQueries.set(queries);
+			return new JourneyTimetableRealtimeResolver.Updates(
+				"realtime-a|realtime-b",
+				true,
+				List.of(
+					new JourneyTimetableRealtimeResolver.Update(
+						queries.get(0).departures().getFirst(), 60, 60, false, "realtime-a", NOW.minusSeconds(10)),
+					new JourneyTimetableRealtimeResolver.Update(
+						queries.get(1).departures().getFirst(), 120, 120, false, "realtime-b", NOW.minusSeconds(10))),
+				null);
+		}, fixedClock(), FRESHNESS_TTL);
+
+		RealtimeObservation observation = multiAdapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
+			snapshot(multiLineRuntime), EFFECTIVE);
+		assertThat(observedQueries.get()).hasSize(2);
+		assertThat(observation.identity()).isEqualTo("realtime-a|realtime-b");
+		assertThat(observation.fresh()).isTrue();
+
+		// 02:50 KST (2026-07-02 02:50+09:00 = 2026-07-01T17:50:00Z): queries 2026-07-01 late + 2026-07-02 early
+		Instant beforeCutoff = Instant.parse("2026-07-01T17:50:00Z");
+		Instant beforeCutoffNow = beforeCutoff.plusSeconds(10);
+		var boundaryRuntime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, boundaryAndCircularTimetable());
+		var boundaryAdapter = new JourneyRealtimeAdapter(queries -> {
+			observedQueries.set(queries);
+			JourneyTimetableRealtimeResolver.Departure lateDeparture = queries.getFirst().departures().stream()
+				.filter(dep -> dep.serviceDate().equals(LocalDate.of(2026, 7, 1)) && dep.tripId().equals("trip-night"))
+				.findFirst().orElseThrow();
+			return new JourneyTimetableRealtimeResolver.Updates(
+				"realtime-night",
+				true,
+				List.of(new JourneyTimetableRealtimeResolver.Update(
+					lateDeparture, 30, 30, false, "realtime-night", beforeCutoff)),
+				null);
+		}, Clock.fixed(beforeCutoffNow, ZoneOffset.UTC), FRESHNESS_TTL);
+
+		RealtimeObservation boundaryObs = boundaryAdapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, beforeCutoff, "station-a", () -> false),
+			snapshot(boundaryRuntime), beforeCutoff);
+		List<JourneyTimetableRealtimeResolver.Departure> deps = observedQueries.get().getFirst().departures();
+		assertThat(deps)
+			.extracting(JourneyTimetableRealtimeResolver.Departure::serviceDate)
+			.contains(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 2));
+		// circular loop trip visits station-a twice on the same service day -> both stopSequences preserved
+		assertThat(deps.stream()
+			.filter(dep -> dep.serviceDate().equals(LocalDate.of(2026, 7, 1)) && dep.tripId().equals("trip-loop"))
+			.map(JourneyTimetableRealtimeResolver.Departure::stopSequence))
+			.containsExactly(1, 3);
+
+		RaptorRealtimeRuntimeView realtimeView = (RaptorRealtimeRuntimeView) boundaryObs.runtimeView();
+		assertThat(realtimeView.realtimeOverlay(LocalDate.of(2026, 7, 1)).available()).isTrue();
+		assertThat(realtimeView.realtimeOverlay(LocalDate.of(2026, 7, 2)).available()).isTrue();
 	}
 
 	@Test
@@ -192,6 +245,9 @@ class JourneyRealtimeAdapterTest {
 		assertRejectedAfterOneCall(new JourneyTimetableRealtimeResolver.Updates(
 			"realtime-1", true, List.of(update("realtime-2", NOW.minusSeconds(10))), null),
 			EFFECTIVE, "identity");
+		assertRejectedAfterOneCall(new JourneyTimetableRealtimeResolver.Updates(
+			"realtime-1|realtime-2", true, List.of(update("realtime-1", NOW.minusSeconds(10))), null),
+			EFFECTIVE, "mixed");
 		assertRejectedAfterOneCall(new JourneyTimetableRealtimeResolver.Updates(
 			"realtime-1+realtime-2", true, List.of(update("realtime-1+realtime-2", NOW.minusSeconds(10))), null),
 			EFFECTIVE, "single");
@@ -339,6 +395,23 @@ class JourneyRealtimeAdapterTest {
 		return new RouteTimetable(
 			List.of(calendar()), List.of(), routes, trips, stopTimes,
 			List.of(), List.of(), null, LoadRouteTimetablePort.RouteAccessData.empty());
+	}
+
+	private static RouteTimetable boundaryAndCircularTimetable() {
+		var route = new TransitRoute("route", "line", "L", "Line", "station-b", "Asia/Seoul");
+		var trips = List.of(
+			new TransitTrip("trip-night", "route", "daily", "station-b", "down", "SUBWAY", "LOCAL", "1901", 0),
+			new TransitTrip("trip-loop", "route", "daily", "station-a", "down", "SUBWAY", "LOCAL", "2901", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-night", 1, "station-a", "line", 96_900, 96_900, 0, 0),
+			new TransitStopTime("trip-night", 2, "station-b", "line", 97_500, 97_500, 0, 0),
+			new TransitStopTime("trip-loop", 1, "station-a", "line", 19_800, 19_800, 0, 0),
+			new TransitStopTime("trip-loop", 2, "station-b", "line", 20_400, 20_400, 0, 0),
+			new TransitStopTime("trip-loop", 3, "station-a", "line", 21_000, 21_000, 0, 0),
+			new TransitStopTime("trip-loop", 4, "station-b", "line", 21_600, 21_600, 0, 0));
+		return new RouteTimetable(
+			List.of(calendar()), List.of(), List.of(route), trips, stopTimes,
+			List.of(), List.of(), null, verifiedAccess());
 	}
 
 	private static ServiceCalendar calendar() {

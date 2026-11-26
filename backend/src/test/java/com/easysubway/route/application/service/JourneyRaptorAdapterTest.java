@@ -1035,10 +1035,29 @@ class JourneyRaptorAdapterTest {
 			stepFreePrefRequest, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
 		var firstRide = (JourneyCandidate.Ride) candidate.legs().get(0);
 		var secondRide = (JourneyCandidate.Ride) candidate.legs().get(2);
-		assertThat(firstRide.alightingCarDoors()).containsExactly(
-			new JourneyCandidate.AlightingCarDoor(3, 2, "TRANSFER"));
+		// H-01: stepFree 환승역에 ELEVATOR/WHEELCHAIR_LIFT 힌트가 없으면 일반 TRANSFER(계단) 힌트를 노출하지 않는다.
+		assertThat(firstRide.alightingCarDoors()).isEmpty();
 		assertThat(secondRide.alightingCarDoors()).containsExactly(
 			new JourneyCandidate.AlightingCarDoor(2, 3, "ELEVATOR"));
+
+		var hintsWithElevator = List.of(
+			new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "TRANSFER", 3, 2),
+			new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "ELEVATOR", 2, 1),
+			new LoadRouteTimetablePort.CarDoorHint("station-transfer", "line-a", "DOWN", "STAIR", 1, 1),
+			new LoadRouteTimetablePort.CarDoorHint("station-b", "line-b", "DOWN", "ELEVATOR", 2, 3));
+		var elevatorAccess = new LoadRouteTimetablePort.RouteAccessData(
+			base.routeAccessData().pathwayNodes(),
+			base.routeAccessData().pathwayEdges(),
+			base.routeAccessData().transferRules(),
+			base.routeAccessData().routeEdgeEvidence(),
+			hintsWithElevator);
+		var elevatorRuntime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, new RouteTimetable(
+			base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(), base.transitTrips(),
+			base.transitStopTimes(), base.transitFrequencies(), List.of(), null, elevatorAccess));
+		var elevatorCandidate = new JourneyRaptorAdapter().plan(
+			stepFreePrefRequest, snapshot(elevatorRuntime), EFFECTIVE, null, measurement()).candidates().getFirst();
+		assertThat(((JourneyCandidate.Ride) elevatorCandidate.legs().get(0)).alightingCarDoors())
+			.containsExactly(new JourneyCandidate.AlightingCarDoor(2, 1, "ELEVATOR"));
 	}
 
 	@Test
@@ -2748,5 +2767,65 @@ class JourneyRaptorAdapterTest {
 		assertThat(chained.highestTransferConnectionRisk().nextHeadwaySeconds()).isNull();
 		assertThat(chained.highestTransferConnectionRisk().level())
 			.isEqualTo(com.easysubway.route.domain.TransferConnectionRisk.Level.CRITICAL_LAST_TRAIN);
+	}
+
+	@Test
+	void viaSearchAppliesSameLineTransferAccessChecksBlockingStairsAndSlowSlacks() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-a", "line-a", "A", "Line A", "station-b", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip("trip-leg1", "route-a", "daily", "station-via", "down", "SUBWAY", "LOCAL", "4001", 0),
+			new TransitTrip("trip-too-soon", "route-a", "daily", "station-b", "down", "SUBWAY", "LOCAL", "4002", 0),
+			new TransitTrip("trip-valid-slack", "route-a", "daily", "station-b", "down", "SUBWAY", "LOCAL", "4003", 0));
+		// leg1 arrives at 33_000 (09:10:00). Transfer walk takes 240s (> 180s default), so 33_200 is invalid and 33_300 is valid.
+		var stopTimes = List.of(
+			new TransitStopTime("trip-leg1", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-leg1", 2, "station-via", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-too-soon", 1, "station-via", "line-a", 33_200, 33_200, 0, 0),
+			new TransitStopTime("trip-too-soon", 2, "station-b", "line-a", 33_500, 33_500, 0, 0),
+			new TransitStopTime("trip-valid-slack", 1, "station-via", "line-a", 33_300, 33_300, 0, 0),
+			new TransitStopTime("trip-valid-slack", 2, "station-b", "line-a", 33_900, 33_900, 0, 0));
+		var edges = List.of(
+			new PathwayEdge("same-line-stairs", "p-via-a", "p-via-b", 240, 360, true, true, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STAIR_ONLY"));
+		var rules = List.of(
+			new TransferRule("same-line-rule", "station-via", "line-a", "station-via", "line-a", "IN_STATION",
+				240, "same-line-stairs", "same-line-stairs", "VERIFIED"));
+		var evidence = List.of(
+			new RouteEdgeEvidence("same-line-ev", "station-via", "line-a", "same-line-stairs", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("p-via-a", "station-via", "line-a", "PLATFORM"),
+				new PathwayNode("p-via-b", "station-via", "line-a", "PLATFORM")),
+			edges, rules, evidence);
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION,
+			new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access));
+
+		var standardReq = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-via",
+			new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false);
+		var standardResult = new JourneyRaptorAdapter().plan(standardReq, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(standardResult.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:25:00Z"));
+			assertThat(candidate.walkingDistanceMeters()).isEqualTo(360);
+			assertThat(candidate.accessibility().stairFree()).isFalse();
+		});
+
+		var strictStepFreeReq = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-via",
+			new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			1, 2, () -> false);
+		var strictResult = new JourneyRaptorAdapter().plan(strictStepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(strictResult.candidates()).isEmpty();
 	}
 }

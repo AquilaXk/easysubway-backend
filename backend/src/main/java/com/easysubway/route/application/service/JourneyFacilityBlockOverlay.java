@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.BitSet;
 import java.util.Objects;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,8 +57,21 @@ final class JourneyFacilityBlockOverlay {
 		BitSet blocked = new BitSet();
 		String unusableReason = unusableReason(view, clock.instant());
 		String unmappedReason = null;
+		String internalUnmappedReason = null;
+		Set<String> internalBlocked = view != null ? view.internalBlockedPathwayEdgeIds() : Set.of();
+		boolean hasInternalBlocked = internalBlocked != null && !internalBlocked.isEmpty();
 		if (unusableReason == null) {
-			unmappedReason = compileBlocked(view, timetable, blocked);
+			unmappedReason = compileBlocked(view.blockedPathwayEdgeIds(), timetable, blocked);
+			if (hasInternalBlocked) {
+				internalUnmappedReason = compileBlocked(internalBlocked, timetable, blocked);
+				if (unmappedReason == null) {
+					unmappedReason = internalUnmappedReason;
+				}
+			}
+		} else if (hasInternalBlocked) {
+			// 외부 실시간 피드가 지연·부재 상태여도 ADMIN_VERIFIED 등 내부 확정 차단 간선은 해제하지 않는다.
+			internalUnmappedReason = compileBlocked(internalBlocked, timetable, blocked);
+			unmappedReason = internalUnmappedReason;
 		}
 		if (unusableReason == null && unmappedReason == null) {
 			return new Capture(RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked),
@@ -67,9 +81,20 @@ final class JourneyFacilityBlockOverlay {
 			String reason = unusableReason != null ? unusableReason : unmappedReason;
 			throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: " + reason);
 		}
-		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = (unusableReason == null && !required && !blocked.isEmpty())
-			? RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked)
-			: RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay;
+		if (!blocked.isEmpty()
+			&& (!required || (unusableReason != null && unmappedReason == null))) {
+			overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(blocked);
+		} else if (unusableReason == null && hasInternalBlocked && internalUnmappedReason == null) {
+			// 외부 피드 차단 간선 중 미매핑 항목이 있어도 내부 확정 차단 간선은 유지한다.
+			BitSet internalOnly = new BitSet();
+			compileBlocked(internalBlocked, timetable, internalOnly);
+			overlay = internalOnly.isEmpty()
+				? RouteTimetableRaptorPlanner.RealtimeOverlay.empty()
+				: RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(internalOnly);
+		} else {
+			overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		}
 		return new Capture(overlay, JourneyAlternatives.FacilityStatus.UNOBSERVED);
 	}
 
@@ -99,12 +124,15 @@ final class JourneyFacilityBlockOverlay {
 	}
 
 	private static String compileBlocked(
-		FacilityAvailabilityView view,
+		Set<String> blockedEdgeIds,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		BitSet blocked
 	) {
+		if (blockedEdgeIds == null || blockedEdgeIds.isEmpty()) {
+			return null;
+		}
 		String missingEdgeReason = null;
-		for (String edgeId : view.blockedPathwayEdgeIds()) {
+		for (String edgeId : blockedEdgeIds) {
 			int[] transitions = timetable.transitionIdsForEdge(edgeId);
 			if (transitions.length == 0) {
 				missingEdgeReason = "blocked pathway edge is not in the captured route bundle";

@@ -415,6 +415,56 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
+	void nextDeparturesUsesZeroThreeServiceDayCutoffAndDoesNotStaleValidDayBeforeHorizonEnd() {
+		RouteTimetable base = timetable(
+			List.of(
+				new ServiceCalendar("saturday", false, false, false, false, false, true, false,
+					LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"),
+				new ServiceCalendar("sunday", false, false, false, false, false, false, true,
+					LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")
+			),
+			List.of(),
+			List.of(),
+			List.of(
+				new TransitTrip("sat-night", "route", "saturday", "sat", "0", "SUBWAY", "LOCAL", null, 0),
+				new TransitTrip("sun-day", "route", "sunday", "sun", "0", "SUBWAY", "LOCAL", null, 0)
+			)
+		);
+		RouteTimetable withLateTrip = new RouteTimetable(
+			base.serviceCalendars(),
+			base.serviceCalendarDates(),
+			base.transitRoutes(),
+			base.transitTrips(),
+			List.of(
+				new TransitStopTime("sat-night", 1, "station", "line", 88_800, 88_800, 0, 0),
+				new TransitStopTime("sat-night", 2, "next", "line", 89_100, 89_100, 0, 0),
+				new TransitStopTime("sun-day", 1, "station", "line", 32_400, 32_400, 0, 0),
+				new TransitStopTime("sun-day", 2, "next", "line", 33_000, 33_000, 0, 0)
+			),
+			base.transitFrequencies(),
+			base.officialFares(),
+			LocalDate.parse("2026-08-29"),
+			base.routeAccessData()
+		);
+		StationTimetableSearchService searchService = service(snapshot(withLateTrip, Instant.parse("2026-08-30T00:00:00Z")));
+
+		// 2026-08-30 00:30 KST (UTC 2026-08-29T15:30:00Z): 03:00 KST 운행일 경계 전이므로 토요일 서비스일(2026-08-29) 기준
+		Selector.NextDeparturesSelector lateSaturday = new Selector.NextDeparturesSelector(Instant.parse("2026-08-29T15:30:00Z"), 2);
+		assertThat(lateSaturday.resolvedDayType()).isEqualTo(DayType.SATURDAY);
+		var result = searchService.search(request(lateSaturday));
+		assertThat(result.resolvedDayType()).isEqualTo(DayType.SATURDAY);
+		assertThat(result.directionGroups()).singleElement().satisfies(group ->
+			assertThat(group.departures()).singleElement().satisfies(dep -> {
+				assertThat(dep.serviceDate()).isEqualTo(LocalDate.parse("2026-08-29"));
+				assertThat(dep.secondsFromServiceDayStart()).isEqualTo(88_800);
+			}));
+
+		// 2026-08-30 03:00 KST (UTC 2026-08-29T18:00:00Z): 새 운행일 2026-08-30 시작 > feedEndDate(2026-08-29) -> TIMETABLE_STALE
+		assertFailure(searchService, request(new Selector.NextDeparturesSelector(Instant.parse("2026-08-29T18:00:00Z"), 1)),
+			Failure.TIMETABLE_STALE);
+	}
+
+	@Test
 	void frequencyInstanceWithLaterStopOverflowIsSkippedAsAWhole() {
 		RouteTimetable template = timetable(List.of(calendar()), List.of(), List.of(), List.of());
 		RouteTimetable timetable = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(), template.transitRoutes(),

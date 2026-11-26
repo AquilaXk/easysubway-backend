@@ -87,6 +87,7 @@ class JourneyProductionConfigurationTest {
 	private static final String SHA_D = "d".repeat(64);
 	private static final String DEPLOYMENT_REVISION = "e".repeat(40);
 	private static final String READINESS_TOKEN = "readiness-token-with-at-least-32-characters";
+	private static final String CONTROL_TOKEN = "control-token-with-at-least-32-characters";
 	private static final String SESSION_PATH = "/api/v3/journeys/session";
 	private static final String SEARCH_PATH = "/api/v3/journeys/search";
 	private static final String CANDIDATE_READINESS_PATH = "/internal/v1/journey/readiness/candidate";
@@ -185,14 +186,20 @@ class JourneyProductionConfigurationTest {
 				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 			mockMvc.perform(get(BENCHMARK_OBSERVATION_PATH)
-					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(post(BENCHMARK_OBSERVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content("{}"))
 				.andExpect(status().isForbidden())
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 		});
 	}
 
 	@Test
-	@DisplayName("internal activation은 readiness와 같은 Bearer로 exact POST만 허용한다")
+	@DisplayName("internal activation은 control Bearer로 내부 직접 POST만 허용하고 readiness 토큰 및 프록시 경유 요청은 거부한다")
 	void activationIngressRequiresBearerAndDeniesOtherMethods() {
 		validProductionContext().run(context -> {
 			assertThat(context).hasNotFailed();
@@ -227,13 +234,36 @@ class JourneyProductionConfigurationTest {
 				.andExpect(status().isUnauthorized())
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
 				.andExpect(content().string(""));
+			mockMvc.perform(post(ACTIVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(activationCommand()))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(post(ACTIVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
+					.header("X-Forwarded-For", "198.51.100.10")
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(activationCommand()))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(post(ACTIVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
+					.with(request -> {
+						request.setRemoteAddr("198.51.100.10");
+						return request;
+					})
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(activationCommand()))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 			mockMvc.perform(get(ACTIVATION_PATH)
-					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN))
 				.andExpect(status().isForbidden())
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
 				.andExpect(content().string(""));
 			mockMvc.perform(post(ACTIVATION_PATH)
-					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
 					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 					.content(activationCommand()))
 				.andExpect(status().isOk())
@@ -246,7 +276,7 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("internal candidate canary는 readiness와 같은 Bearer로 exact POST만 허용한다")
+	@DisplayName("internal candidate canary는 control Bearer로 내부 직접 POST만 허용한다")
 	void candidateCanaryIngressRequiresBearerAndDeniesOtherMethods() {
 		validProductionContext().run(context -> {
 			assertThat(context).hasNotFailed();
@@ -272,13 +302,19 @@ class JourneyProductionConfigurationTest {
 				.andExpect(status().isUnauthorized())
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
 				.andExpect(content().string(""));
+			mockMvc.perform(post(CANARY_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(canaryCommand()))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 			mockMvc.perform(get(CANARY_PATH)
-					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN))
 				.andExpect(status().isForbidden())
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
 				.andExpect(content().string(""));
 			mockMvc.perform(post(CANARY_PATH)
-					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
 					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 					.content(canaryCommand()))
 				.andExpect(status().isServiceUnavailable())
@@ -317,6 +353,7 @@ class JourneyProductionConfigurationTest {
 		productionContext(
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
 			"easysubway.journey-v3.readiness.service-token=" + READINESS_TOKEN,
+			"easysubway.journey-v3.readiness.control-token=" + CONTROL_TOKEN,
 			"easysubway.journey-v3.readiness.instance-id=backend-a",
 			"easysubway.journey-v3.readiness.release-tuple-sha256=" + SHA_A,
 			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + SHA_B,
@@ -473,9 +510,27 @@ class JourneyProductionConfigurationTest {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
 				.andExpect(status().isForbidden())
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(CANDIDATE_READINESS_PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+				.header("X-Forwarded-For", "198.51.100.10"))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(CANDIDATE_READINESS_PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(ACTIVE_READINESS_PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(ACTIVE_READINESS_PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+				.header("X-Forwarded-For", "198.51.100.10"))
+				.andExpect(status().isOk())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 
 			verify(registry).candidateSnapshot();
-			verify(registry).activeSnapshot();
+			verify(registry, org.mockito.Mockito.times(2)).activeSnapshot();
 		});
 	}
 
@@ -618,6 +673,11 @@ class JourneyProductionConfigurationTest {
 			.withPropertyValues("easysubway.journey-v3.readiness.traffic-generation=0")
 			.withUserConfiguration(DependencyTestConfiguration.class)
 			.run(context -> assertThat(context).hasFailed());
+
+		validProductionProperties()
+			.withPropertyValues("easysubway.journey-v3.readiness.control-token=" + READINESS_TOKEN)
+			.withUserConfiguration(DependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
 	}
 
 	@Test
@@ -689,6 +749,7 @@ class JourneyProductionConfigurationTest {
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
 			"easysubway.journey-v3.search-web.enabled=true",
 			"easysubway.journey-v3.readiness.service-token=" + READINESS_TOKEN,
+			"easysubway.journey-v3.readiness.control-token=" + CONTROL_TOKEN,
 			"easysubway.journey-v3.readiness.instance-id=backend-a",
 			"easysubway.journey-v3.readiness.release-tuple-sha256=" + SHA_A,
 			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + SHA_B,
@@ -954,7 +1015,7 @@ class JourneyProductionConfigurationTest {
 
 				// 시설 상태 심장박동이 없으면 required=true 카나리는 fail-closed(503)로 거부해야 한다.
 				mockMvc.perform(post(CANARY_PATH)
-						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
 						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 						.content(canaryCommand().formatted(manifest)))
 					.andExpect(status().isServiceUnavailable())
@@ -971,7 +1032,7 @@ class JourneyProductionConfigurationTest {
 				when(statusStore.loadStatuses()).thenReturn(java.util.List.of());
 
 				mockMvc.perform(post(CANARY_PATH)
-						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
 						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 						.content(canaryCommand().formatted(manifest)))
 					.andExpect(status().isOk())
@@ -1016,7 +1077,7 @@ class JourneyProductionConfigurationTest {
 					.build();
 				String manifest = com.easysubway.journey.bundle.LoadScenarioBundles.manifestSha256("a");
 				mockMvc.perform(post(CANARY_PATH)
-						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
 						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 						.content(canaryCommand().formatted(manifest)))
 					.andExpect(status().isOk())
@@ -1032,7 +1093,7 @@ class JourneyProductionConfigurationTest {
 						now)));
 
 				mockMvc.perform(post(CANARY_PATH)
-						.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + CONTROL_TOKEN)
 						.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
 						.content(canaryCommand().formatted(manifest)))
 					.andExpect(status().isServiceUnavailable())

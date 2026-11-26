@@ -57,13 +57,20 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("(prod | staging | release | prod-like) & !capacity-evidence")
@@ -76,6 +83,36 @@ public class JourneyProductionConfiguration {
 	private static final String STATION_TIMETABLE_PATH = "/api/v3/station-timetables/search";
 	private static final Clock CLOCK = Clock.systemUTC();
 	private static final Duration REALTIME_FRESHNESS_TTL = Duration.ofSeconds(90);
+	private static final List<IpAddressMatcher> INTERNAL_CONTROL_NETWORKS = List.of(
+		new IpAddressMatcher("127.0.0.1/32"),
+		new IpAddressMatcher("::1/128"),
+		new IpAddressMatcher("10.0.0.0/8"),
+		new IpAddressMatcher("172.16.0.0/12"),
+		new IpAddressMatcher("192.168.0.0/16")
+	);
+	private static final List<String> PROXY_FORWARDING_HEADERS = List.of(
+		"X-Forwarded-For",
+		"X-Real-IP",
+		"Forwarded",
+		"CF-Connecting-IP"
+	);
+
+	private static AuthorizationManager<RequestAuthorizationContext> internalDirectOnly() {
+		return (authentication, context) -> {
+			HttpServletRequest request = context.getRequest();
+			String remoteAddr = request.getRemoteAddr();
+			if (remoteAddr == null || INTERNAL_CONTROL_NETWORKS.stream().noneMatch(matcher -> matcher.matches(remoteAddr))) {
+				return new AuthorizationDecision(false);
+			}
+			for (String header : PROXY_FORWARDING_HEADERS) {
+				var values = request.getHeaders(header);
+				if ((values != null && values.hasMoreElements()) || request.getHeader(header) != null) {
+					return new AuthorizationDecision(false);
+				}
+			}
+			return new AuthorizationDecision(true);
+		};
+	}
 
 	@Bean
 	JourneyReadinessService journeyReadinessService(
@@ -340,15 +377,22 @@ public class JourneyProductionConfiguration {
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH, PROFILE_PATH, STATION_TIMETABLE_PATH).permitAll()
 				.requestMatchers(HttpMethod.POST, JourneyActivationController.PATH)
-				.hasRole("JOURNEY_READINESS")
+				.access(AuthorizationManagers.allOf(
+					AuthorityAuthorizationManager.hasRole("JOURNEY_CONTROL"),
+					internalDirectOnly()))
 				.requestMatchers(HttpMethod.POST, JourneyCandidateCanaryController.PATH)
-				.hasRole("JOURNEY_READINESS")
+				.access(AuthorizationManagers.allOf(
+					AuthorityAuthorizationManager.hasRole("JOURNEY_CONTROL"),
+					internalDirectOnly()))
 				.requestMatchers(HttpMethod.POST, JourneyBenchmarkObservationController.PATH)
-				.hasRole("JOURNEY_READINESS")
-				.requestMatchers(
-					HttpMethod.GET,
-					JourneyReadinessController.CANDIDATE_PATH,
-					JourneyReadinessController.ACTIVE_PATH)
+				.access(AuthorizationManagers.allOf(
+					AuthorityAuthorizationManager.hasRole("JOURNEY_CONTROL"),
+					internalDirectOnly()))
+				.requestMatchers(HttpMethod.GET, JourneyReadinessController.CANDIDATE_PATH)
+				.access(AuthorizationManagers.allOf(
+					AuthorityAuthorizationManager.hasRole("JOURNEY_READINESS"),
+					internalDirectOnly()))
+				.requestMatchers(HttpMethod.GET, JourneyReadinessController.ACTIVE_PATH)
 				.hasRole("JOURNEY_READINESS")
 				.anyRequest().denyAll()
 			)
@@ -374,7 +418,9 @@ public class JourneyProductionConfiguration {
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 			}))
 			.addFilterBefore(
-				new JourneyReadinessServiceTokenFilter(readinessProperties.serviceToken()),
+				new JourneyReadinessServiceTokenFilter(
+					readinessProperties.serviceToken(),
+					readinessProperties.controlToken()),
 				UsernamePasswordAuthenticationFilter.class)
 			.build();
 	}

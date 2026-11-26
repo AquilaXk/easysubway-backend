@@ -188,6 +188,37 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	@Override
+	public Optional<Station> loadStation(String stationId) {
+		if (stationId == null || stationId.isBlank()) {
+			return Optional.empty();
+		}
+		Optional<Station> seeded = super.loadStation(stationId);
+		if (seeded.isPresent()) {
+			return seeded;
+		}
+		Optional<ActiveRouteBundleSnapshot> activeBundle = activeBundleSnapshot();
+		if (activeBundle.isEmpty() || !(activeBundle.get().runtimeView() instanceof RouteBundleFacilityCatalog catalog)) {
+			return Optional.empty();
+		}
+		if (!catalog.canonicalStationIds().contains(stationId)) {
+			return Optional.empty();
+		}
+		LocalDate verifiedAt = LocalDate.ofInstant(activeBundle.get().activatedAt(), SEOUL_ZONE);
+		return Optional.of(new Station(
+			stationId,
+			stationId,
+			"",
+			"전국",
+			null,
+			null,
+			DataQualityLevel.LEVEL_2,
+			DataSourceType.OFFICIAL_FILE,
+			verifiedAt,
+			true
+		));
+	}
+
+	@Override
 	public List<Station> loadStations() {
 		List<Station> seedStations = super.loadStations();
 		Optional<ActiveRouteBundleSnapshot> activeBundle = activeBundleSnapshot();
@@ -231,6 +262,33 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 			byId.put(bundleExit.id(), toStationExit(bundleExit));
 		}
 		return List.copyOf(byId.values());
+	}
+
+	@Override
+	public Optional<AccessibilityFacility> loadAccessibilityFacility(String facilityId) {
+		if (facilityId == null || facilityId.isBlank()) {
+			return Optional.empty();
+		}
+		Optional<String> overridePayload;
+		try {
+			overridePayload = activePayload(FACILITY, facilityId);
+		} catch (DataAccessException exception) {
+			incrementDbFailure();
+			throw new TransitDataAccessException("PostgreSQL 마스터 override 조회 실패: " + FACILITY, exception);
+		}
+		if (overridePayload.isPresent()) {
+			return Optional.of(readJson(overridePayload.get(), AccessibilityFacility.class));
+		}
+		Optional<ActiveRouteBundleSnapshot> activeBundle = activeBundleSnapshot();
+		if (activeBundle.isPresent() && activeBundle.get().runtimeView() instanceof RouteBundleFacilityCatalog catalog) {
+			LocalDate fallbackDate = LocalDate.ofInstant(activeBundle.get().activatedAt(), SEOUL_ZONE);
+			for (RouteBundleFacilityCatalog.BundleFacility bundleFacility : catalog.bundleFacilities()) {
+				if (facilityId.equals(bundleFacility.id())) {
+					return Optional.of(toAccessibilityFacility(bundleFacility, fallbackDate));
+				}
+			}
+		}
+		return super.loadAccessibilityFacility(facilityId);
 	}
 
 	@Override

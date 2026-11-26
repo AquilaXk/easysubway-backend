@@ -9,8 +9,11 @@ import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 
@@ -54,21 +57,20 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		requireNotCancelled(requiredRequest);
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
+		JourneyRaptorQuery raptorQuery = JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant);
 		List<JourneyTimetableRealtimeResolver.Query> queries =
-			planner.realtimeQueries(
-				JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant),
-				routeRuntime.compiledTimetable()
-			);
-		if (queries.size() != 1) {
-			throw new IllegalArgumentException("Journey realtime requires exactly one origin query");
+			planner.realtimeQueries(raptorQuery, routeRuntime.compiledTimetable());
+		if (queries.isEmpty()) {
+			throw new IllegalArgumentException("Journey realtime requires at least one origin query");
 		}
+		Set<LocalDate> coveredServiceDates = Set.copyOf(planner.realtimeQueryServiceDates(raptorQuery));
 		requireNotCancelled(requiredRequest);
 
 		JourneyTimetableRealtimeResolver.Updates updates = resolver.resolve(List.copyOf(queries));
 		requireNotCancelled(requiredRequest);
 		ValidatedObservation validated = validateUpdates(updates, clock.instant(), requiredEffectiveInstant);
 		RaptorRealtimeRuntimeView realtimeRuntime = RaptorRealtimeRuntimeView.compile(
-			validated.identity(), routeRuntime, updates);
+			validated.identity(), routeRuntime, updates, coveredServiceDates);
 		requireNotCancelled(requiredRequest);
 		return new RealtimeObservation(
 			validated.identity(),
@@ -90,12 +92,15 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		if (!updates.available() || updates.updates().isEmpty()) {
 			throw new IllegalArgumentException("realtime updates are unavailable");
 		}
-		String identity = requireSingleIdentity(updates.version());
+		String identity = updates.version();
+		Set<String> declaredIdentities = parseDeclaredIdentities(identity);
+		Set<String> observedIdentities = new LinkedHashSet<>();
 		Instant validUntil = null;
 		for (JourneyTimetableRealtimeResolver.Update update : updates.updates()) {
-			if (!identity.equals(update.providerSnapshotId())) {
+			if (update == null || !declaredIdentities.contains(update.providerSnapshotId())) {
 				throw new IllegalArgumentException("realtime update identity is mixed");
 			}
+			observedIdentities.add(update.providerSnapshotId());
 			Instant observedAt = update.providerObservedAt();
 			Duration age = Duration.between(observedAt, capturedNow);
 			if (age.isNegative()) {
@@ -114,6 +119,9 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 				validUntil = expiresAt;
 			}
 		}
+		if (!observedIdentities.equals(declaredIdentities)) {
+			throw new IllegalArgumentException("realtime update identity is mixed");
+		}
 		if (validUntil == null || !validUntil.isAfter(effectiveInstant)) {
 			throw new IllegalArgumentException("realtime observation is invalid for the effective instant");
 		}
@@ -131,11 +139,24 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		return runtime;
 	}
 
-	private static String requireSingleIdentity(String identity) {
+	private static Set<String> parseDeclaredIdentities(String identity) {
 		if (identity == null || identity.isBlank() || identity.indexOf('+') >= 0) {
 			throw new IllegalArgumentException("realtime updates require a single provider identity");
 		}
-		return identity;
+		if (identity.indexOf('|') < 0) {
+			return Set.of(identity);
+		}
+		String[] parts = identity.split("\\|", -1);
+		if (parts.length < 2) {
+			throw new IllegalArgumentException("realtime updates require a single provider identity");
+		}
+		Set<String> parsed = new LinkedHashSet<>(parts.length);
+		for (String part : parts) {
+			if (part.isBlank() || !parsed.add(part)) {
+				throw new IllegalArgumentException("realtime update identity is mixed");
+			}
+		}
+		return Set.copyOf(parsed);
 	}
 
 	private static Duration requirePositive(Duration value) {

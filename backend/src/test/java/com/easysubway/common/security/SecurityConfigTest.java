@@ -3,9 +3,11 @@ package com.easysubway.common.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
@@ -1098,6 +1100,71 @@ class SecurityConfigTest {
 			.doesNotContain(rawSecret);
 		assertThat(SecurityConfig.resolveRememberMeKey("explicit-key", rawSecret, false))
 			.isEqualTo("explicit-key");
+	}
+
+	@Test
+	@DisplayName("운영 프로필 그룹은 공백·저엔트로피 remember-me 키를 거부하고 로그인 속도 제한은 IP별로 429를 반환한다")
+	void prodGroupRememberMeAndLoginRateLimitAreEnforced() throws Exception {
+		assertThatThrownBy(() -> SecurityConfig.resolveRememberMeKey("   " + "a".repeat(32) + "   ", "", true))
+			.isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> SecurityConfig.resolveRememberMeKey("a".repeat(64), "", true))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(SecurityConfig.isProductionProfile(new MockEnvironment().withProperty("spring.profiles.active", "staging")))
+			.isTrue();
+
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.operator-username=operator-user",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
+				"easysubway.admin.basic-auth.enabled=false",
+				"easysubway.auth.client-ip.trusted-proxies=10.0.0.0/8",
+				"easysubway.admin.login-rate-limit.per-minute=2"
+			)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(context)
+					.apply(springSecurity())
+					.build();
+
+				for (int attempt = 0; attempt < 2; attempt++) {
+					mockMvc.perform(post("/admin/login")
+							.with(csrf())
+							.with(req -> {
+								req.setRemoteAddr("10.1.2.3");
+								return req;
+							})
+							.header("X-Forwarded-For", "198.51.100.10")
+							.param("username", "unknown-user")
+							.param("password", "wrong"))
+						.andExpect(status().is3xxRedirection());
+				}
+				mockMvc.perform(post("/admin/login")
+						.with(csrf())
+						.with(req -> {
+							req.setRemoteAddr("10.1.2.3");
+							return req;
+						})
+						.header("X-Forwarded-For", "198.51.100.10")
+						.param("username", "unknown-user")
+						.param("password", "wrong"))
+					.andExpect(status().isTooManyRequests())
+					.andExpect(header().exists("Retry-After"))
+					.andExpect(header().string("Cache-Control", "no-store"));
+
+				mockMvc.perform(post("/operator/login")
+						.with(csrf())
+						.with(req -> {
+							req.setRemoteAddr("10.1.2.3");
+							return req;
+						})
+						.header("X-Forwarded-For", "203.0.113.20")
+						.param("username", "unknown-operator")
+						.param("password", "wrong"))
+					.andExpect(status().is3xxRedirection());
+			});
 	}
 
 	private record BootstrapIdentityCollision(

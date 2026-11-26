@@ -119,4 +119,36 @@ class BitPackedOdFareStoreTest {
 		assertThat(empty.isEmpty()).isTrue();
 		assertThat(empty.getQuote("a", "b")).isNull();
 	}
+
+	@Test
+	@DisplayName("Builder 직접 적재는 packed·비정규 overflow·미등록 역 모두 from()과 동일하며 중복 키를 거부한다")
+	void builderDirectPackingMatchesFromAndRejectsDuplicatesAcrossOverflow() {
+		BitPackedOdFareStore built = BitPackedOdFareStore.builder(List.of("s-1", "s-2", "s-3"))
+			.add("s-1", "s-2", "kric", "snap-1", "h1", 1400, 1500, 800, 900, 500, 500)
+			.add("s-2", "s-3", "kric", "snap-1", "h1", 1405, 1500, 800, 900, 500, 500)
+			.add("s-1", "s-external", "kric", "snap-2", "h2", 2000, 2100, 1200, 1300, 700, 700)
+			.build();
+
+		assertThat(built).hasSize(3);
+		assertThat(built.getQuote("s-1", "s-2").gnrlCardFare()).isEqualTo(1400);
+		assertThat(built.getQuote("s-2", "s-3").gnrlCardFare()).isEqualTo(1405);
+		assertThat(built.getQuote("s-1", "s-external").gnrlCardFare()).isEqualTo(2000);
+		assertThat(built).isEqualTo(Map.of(
+			OfficialFareQuote.fareKey("s-1", "s-2"), built.getQuote("s-1", "s-2"),
+			OfficialFareQuote.fareKey("s-2", "s-3"), built.getQuote("s-2", "s-3"),
+			OfficialFareQuote.fareKey("s-1", "s-external"), built.getQuote("s-1", "s-external")
+		));
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> BitPackedOdFareStore.builder(List.of("s-1", "s-2"))
+			.add("s-1", "s-2", "kric", "snap-1", "h1", 1400, 1500, 800, 900, 500, 500)
+			.add("s-1", "s-2", "kric", "snap-1", "h1", 1405, 1500, 800, 900, 500, 500))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("duplicate official_od_fare_quotes key");
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> BitPackedOdFareStore.builder(List.of("s-1", "s-2"))
+			.add("s-1", "s-2", "kric", "snap-1", "h1", 1405, 1500, 800, 900, 500, 500)
+			.add("s-1", "s-2", "kric", "snap-1", "h1", 1400, 1500, 800, 900, 500, 500))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("duplicate official_od_fare_quotes key");
+	}
 }

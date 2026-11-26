@@ -81,11 +81,14 @@ public final class RaptorRouteBundleRuntimeView
 		this.generation = generation;
 		this.compiledTimetable = Objects.requireNonNull(compiledTimetable, "compiledTimetable");
 		this.smrtElevatorFacilities = List.copyOf(smrtElevatorFacilities);
-		for (var entry : Objects.requireNonNull(officialFareQuotes, "officialFareQuotes").entrySet()) {
-			Objects.requireNonNull(entry.getValue(), "fareQuote");
-			String expectedKey = OfficialFareQuote.fareKey(entry.getValue().originStationId(), entry.getValue().destinationStationId());
-			if (!expectedKey.equals(entry.getKey())) {
-				throw new IllegalArgumentException("officialFareQuotes key mismatch: expected " + expectedKey + " but got " + entry.getKey());
+		Objects.requireNonNull(officialFareQuotes, "officialFareQuotes");
+		if (!(officialFareQuotes instanceof BitPackedOdFareStore)) {
+			for (var entry : officialFareQuotes.entrySet()) {
+				Objects.requireNonNull(entry.getValue(), "fareQuote");
+				String expectedKey = OfficialFareQuote.fareKey(entry.getValue().originStationId(), entry.getValue().destinationStationId());
+				if (!expectedKey.equals(entry.getKey())) {
+					throw new IllegalArgumentException("officialFareQuotes key mismatch: expected " + expectedKey + " but got " + entry.getKey());
+				}
 			}
 		}
 		this.canonicalStationIds = Collections.unmodifiableSet(

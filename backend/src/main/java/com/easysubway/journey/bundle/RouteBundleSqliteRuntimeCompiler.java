@@ -71,6 +71,20 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	private static final Set<String> PAYLOAD_PATHS = Set.of(
 		TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH);
 	private static final String OUT_OF_STATION_TRANSFER = "OUT_OF_STATION_TRANSFER";
+	private static final List<String> TRANSIT_TRIPS_COLUMNS_LEGACY = List.of(
+		"id", "route_id", "service_id", "trip_headsign", "direction_id",
+		"service_pattern", "service_class", "service_day_start_seconds");
+	private static final List<String> TRANSIT_TRIPS_COLUMNS_WITH_TRAIN_NO = List.of(
+		"id", "route_id", "service_id", "trip_headsign", "direction_id",
+		"service_pattern", "service_class", "train_no", "service_day_start_seconds");
+	private static final String SELECT_TRANSIT_TRIPS_LEGACY = """
+		SELECT id, route_id, service_id, trip_headsign, direction_id, service_class, service_pattern,
+		 service_day_start_seconds FROM transit_trips ORDER BY id COLLATE BINARY
+		""";
+	private static final String SELECT_TRANSIT_TRIPS_WITH_TRAIN_NO = """
+		SELECT id, route_id, service_id, trip_headsign, direction_id, service_class, service_pattern,
+		 train_no, service_day_start_seconds FROM transit_trips ORDER BY id COLLATE BINARY
+		""";
 	// #458: 전국 공식 시간표 번들(실측 81.6MiB, #903 반영 예상 약 105MiB)에 여유를 둔 값.
 	// data server-route-bundle-build-contract.json maxTotalDecompressedBytes와 함께 바꾼다.
 	static final long MAX_TOTAL_DECOMPRESSED_BYTES = 192L * 1024L * 1024L;
@@ -138,14 +152,16 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var evaluations = validateAccessibility(accessibilityConn, topology);
 			var carDoorHints = loadCarDoorHints(accessibilityConn);
 			var platformGaps = loadPlatformGaps(accessibilityConn);
-			Map<String, OfficialFareQuote> fareQuotes = loadFare(byPath.get(FARE_PATH).connection());
 			var references = components.getFirst().references();
+			var canonicalStationIds = canonicalStationIds(references);
+			Map<String, OfficialFareQuote> fareQuotes = loadFare(
+				byPath.get(FARE_PATH).connection(), canonicalStationIds);
 			var loadedFacilities = loadFacilities(accessibilityConn);
 			var bundleStationExits = loadStationExits(accessibilityConn);
 			return new CompiledPayloads(loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations, carDoorHints, platformGaps),
 				loadedFacilities.smrtElevatorFacilities(), fareQuotes, canonicalStationLines(references),
-				indexFacilityEdgeIds(topology), canonicalStationIds(references),
+				indexFacilityEdgeIds(topology), canonicalStationIds,
 				loadedFacilities.bundleFacilities(), bundleStationExits);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
@@ -456,12 +472,15 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		throw new IllegalArgumentException("bundle station_exit " + column + " must be numeric");
 	}
 
-	private static Map<String, OfficialFareQuote> loadFare(Connection connection) throws SQLException {
+	private static Map<String, OfficialFareQuote> loadFare(
+		Connection connection,
+		Set<String> canonicalStationIds
+	) throws SQLException {
 		requireColumns(connection, "official_od_fare_quotes", List.of(
 			"origin_station_id", "destination_station_id", "source_id", "snapshot_id", "mapping_ledger_hash",
 			"gnrl_card_fare", "gnrl_cash_fare", "yung_card_fare", "yung_cash_fare",
 			"child_card_fare", "child_cash_fare"));
-		var fareQuotes = new HashMap<String, OfficialFareQuote>();
+		var fareStore = com.easysubway.route.application.service.BitPackedOdFareStore.builder(canonicalStationIds);
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
 			SELECT origin_station_id, destination_station_id, source_id, snapshot_id, mapping_ledger_hash,
 			 gnrl_card_fare, gnrl_cash_fare, yung_card_fare, yung_cash_fare, child_card_fare, child_cash_fare
@@ -482,23 +501,13 @@ public final class RouteBundleSqliteRuntimeCompiler {
 						throw new IllegalArgumentException("fare value is invalid");
 					}
 				}
-				int gnrlCardFare = rows.getInt(6);
-				int gnrlCashFare = rows.getInt(7);
-				int yungCardFare = rows.getInt(8);
-				int yungCashFare = rows.getInt(9);
-				int childCardFare = rows.getInt(10);
-				int childCashFare = rows.getInt(11);
-
-				String key = OfficialFareQuote.fareKey(origin, destination);
-				var quote = new OfficialFareQuote(
+				fareStore.add(
 					origin, destination, sourceId, snapshotId, mappingLedgerHash,
-					gnrlCardFare, gnrlCashFare, yungCardFare, yungCashFare, childCardFare, childCashFare);
-				if (fareQuotes.put(key, quote) != null) {
-					throw new IllegalArgumentException("duplicate official_od_fare_quotes key: " + key);
-				}
+					rows.getInt(6), rows.getInt(7), rows.getInt(8),
+					rows.getInt(9), rows.getInt(10), rows.getInt(11));
 			}
 		}
-		return Map.copyOf(fareQuotes);
+		return fareStore.build();
 	}
 
 	private static List<CarDoorHint> loadCarDoorHints(Connection connection) throws SQLException {
@@ -590,7 +599,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		Connection connection, Map<String, TopologyEdge> topology, Map<String, Evaluation> evaluations,
 		List<CarDoorHint> carDoorHints, Map<PlatformGapKey, List<PlatformGap>> platformGaps)
 		throws SQLException {
-		requireTimetableColumns(connection);
+		boolean hasTrainNo = requireTimetableColumns(connection);
 		var calendars = new ArrayList<ServiceCalendar>();
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
 			SELECT service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday,
@@ -614,13 +623,21 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4), rows.getString(5), rows.getString(6)));
 		}
 		var trips = new ArrayList<TransitTrip>();
-		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
-			SELECT id, route_id, service_id, trip_headsign, direction_id, service_class, service_pattern,
-			 service_day_start_seconds FROM transit_trips ORDER BY id COLLATE BINARY
-			""")) {
-			while (rows.next()) trips.add(new TransitTrip(
-				rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4), rows.getString(5),
-				rows.getString(6), rows.getString(7), null, rows.getInt(8)));
+		String tripQuery = hasTrainNo ? SELECT_TRANSIT_TRIPS_WITH_TRAIN_NO : SELECT_TRANSIT_TRIPS_LEGACY;
+		try (var statement = connection.createStatement(); var rows = statement.executeQuery(tripQuery)) {
+			while (rows.next()) {
+				String normalizedTrainNo = null;
+				if (hasTrainNo) {
+					String rawTrainNo = rows.getString(8);
+					if (rawTrainNo != null && !rawTrainNo.isBlank()) {
+						normalizedTrainNo = rawTrainNo.strip();
+					}
+				}
+				int serviceDayStartSeconds = rows.getInt(hasTrainNo ? 9 : 8);
+				trips.add(new TransitTrip(
+					rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4), rows.getString(5),
+					rows.getString(6), rows.getString(7), normalizedTrainNo, serviceDayStartSeconds));
+			}
 		}
 		var stopTimes = new ArrayList<TransitStopTime>();
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
@@ -731,22 +748,32 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		return new Endpoint(parts[0], parts.length >= 2 ? parts[1] : null);
 	}
 
-	private static void requireTimetableColumns(Connection connection) throws SQLException {
+	private static boolean requireTimetableColumns(Connection connection) throws SQLException {
 		requireColumns(connection, "service_calendars", List.of(
 			"service_id", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
 			"start_date", "end_date", "timezone"));
 		requireColumns(connection, "service_calendar_dates", List.of("service_id", "date", "exception_type"));
 		requireColumns(connection, "transit_routes", List.of(
 			"id", "line_id", "route_short_name", "route_long_name", "direction_name", "timezone"));
-		requireColumns(connection, "transit_trips", List.of(
-			"id", "route_id", "service_id", "trip_headsign", "direction_id", "service_pattern",
-			"service_class", "service_day_start_seconds"));
+		boolean hasTrainNo = requireTransitTripsColumns(connection);
 		requireColumns(connection, "transit_stop_times", List.of(
 			"trip_id", "stop_sequence", "station_id", "line_id", "arrival_seconds", "departure_seconds",
 			"pickup_type", "drop_off_type"));
 		requireColumns(connection, "transit_frequencies", List.of(
 			"trip_id", "start_time_seconds", "end_time_seconds", "headway_seconds", "exact_times"));
 		requireColumns(connection, "transit_feed_info", List.of("id", "feed_end_date"));
+		return hasTrainNo;
+	}
+
+	private static boolean requireTransitTripsColumns(Connection connection) throws SQLException {
+		var columns = readTableColumns(connection, "transit_trips");
+		if (columns.equals(TRANSIT_TRIPS_COLUMNS_WITH_TRAIN_NO)) {
+			return true;
+		}
+		if (columns.equals(TRANSIT_TRIPS_COLUMNS_LEGACY)) {
+			return false;
+		}
+		throw new IllegalArgumentException("SQLite table schema mismatch: transit_trips");
 	}
 
 	private static void requireColumns(Connection connection, String table, List<String> expected) throws SQLException {

@@ -6,6 +6,7 @@ import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorit
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.domain.AdminIdentity;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
+import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -90,7 +91,7 @@ public class AdminIdentityUserDetailsService implements UserDetailsService, User
 			.password(identity.passwordHash())
 			.authorities(authorities.toArray(String[]::new))
 			.disabled(identity.disabled())
-			.accountLocked(identity.lockedAt(now))
+			.accountLocked(identity.status() == AdminIdentityStatus.LOCKED)
 			.accountExpired(false)
 			.credentialsExpired(identity.credentialsExpiredAt(now))
 			.build();

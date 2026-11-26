@@ -16,6 +16,7 @@ import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.Lo
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
+import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
@@ -31,7 +32,12 @@ import com.easysubway.notification.application.port.in.ReportStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.ReportStatusChangedAlertCommand;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
+import com.easysubway.transit.application.port.out.FacilityOperationalStatusStore;
+import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.FacilityOperationalState;
+import com.easysubway.transit.domain.FacilityOperationalStatus;
+import com.easysubway.transit.domain.FacilityStatusSource;
 import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.awt.image.BufferedImage;
@@ -1396,6 +1402,78 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("운영(읽기 전용 마스터)에서도 FacilityOperationalStatusStore가 연결되면 고장·복구 신고 승인을 ADMIN_VERIFIED로 반영한다")
+	void acceptedReportUpdatesOperationalStatusStoreWithoutMasterWriteErrorUnderReadOnlyMaster() {
+		var transitRepository = new UnavailableTransitMasterRepository();
+		var repository = new InMemoryFacilityReportRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		Map<String, FacilityOperationalStatus> storeRows = new java.util.LinkedHashMap<>();
+		FacilityOperationalStatusStore statusStore = new FacilityOperationalStatusStore() {
+			@Override
+			public List<FacilityOperationalStatus> loadStatuses() {
+				return List.copyOf(storeRows.values());
+			}
+
+			@Override
+			public Optional<Instant> lastSuccessfulCollectionAt(String feed) {
+				return Optional.empty();
+			}
+
+			@Override
+			public FeedApplyResult applyFeedCollection(String feed, List<FeedObservation> observations, Instant observedAt) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+				FacilityOperationalStatus prev = storeRows.get(facilityId);
+				storeRows.put(facilityId, new FacilityOperationalStatus(
+					facilityId, state, FacilityStatusSource.ADMIN_VERIFIED, null, verifiedAt, verifiedAt));
+				return new AdminVerifiedResult(
+					true,
+					prev == null ? Optional.empty() : Optional.of(prev.status()),
+					prev == null ? Optional.empty() : Optional.of(prev.source()));
+			}
+		};
+		var prodService = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			statusStore,
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var brokenReport = prodService.createReport(reportCommand(
+			"anonymous-user-prod-broken",
+			FacilityReportType.BROKEN,
+			"운영 환경 고장 신고입니다."
+		));
+		var acceptedBroken = prodService.reviewReport(reviewCommand(brokenReport.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(acceptedBroken.status()).isEqualTo(FacilityReportStatus.ACCEPTED);
+		assertThat(storeRows.get("facility-sangnoksu-elevator-1"))
+			.satisfies(row -> {
+				assertThat(row.status()).isEqualTo(FacilityOperationalState.OUT_OF_SERVICE);
+				assertThat(row.source()).isEqualTo(FacilityStatusSource.ADMIN_VERIFIED);
+			});
+
+		var recoveredReport = prodService.createReport(reportCommand(
+			"anonymous-user-prod-recovered",
+			FacilityReportType.RECOVERED,
+			"운영 환경 복구 신고입니다."
+		));
+		var acceptedRecovered = prodService.reviewReport(reviewCommand(recoveredReport.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(acceptedRecovered.status()).isEqualTo(FacilityReportStatus.ACCEPTED);
+		assertThat(storeRows.get("facility-sangnoksu-elevator-1").status()).isEqualTo(FacilityOperationalState.OPERATING);
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::facilityId, FacilityStatusChangedAlertCommand::status)
+			.containsExactly(
+				tuple("facility-sangnoksu-elevator-1", AccessibilityFacilityStatus.BROKEN),
+				tuple("facility-sangnoksu-elevator-1", AccessibilityFacilityStatus.NORMAL));
+	}
+
+	@Test
 	@DisplayName("승인된 시설 상태 신고는 즐겨찾기 알림을 요청한다")
 	void acceptedReportRequestsFavoriteFacilityStatusAlert() {
 		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
@@ -2039,5 +2117,133 @@ class FacilityReportServiceTest {
 			.filteredOn(facility -> facility.id().equals("facility-sangnoksu-elevator-1"))
 			.extracting(facility -> facility.lastUpdatedAt())
 			.containsExactly(java.time.LocalDate.of(2026, 6, 12));
+	}
+
+	@Test
+	@DisplayName("신고 생성은 전체 역·시설 목록을 재적재하지 않고 단건 조회 포트를 사용한다")
+	void createReportUsesSingleStationAndFacilityLookups() {
+		var delegate = new InMemoryTransitMasterRepository();
+		LoadTransitMasterPort singleLookupOnlyPort = new LoadTransitMasterPort() {
+			@Override
+			public List<com.easysubway.transit.domain.TransitOperator> loadOperators() {
+				throw new AssertionError("loadOperators must not be called");
+			}
+
+			@Override
+			public List<com.easysubway.transit.domain.SubwayLine> loadLines() {
+				throw new AssertionError("loadLines must not be called");
+			}
+
+			@Override
+			public List<com.easysubway.transit.domain.Station> loadStations() {
+				throw new AssertionError("loadStations must not be called during createReport");
+			}
+
+			@Override
+			public List<com.easysubway.transit.domain.StationLine> loadStationLines() {
+				throw new AssertionError("loadStationLines must not be called");
+			}
+
+			@Override
+			public List<com.easysubway.transit.domain.StationExit> loadStationExits() {
+				throw new AssertionError("loadStationExits must not be called");
+			}
+
+			@Override
+			public List<com.easysubway.transit.domain.AccessibilityFacility> loadAccessibilityFacilities() {
+				throw new AssertionError("loadAccessibilityFacilities must not be called during createReport");
+			}
+
+			@Override
+			public Optional<com.easysubway.transit.domain.Station> loadStation(String stationId) {
+				return delegate.loadStation(stationId);
+			}
+
+			@Override
+			public Optional<com.easysubway.transit.domain.AccessibilityFacility> loadAccessibilityFacility(String facilityId) {
+				return delegate.loadAccessibilityFacility(facilityId);
+			}
+		};
+		var reports = new InMemoryFacilityReportRepository();
+		var singleLookupService = new FacilityReportService(
+			singleLookupOnlyPort,
+			delegate,
+			null,
+			reports,
+			reports,
+			command -> {
+			},
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneOffset.UTC)
+		);
+
+		FacilityReport created = singleLookupService.createReport(reportCommand("single-lookup-user", "단건 조회 신고"));
+		assertThat(created.stationId()).isEqualTo("station-sangnoksu");
+		assertThat(created.facilityId()).isEqualTo("facility-sangnoksu-elevator-1");
+	}
+
+	@Test
+	@DisplayName("신고 DB 저장이 실패하면 먼저 저장한 원본·썸네일 사진을 보상 삭제한다")
+	void createReportDeletesStoredPhotoWhenSaveReportFails() {
+		List<String> deletedObjectKeys = new ArrayList<>();
+		var failingSaveRepo = new InMemoryFacilityReportRepository() {
+			@Override
+			public FacilityReport saveReport(FacilityReport report) {
+				throw new IllegalStateException("DB save failed");
+			}
+		};
+		final class TrackingPhotoStorage implements StoreFacilityReportPhotoPort, DeleteFacilityReportPhotoPort {
+			@Override
+			public StoredFacilityReportPhoto storeFacilityReportPhoto(StoreFacilityReportPhotoCommand command) {
+				return new StoredFacilityReportPhoto(
+					"facility-reports/%s/original.jpg".formatted(command.reportId()),
+					"facility-reports/%s/thumb.jpg".formatted(command.reportId())
+				);
+			}
+
+			@Override
+			public void deleteFacilityReportPhoto(String objectKey) {
+				deletedObjectKeys.add(objectKey);
+			}
+		}
+		var photoStorage = new TrackingPhotoStorage();
+		var failingService = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			failingSaveRepo,
+			failingSaveRepo,
+			photoStorage,
+			command -> {
+			},
+			command -> {
+			},
+			audit -> audit,
+			reportId -> List.of(),
+			objectKey -> Optional.of(new LoadedFacilityReportPhoto("image/jpeg", validJpegBytes())),
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneOffset.UTC),
+			"local-dev-report-receipt-pepper"
+		);
+		byte[] jpeg = validJpegBytes();
+		var command = objectPhotoReportCommand(
+			"client-fail-comp-1",
+			"facility-reports/unclaimed/user-1/upload-1.jpg",
+			sha256HexForTest(jpeg),
+			(long) jpeg.length
+		);
+
+		assertThatThrownBy(() -> failingService.createReport(command))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("DB save failed");
+		assertThat(deletedObjectKeys)
+			.hasSize(2)
+			.anyMatch(key -> key.endsWith("/original.jpg"))
+			.anyMatch(key -> key.endsWith("/thumb.jpg"));
+	}
+
+	private static String sha256HexForTest(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (java.security.NoSuchAlgorithmException exception) {
+			throw new IllegalStateException(exception);
+		}
 	}
 }

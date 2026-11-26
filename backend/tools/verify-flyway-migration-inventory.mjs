@@ -6,9 +6,9 @@ const MIGRATION_FILENAME = /^V([1-9]\d*)__([a-z0-9]+(?:_[a-z0-9]+)*)\.sql$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const LOCK_RELATIVE_PATH = "backend/flyway-migration-inventory.lock.json";
 const MIGRATION_ROOT_RELATIVE_PATH = "backend/src/main/resources/db/migration/postgresql";
+const H2_MIGRATION_ROOT_RELATIVE_PATH = "backend/src/main/resources/db/migration/h2";
 
-export function buildFlywayMigrationInventory({ migrationRoot, repositoryRoot }) {
-  assertCanonicalMigrationRoot(migrationRoot, repositoryRoot);
+function scanCanonicalMigrations(migrationRoot, pathPrefix) {
   assertDirectory(migrationRoot, "migration root");
 
   const versions = new Set();
@@ -29,17 +29,49 @@ export function buildFlywayMigrationInventory({ migrationRoot, repositoryRoot })
     return {
       version,
       description,
-      path: `${MIGRATION_ROOT_RELATIVE_PATH}/${entry.name}`,
+      path: `${pathPrefix}/${entry.name}`,
       sha256: sha256(readFileSync(path)),
       numericVersion,
     };
   });
 
   migrations.sort((left, right) => left.numericVersion < right.numericVersion ? -1 : left.numericVersion > right.numericVersion ? 1 : 0);
+  return migrations;
+}
+
+export function buildFlywayMigrationInventory({ migrationRoot, repositoryRoot }) {
+  assertCanonicalMigrationRoot(migrationRoot, repositoryRoot);
+  const migrations = scanCanonicalMigrations(migrationRoot, MIGRATION_ROOT_RELATIVE_PATH);
   return {
     schemaVersion: 1,
     migrations: migrations.map(({ version, description, path, sha256: digest }) => ({ version, description, path, sha256: digest })),
   };
+}
+
+export function verifyH2MigrationParity({ pgMigrationRoot, h2MigrationRoot }) {
+  assertPath(pgMigrationRoot, "postgresql migration root");
+  assertPath(h2MigrationRoot, "h2 migration root");
+  const pgMigrations = scanCanonicalMigrations(pgMigrationRoot, MIGRATION_ROOT_RELATIVE_PATH);
+  const h2Migrations = scanCanonicalMigrations(h2MigrationRoot, H2_MIGRATION_ROOT_RELATIVE_PATH);
+
+  const pgByVersion = new Map(pgMigrations.map((entry) => [entry.version, entry.description]));
+  const h2ByVersion = new Map(h2Migrations.map((entry) => [entry.version, entry.description]));
+
+  for (const [version, pgDescription] of pgByVersion) {
+    const h2Description = h2ByVersion.get(version);
+    if (h2Description === undefined) {
+      throw new Error(`H2 Flyway migration missing version V${version}__${pgDescription}.sql`);
+    }
+    if (h2Description !== pgDescription) {
+      throw new Error(`H2 Flyway migration V${version} description mismatch: expected ${pgDescription}, got ${h2Description}`);
+    }
+  }
+  for (const [version, h2Description] of h2ByVersion) {
+    if (!pgByVersion.has(version)) {
+      throw new Error(`H2 Flyway migration has extra version V${version}__${h2Description}.sql absent from PostgreSQL`);
+    }
+  }
+  return { count: pgMigrations.length };
 }
 
 export function verifyFlywayMigrationInventory({ lockPath, migrationRoot }) {

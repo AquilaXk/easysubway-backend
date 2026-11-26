@@ -669,6 +669,17 @@ class RouteTimetableCarDoorHintsTest {
 		assertThat(compiledWithLiftOnly.selectAlightingCarDoors("station-b", "line-1", "up", true, false))
 			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 2, "TRANSFER"));
 
+		var transferWithoutStepFreeTimetable = createBaseTimetable(List.of(
+			new CarDoorHint("station-b", "line-1", "UP", "TRANSFER", 3, 2),
+			new CarDoorHint("station-b", "line-1", "UP", "STAIR", 4, 1)
+		));
+		var compiledWithoutStepFree = planner.compile(transferWithoutStepFreeTimetable);
+		// stepFree 환승역에 ELEVATOR/WHEELCHAIR_LIFT 힌트가 없으면 일반 TRANSFER(계단) 힌트를 노출하지 않는다.
+		assertThat(compiledWithoutStepFree.selectAlightingCarDoors("station-b", "line-1", "up", true, true))
+			.isEmpty();
+		assertThat(compiledWithoutStepFree.selectAlightingCarDoors("station-b", "line-1", "up", true, false))
+			.containsExactly(new RouteTimetableRaptorPlanner.AlightingCarDoor(3, 2, "TRANSFER"));
+
 		// 정방향/역방향 전체 탐색에서 JourneyAccessProjection 생성이 예외 없이 동작하고 첫 승차 하차 힌트에 ELEVATOR가 실린다
 		var stepFreeQuery = JourneyRaptorQuery.from(
 			createRequest("station-a", "station-c", JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE),

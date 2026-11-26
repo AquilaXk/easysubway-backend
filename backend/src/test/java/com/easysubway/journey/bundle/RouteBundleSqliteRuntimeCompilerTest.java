@@ -984,7 +984,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
 				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
 				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
-				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT,
 				 service_day_start_seconds INTEGER NOT NULL);
 				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
 				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
@@ -1001,10 +1001,10 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
 			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
 				"route-2", "line-2", "2", "Line 2", "station-a", "Asia/Seoul");
-			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
-				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", 0);
-			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
-				"trip-2", "route-2", "weekday", "station-a", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", "K1001", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-2", "route-2", "weekday", "station-a", "0", "LOCAL", "SUBWAY", "K2002", 0);
 			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
 				"trip-1", 1, "station-a", "line-1", 36000, 36000, 0, 0);
 			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
@@ -1031,6 +1031,249 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThat(runtime.transitionEdgeIdsForFacility("unknown-facility")).isEmpty();
 		assertThat(runtime.transitionEdgeIdsForFacility(null)).isEmpty();
 		assertThat(runtime.transitionEdgeIdsForFacility("   ")).isEmpty();
+	}
+
+	@Test
+	void compilesNineColumnTripsWithNormalizedTrainNoAndAllowsLegacyEightColumnSchema() throws Exception {
+		var nineColumnTimetable = sqlite("timetable-nine-col-train-no", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, monday INTEGER NOT NULL,
+				 tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL,
+				 friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL,
+				 start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE service_calendar_dates (service_id TEXT NOT NULL, date TEXT NOT NULL,
+				 exception_type INTEGER NOT NULL, PRIMARY KEY(service_id,date));
+				CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL,
+				 route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL,
+				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT,
+				 service_day_start_seconds INTEGER NOT NULL);
+				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
+				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
+				 departure_seconds INTEGER NOT NULL, pickup_type INTEGER NOT NULL,
+				 drop_off_type INTEGER NOT NULL, PRIMARY KEY(trip_id,stop_sequence));
+				CREATE TABLE transit_frequencies (trip_id TEXT NOT NULL, start_time_seconds INTEGER NOT NULL,
+				 end_time_seconds INTEGER NOT NULL, headway_seconds INTEGER NOT NULL,
+				 exact_times INTEGER NOT NULL, PRIMARY KEY(trip_id,start_time_seconds));
+				CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL)
+				""");
+			insert(connection, "INSERT INTO service_calendars VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"weekday", 1, 1, 1, 1, 1, 1, 1, "20260801", "20261231", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
+				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", "  K1001  ", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-2", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", "   ", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-3", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", null, 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-4", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", "\t\u3000K2002\u3000", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-5", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", "\u3000", 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", 1, "station-a", "line-1", 36000, 36000, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-1", 2, "station-b", "line-1", 36600, 36600, 0, 0);
+			insert(connection, "INSERT INTO transit_feed_info VALUES(?,?)", 1, "20261231");
+		});
+		var nineColumnPayloads = payloads();
+		nineColumnPayloads.put(RouteBundleSqliteRuntimeCompiler.TIMETABLE_PATH, Zstd.compress(nineColumnTimetable, 10));
+
+		var nineColumnRead = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(nineColumnPayloads));
+		assertThat(nineColumnRead.transitTrips())
+			.extracting(LoadRouteTimetablePort.TransitTrip::id, LoadRouteTimetablePort.TransitTrip::trainNo)
+			.containsExactly(
+				org.assertj.core.groups.Tuple.tuple("trip-1", "K1001"),
+				org.assertj.core.groups.Tuple.tuple("trip-2", null),
+				org.assertj.core.groups.Tuple.tuple("trip-3", null),
+				org.assertj.core.groups.Tuple.tuple("trip-4", "K2002"),
+				org.assertj.core.groups.Tuple.tuple("trip-5", null));
+		assertThat(new RouteBundleSqliteRuntimeCompiler().compile(input(nineColumnPayloads)).routeBundleSha256())
+			.isEqualTo(SHA);
+
+		var legacyTimetable = sqlite("timetable-legacy-eight-col", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, monday INTEGER NOT NULL,
+				 tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL,
+				 friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL,
+				 start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE service_calendar_dates (service_id TEXT NOT NULL, date TEXT NOT NULL,
+				 exception_type INTEGER NOT NULL, PRIMARY KEY(service_id,date));
+				CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL,
+				 route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL,
+				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_day_start_seconds INTEGER NOT NULL);
+				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
+				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
+				 departure_seconds INTEGER NOT NULL, pickup_type INTEGER NOT NULL,
+				 drop_off_type INTEGER NOT NULL, PRIMARY KEY(trip_id,stop_sequence));
+				CREATE TABLE transit_frequencies (trip_id TEXT NOT NULL, start_time_seconds INTEGER NOT NULL,
+				 end_time_seconds INTEGER NOT NULL, headway_seconds INTEGER NOT NULL,
+				 exact_times INTEGER NOT NULL, PRIMARY KEY(trip_id,start_time_seconds));
+				CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL)
+				""");
+			insert(connection, "INSERT INTO service_calendars VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+				"weekday", 1, 1, 1, 1, 1, 1, 1, "20260801", "20261231", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
+				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
+				"trip-legacy", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
+				"trip-legacy-offset", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", 120);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-legacy", 1, "station-a", "line-1", 36000, 36000, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-legacy", 2, "station-b", "line-1", 36600, 36600, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-legacy-offset", 1, "station-a", "line-1", 37000, 37000, 0, 0);
+			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
+				"trip-legacy-offset", 2, "station-b", "line-1", 37600, 37600, 0, 0);
+			insert(connection, "INSERT INTO transit_feed_info VALUES(?,?)", 1, "20261231");
+		});
+		var legacyPayloads = payloads();
+		legacyPayloads.put(RouteBundleSqliteRuntimeCompiler.TIMETABLE_PATH, Zstd.compress(legacyTimetable, 10));
+
+		var legacyRead = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(legacyPayloads));
+		assertThat(legacyRead.transitTrips())
+			.extracting(
+				LoadRouteTimetablePort.TransitTrip::id,
+				LoadRouteTimetablePort.TransitTrip::serviceClass,
+				LoadRouteTimetablePort.TransitTrip::servicePattern,
+				LoadRouteTimetablePort.TransitTrip::trainNo,
+				LoadRouteTimetablePort.TransitTrip::serviceDayStartSeconds)
+			.containsExactly(
+				org.assertj.core.groups.Tuple.tuple("trip-legacy", "SUBWAY", "LOCAL", null, 0),
+				org.assertj.core.groups.Tuple.tuple("trip-legacy-offset", "SUBWAY", "LOCAL", null, 120));
+		var legacyRuntime = new RouteBundleSqliteRuntimeCompiler().compile(input(legacyPayloads));
+		assertThat(legacyRuntime.routeBundleSha256()).isEqualTo(SHA);
+		assertThat(legacyRuntime.stationTimetableIndex().timetable().transitTrips())
+			.extracting(LoadRouteTimetablePort.TransitTrip::trainNo)
+			.containsExactly(null, null);
+		var legacyRequest = new JourneyRequest(
+			"01HZY3Q4J5K6M7N8P9Q0R1S2T4",
+			"station-a",
+			"station-b",
+			new JourneyRequest.Departure.Scheduled(DEPARTURE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0,
+			1,
+			() -> false);
+		var legacySnapshot = new ActiveJourneySnapshot(
+			"active:7", BUNDLE_ID, SHA, "timetable", "accessibility", 7, legacyRuntime,
+			DEPARTURE.plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+		var legacyPlanned = new JourneyRaptorAdapter().plan(
+			legacyRequest, legacySnapshot, DEPARTURE, null, new JourneyRequestMeasurement(legacyRequest.requestId()));
+		assertThat(legacyPlanned.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.transferCount()).isZero();
+			assertThat(candidate.fare().adultCardWon()).isEqualTo(1400);
+		});
+	}
+
+	@Test
+	void rejectsNonCanonicalTransitTripsColumnConfigurations() throws Exception {
+		List<String> invalidTripTableDdls = List.of(
+			// 필수 열 누락 (7열)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL)
+				""",
+			// 임의 추가 열 (9열이지만 train_no가 아님)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_number TEXT,
+				 service_day_start_seconds INTEGER NOT NULL)
+				""",
+			// 대소문자 불일치 열 (9열: TRAIN_NO)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, TRAIN_NO TEXT,
+				 service_day_start_seconds INTEGER NOT NULL)
+				""",
+			// 임의 추가 열 (10열)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT,
+				 service_day_start_seconds INTEGER NOT NULL, extra_col TEXT)
+				""",
+			// 순서 변경 열 (9열: service_day_start_seconds와 train_no 뒤바뀜)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_day_start_seconds INTEGER NOT NULL, train_no TEXT)
+				""",
+			// 순서 변경 열 (9열: train_no가 service_pattern 앞)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 train_no TEXT, service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_day_start_seconds INTEGER NOT NULL)
+				""",
+			// 순서 변경 열 (8열: service_class와 service_pattern 뒤바뀜)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_class TEXT NOT NULL, service_pattern TEXT NOT NULL,
+				 service_day_start_seconds INTEGER NOT NULL)
+				""",
+			// 잘못된 열 이름 (8열: service_class 대신 train_no)
+			"""
+				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
+				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, train_no TEXT,
+				 service_day_start_seconds INTEGER NOT NULL)
+				"""
+		);
+
+		for (int index = 0; index < invalidTripTableDdls.size(); index++) {
+			String tripDdl = invalidTripTableDdls.get(index);
+			var invalidTimetable = sqlite("timetable-invalid-trips-" + index, connection -> {
+				common(connection, identitySql());
+				execute(connection, """
+					CREATE TABLE service_calendars (service_id TEXT PRIMARY KEY, monday INTEGER NOT NULL,
+					 tuesday INTEGER NOT NULL, wednesday INTEGER NOT NULL, thursday INTEGER NOT NULL,
+					 friday INTEGER NOT NULL, saturday INTEGER NOT NULL, sunday INTEGER NOT NULL,
+					 start_date TEXT NOT NULL, end_date TEXT NOT NULL, timezone TEXT NOT NULL);
+					CREATE TABLE service_calendar_dates (service_id TEXT NOT NULL, date TEXT NOT NULL,
+					 exception_type INTEGER NOT NULL, PRIMARY KEY(service_id,date));
+					CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL,
+					 route_short_name TEXT NOT NULL, route_long_name TEXT NOT NULL,
+					 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
+					""" + tripDdl + """
+					; CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
+					 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
+					 departure_seconds INTEGER NOT NULL, pickup_type INTEGER NOT NULL,
+					 drop_off_type INTEGER NOT NULL, PRIMARY KEY(trip_id,stop_sequence));
+					CREATE TABLE transit_frequencies (trip_id TEXT NOT NULL, start_time_seconds INTEGER NOT NULL,
+					 end_time_seconds INTEGER NOT NULL, headway_seconds INTEGER NOT NULL,
+					 exact_times INTEGER NOT NULL, PRIMARY KEY(trip_id,start_time_seconds));
+					CREATE TABLE transit_feed_info (id INTEGER PRIMARY KEY, feed_end_date TEXT NOT NULL)
+					""");
+			});
+			var invalidPayloads = payloads();
+			invalidPayloads.put(RouteBundleSqliteRuntimeCompiler.TIMETABLE_PATH, Zstd.compress(invalidTimetable, 10));
+
+			assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().readTimetable(input(invalidPayloads)))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("SQLite table schema mismatch: transit_trips");
+		}
 	}
 
 	@Test
@@ -1192,7 +1435,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				 direction_name TEXT NOT NULL, timezone TEXT NOT NULL);
 				CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL,
 				 service_id TEXT NOT NULL, trip_headsign TEXT NOT NULL, direction_id TEXT NOT NULL,
-				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 service_pattern TEXT NOT NULL, service_class TEXT NOT NULL, train_no TEXT,
 				 service_day_start_seconds INTEGER NOT NULL);
 				CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, stop_sequence INTEGER NOT NULL,
 				 station_id TEXT NOT NULL, line_id TEXT NOT NULL, arrival_seconds INTEGER NOT NULL,
@@ -1207,8 +1450,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				"weekday", 1, 1, 1, 1, 1, 1, 1, "20260801", "20261231", "Asia/Seoul");
 			insert(connection, "INSERT INTO transit_routes VALUES(?,?,?,?,?,?)",
 				"route-1", "line-1", "1", "Line 1", "station-b", "Asia/Seoul");
-			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?)",
-				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", 0);
+			insert(connection, "INSERT INTO transit_trips VALUES(?,?,?,?,?,?,?,?,?)",
+				"trip-1", "route-1", "weekday", "station-b", "0", "LOCAL", "SUBWAY", "  K1001  ", 0);
 			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",
 				"trip-1", 1, "station-a", "line-1", 36000, 36000, 0, 0);
 			insert(connection, "INSERT INTO transit_stop_times VALUES(?,?,?,?,?,?,?,?)",

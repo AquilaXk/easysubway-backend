@@ -47,10 +47,10 @@ const FINDING_REASON = 'Exact current SpotBugs finding requires source-level rev
 const FINDING_REMOVAL = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
 const FINDING_TRIGGER = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
 const ISSUE4_TITLE = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
-const BUILD_SCRIPT_DIGEST = '3d6733e3d3b425d3321b3600e776ce957d75b60d879922ebd0a63a5acb79e4be';
+const BUILD_SCRIPT_DIGEST = '6f1a4e25acf3fb8471aae04b210278c59902e942781977c38e6e0f4fe7c9cf09';
 // SpotBugs job의 Java·계약 staging 단계가 들어 있는 composite. 내용이 바뀌면 이 digest를 함께 갱신해야 gate가 통과한다.
 const SETUP_COMPOSITE_PATH = '.github/actions/backend-setup/action.yml';
-const SETUP_COMPOSITE_DIGEST = 'f5806526225d608448680dff54e26c07dcfaf3633119592b0a77fc71eb7cd27b';
+const SETUP_COMPOSITE_DIGEST = '9b066da7b90ecce0ad1ce38097aea852988a9c3a776346a02945e9fab77230c7';
 const SPOTBUGS_TEST_TRIGGERS = ['test output becomes packaged/runtime', 'custom source set mixes test and production outputs', 'bootJar or image admits test classes', 'Gradle source-set/classpath semantics change'];
 const EXCLUSION_TRIGGERS = ['source byte change', 'class/member/annotation or responsibility change', 'plugin/JDK/task/source-set change', 'broader class/package Match', 'Backend #4 remediation'];
 const FINAL_REQUIREMENTS = ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'];

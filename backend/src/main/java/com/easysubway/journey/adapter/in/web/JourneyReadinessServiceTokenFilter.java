@@ -16,12 +16,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 public final class JourneyReadinessServiceTokenFilter extends OncePerRequestFilter {
 
-	public static final String ROLE = "ROLE_JOURNEY_READINESS";
+	public static final String READINESS_ROLE = "ROLE_JOURNEY_READINESS";
+	public static final String CONTROL_ROLE = "ROLE_JOURNEY_CONTROL";
+	public static final String ROLE = READINESS_ROLE;
 
-	private final byte[] expectedToken;
+	private final byte[] expectedReadinessToken;
+	private final byte[] expectedControlToken;
 
-	public JourneyReadinessServiceTokenFilter(String expectedToken) {
-		this.expectedToken = expectedToken.getBytes(StandardCharsets.UTF_8);
+	public JourneyReadinessServiceTokenFilter(String expectedReadinessToken, String expectedControlToken) {
+		this.expectedReadinessToken = expectedReadinessToken.getBytes(StandardCharsets.UTF_8);
+		this.expectedControlToken = expectedControlToken.getBytes(StandardCharsets.UTF_8);
 	}
 
 	@Override
@@ -32,14 +36,23 @@ public final class JourneyReadinessServiceTokenFilter extends OncePerRequestFilt
 		String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
 		if (authorization != null
 			&& authorization.length() > 7
-			&& authorization.regionMatches(true, 0, "Bearer ", 0, 7)
-			&& MessageDigest.isEqual(
-				authorization.substring(7).getBytes(StandardCharsets.UTF_8), expectedToken)) {
-			var authentication = new UsernamePasswordAuthenticationToken(
-				"journey-readiness",
-				null,
-				List.of(new SimpleGrantedAuthority(ROLE)));
-			SecurityContextHolder.getContext().setAuthentication(authentication);
+			&& authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+			byte[] presented = authorization.substring(7).getBytes(StandardCharsets.UTF_8);
+			boolean controlMatched = MessageDigest.isEqual(presented, expectedControlToken);
+			boolean readinessMatched = MessageDigest.isEqual(presented, expectedReadinessToken);
+			if (controlMatched) {
+				var authentication = new UsernamePasswordAuthenticationToken(
+					"journey-control",
+					null,
+					List.of(new SimpleGrantedAuthority(CONTROL_ROLE)));
+				SecurityContextHolder.getContext().setAuthentication(authentication);
+			} else if (readinessMatched) {
+				var authentication = new UsernamePasswordAuthenticationToken(
+					"journey-readiness",
+					null,
+					List.of(new SimpleGrantedAuthority(READINESS_ROLE)));
+				SecurityContextHolder.getContext().setAuthentication(authentication);
+			}
 		}
 		filterChain.doFilter(request, response);
 	}

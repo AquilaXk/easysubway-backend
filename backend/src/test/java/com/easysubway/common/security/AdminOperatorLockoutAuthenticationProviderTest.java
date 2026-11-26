@@ -10,6 +10,7 @@ import com.easysubway.admin.identity.domain.AdminIdentity;
 import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
+import com.easysubway.common.web.TrustedClientIpResolver;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,6 +19,7 @@ import java.time.ZoneId;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
@@ -26,6 +28,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @DisplayName("관리자 Basic auth 실패 잠금 provider")
 class AdminOperatorLockoutAuthenticationProviderTest {
@@ -248,6 +252,108 @@ class AdminOperatorLockoutAuthenticationProviderTest {
 
 		assertThat(provider.authenticate(token("app-user", "app-password")).isAuthenticated())
 			.isTrue();
+	}
+
+	@Test
+	@DisplayName("HTTP 로그인 잠금은 (loginId, clientIp) 단위로 분리되어 공격자 IP의 실패로 정상 관리자 IP가 잠기지 않는다")
+	void httpLockoutIsScopedPerClientIpWithoutLockingOtherIps() {
+		var clock = new MutableClock(Instant.parse("2026-06-22T00:00:00Z"));
+		var repository = new InMemoryAdminIdentityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		repository.upsertBootstrap(new AdminIdentity(
+			"admin-user",
+			"관리자",
+			null,
+			passwordEncoder.encode("admin-password"),
+			AdminIdentityAuthMethod.LOCAL,
+			AdminIdentityRole.ADMIN,
+			AdminIdentityStatus.ACTIVE,
+			0,
+			null,
+			LocalDateTime.now(clock),
+			null,
+			false,
+			null,
+			true,
+			LocalDateTime.now(clock),
+			LocalDateTime.now(clock)
+		));
+		var provider = new AdminOperatorLockoutAuthenticationProvider(
+			new AdminIdentityUserDetailsService(repository, new ConcurrentUserDetailsManager(), clock),
+			passwordEncoder,
+			repository,
+			2,
+			Duration.ofMinutes(5),
+			clock,
+			TrustedClientIpResolver.fromCidrs("10.0.0.0/8")
+		);
+
+		try {
+			var attackerRequest = new MockHttpServletRequest();
+			attackerRequest.setRemoteAddr("10.1.2.3");
+			attackerRequest.addHeader("X-Forwarded-For", "198.51.100.5");
+			RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(attackerRequest));
+			assertThatThrownBy(() -> provider.authenticate(token("admin-user", "bad-password")))
+				.isInstanceOf(BadCredentialsException.class);
+			assertThatThrownBy(() -> provider.authenticate(token("admin-user", "bad-password")))
+				.isInstanceOf(BadCredentialsException.class);
+			assertThatThrownBy(() -> provider.authenticate(token("admin-user", "admin-password")))
+				.isInstanceOf(LockedException.class);
+
+			var legitimateAdminRequest = new MockHttpServletRequest();
+			legitimateAdminRequest.setRemoteAddr("10.1.2.3");
+			legitimateAdminRequest.addHeader("X-Forwarded-For", "203.0.113.10");
+			RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(legitimateAdminRequest));
+			assertThat(provider.authenticate(token("admin-user", "admin-password")).isAuthenticated())
+				.isTrue();
+
+			// 정상 관리자 로그인 성공 후에도 공격자 IP는 잠금 기간 동안 계속 차단된다.
+			RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(attackerRequest));
+			assertThatThrownBy(() -> provider.authenticate(token("admin-user", "admin-password")))
+				.isInstanceOf(LockedException.class);
+
+			clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+			assertThat(provider.authenticate(token("admin-user", "admin-password")).isAuthenticated())
+				.isTrue();
+		} finally {
+			RequestContextHolder.resetRequestAttributes();
+		}
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 사용자 ID 대입 시 BCrypt 더미 비교를 수행하지 않고 즉시 거부한다")
+	void unknownUsernameSkipsDummyBcryptEvaluation() {
+		var clock = new MutableClock(Instant.parse("2026-06-22T00:00:00Z"));
+		var repository = new InMemoryAdminIdentityRepository();
+		var delegateEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var matchesCount = new AtomicInteger();
+		PasswordEncoder countingEncoder = new PasswordEncoder() {
+			@Override
+			public String encode(CharSequence rawPassword) {
+				return delegateEncoder.encode(rawPassword);
+			}
+
+			@Override
+			public boolean matches(CharSequence rawPassword, String encodedPassword) {
+				matchesCount.incrementAndGet();
+				return delegateEncoder.matches(rawPassword, encodedPassword);
+			}
+		};
+		var provider = new AdminOperatorLockoutAuthenticationProvider(
+			new AdminIdentityUserDetailsService(repository, new ConcurrentUserDetailsManager(), clock),
+			countingEncoder,
+			repository,
+			5,
+			Duration.ofMinutes(5),
+			clock
+		);
+
+		for (int i = 0; i < 10; i++) {
+			String loginId = "unknown-admin-" + i;
+			assertThatThrownBy(() -> provider.authenticate(token(loginId, "bad-password")))
+				.isInstanceOf(BadCredentialsException.class);
+		}
+		assertThat(matchesCount.get()).isZero();
 	}
 
 	private AdminOperatorLockoutAuthenticationProvider provider(

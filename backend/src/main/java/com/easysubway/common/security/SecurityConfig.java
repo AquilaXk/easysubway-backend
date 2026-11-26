@@ -36,6 +36,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -53,6 +54,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.RememberMeServices;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.rememberme.TokenBasedRememberMeServices;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
@@ -208,13 +210,27 @@ public class SecurityConfig {
 		new IpAddressMatcher("172.16.0.0/12"),
 		new IpAddressMatcher("192.168.0.0/16")
 	);
+	private static final List<String> PROXY_FORWARDING_HEADERS = List.of(
+		"X-Forwarded-For",
+		"X-Real-IP",
+		"Forwarded",
+		"CF-Connecting-IP"
+	);
 
 	private static AuthorizationManager<RequestAuthorizationContext> internalNetworkOnly() {
 		return (authentication, context) -> {
-			String remoteAddr = context.getRequest().getRemoteAddr();
-			boolean internal = remoteAddr != null
-				&& INTERNAL_NETWORK_MATCHERS.stream().anyMatch(matcher -> matcher.matches(remoteAddr));
-			return new AuthorizationDecision(internal);
+			var request = context.getRequest();
+			String remoteAddr = request.getRemoteAddr();
+			if (remoteAddr == null || INTERNAL_NETWORK_MATCHERS.stream().noneMatch(matcher -> matcher.matches(remoteAddr))) {
+				return new AuthorizationDecision(false);
+			}
+			for (String header : PROXY_FORWARDING_HEADERS) {
+				var values = request.getHeaders(header);
+				if ((values != null && values.hasMoreElements()) || request.getHeader(header) != null) {
+					return new AuthorizationDecision(false);
+				}
+			}
+			return new AuthorizationDecision(true);
 		};
 	}
 
@@ -269,7 +285,10 @@ public class SecurityConfig {
 		AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler,
 		LoginNoticeFlash loginNoticeFlash,
 		RememberMeServices adminRememberMeServices,
-		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
+		TrustedClientIpResolver trustedClientIpResolver,
+		Environment environment,
+		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled,
+		@Value("${easysubway.admin.login-rate-limit.per-minute:0}") int loginRateLimitPerMinute
 	) throws Exception {
 		// 관리자 확인 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
 		HttpSecurity configured = http
@@ -377,6 +396,12 @@ public class SecurityConfig {
 					response.sendRedirect(request.getContextPath() + "/admin/login?logout"))
 				.permitAll()
 			)
+			.addFilterBefore(
+				new AdminLoginRateLimitFilter(
+					trustedClientIpResolver,
+					resolveLoginRateLimit(loginRateLimitPerMinute, environment),
+					Clock.systemUTC()),
+				UsernamePasswordAuthenticationFilter.class)
 			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class);
 		configureBasicAuth(configured, basicAuthEnabled);
 		return configured.build();
@@ -388,7 +413,10 @@ public class SecurityConfig {
 		HttpSecurity http,
 		AdminOperatorAuditFilter auditFilter,
 		LoginNoticeFlash loginNoticeFlash,
-		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
+		TrustedClientIpResolver trustedClientIpResolver,
+		Environment environment,
+		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled,
+		@Value("${easysubway.admin.login-rate-limit.per-minute:0}") int loginRateLimitPerMinute
 	) throws Exception {
 		// 운영기관 전용 화면은 전역 관리자와 별도 역할로 분리해 이후 기관별 범위 제한을 붙일 수 있게 한다.
 		HttpSecurity configured = http
@@ -426,6 +454,12 @@ public class SecurityConfig {
 					response.sendRedirect(request.getContextPath() + "/operator/login?logout"))
 				.permitAll()
 			)
+			.addFilterBefore(
+				new AdminLoginRateLimitFilter(
+					trustedClientIpResolver,
+					resolveLoginRateLimit(loginRateLimitPerMinute, environment),
+					Clock.systemUTC()),
+				UsernamePasswordAuthenticationFilter.class)
 			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class);
 		configureBasicAuth(configured, basicAuthEnabled);
 		return configured.build();
@@ -590,6 +624,7 @@ public class SecurityConfig {
 		UserDetailsService userDetailsService,
 		PasswordEncoder passwordEncoder,
 		AdminIdentityRepository adminIdentityRepository,
+		TrustedClientIpResolver trustedClientIpResolver,
 		@Value("${easysubway.admin.lockout.max-failures:5}") int maxFailures,
 		@Value("${easysubway.admin.lockout.duration:PT15M}") String lockoutDuration
 	) {
@@ -599,7 +634,8 @@ public class SecurityConfig {
 			adminIdentityRepository,
 			maxFailures,
 			Duration.parse(lockoutDuration),
-			Clock.systemUTC()
+			Clock.systemUTC(),
+			trustedClientIpResolver
 		);
 	}
 
@@ -615,7 +651,7 @@ public class SecurityConfig {
 		@Value("${easysubway.admin.password:}") String adminPassword,
 		Environment environment
 	) {
-		boolean production = Arrays.asList(environment.getActiveProfiles()).contains("prod");
+		boolean production = isProductionProfile(environment);
 		var services = new TokenBasedRememberMeServices(
 			resolveRememberMeKey(key, adminPassword, production),
 			userDetailsService
@@ -631,10 +667,14 @@ public class SecurityConfig {
 
 	static String resolveRememberMeKey(String configuredKey, String fallbackSecret, boolean production) {
 		if (production) {
-			if (configuredKey == null || configuredKey.isBlank() || configuredKey.length() < 32) {
+			String trimmed = configuredKey == null ? "" : configuredKey.trim();
+			if (trimmed.length() < 32) {
 				throw new IllegalStateException("운영 관리자 로그인 유지 서명 키는 32자 이상이어야 합니다.");
 			}
-			return configuredKey;
+			if (trimmed.chars().distinct().count() < 8) {
+				throw new IllegalStateException("운영 관리자 로그인 유지 서명 키는 고엔트로피 키여야 합니다.");
+			}
+			return trimmed;
 		}
 		if (configuredKey != null && !configuredKey.isBlank()) {
 			return configuredKey;
@@ -643,6 +683,17 @@ public class SecurityConfig {
 			? UUID.randomUUID().toString()
 			: fallbackSecret;
 		return deriveRememberMeKey(secret);
+	}
+
+	static int resolveLoginRateLimit(int configuredLimit, Environment environment) {
+		if (configuredLimit > 0) {
+			return configuredLimit;
+		}
+		return isProductionProfile(environment) ? 10 : 120;
+	}
+
+	static boolean isProductionProfile(Environment environment) {
+		return environment.acceptsProfiles(Profiles.of("prod", "staging", "release", "prod-like"));
 	}
 
 	static String deriveRememberMeKey(String secret) {
@@ -743,7 +794,7 @@ public class SecurityConfig {
 	}
 
 	private void validateProdAdminCredentials(String adminUsername, String adminPassword, Environment environment) {
-		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")
+		if (isProductionProfile(environment)
 			&& (adminUsername.isBlank() || adminPassword.isBlank())) {
 			throw new IllegalStateException("운영 관리자 계정 설정이 필요합니다.");
 		}
@@ -810,7 +861,7 @@ public class SecurityConfig {
 		Environment environment,
 		Clock clock
 	) {
-		if (!Arrays.asList(environment.getActiveProfiles()).contains("prod") || !basicAuthEnabled) {
+		if (!isProductionProfile(environment) || !basicAuthEnabled) {
 			return;
 		}
 		if (exceptionOwner.isBlank() || exceptionExpiresAt.isBlank()) {

@@ -32,6 +32,8 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	private static final URI TOPIS_BASE_URI = URI.create("http://swopenapi.seoul.go.kr/api/subway/");
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMillis(1500);
 	private static final int MAX_RESPONSE_BYTES = 1_048_576;
+	private static final int POSITION_PAGE_SIZE = 200;
+	private static final int MAX_POSITION_PAGES = 5;
 	private static final Pattern ETA_PATTERN = Pattern.compile("(\\d+)\\s*분(?:\\s*(\\d+)\\s*초)?|(\\d+)\\s*초");
 
 	/**
@@ -118,30 +120,53 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		if (serviceKey.isBlank()) {
 			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 		}
-		JsonNode payload = request("realtimePosition/0/10/%s".formatted(pathSegment(query.lineName())));
-		JsonNode items = payload.path("realtimePositionList");
-		if (!items.isArray()) {
-			return emptyWhenNoData(payload);
-		}
+		String encodedLine = pathSegment(query.lineName());
 		List<RealtimeTrainPosition> positions = new ArrayList<>();
-		for (JsonNode item : items) {
-			String lineId = stringOrEmpty(item, "subwayId");
-			String stationName = stringOrEmpty(item, "statnNm");
-			String trainNo = stringOrEmpty(item, "trainNo");
-			if (lineId.isBlank() || stationName.isBlank() || trainNo.isBlank()) {
-				continue;
+		int receivedCount = 0;
+		int startIndex = 0;
+		Integer expectedTotal = null;
+		for (int page = 0; page < MAX_POSITION_PAGES; page++) {
+			int endIndex = startIndex + POSITION_PAGE_SIZE - 1;
+			JsonNode payload = request("realtimePosition/%d/%d/%s".formatted(startIndex, endIndex, encodedLine));
+			JsonNode items = payload.path("realtimePositionList");
+			if (!items.isArray()) {
+				List<RealtimeTrainPosition> empty = emptyWhenNoData(payload);
+				if (page == 0) {
+					return empty;
+				}
+				break;
 			}
-			positions.add(new RealtimeTrainPosition(
-				lineId,
-				stationName,
-				trainNo,
-				stringOrEmpty(item, "trainSttus"),
-				stringOrEmpty(item, "updnLine"),
-				stringOrEmpty(item, "statnTnm"),
-				stringOrEmpty(item, "recptnDt")
-			));
+			if (items.isEmpty()) {
+				break;
+			}
+			receivedCount += items.size();
+			for (JsonNode item : items) {
+				String lineId = stringOrEmpty(item, "subwayId");
+				String stationName = stringOrEmpty(item, "statnNm");
+				String trainNo = stringOrEmpty(item, "trainNo");
+				if (lineId.isBlank() || stationName.isBlank() || trainNo.isBlank()) {
+					continue;
+				}
+				positions.add(new RealtimeTrainPosition(
+					lineId,
+					stationName,
+					trainNo,
+					stringOrEmpty(item, "trainSttus"),
+					stringOrEmpty(item, "updnLine"),
+					stringOrEmpty(item, "statnTnm"),
+					stringOrEmpty(item, "recptnDt")
+				));
+			}
+			Integer pageTotal = reportedTotalCount(payload);
+			if (pageTotal != null) {
+				expectedTotal = pageTotal;
+			}
+			startIndex += items.size();
+			if (expectedTotal != null ? startIndex >= expectedTotal : items.size() < POSITION_PAGE_SIZE) {
+				break;
+			}
 		}
-		return requiredItemsOnly("TRAIN_POSITIONS", items.size(), positions);
+		return requiredItemsOnly("TRAIN_POSITIONS", receivedCount, positions);
 	}
 
 	/**
@@ -255,6 +280,20 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	private String stringOrEmpty(JsonNode node, String fieldName) {
 		JsonNode value = node.path(fieldName);
 		return value.isTextual() || value.isNumber() ? value.asText() : "";
+	}
+
+	private Integer reportedTotalCount(JsonNode payload) {
+		JsonNode errorMessage = payload.path("errorMessage");
+		Integer total = positiveInt(errorMessage, "total");
+		if (total != null) {
+			return total;
+		}
+		Integer totalCount = positiveInt(errorMessage, "totalCount");
+		if (totalCount != null) {
+			return totalCount;
+		}
+		Integer rootTotal = positiveInt(payload, "total");
+		return rootTotal != null ? rootTotal : positiveInt(payload, "totalCount");
 	}
 
 	static Integer positiveInt(JsonNode node, String fieldName) {

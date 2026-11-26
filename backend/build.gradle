@@ -449,6 +449,9 @@ def journeyContractsLock = layout.projectDirectory.file('journey-contracts.lock.
 def stageContracts = tasks.register('stageContracts', Exec) {
 	inputs.file(layout.projectDirectory.file('tools/stage-contracts.mjs'))
 	inputs.file(layout.projectDirectory.file('contracts.lock.json'))
+	inputs.file(journeyContractsLock)
+		.withPropertyName('journeyContractsLock')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.files(providers.provider {
 		def bundle = contractsBundle.orNull
 		bundle == null || bundle.isBlank() ? [] : [file(bundle)]
@@ -458,8 +461,14 @@ def stageContracts = tasks.register('stageContracts', Exec) {
 	outputs.dir(layout.buildDirectory.dir('contracts-staging'))
 	outputs.upToDateWhen {
 		def bundle = contractsBundle.orNull
+		def lock = new groovy.json.JsonSlurper().parse(journeyContractsLock.asFile)
+		def payloadSha256 = lock?.payload?.sha256
+		def marker = journeyContractsStagingMarker.get().asFile
 		bundle != null && !bundle.isBlank()
 			&& java.nio.file.Files.isRegularFile(file(bundle).toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			&& java.nio.file.Files.isRegularFile(marker.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			&& payloadSha256 instanceof String
+			&& marker.getText('UTF-8') == "${payloadSha256}\n"
 	}
 	executable = 'node'
 	args 'tools/stage-contracts.mjs', '--lock', 'contracts.lock.json'
@@ -498,18 +507,18 @@ def stageContracts = tasks.register('stageContracts', Exec) {
 			def stagingDir = journeyContractsStaging.get().asFile
 			stagingDir.mkdirs()
 			def marker = journeyContractsStagingMarker.get().asFile
-			if (!marker.exists()) {
-				marker.setText("${payloadSha256}\n", 'UTF-8')
-			}
-			if (journeyLock.resources instanceof List) {
-				journeyLock.resources.each { res ->
-					def src = file(res.path)
-					if (src.exists()) {
-						def dest = new File(stagingDir, res.path as String)
-						dest.parentFile.mkdirs()
-						dest.bytes = src.bytes
+			if (!marker.exists() || marker.getText('UTF-8') != "${payloadSha256}\n") {
+				if (journeyLock.resources instanceof List) {
+					journeyLock.resources.each { res ->
+						def src = file("../${res.path}")
+						if (src.exists() && java.nio.file.Files.isRegularFile(src.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+							def dest = new File(stagingDir, res.path as String)
+							dest.parentFile.mkdirs()
+							dest.bytes = src.bytes
+						}
 					}
 				}
+				marker.setText("${payloadSha256}\n", 'UTF-8')
 			}
 		}
 	}
