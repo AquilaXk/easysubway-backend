@@ -45,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -764,5 +765,103 @@ class JdbcTransitMasterOverrideRepositoryTest {
 		public Instant instant() {
 			return instant;
 		}
+	}
+
+	@Test
+	@DisplayName("생성자 provider null·단건/목록 번들 카탈로그 병합·actorless 저장·DB 조회 예외 분기를 처리한다")
+	void coversProvidersBundleCatalogSingleAndListMergesActorlessSavesAndDbErrors() {
+		DataSource dataSource = overrideDataSource();
+		ObjectMapper mapper = objectMapper();
+
+		// 1) 3-arg 생성자 및 4-arg ObjectProvider null / 빈 BeanFactory 분기
+		var repoThreeArg = new JdbcTransitMasterOverrideRepository(dataSource, mapper, new SimpleMeterRegistry());
+		assertThat(repoThreeArg.loadStation("station-sangnoksu")).isPresent();
+
+		var repoNullProviders = new JdbcTransitMasterOverrideRepository(
+			dataSource, mapper, (ObjectProvider<MeterRegistry>) null, (ObjectProvider<RouteBundleActivationRegistry>) null);
+		assertThat(repoNullProviders.masterDataCapability().artifactVersion()).isEqualTo("static-seed+overrides");
+		assertThat(repoNullProviders.loadStations()).isNotEmpty();
+
+		var emptyFactory = new StaticListableBeanFactory();
+		var repoEmptyProviders = new JdbcTransitMasterOverrideRepository(
+			dataSource, mapper,
+			emptyFactory.getBeanProvider(MeterRegistry.class),
+			emptyFactory.getBeanProvider(RouteBundleActivationRegistry.class));
+		assertThat(repoEmptyProviders.loadAccessibilityFacilities()).isNotEmpty();
+
+		// 2) 비카탈로그 runtimeView 분기
+		Instant t0 = Instant.parse("2026-08-12T00:00:00Z");
+		var clock = new MutableClock(t0);
+		var nonCatalogRegistry = new RouteBundleActivationRegistry(clock);
+		String nonCatalogSha = LoadScenarioBundles.manifestSha256("a");
+		nonCatalogRegistry.stage(LoadScenarioBundles.candidate("a", new RouteBundleRuntimeView() {}, t0), 0);
+		nonCatalogRegistry.activate(nonCatalogSha, 0);
+		var repoNonCatalog = new JdbcTransitMasterOverrideRepository(
+			dataSource, mapper, new SimpleMeterRegistry(), () -> nonCatalogRegistry);
+		assertThat(repoNonCatalog.loadStation("station-only-bundle")).isEmpty();
+		assertThat(repoNonCatalog.loadStations()).isNotEmpty();
+		assertThat(repoNonCatalog.loadStationExits()).isNotEmpty();
+		assertThat(repoNonCatalog.loadAccessibilityFacility("facility-only-bundle")).isEmpty();
+		assertThat(repoNonCatalog.loadAccessibilityFacilities()).isNotEmpty();
+
+		// 3) 카탈로그 활성 상태 + null/blank + 시드 충돌 + 신규 번들 엔트리 + enum 폴백 분기
+		var registry = new RouteBundleActivationRegistry(clock);
+		var catalog = new BundleCatalogRuntime(
+			new LinkedHashSet<>(List.of("station-sangnoksu", "station-bundle-only")),
+			List.of(
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-sangnoksu-elevator-1", "station-sangnoksu", null,
+					"ELEVATOR", "중복 시드 엘리베이터", "", "", "", "OPERATING", "OPERATIONAL", "OFFICIAL_FILE", 0L, 90),
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-bundle-esc", "station-bundle-only", "exit-bundle-1",
+					"ESCALATOR", "에스컬레이터", "B1", "1F", "안내", "BROKEN", "STOPPED", "FIELD_VERIFIED", 0L, 60),
+				new RouteBundleFacilityCatalog.BundleFacility(
+					"facility-bundle-fallback", "station-bundle-only", null,
+					"UNKNOWN_CUSTOM_TYPE", "기타 시설", "", "", "", "OTHER_STATUS", "OTHER_OP", "UNKNOWN_SOURCE", 0L, 10)
+			),
+			List.of(
+				new RouteBundleFacilityCatalog.BundleStationExit(
+					"exit-sangnoksu-1", "station-sangnoksu", "1", "중복 시드 출구", null, null, false, "OFFICIAL_FILE"),
+				new RouteBundleFacilityCatalog.BundleStationExit(
+					"exit-bundle-1", "station-bundle-only", "1", "번들 전용 출구", 35.1, 129.0, true, "OFFICIAL_API")
+			)
+		);
+		String catalogSha = LoadScenarioBundles.manifestSha256("b");
+		registry.stage(LoadScenarioBundles.candidate("b", catalog, t0), 0);
+		registry.activate(catalogSha, 0);
+		var repoCatalog = new JdbcTransitMasterOverrideRepository(
+			dataSource, mapper, new SimpleMeterRegistry(), () -> registry);
+
+		assertThat(repoCatalog.loadStation(null)).isEmpty();
+		assertThat(repoCatalog.loadStation(" ")).isEmpty();
+		assertThat(repoCatalog.loadStation("station-not-in-bundle")).isEmpty();
+		assertThat(repoCatalog.loadStation("station-bundle-only")).isPresent();
+		assertThat(repoCatalog.loadStations()).anySatisfy(s -> assertThat(s.id()).isEqualTo("station-bundle-only"));
+		assertThat(repoCatalog.loadStationExits()).anySatisfy(e -> assertThat(e.id()).isEqualTo("exit-bundle-1"));
+
+		assertThat(repoCatalog.loadAccessibilityFacility(null)).isEmpty();
+		assertThat(repoCatalog.loadAccessibilityFacility(" ")).isEmpty();
+		assertThat(repoCatalog.loadAccessibilityFacility("facility-missing")).isEmpty();
+		assertThat(repoCatalog.loadAccessibilityFacility("facility-bundle-esc")).get().satisfies(f -> {
+			assertThat(f.type()).isEqualTo(AccessibilityFacilityType.ESCALATOR);
+			assertThat(f.status()).isEqualTo(AccessibilityFacilityStatus.UNKNOWN);
+		});
+		assertThat(repoCatalog.loadAccessibilityFacility("facility-bundle-fallback")).isPresent();
+		assertThat(repoCatalog.loadAccessibilityFacilities())
+			.anySatisfy(f -> assertThat(f.id()).isEqualTo("facility-bundle-esc"))
+			.anySatisfy(f -> assertThat(f.id()).isEqualTo("facility-bundle-fallback"));
+
+		// 4) actorless 저장 메서드(saveFacilityStatus 3-arg, saveAccessibilityFacility, saveStationLayoutSource, saveRouteNode, saveRouteEdge)
+		repoCatalog.saveFacilityStatus("facility-sangnoksu-elevator-1", AccessibilityFacilityStatus.UNDER_CONSTRUCTION, LocalDate.of(2026, 8, 12));
+		var facilityToSave = repoCatalog.loadAccessibilityFacility("facility-sangnoksu-elevator-1").orElseThrow();
+		repoCatalog.saveAccessibilityFacility(facilityToSave);
+		repoCatalog.saveStationLayoutSource(repoCatalog.loadStationLayoutSources().getFirst());
+		repoCatalog.saveRouteNode(repoCatalog.loadRouteNodes().getFirst());
+		repoCatalog.saveRouteEdge(repoCatalog.loadRouteEdges().getFirst());
+
+		// 5) DB 테이블 누락 시 loadAccessibilityFacility DataAccessException -> TransitDataAccessException
+		var emptyRepo = new JdbcTransitMasterOverrideRepository(emptyDataSource(), mapper);
+		assertThatThrownBy(() -> emptyRepo.loadAccessibilityFacility("facility-sangnoksu-elevator-1"))
+			.isInstanceOf(TransitDataAccessException.class);
 	}
 }

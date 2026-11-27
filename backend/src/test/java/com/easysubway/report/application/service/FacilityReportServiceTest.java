@@ -9,6 +9,7 @@ import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepos
 import com.easysubway.report.adapter.out.storage.LocalFacilityReportPhotoStorage;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.CreatedFacilityReport;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
@@ -62,8 +63,11 @@ import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.mock.env.MockEnvironment;
 
 @DisplayName("시설 신고 서비스")
 class FacilityReportServiceTest {
@@ -2245,5 +2249,244 @@ class FacilityReportServiceTest {
 		} catch (java.security.NoSuchAlgorithmException exception) {
 			throw new IllegalStateException(exception);
 		}
+	}
+
+	@Test
+	@DisplayName("생성자·prod pepper 검증·사진 보상 삭제 예외·운영 스토어 상태 변경 여부를 검증한다")
+	void coversConstructorPepperPhotoCleanupAndReadOnlyStoreNotificationBranches() {
+		Clock fixedClock = Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"));
+		var reports = new InMemoryFacilityReportRepository();
+		MockEnvironment prodEnv = new MockEnvironment().withProperty("spring.profiles.active", "prod");
+		prodEnv.setActiveProfiles("prod");
+		var beanFactory = new StaticListableBeanFactory();
+		ObjectProvider<FacilityOperationalStatusStore> emptyProvider =
+			beanFactory.getBeanProvider(FacilityOperationalStatusStore.class);
+
+		// 1) @Autowired 13-arg & 12-arg 생성자 + prod pepper invalid / null environment / empty pepper
+		for (String invalidPepper : List.of("local-dev-report-receipt-pepper", " ", "short")) {
+			var invalidProdService = new FacilityReportService(
+				transitRepository, transitRepository, reports, reports,
+				cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k", "t"),
+				cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+				objectKey -> Optional.empty(), invalidPepper, prodEnv, null
+			);
+			assertThatThrownBy(invalidProdService::afterPropertiesSet)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("pepper");
+			assertThatThrownBy(() -> invalidProdService.createReportWithReceipt(
+				reportCommand("prod-u", "missing submission id")))
+				.isInstanceOf(InvalidFacilityReportException.class);
+			assertThatThrownBy(() -> invalidProdService.createReportWithReceipt(new CreateFacilityReportCommand(
+				"prod-u", "prod-sub-1", "station-sangnoksu", "facility-sangnoksu-elevator-1",
+				FacilityReportType.BROKEN, "pepper fail", null, null, null, null, null, null, null, null, null)))
+				.isInstanceOf(IllegalStateException.class);
+		}
+		var nullPepperProd = new FacilityReportService(
+			transitRepository, transitRepository, reports, reports,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k", "t"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			objectKey -> Optional.empty(), (String) null, prodEnv
+		);
+		assertThatThrownBy(nullPepperProd::afterPropertiesSet).isInstanceOf(IllegalStateException.class);
+
+		var validProd12 = new FacilityReportService(
+			transitRepository, transitRepository, reports, reports,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k", "t"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			objectKey -> Optional.empty(), "a".repeat(32), prodEnv
+		);
+		assertThatNoException().isThrownBy(validProd12::afterPropertiesSet);
+
+		var devNullPepper13 = new FacilityReportService(
+			transitRepository, transitRepository, reports, reports,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k", "t"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			objectKey -> Optional.empty(), null, new MockEnvironment(), emptyProvider
+		);
+		assertThatNoException().isThrownBy(devNullPepper13::afterPropertiesSet);
+		assertThat(devNullPepper13.findReportByClientSubmissionId(null)).isEmpty();
+		assertThat(devNullPepper13.findReportByClientSubmissionId("  ")).isEmpty();
+
+		var nullEnv12 = new FacilityReportService(
+			transitRepository, transitRepository, reports, reports,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k", "t"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			objectKey -> Optional.empty(), "valid-non-prod", (org.springframework.core.env.Environment) null
+		);
+		assertThatNoException().isThrownBy(nullEnv12::afterPropertiesSet);
+
+		// 2) 편의 생성자 오버로드(5/6/7/8/11-arg) + listReviewAudits 기본 람다 + defaultPhotoStoragePort/Loader
+		FacilityOperationalStatusStore noOpStore = new FacilityOperationalStatusStore() {
+			@Override
+			public List<FacilityOperationalStatus> loadStatuses() {
+				return List.of();
+			}
+
+			@Override
+			public Optional<Instant> lastSuccessfulCollectionAt(String feed) {
+				return Optional.empty();
+			}
+
+			@Override
+			public FeedApplyResult applyFeedCollection(String feed, List<FeedObservation> observations, Instant observedAt) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+				return new AdminVerifiedResult(true, Optional.empty(), Optional.empty());
+			}
+		};
+		var svc5a = new FacilityReportService(transitRepository, transitRepository, reports, reports, cmd -> {});
+		var svc5b = service;
+		var svc6 = new FacilityReportService(transitRepository, transitRepository, reports, reports, cmd -> {}, fixedClock);
+		var svc7a = new FacilityReportService(transitRepository, transitRepository, noOpStore, reports, reports, cmd -> {}, fixedClock);
+		var svc7b = new FacilityReportService(transitRepository, transitRepository, reports, reports, cmd -> {}, cmd -> {}, fixedClock);
+		var svc8 = new FacilityReportService(transitRepository, transitRepository, reports, reports, cmd -> {}, cmd -> {}, audit -> audit, fixedClock);
+		var svc11 = new FacilityReportService(
+			transitRepository, transitRepository, reports, reports,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k", "t"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(), fixedClock, "local-dev-report-receipt-pepper"
+		);
+		var auditTarget = svc6.createReport(reportCommand("u-audit", "for audit"));
+		for (FacilityReportService svc : List.of(svc5a, svc6, svc7a, svc7b, svc8)) {
+			assertThat(svc.listReviewAudits(auditTarget.id())).isEmpty();
+		}
+		var selfAuditTarget = svc5b.createReport(reportCommand("u-audit-5b", "for audit 5b"));
+		assertThat(svc5b.listReviewAudits(selfAuditTarget.id())).isEmpty();
+		assertThat(svc11.createReportWithReceipt(new CreateFacilityReportCommand(
+			"u11", "client-11", "station-sangnoksu", "facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN, "blank photo metadata",
+			"  ", "  ", null, "  ", "  ", null, null, null, null
+		)).receiptToken()).isNotBlank();
+		assertThatThrownBy(() -> svc7a.createReport(photoReportCommand("a.jpg", "image/jpeg", validJpegBase64())))
+			.isInstanceOf(InvalidFacilityReportException.class);
+		byte[] jpeg = validJpegBytes();
+		assertThatThrownBy(() -> svc7a.createReport(objectPhotoReportCommand(
+			"client-obj-default", "facility-reports/unclaimed/u/obj.jpg", sha256HexForTest(jpeg), (long) jpeg.length)))
+			.isInstanceOf(RuntimeException.class);
+
+		// 3) deleteStoredPhotoOnSaveFailure: loadPort 기반 삭제(예외 삼킴), DeletePort 미구현, blank objectKey
+		var failingSaveRepo = new InMemoryFacilityReportRepository() {
+			@Override
+			public FacilityReport saveReport(FacilityReport report) {
+				throw new IllegalStateException("DB save failed");
+			}
+		};
+		var throwingDeleteLoader = new ThrowingDeletePhotoLoader(
+			"facility-reports/unclaimed/u/fail-1.jpg", "image/jpeg", jpeg);
+		var svcDeleteViaLoader = new FacilityReportService(
+			transitRepository, transitRepository, failingSaveRepo, failingSaveRepo,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k-1", "t-1"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			throwingDeleteLoader, fixedClock, "local-dev-report-receipt-pepper"
+		);
+		assertThatThrownBy(() -> svcDeleteViaLoader.createReport(objectPhotoReportCommand(
+			"client-del-loader", "facility-reports/unclaimed/u/fail-1.jpg", sha256HexForTest(jpeg), (long) jpeg.length)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("DB save failed");
+		assertThat(throwingDeleteLoader.deleteAttempted).isTrue();
+
+		var svcNoDeletePort = new FacilityReportService(
+			transitRepository, transitRepository, failingSaveRepo, failingSaveRepo,
+			cmd -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto("k-2", "t-2"),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			objectKey -> Optional.of(new LoadedFacilityReportPhoto("image/jpeg", jpeg)),
+			fixedClock, "local-dev-report-receipt-pepper"
+		);
+		assertThatThrownBy(() -> svcNoDeletePort.createReport(objectPhotoReportCommand(
+			"client-no-delete", "facility-reports/unclaimed/u/fail-2.jpg", sha256HexForTest(jpeg), (long) jpeg.length)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("DB save failed");
+
+		List<String> nonBlankDeleted = new ArrayList<>();
+		final class BlankKeyDeleteStorage implements StoreFacilityReportPhotoPort, DeleteFacilityReportPhotoPort {
+			@Override
+			public StoredFacilityReportPhoto storeFacilityReportPhoto(StoreFacilityReportPhotoCommand command) {
+				return new StoredFacilityReportPhoto(null, " ");
+			}
+
+			@Override
+			public void deleteFacilityReportPhoto(String objectKey) {
+				nonBlankDeleted.add(objectKey);
+			}
+		}
+		var svcBlankKeys = new FacilityReportService(
+			transitRepository, transitRepository, failingSaveRepo, failingSaveRepo,
+			new BlankKeyDeleteStorage(),
+			cmd -> {}, cmd -> {}, audit -> audit, reportId -> List.of(),
+			objectKey -> Optional.of(new LoadedFacilityReportPhoto("image/jpeg", jpeg)),
+			fixedClock, "local-dev-report-receipt-pepper"
+		);
+		assertThatThrownBy(() -> svcBlankKeys.createReport(objectPhotoReportCommand(
+			"client-blank-del", "facility-reports/unclaimed/u/fail-3.jpg", sha256HexForTest(jpeg), (long) jpeg.length)))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(nonBlankDeleted).isEmpty();
+
+		// 4) !isMasterDataWritable() 분기: recorded=false, 동일 이전 상태, empty 이전 상태 + OPERATING
+		var readOnlyTransit = new UnavailableTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		final class MutableResultStore implements FacilityOperationalStatusStore {
+			AdminVerifiedResult nextResult;
+
+			@Override
+			public List<FacilityOperationalStatus> loadStatuses() {
+				return List.of();
+			}
+
+			@Override
+			public Optional<Instant> lastSuccessfulCollectionAt(String feed) {
+				return Optional.empty();
+			}
+
+			@Override
+			public FeedApplyResult applyFeedCollection(String feed, List<FeedObservation> observations, Instant observedAt) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public AdminVerifiedResult recordAdminVerified(String facilityId, FacilityOperationalState state, Instant verifiedAt) {
+				return nextResult;
+			}
+		}
+		var mutableStore = new MutableResultStore();
+		var roRepo = new InMemoryFacilityReportRepository();
+		var roService = new FacilityReportService(
+			readOnlyTransit, readOnlyTransit, mutableStore, roRepo, roRepo, alertUseCase, fixedClock);
+
+		mutableStore.nextResult = new FacilityOperationalStatusStore.AdminVerifiedResult(
+			false, Optional.empty(), Optional.empty());
+		var r1 = roService.createReport(reportCommand("u-ro-1", FacilityReportType.BROKEN, "not recorded"));
+		roService.reviewReport(reviewCommand(r1.id(), FacilityReportReviewDecision.ACCEPT));
+
+		mutableStore.nextResult = new FacilityOperationalStatusStore.AdminVerifiedResult(
+			true, Optional.of(FacilityOperationalState.OUT_OF_SERVICE), Optional.empty());
+		var r2 = roService.createReport(reportCommand("u-ro-2", FacilityReportType.BROKEN, "same state"));
+		roService.reviewReport(reviewCommand(r2.id(), FacilityReportReviewDecision.ACCEPT));
+
+		mutableStore.nextResult = new FacilityOperationalStatusStore.AdminVerifiedResult(
+			true, Optional.empty(), Optional.empty());
+		var r3 = roService.createReport(reportCommand("u-ro-3", FacilityReportType.RECOVERED, "empty prev operating"));
+		roService.reviewReport(reviewCommand(r3.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(alertUseCase.commands).isEmpty();
+
+		// 5) 5-arg alert lambda, no-photo save failure compensation, listReportsForFacility null/valid, confirmReportResult idempotent
+		var r5a = svc5a.createReport(reportCommand("u-5a", FacilityReportType.RECOVERED, "trigger 5a"));
+		assertThat(svc5a.reviewReport(reviewCommand(r5a.id(), FacilityReportReviewDecision.ACCEPT)).status())
+			.isEqualTo(FacilityReportStatus.ACCEPTED);
+		assertThatThrownBy(() -> svcNoDeletePort.createReport(reportCommand("u-no-photo-fail", "no photo fail")))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(roService.listReportsForFacility(null, "facility-sangnoksu-elevator-1")).isEmpty();
+		assertThat(roService.listReportsForFacility("station-sangnoksu", null)).isEmpty();
+		assertThat(roService.listReportsForFacility("station-sangnoksu", "facility-sangnoksu-elevator-1")).hasSize(3);
+		assertThat(roService.listUserReportSummaries("u-ro-1", FacilityReportPageRequest.of(0, 10)).items()).hasSize(1);
+		var receiptCreated = roService.createReportWithReceipt(new CreateFacilityReportCommand(
+			null, "client-confirm-token", "station-sangnoksu", "facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN, "confirm receipt", null, null, null, null, null, null, null, null, null));
+		roService.reviewReport(reviewCommand(receiptCreated.report().id(), FacilityReportReviewDecision.ACCEPT));
+		var confirmed = roService.confirmReportResultByReceiptToken(receiptCreated.report().id(), receiptCreated.receiptToken());
+		assertThat(confirmed.status()).isEqualTo(FacilityReportStatus.RESOLVED);
+		assertThat(roService.confirmReportResultByReceiptToken(receiptCreated.report().id(), receiptCreated.receiptToken()).status())
+			.isEqualTo(FacilityReportStatus.RESOLVED);
 	}
 }

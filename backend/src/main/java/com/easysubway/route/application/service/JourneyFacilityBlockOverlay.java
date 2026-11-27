@@ -89,9 +89,7 @@ final class JourneyFacilityBlockOverlay {
 			// 외부 피드 차단 간선 중 미매핑 항목이 있어도 내부 확정 차단 간선은 유지한다.
 			BitSet internalOnly = new BitSet();
 			compileBlocked(internalBlocked, timetable, internalOnly);
-			overlay = internalOnly.isEmpty()
-				? RouteTimetableRaptorPlanner.RealtimeOverlay.empty()
-				: RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(internalOnly);
+			overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(internalOnly);
 		} else {
 			overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
 		}

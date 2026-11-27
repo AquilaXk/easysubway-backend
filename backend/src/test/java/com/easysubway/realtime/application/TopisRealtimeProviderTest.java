@@ -541,6 +541,84 @@ class TopisRealtimeProviderTest {
 		assertThatThrownBy(() -> provider(new ChunkedBodyHttpClient(503, successBody)).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
 			.isInstanceOf(RealtimeProviderException.class)
 			.hasMessage("PROVIDER_UNAVAILABLE");
+		assertThatThrownBy(() -> provider(new ChunkedBodyHttpClient(199, successBody)).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+	}
+
+	@Test
+	@DisplayName("null serviceKey, null lineName, IOException, InterruptedException 및 페이지네이션 경계 분기를 처리한다")
+	void handlesNullInputsTransportErrorsAndPaginationEdges() throws Exception {
+		var nullKeyProvider = new TopisRealtimeProvider(null, JSON, ChunkedBodyHttpClient.ok(ONE_ARRIVAL_PAYLOAD));
+		assertThatThrownBy(() -> nullKeyProvider.arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+		assertThatThrownBy(() -> nullKeyProvider.trainPositions(LINE_3_POSITIONS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+
+		// IOException -> PROVIDER_UNAVAILABLE
+		HttpClient ioErrorClient = mock(HttpClient.class);
+		when(ioErrorClient.<InputStream>send(any(HttpRequest.class), any())).thenThrow(new IOException("reset"));
+		assertThatThrownBy(() -> provider(ioErrorClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+
+		// InterruptedException -> interrupt 플래그 복원 및 PROVIDER_UNAVAILABLE
+		HttpClient interruptedClient = mock(HttpClient.class);
+		when(interruptedClient.<InputStream>send(any(HttpRequest.class), any()))
+			.thenThrow(new InterruptedException("stop"));
+		try {
+			assertThatThrownBy(() -> provider(interruptedClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+				.isInstanceOf(RealtimeProviderException.class)
+				.hasMessage("PROVIDER_UNAVAILABLE");
+			assertThat(Thread.currentThread().isInterrupted()).isTrue();
+		} finally {
+			Thread.interrupted();
+		}
+
+		// 1) page > 0 에서 non-array + INFO-200 은 1페이지 결과로 정상 종료하고 null lineName·숫자 필드를 처리한다
+		HttpClient page2NonArrayClient = mock(HttpClient.class);
+		when(page2NonArrayClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			HttpRequest req = invocation.getArgument(0);
+			String path = req.uri().getRawPath();
+			String body = path.contains("/0/")
+				? "{\"errorMessage\":{\"status\":200,\"code\":\"INFO-000\",\"totalCount\":2},\"realtimePositionList\":["
+					+ "{\"subwayId\":1003,\"statnNm\":\"충무로\",\"trainNo\":\"3101\"}]}"
+				: "{\"code\":\"INFO-200\"}";
+			return new StubResponse<>(req, 200, new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+		});
+		List<RealtimeTrainPosition> page2NonArray = provider(page2NonArrayClient)
+			.trainPositions(new RealtimeQuery(null, "seoul-3", "1003", null, null));
+		assertThat(page2NonArray).hasSize(1);
+		assertThat(page2NonArray.getFirst().lineId()).isEqualTo("1003");
+
+		// 2) page 1은 root totalCount로 2페이지 요구, page 2는 빈 배열로 break + totalCount/total 경로 커버
+		HttpClient page2EmptyArrayClient = mock(HttpClient.class);
+		when(page2EmptyArrayClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			HttpRequest req = invocation.getArgument(0);
+			String path = req.uri().getRawPath();
+			String body = path.contains("/0/")
+				? "{\"errorMessage\":{\"status\":200,\"code\":\"INFO-000\"},\"totalCount\":5,\"realtimePositionList\":["
+					+ "{\"subwayId\":\"1003\",\"statnNm\":\"충무로\",\"trainNo\":\"3101\"}]}"
+				: "{\"errorMessage\":{\"status\":200,\"code\":\"INFO-000\"},\"total\":5,\"realtimePositionList\":[]}";
+			return new StubResponse<>(req, 200, new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+		});
+		assertThat(provider(page2EmptyArrayClient).trainPositions(LINE_3_POSITIONS)).hasSize(1);
+
+		// 3) MAX_POSITION_PAGES(5) 동안 200건씩 total 미기재로 채워지면 5페이지 후 종료한다
+		List<String> fullPageRows = new ArrayList<>(200);
+		for (int i = 0; i < 200; i++) {
+			fullPageRows.add("{\"subwayId\":\"1003\",\"statnNm\":\"충무로\",\"trainNo\":\"" + (4000 + i) + "\"}");
+		}
+		String fullPageBody = "{\"errorMessage\":{\"status\":200,\"code\":\"INFO-000\"},\"realtimePositionList\":["
+			+ String.join(",", fullPageRows) + "]}";
+		HttpClient fivePageClient = mock(HttpClient.class);
+		when(fivePageClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			HttpRequest req = invocation.getArgument(0);
+			return new StubResponse<>(req, 200, new ByteArrayInputStream(fullPageBody.getBytes(StandardCharsets.UTF_8)));
+		});
+		assertThat(provider(fivePageClient).trainPositions(LINE_3_POSITIONS)).hasSize(1000);
 	}
 
 	private static TopisRealtimeProvider provider(HttpClient httpClient) {

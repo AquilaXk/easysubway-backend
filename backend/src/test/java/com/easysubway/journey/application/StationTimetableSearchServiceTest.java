@@ -462,6 +462,17 @@ class StationTimetableSearchServiceTest {
 		// 2026-08-30 03:00 KST (UTC 2026-08-29T18:00:00Z): 새 운행일 2026-08-30 시작 > feedEndDate(2026-08-29) -> TIMETABLE_STALE
 		assertFailure(searchService, request(new Selector.NextDeparturesSelector(Instant.parse("2026-08-29T18:00:00Z"), 1)),
 			Failure.TIMETABLE_STALE);
+
+		// feedEndDate가 탐색 종료일(last) 이후면 feedEndDate로 자르지 않고 정상 조회된다.
+		RouteTimetable futureFeedEnd = new RouteTimetable(
+			withLateTrip.serviceCalendars(), withLateTrip.serviceCalendarDates(), withLateTrip.transitRoutes(),
+			withLateTrip.transitTrips(), withLateTrip.transitStopTimes(), withLateTrip.transitFrequencies(),
+			withLateTrip.officialFares(), LocalDate.parse("2026-12-31"), withLateTrip.routeAccessData()
+		);
+		var futureResult = service(snapshot(futureFeedEnd, Instant.parse("2026-08-30T00:00:00Z")))
+			.search(request(new Selector.NextDeparturesSelector(Instant.parse("2026-08-29T15:30:00Z"), 1)));
+		assertThat(futureResult.directionGroups()).singleElement()
+			.satisfies(group -> assertThat(group.departures()).hasSize(1));
 	}
 
 	@Test

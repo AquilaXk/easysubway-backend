@@ -2828,4 +2828,63 @@ class JourneyRaptorAdapterTest {
 		var strictResult = new JourneyRaptorAdapter().plan(strictStepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
 		assertThat(strictResult.candidates()).isEmpty();
 	}
+
+	@Test
+	void viaSearchAppliesSameLineOutOfStationFootpathAndChecksNonMatchingFootpaths() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-a", "line-a", "A", "Line A", "station-b", "Asia/Seoul"),
+			new TransitRoute("route-other", "line-other", "O", "Other", "station-b", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip("trip-leg1", "route-a", "daily", "station-via", "down", "SUBWAY", "LOCAL", "5001", 0),
+			new TransitTrip("trip-leg2", "route-a", "daily", "station-b", "down", "SUBWAY", "LOCAL", "5002", 0),
+			new TransitTrip("trip-other", "route-other", "daily", "station-b", "down", "SUBWAY", "LOCAL", "5003", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-leg1", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-leg1", 2, "station-via", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-leg2", 1, "station-via", "line-a", 33_400, 33_400, 0, 0),
+			new TransitStopTime("trip-leg2", 2, "station-b", "line-a", 33_900, 33_900, 0, 0),
+			new TransitStopTime("trip-other", 1, "station-via", "line-other", 34_000, 34_000, 0, 0),
+			new TransitStopTime("trip-other", 2, "station-b", "line-other", 34_500, 34_500, 0, 0));
+		var edges = List.of(
+			new PathwayEdge("same-line-out", "p-via-a", "p-via-b", 240, 320, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("other-line-out", "p-via-other", "p-via-b", 180, 200, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+		var rules = List.of(
+			new TransferRule("other-only-out", "station-via", "line-other", "station-via", "line-other", "OUT_OF_STATION",
+				180, "other-line-out", "other-line-out", "VERIFIED"),
+			new TransferRule("from-a-to-other-out", "station-via", "line-a", "station-via", "line-other", "OUT_OF_STATION",
+				180, "other-line-out", "other-line-out", "VERIFIED"),
+			new TransferRule("same-line-out-rule", "station-via", "line-a", "station-via", "line-a", "OUT_OF_STATION",
+				240, "same-line-out", "same-line-out", "VERIFIED"));
+		var evidence = List.of(
+			new RouteEdgeEvidence("same-out-ev", "station-via", "line-a", "same-line-out", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new RouteEdgeEvidence("other-out-ev", "station-via", "line-other", "other-line-out", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("p-via-a", "station-via", "line-a", "PLATFORM"),
+				new PathwayNode("p-via-b", "station-via", "line-a", "PLATFORM"),
+				new PathwayNode("p-via-other", "station-via", "line-other", "PLATFORM")),
+			edges, rules, evidence);
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION,
+			new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access));
+
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-via",
+			new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false);
+		var result = new JourneyRaptorAdapter().plan(request, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:25:00Z"));
+			assertThat(candidate.walkingDistanceMeters()).isEqualTo(320);
+		});
+	}
 }

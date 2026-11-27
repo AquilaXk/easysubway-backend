@@ -1167,6 +1167,108 @@ class SecurityConfigTest {
 			});
 	}
 
+	@Test
+	@DisplayName("/actuator/prometheus는 사설망 직접 접근만 허용하고 프록시 전달 헤더나 외부·null IP는 거부한다")
+	void actuatorPrometheusRejectsProxyHeadersAndUntrustedRemoteAddr() throws Exception {
+		contextRunner
+			.withUserConfiguration(ActuatorPrometheusProbeController.class)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(context)
+					.apply(springSecurity())
+					.build();
+
+				mockMvc.perform(get("/actuator/prometheus")
+						.with(req -> {
+							req.setRemoteAddr("10.1.2.3");
+							return req;
+						}))
+					.andExpect(status().isOk());
+
+				mockMvc.perform(get("/actuator/prometheus")
+						.with(req -> {
+							req.setRemoteAddr("203.0.113.5");
+							return req;
+						}))
+					.andExpect(status().isForbidden());
+
+				for (String header : List.of("X-Forwarded-For", "X-Real-IP", "Forwarded", "CF-Connecting-IP")) {
+					mockMvc.perform(get("/actuator/prometheus")
+							.with(req -> {
+								req.setRemoteAddr("10.1.2.3");
+								return req;
+							})
+							.header(header, "198.51.100.1"))
+						.andExpect(status().isForbidden());
+				}
+
+				mockMvc.perform(get("/actuator/prometheus")
+						.with(req -> {
+							req.setRemoteAddr(null);
+							return req;
+						}))
+					.andExpect(status().isForbidden());
+			});
+	}
+
+	@Test
+	@DisplayName("convenience userDetailsService와 remember-me/prod 검증의 경계 분기를 커버한다")
+	void convenienceUserDetailsServiceAndRememberMeAndValidationBranches() {
+		var securityConfig = new SecurityConfig();
+		var repository = new InMemoryAdminIdentityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+
+		var service = securityConfig.userDetailsService(
+			"admin-user", "admin-password", "", "", "", "", false, "", "",
+			repository, passwordEncoder, new MockEnvironment()
+		);
+		assertThat(service.loadUserByUsername("admin-user").getAuthorities())
+			.extracting(GrantedAuthority::getAuthority)
+			.contains("ROLE_ADMIN", "admin.view");
+
+		assertThatThrownBy(() -> SecurityConfig.resolveRememberMeKey(null, "fallback", true))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("32자 이상");
+		assertThat(SecurityConfig.resolveRememberMeKey(null, null, false))
+			.hasSize(64);
+		assertThat(SecurityConfig.resolveRememberMeKey("   ", "fallback-secret", false))
+			.isEqualTo(SecurityConfig.deriveRememberMeKey("fallback-secret"));
+
+		var prod = new MockEnvironment().withProperty("spring.profiles.active", "prod");
+		prod.setActiveProfiles("prod");
+		assertThat(SecurityConfig.resolveLoginRateLimit(0, prod)).isEqualTo(10);
+		assertThat(SecurityConfig.resolveLoginRateLimit(0, new MockEnvironment())).isEqualTo(120);
+
+		assertThatThrownBy(() -> securityConfig.userDetailsService(
+			"admin-user", "", "", "", "", "", false, "", "",
+			repository, new InMemoryAdminRbacAuthorityRepository(), passwordEncoder, prod
+		)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> securityConfig.userDetailsService(
+			"", "admin-pass", "", "", "", "", false, "", "",
+			repository, new InMemoryAdminRbacAuthorityRepository(), passwordEncoder, prod
+		)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> securityConfig.userDetailsService(
+			"admin-user", "admin-pass", "operator-user", "operator-pass", "operator-user", "user-pass",
+			false, "", "", repository, new InMemoryAdminRbacAuthorityRepository(), passwordEncoder, new MockEnvironment()
+		)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> securityConfig.userDetailsService(
+			"admin-user", "admin-pass", "", "", "admin-user", "user-pass",
+			false, "", "", repository, new InMemoryAdminRbacAuthorityRepository(), passwordEncoder, new MockEnvironment()
+		)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> SecurityConfig.validateProdBasicAuthPolicy(
+			true, "security-owner", "", prod, Clock.systemUTC()
+		)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@RestController
+	static class ActuatorPrometheusProbeController {
+
+		@GetMapping("/actuator/prometheus")
+		String prometheus() {
+			return "# TYPE up gauge\nup 1\n";
+		}
+	}
+
 	private record BootstrapIdentityCollision(
 		String adminUsername,
 		String adminPassword,

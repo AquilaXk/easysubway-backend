@@ -41,10 +41,13 @@ class FacilityAvailabilityViewTest {
 	@DisplayName("SimpleFacilityAvailabilityView는 null 집합 전달 시 빈 집합으로 초기화한다")
 	void testSimpleFacilityAvailabilityViewNulls() {
 		SimpleFacilityAvailabilityView view = new SimpleFacilityAvailabilityView(false, null, null);
+		SimpleFacilityAvailabilityView explicitNullInternal = new SimpleFacilityAvailabilityView(false, null, null, null);
 
 		assertThat(view.available()).isFalse();
 		assertThat(view.observedAt()).isNull();
 		assertThat(view.blockedPathwayEdgeIds()).isEmpty();
+		assertThat(view.internalBlockedPathwayEdgeIds()).isEmpty();
+		assertThat(explicitNullInternal.internalBlockedPathwayEdgeIds()).isEmpty();
 	}
 
 	@Test

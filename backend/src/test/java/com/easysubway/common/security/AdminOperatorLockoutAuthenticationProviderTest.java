@@ -26,6 +26,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -354,6 +355,129 @@ class AdminOperatorLockoutAuthenticationProviderTest {
 				.isInstanceOf(BadCredentialsException.class);
 		}
 		assertThat(matchesCount.get()).isZero();
+	}
+
+	@Test
+	@DisplayName("null IP 해석기는 directOnly로 대체되고 null 사용자명은 빈 문자열로 정규화되며 IP 잠금 맵은 상한 초과 시 축출된다")
+	void nullResolverNullUsernameAndBoundedIpLockoutsAreHandled() {
+		var clock = new MutableClock(Instant.parse("2026-06-22T00:00:00Z"));
+		var repository = new InMemoryAdminIdentityRepository();
+		PasswordEncoder fastEncoder = new PasswordEncoder() {
+			@Override
+			public String encode(CharSequence rawPassword) {
+				return "{noop}" + rawPassword;
+			}
+
+			@Override
+			public boolean matches(CharSequence rawPassword, String encodedPassword) {
+				return ("{noop}" + rawPassword).equals(encodedPassword);
+			}
+		};
+		repository.upsertBootstrap(new AdminIdentity(
+			"admin-user", "관리자", null, fastEncoder.encode("admin-password"),
+			AdminIdentityAuthMethod.LOCAL, AdminIdentityRole.ADMIN, AdminIdentityStatus.ACTIVE,
+			0, null, LocalDateTime.now(clock), null, false, null, true,
+			LocalDateTime.now(clock), LocalDateTime.now(clock)
+		));
+		var users = new ConcurrentUserDetailsManager();
+		var userDetailsService = new AdminIdentityUserDetailsService(repository, users, clock);
+
+		var defaultResolverProvider = new AdminOperatorLockoutAuthenticationProvider(
+			userDetailsService, fastEncoder, repository, 2, Duration.ofMinutes(5), clock, null
+		);
+		Authentication nullNameAuth = new UsernamePasswordAuthenticationToken(null, "bad-password") {
+			@Override
+			public String getName() {
+				return null;
+			}
+		};
+		assertThatThrownBy(() -> defaultResolverProvider.authenticate(nullNameAuth))
+			.isInstanceOf(BadCredentialsException.class);
+		assertThat(defaultResolverProvider.authenticate(token("admin-user", "admin-password")).isAuthenticated())
+			.isTrue();
+
+		var proxyProvider = new AdminOperatorLockoutAuthenticationProvider(
+			userDetailsService, fastEncoder, repository, 1, Duration.ofMinutes(5),
+			clock, TrustedClientIpResolver.fromCidrs("10.0.0.0/8")
+		);
+		try {
+			for (int i = 0; i <= 16_384; i++) {
+				var req = new MockHttpServletRequest();
+				req.setRemoteAddr("10.1.2.3");
+				req.addHeader("X-Forwarded-For", "198.51." + ((i >> 8) & 0xFF) + "." + (i & 0xFF));
+				RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(req));
+				assertThatThrownBy(() -> proxyProvider.authenticate(token("admin-user", "bad-password")))
+					.isInstanceOf(BadCredentialsException.class);
+			}
+			// 가장 오래된 IP("198.51.0.0")는 축출되어 잠금 상태가 아닌 BadCredentialsException이 발생한다.
+			var evictedReq = new MockHttpServletRequest();
+			evictedReq.setRemoteAddr("10.1.2.3");
+			evictedReq.addHeader("X-Forwarded-For", "198.51.0.0");
+			RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(evictedReq));
+			assertThatThrownBy(() -> proxyProvider.authenticate(token("admin-user", "bad-password")))
+				.isInstanceOf(BadCredentialsException.class);
+		} finally {
+			RequestContextHolder.resetRequestAttributes();
+		}
+	}
+
+	@Test
+	@DisplayName("차단 감사 결과는 CREDENTIAL_ROTATION_REQUIRED 상태와 ACTIVE 계정의 만료·비활성 상태를 구분한다")
+	void blockedOutcomeCoversCredentialRotationAndActiveAccountStatusVariants() {
+		var clock = new MutableClock(Instant.parse("2026-06-22T00:00:00Z"));
+		var repository = new InMemoryAdminIdentityRepository();
+		var encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var now = LocalDateTime.now(clock);
+		String hash = encoder.encode("admin-password");
+
+		repository.upsertBootstrap(new AdminIdentity(
+			"rotation-user", "교체필요", null, hash,
+			AdminIdentityAuthMethod.LOCAL, AdminIdentityRole.ADMIN, AdminIdentityStatus.CREDENTIAL_ROTATION_REQUIRED,
+			0, null, now, null, false, null, true, now, now
+		));
+		repository.upsertBootstrap(new AdminIdentity(
+			"expired-active-user", "만료활성", null, hash,
+			AdminIdentityAuthMethod.LOCAL, AdminIdentityRole.ADMIN, AdminIdentityStatus.ACTIVE,
+			0, null, now, now.minusMinutes(1), false, null, true, now, now
+		));
+		repository.upsertBootstrap(new AdminIdentity(
+			"disabled-details-user", "비활성위임", null, hash,
+			AdminIdentityAuthMethod.LOCAL, AdminIdentityRole.ADMIN, AdminIdentityStatus.ACTIVE,
+			0, null, now, null, false, null, true, now, now
+		));
+
+		AdminIdentityUserDetailsService delegateService = new AdminIdentityUserDetailsService(
+			repository, new ConcurrentUserDetailsManager(), clock
+		);
+		UserDetailsService customService = username -> {
+			if ("disabled-details-user".equals(username)) {
+				return User.withUsername("disabled-details-user")
+					.password(hash)
+					.roles("ADMIN")
+					.disabled(true)
+					.build();
+			}
+			return delegateService.loadUserByUsername(username);
+		};
+
+		var provider = new AdminOperatorLockoutAuthenticationProvider(
+			customService, encoder, repository, 2, Duration.ofMinutes(5), clock
+		);
+
+		assertThatThrownBy(() -> provider.authenticate(token("rotation-user", "admin-password")))
+			.isInstanceOf(DisabledException.class);
+		assertThatThrownBy(() -> provider.authenticate(token("expired-active-user", "admin-password")))
+			.isInstanceOf(org.springframework.security.authentication.CredentialsExpiredException.class);
+		assertThatThrownBy(() -> provider.authenticate(token("disabled-details-user", "admin-password")))
+			.isInstanceOf(DisabledException.class);
+
+		assertThat(repository.audits())
+			.extracting(audit -> audit.loginId() + ":" + audit.outcome())
+			.containsExactly(
+				"rotation-user:CREDENTIAL_ROTATION_REQUIRED",
+				"expired-active-user:PASSWORD_EXPIRED",
+				"disabled-details-user:DISABLED"
+			);
 	}
 
 	private AdminOperatorLockoutAuthenticationProvider provider(

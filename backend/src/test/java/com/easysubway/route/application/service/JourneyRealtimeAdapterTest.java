@@ -25,7 +25,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -442,5 +445,117 @@ class JourneyRealtimeAdapterTest {
 				new PathwayNode("platform-b", "station-b", "line", "PLATFORM"),
 				new PathwayNode("outside", "station-b", null, "EXIT")),
 			edges, List.of(), evidence);
+	}
+
+	@Test
+	void coversIdentityValidationExpiryBoundariesAndRaptorRealtimeRuntimeViewBranches() {
+		assertThatThrownBy(() -> new JourneyRealtimeAdapter(q -> null, fixedClock(), Duration.ZERO))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRealtimeAdapter(q -> null, fixedClock(), Duration.ofSeconds(-1)))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, directTimetable());
+		var calls = new AtomicInteger();
+		var adapter = new JourneyRealtimeAdapter(q -> {
+			calls.incrementAndGet();
+			return updates("realtime-1", NOW.minusSeconds(10));
+		}, fixedClock(), FRESHNESS_TTL);
+		assertThatThrownBy(() -> adapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-missing", () -> false),
+			snapshot(runtime), EFFECTIVE))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("at least one origin query");
+		assertThat(calls).hasValue(0);
+
+		assertRejectedAfterOneCall(
+			new JourneyTimetableRealtimeResolver.Updates("r1", true, List.of(), null), EFFECTIVE, "unavailable");
+		assertRejectedAfterOneCall(
+			new JourneyTimetableRealtimeResolver.Updates(null, true, List.of(update("r1", NOW)), null),
+			EFFECTIVE, "single provider identity");
+		assertRejectedAfterOneCall(
+			new JourneyTimetableRealtimeResolver.Updates(" ", true, List.of(update("r1", NOW)), null),
+			EFFECTIVE, "single provider identity");
+		assertRejectedAfterOneCall(
+			new JourneyTimetableRealtimeResolver.Updates("r1||r2", true, List.of(update("r1", NOW)), null),
+			EFFECTIVE, "mixed");
+		assertRejectedAfterOneCall(
+			new JourneyTimetableRealtimeResolver.Updates("r1|r1", true, List.of(update("r1", NOW)), null),
+			EFFECTIVE, "mixed");
+		assertRejectedAfterOneCall(
+			new JourneyTimetableRealtimeResolver.Updates("r1|r2", true, List.of(update("r1", NOW.minusSeconds(5))), null),
+			EFFECTIVE, "mixed");
+		assertRejectedAfterOneCall(updates("r1", NOW.minusSeconds(90)), EFFECTIVE, "expired");
+
+		var overflowAdapter = new JourneyRealtimeAdapter(
+			q -> updates("r1", Instant.MAX.minusSeconds(1)),
+			Clock.fixed(Instant.MAX, ZoneOffset.UTC),
+			Duration.ofSeconds(10));
+		assertThatThrownBy(() -> overflowAdapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
+			snapshot(runtime), EFFECTIVE))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("realtime observation expiry is invalid");
+
+		var updateTripLate = new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure(
+				"station-a", "line", "trip-late", "1002", "LOCAL", LocalDate.of(2026, 7, 1), 1,
+				Instant.parse("2026-07-01T16:00:00Z"), Instant.parse("2026-07-01T16:00:00Z")),
+			30, 30, false, "r2", NOW.minusSeconds(20));
+		var shrinkObsAdapter = new JourneyRealtimeAdapter(q -> new JourneyTimetableRealtimeResolver.Updates(
+			"r1|r2", true, List.of(update("r1", NOW.minusSeconds(10)), updateTripLate), null),
+			fixedClock(), FRESHNESS_TTL);
+		RealtimeObservation shrinkObs = shrinkObsAdapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
+			snapshot(runtime), EFFECTIVE);
+		assertThat(shrinkObs.identity()).isEqualTo("r1|r2");
+		assertThat(shrinkObs.validUntil()).isEqualTo(NOW.plusSeconds(70));
+
+		var updateTripLateNewer = new JourneyTimetableRealtimeResolver.Update(
+			updateTripLate.departure(), 30, 30, false, "r2", NOW.minusSeconds(5));
+		var keepMinObsAdapter = new JourneyRealtimeAdapter(q -> new JourneyTimetableRealtimeResolver.Updates(
+			"r1|r2", true, List.of(update("r1", NOW.minusSeconds(20)), updateTripLateNewer), null),
+			fixedClock(), FRESHNESS_TTL);
+		RealtimeObservation keepMinObs = keepMinObsAdapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
+			snapshot(runtime), EFFECTIVE);
+		assertThat(keepMinObs.validUntil()).isEqualTo(NOW.plusSeconds(70));
+
+		// RaptorRealtimeRuntimeView.compile 경계 검사
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1", runtime, new JourneyTimetableRealtimeResolver.Updates(
+				"r1", true, List.of(update("r1", NOW), update("r1", NOW)), null)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("realtime overlay must contain valid updates");
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"   ", runtime, updates("r1", NOW)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1+r2", runtime, updates("r1+r2", NOW)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1||r2", runtime, updates("r1", NOW)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1|r1", runtime, updates("r1", NOW)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1", runtime, updates("r1", NOW), Set.of(LocalDate.of(2026, 7, 2))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("unexpected service date");
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1", runtime, new JourneyTimetableRealtimeResolver.Updates("r1", true, List.of(), null), Set.of()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("realtime overlay must contain valid updates");
+		Set<LocalDate> withNullDate = new HashSet<>(Arrays.asList(LocalDate.of(2026, 7, 1), null));
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"r1", runtime, updates("r1", NOW), withNullDate))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("null");
+
+		RaptorRealtimeRuntimeView emptyCoveredView = RaptorRealtimeRuntimeView.compile(
+			"r1", runtime, updates("r1", NOW),
+			Set.of(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 2)));
+		assertThat(emptyCoveredView.realtimeOverlay(LocalDate.of(2026, 7, 2)).available()).isTrue();
 	}
 }

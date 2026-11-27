@@ -225,6 +225,48 @@ class JourneyFacilityBlockOverlayTest {
 		for (int trans : secondaryTransitions) {
 			assertThat(staleOptional.overlay().isTransitionBlocked(trans)).isTrue();
 		}
+
+		// 6) 외부 피드 비가용 + required=true + ConstraintMode.NONE + 내부 차단 일부 미매핑이면 empty 반환
+		var stalePartialInternalRequiredNone = new JourneyFacilityBlockOverlay(() -> staleWithPartialInternal, true, CLOCK)
+			.captureWithStatus(ConstraintMode.NONE, compiled);
+		assertThat(stalePartialInternalRequiredNone.status()).isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		assertThat(stalePartialInternalRequiredNone.overlay().isEmpty()).isTrue();
+
+		// 7) null 차단 집합 반환 뷰는 안전하게 빈 차단의 APPLIED로 처리한다
+		FacilityAvailabilityView nullSetView = new FacilityAvailabilityView() {
+			@Override
+			public boolean available() {
+				return true;
+			}
+
+			@Override
+			public Instant observedAt() {
+				return NOW;
+			}
+
+			@Override
+			public Set<String> blockedPathwayEdgeIds() {
+				return null;
+			}
+
+			@Override
+			public Set<String> internalBlockedPathwayEdgeIds() {
+				return null;
+			}
+		};
+		var nullSetsCapture = new JourneyFacilityBlockOverlay(() -> nullSetView, true, CLOCK)
+			.captureWithStatus(ConstraintMode.REQUIRE_STEP_FREE, compiled);
+		assertThat(nullSetsCapture.status()).isEqualTo(JourneyAlternatives.FacilityStatus.APPLIED);
+		assertThat(nullSetsCapture.overlay().isEmpty()).isTrue();
+		assertThat(new JourneyFacilityBlockOverlay(() -> nullSetView, true, CLOCK)
+			.capture(ConstraintMode.REQUIRE_STEP_FREE, compiled).isEmpty()).isTrue();
+
+		// 8) 외부 피드 정상·내부 차단만 존재 + 내부 차단 미매핑 + ConstraintMode.NONE -> empty 반환
+		var freshUnmappedInternalOnly = FacilityAvailabilityView.blocked(NOW, Set.of(), Set.of("unmapped-internal"));
+		var unmappedInternalNone = new JourneyFacilityBlockOverlay(() -> freshUnmappedInternalOnly, true, CLOCK)
+			.captureWithStatus(ConstraintMode.NONE, compiled);
+		assertThat(unmappedInternalNone.status()).isEqualTo(JourneyAlternatives.FacilityStatus.UNOBSERVED);
+		assertThat(unmappedInternalNone.overlay().isEmpty()).isTrue();
 	}
 
 	private static RouteTimetable sampleTimetableWithTwoTransfers() {

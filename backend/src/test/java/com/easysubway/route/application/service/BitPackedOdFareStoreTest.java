@@ -151,4 +151,74 @@ class BitPackedOdFareStoreTest {
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("duplicate official_od_fare_quotes key");
 	}
+
+	@Test
+	@DisplayName("Builder 경계·메타데이터 재사용/한도·행렬 크기 초과·부분 누락 요금을 모두 정확히 처리한다")
+	void builderCoversEmptyLargeMatrixMetaCacheAndPackValidationBranches() {
+		// 1) 빈 역 목록 -> matrixEnabled=false -> overflow 경로
+		BitPackedOdFareStore emptyMatrix = BitPackedOdFareStore.builder(List.of())
+			.add("x-1", "x-2", "kric", "s1", "h1", 1400, 1500, 800, 900, 500, 500)
+			.build();
+		assertThat(emptyMatrix.getQuote("x-1", "x-2").gnrlCardFare()).isEqualTo(1400);
+		assertThat(emptyMatrix.containsKey(OfficialFareQuote.fareKey("x-1", "missing"))).isFalse();
+
+		// 2) MAX_MATRIX_STATIONS(10,000) 초과 -> matrixEnabled=false
+		List<String> tooManyStations = java.util.stream.IntStream.range(0, 10_001)
+			.mapToObj(i -> "st-" + i)
+			.toList();
+		BitPackedOdFareStore largeMatrix = BitPackedOdFareStore.builder(tooManyStations)
+			.add("st-0", "st-1", "kric", "s1", "h1", 1400, 1500, 800, 900, 500, 500)
+			.build();
+		assertThat(largeMatrix.getQuote("st-0", "st-1").gnrlCardFare()).isEqualTo(1400);
+
+		// 3) 메타데이터 캐시 히트(lastMeta 불일치 필드별 분기) 및 MAX_METADATA_COMBINATIONS(8) 초과 + overflow->packed 중복 거부
+		var builder = BitPackedOdFareStore.builder(List.of(
+			"s-0", "s-1", "s-2", "s-3", "s-4", "s-5", "s-6", "s-7", "s-8", "s-9", "s-10"));
+		for (int i = 0; i < 8; i++) {
+			builder.add("s-" + i, "s-" + (i + 1), "src-" + i, "snap-" + i, "h-" + i, 1400, 1500, 800, 900, 500, 500);
+		}
+		// 동일 sourceId/snapshotId지만 다른 ledgerHash -> lastMeta miss
+		// 동일 lastMeta 재사용 -> lastMeta hit
+		// 기존 metaMap 재조회 -> existing != null hit
+		// 9번째 조합 -> metaMap 가득 참 -> overflow로 격리
+		builder
+			.add("s-0", "s-2", "src-7", "snap-7", "h-7", 1400, 1500, 800, 900, 500, 500)
+			.add("s-0", "s-3", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 500)
+			.add("s-0", "s-4", "src-0", "snap-0", "h-other", 1400, 1500, 800, 900, 500, 500)
+			.add("s-0", "s-5", "src-0", "snap-other", "h-0", 1400, 1500, 800, 900, 500, 500)
+			.add("s-0", "s-6", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 500)
+			// 각각 다른 운임 필드가 pack 불가 조건에 걸리는 경우
+			.add("s-1", "s-3", "src-0", "snap-0", "h-0", 1400, 1505, 800, 900, 500, 500)
+			.add("s-1", "s-4", "src-0", "snap-0", "h-0", 1400, 1500, 805, 900, 500, 500)
+			.add("s-1", "s-5", "src-0", "snap-0", "h-0", 1400, 1500, 800, 10240, 500, 500)
+			.add("s-1", "s-6", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 505, 500)
+			.add("s-1", "s-7", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 10240)
+			.add("s-1", "s-8", "src-9", "snap-9", "h-9", 1400, 1500, 800, 900, 500, 500);
+
+		// packed 키 중복 거부
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> builder.add(
+			"s-0", "s-1", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 500))
+			.isInstanceOf(IllegalArgumentException.class);
+		// overflow 키에 packed 가능한 조합 중복 적재 거부
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> builder.add(
+			"s-1", "s-8", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 500))
+			.isInstanceOf(IllegalArgumentException.class);
+		// overflow 키에 overflow 조합 중복 적재 거부 + gnrlCard unpackable
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> builder.add(
+			"s-1", "s-8", "src-9", "snap-9", "h-9", 1405, 1500, 800, 900, 500, 500))
+			.isInstanceOf(IllegalArgumentException.class);
+		// origin/dest 한쪽만 미존재인 add & getQuote
+		builder.add("s-0", "unknown-dest", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 500);
+		builder.add("unknown-origin", "s-0", "src-0", "snap-0", "h-0", 1400, 1500, 800, 900, 500, 500);
+		BitPackedOdFareStore built = builder.build();
+		assertThat(built.getQuote("s-0", "missing-dest")).isNull();
+		assertThat(built.getQuote("s-1", "s-8").snapshotId()).isEqualTo("snap-9");
+
+		// from()에서 null value quote 무시 및 동일 key matrix 중복 방지 확인
+		Map<String, OfficialFareQuote> withNull = new HashMap<>();
+		withNull.put("a^@b", null);
+		withNull.put("a^@c", new OfficialFareQuote("a", "c", "src", "snap", "h", 1400, 1500, 800, 900, 500, 500));
+		BitPackedOdFareStore fromWithNull = BitPackedOdFareStore.from(List.of("a", "b", "c"), withNull);
+		assertThat(fromWithNull).hasSize(1);
+	}
 }

@@ -1623,6 +1623,54 @@ class RealtimeGatewayServiceTest {
 		assertThat(TopisRealtimeProvider.positiveInt(missingNode, "barvlDt")).isNull();
 	}
 
+	@Test
+	@DisplayName("PROVIDER_REQUEST_REJECTED, 열차위치 비활성/빈목록, null ETA 캐시 보정 및 blank 수신시각을 처리한다")
+	void handlesRequestRejectedDisabledEmptyPositionsNullEtaCacheAndBlankTimestamp() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeProviderControl disabledControl = new RealtimeProviderControl();
+		disabledControl.disableProvider("seoul-topis", "MAINTENANCE");
+		RealtimeGatewayService disabledService = service(
+			provider, clock, InMemoryRealtimeMappingPort.seededFixture(), disabledControl);
+
+		assertThat(disabledService.trainPositions(line4Query()).fallbackCode()).isEqualTo("PROVIDER_DISABLED");
+		assertThat(provider.trainPositionCalls).hasValue(0);
+
+		RealtimeGatewayService service = service(provider, clock);
+		provider.failureCode = "PROVIDER_REQUEST_REJECTED";
+		assertThat(service.arrivals(sangnoksuQuery()).fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(service.trainPositions(line4Query()).fallbackCode()).isEqualTo("PROVIDER_ERROR");
+
+		provider.failureCode = null;
+		provider.trainPositionsResponse = List.of();
+		assertThat(service.trainPositions(line4Query()).fallbackCode()).isEqualTo("EMPTY_PROVIDER_RESULT");
+
+		// etaSeconds=null 인 도착 결과는 캐시 재사용 시에도 eta 보정을 건너뛰고 보존된다.
+		RealtimeProvider nullEtaAndBlankTsProvider = new RealtimeProvider() {
+			@Override
+			public List<RealtimeArrival> arrivals(RealtimeQuery query) {
+				return List.of(
+					new RealtimeArrival("1004", "상록수", "당고개", "상행", "4123", null, "전역 진입", "전역", "2026-06-26T08:00:00Z"),
+					new RealtimeArrival("1004", "상록수", "오이도", "하행", "4124", 120, "2분 후", "전역", " ")
+				);
+			}
+
+			@Override
+			public List<RealtimeTrainPosition> trainPositions(RealtimeQuery query) {
+				return List.of();
+			}
+		};
+		RealtimeGatewayService nullEtaGateway = service(nullEtaAndBlankTsProvider, clock);
+		RealtimeArrivalResult initial = nullEtaGateway.arrivals(sangnoksuQuery());
+		assertThat(initial.arrivals()).hasSize(1);
+		assertThat(initial.arrivals().getFirst().etaSeconds()).isNull();
+
+		clock.instant = Instant.parse("2026-06-26T08:00:10Z");
+		RealtimeArrivalResult cachedHit = nullEtaGateway.arrivals(sangnoksuQuery());
+		assertThat(cachedHit.status()).isEqualTo(RealtimeStatus.FRESH);
+		assertThat(cachedHit.arrivals().getFirst().etaSeconds()).isNull();
+	}
+
 	private RealtimeQuery sangnoksuQuery() {
 		return new RealtimeQuery("station-sangnoksu", "seoul-4", "1004", "상록수", null);
 	}

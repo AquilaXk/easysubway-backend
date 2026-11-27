@@ -568,4 +568,86 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "station-b", null, "EXIT")),
 			edges, List.of(transferRulePrimary, transferRuleDetour), evidence);
 	}
+
+	@Test
+	@DisplayName("새벽 03시 경계 realtimeQueries, explicitTransferRule 범위 검사 및 RealtimeOverlay emptyAvailable/combine을 처리한다")
+	void coversPreDawnRealtimeQueryWindowExplicitTransferBoundsAndOverlayEmptyCombineBranches() {
+		// 2026-06-30T18:30:00Z = 2026-07-01 03:30:00 KST (직전 운행일 2026-06-30 경계 포함)
+		Instant preDawnKst = Instant.parse("2026-06-30T18:30:00Z");
+		var boundaryTimetable = new RouteTimetable(
+			List.of(
+				new ServiceCalendar("daily", true, true, true, true, true, true, true,
+					LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 2), "Asia/Seoul"),
+				new ServiceCalendar("future-only", false, false, false, false, true, false, false,
+					LocalDate.of(2026, 7, 3), LocalDate.of(2026, 7, 3), "Asia/Seoul")),
+			List.of(),
+			List.of(new TransitRoute("route-a", "line-a", "A", "Line A", "station-b", "Asia/Seoul")),
+			List.of(
+				new TransitTrip("trip-too-early-prev", "route-a", "daily", "station-b", "down", "SUBWAY", "LOCAL", "9001", 0),
+				new TransitTrip("trip-late-prev", "route-a", "daily", "station-b", "down", "SUBWAY", "LOCAL", "9002", 0),
+				new TransitTrip("trip-inactive-day", "route-a", "future-only", "station-b", "down", "SUBWAY", "LOCAL", "9003", 0)),
+			List.of(
+				new TransitStopTime("trip-too-early-prev", 1, "station-a", "line-a", 7_200, 7_200, 0, 0),
+				new TransitStopTime("trip-too-early-prev", 2, "station-b", "line-a", 7_800, 7_800, 0, 0),
+				new TransitStopTime("trip-late-prev", 1, "station-a", "line-a", 98_400, 98_400, 0, 0),
+				new TransitStopTime("trip-late-prev", 2, "station-b", "line-a", 99_000, 99_000, 0, 0),
+				new TransitStopTime("trip-inactive-day", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+				new TransitStopTime("trip-inactive-day", 2, "station-b", "line-a", 33_000, 33_000, 0, 0)),
+			List.of(), List.of(), null,
+			com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData.empty());
+		var boundaryCompiled = planner.compile(boundaryTimetable);
+		var preDawnQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-b",
+			new JourneyRaptorQuery.DepartAt(preDawnKst),
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> false);
+		var preDawnQueries = planner.realtimeQueries(preDawnQuery, boundaryCompiled);
+		assertThat(preDawnQueries).singleElement().satisfies(q ->
+			assertThat(q.departures())
+				.extracting(d -> d.tripId() + "@" + d.serviceDate())
+				.contains("trip-late-prev@2026-06-30")
+				.doesNotContain("trip-too-early-prev@2026-06-30", "trip-inactive-day@2026-07-01"));
+
+		// 04:30 KST (elapsedAfterCutoff >= 3600)
+		Instant afterPreDawnKst = Instant.parse("2026-06-30T19:30:00Z");
+		var afterPreDawnQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-b",
+			new JourneyRaptorQuery.DepartAt(afterPreDawnKst),
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> false);
+		assertThat(planner.realtimeQueries(afterPreDawnQuery, boundaryCompiled).getFirst().departures())
+			.extracting(d -> d.serviceDate())
+			.doesNotContain(LocalDate.of(2026, 6, 30));
+
+		// hasExplicitTransferRule out-of-range 경계
+		assertThat(boundaryCompiled.hasExplicitTransferRule(-1, 0, 0)).isFalse();
+		assertThat(boundaryCompiled.hasExplicitTransferRule(999, 0, 0)).isFalse();
+		assertThat(boundaryCompiled.hasExplicitTransferRule(0, -1, 0)).isFalse();
+		assertThat(boundaryCompiled.hasExplicitTransferRule(0, 999, 0)).isFalse();
+		assertThat(boundaryCompiled.hasExplicitTransferRule(0, 0, -1)).isFalse();
+		assertThat(boundaryCompiled.hasExplicitTransferRule(0, 0, 999)).isFalse();
+
+		// RealtimeOverlay.emptyAvailable / blockedOnly / combine 경계
+		assertThatThrownBy(() -> RouteTimetableRaptorPlanner.RealtimeOverlay.emptyAvailable(null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> RouteTimetableRaptorPlanner.RealtimeOverlay.emptyAvailable(" "))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(null).available()).isFalse();
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(new java.util.BitSet()).available()).isFalse();
+
+		var emptyAvail = RouteTimetableRaptorPlanner.RealtimeOverlay.emptyAvailable("avail-v1");
+		var bits = new java.util.BitSet();
+		bits.set(0);
+		var blocked = RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(bits);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(null, null).available()).isFalse();
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), null).available()).isFalse();
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(emptyAvail, blocked).isEmpty()).isFalse();
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(blocked, emptyAvail).isEmpty()).isFalse();
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(emptyAvail, null)).isSameAs(emptyAvail);
+		assertThat(RouteTimetableRaptorPlanner.RealtimeOverlay.combine(
+			blocked, RouteTimetableRaptorPlanner.RealtimeOverlay.empty())).isSameAs(blocked);
+	}
 }

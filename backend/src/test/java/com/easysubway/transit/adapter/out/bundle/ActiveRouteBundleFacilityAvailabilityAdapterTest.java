@@ -315,6 +315,13 @@ class ActiveRouteBundleFacilityAvailabilityAdapterTest {
 		assertThat(new ActiveRouteBundleFacilityAvailabilityAdapter(throwingRegistry, okStore).currentView())
 			.isEqualTo(FacilityAvailabilityView.unavailable());
 
+		var nullViewSnapshot = mock(ActiveRouteBundleSnapshot.class);
+		when(nullViewSnapshot.runtimeView()).thenReturn(null);
+		var nullViewRegistry = mock(RouteBundleActivationRegistry.class);
+		when(nullViewRegistry.activeSnapshot()).thenReturn(nullViewSnapshot);
+		assertThat(new ActiveRouteBundleFacilityAvailabilityAdapter(nullViewRegistry, okStore).currentView())
+			.isEqualTo(FacilityAvailabilityView.unavailable());
+
 		var runtime = compileRealBundle();
 		var registry = activatedRegistry(new MutableClock(BUNDLE_NOW), runtime);
 		var nullStatusesStore = mock(FacilityOperationalStatusStore.class);

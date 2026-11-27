@@ -628,4 +628,55 @@ class JourneyOfficialOdFareTest {
 		return new RouteTimetable(
 			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
 	}
+
+	@Test
+	@DisplayName("(11) BitPackedOdFareStore 4구간 서로 다른 스냅샷, 2구간 동일 스냅샷, 선행 구간 누락을 정확히 처리한다")
+	void calculateFareSupportsBitPackedStoreMultipleSnapshotsAndLeadingMissingSection() {
+		var fourSectionItinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
+			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(1_500), null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(3, 1_500, 400, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
+			List.of(
+				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
+					EFFECTIVE, EFFECTIVE.plusSeconds(200), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", true),
+				TestProjectionRides.projectionRide("line-2", "trip-2", "station-c", "station-b", "station-c",
+					EFFECTIVE.plusSeconds(300), EFFECTIVE.plusSeconds(500), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-c", "station-c", true),
+				TestProjectionRides.projectionRide("line-3", "trip-3", "station-d", "station-c", "station-d",
+					EFFECTIVE.plusSeconds(600), EFFECTIVE.plusSeconds(800), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-d", "station-d", true),
+				TestProjectionRides.projectionRide("line-4", "trip-4", "station-e", "station-d", "station-e",
+					EFFECTIVE.plusSeconds(900), EFFECTIVE.plusSeconds(1_200), null, null)));
+		var bitPacked = BitPackedOdFareStore.builder(List.of("station-a", "station-b", "station-c", "station-d", "station-e"))
+			.add("station-a", "station-b", "official", "snap-1", "f".repeat(64), 1400, 1500, 800, 900, 500, 600)
+			.add("station-b", "station-c", "official", "snap-2", "f".repeat(64), 1400, 1500, 800, 900, 500, 600)
+			.add("station-c", "station-d", "official", "snap-3", "f".repeat(64), 1400, 1500, 800, 900, 500, 600)
+			.add("station-d", "station-e", "official", "snap-4", "f".repeat(64), 1400, 1500, 800, 900, 500, 600)
+			.build();
+		var fourFare = JourneyRaptorAdapter.calculateFare(fourSectionItinerary, bitPacked);
+		assertThat(fourFare.status()).isEqualTo(FareStatus.AVAILABLE);
+		assertThat(fourFare.adultCardWon()).isEqualTo(5600);
+		assertThat(fourFare.sourceSnapshotIds()).containsExactly("snap-1", "snap-2", "snap-3", "snap-4");
+
+		var twoSectionItinerary = new RouteTimetableRaptorPlanner.JourneyItinerary(
+			LocalDate.of(2026, 7, 1), EFFECTIVE, EFFECTIVE.plusSeconds(600), null, null,
+			new JourneyProfileRaptorPort.ItineraryMetrics(1, 600, 200, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)),
+			List.of(
+				TestProjectionRides.projectionRide("line-1", "trip-1", "station-b", "station-a", "station-b",
+					EFFECTIVE, EFFECTIVE.plusSeconds(200), null, null),
+				access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, "station-b", "station-b", true),
+				TestProjectionRides.projectionRide("line-2", "trip-2", "station-c", "station-b", "station-c",
+					EFFECTIVE.plusSeconds(300), EFFECTIVE.plusSeconds(500), null, null)));
+		var sameSnapStore = BitPackedOdFareStore.builder(List.of("station-a", "station-b", "station-c"))
+			.add("station-a", "station-b", "official", "snap-same", "f".repeat(64), 1400, 1500, 800, 900, 500, 600)
+			.add("station-b", "station-c", "official", "snap-same", "f".repeat(64), 1400, 1500, 800, 900, 500, 600)
+			.build();
+		var twoFare = JourneyRaptorAdapter.calculateFare(twoSectionItinerary, sameSnapStore);
+		assertThat(twoFare.sourceSnapshotIds()).containsExactly("snap-same");
+
+		var missingLeadingQuote = Map.of(
+			OfficialFareQuote.fareKey("station-b", "station-c"),
+			quote("station-b", "station-c", "snap-same", 1400, 1500, 800, 900, 500, 600));
+		assertUnavailable(JourneyRaptorAdapter.calculateFare(fourSectionItinerary, missingLeadingQuote));
+	}
 }

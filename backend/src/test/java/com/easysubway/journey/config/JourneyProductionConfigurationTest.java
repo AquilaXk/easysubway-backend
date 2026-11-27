@@ -276,6 +276,64 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("readiness active/candidate 경로의 인증·직접접근 경계와 canary/facilityAvailabilityPort 팩토리 분기를 검증한다")
+	@SuppressWarnings("unchecked")
+	void coversReadinessActiveAuthAndCanaryFacilityFallbackBranches() throws Exception {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+				.apply(springSecurity())
+				.build();
+
+			mockMvc.perform(get(ACTIVE_READINESS_PATH))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+			mockMvc.perform(get(CANDIDATE_READINESS_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.with(request -> {
+						request.setRemoteAddr(null);
+						return request;
+					}))
+				.andExpect(status().isForbidden());
+
+			mockMvc.perform(get(CANDIDATE_READINESS_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.header("X-Real-IP", "198.51.100.1"))
+				.andExpect(status().isForbidden());
+		});
+
+		var config = new JourneyProductionConfiguration();
+		var registry = new RouteBundleActivationRegistry(Clock.fixed(VERIFIED_AT, ZoneOffset.UTC));
+		var workspacePool = new ScanWorkspacePool(2);
+		var statusStore = mock(com.easysubway.transit.application.port.out.FacilityOperationalStatusStore.class);
+		var customPort = com.easysubway.journey.application.FacilityAvailabilityPort.unavailable();
+
+		var nullRegistryProvider = mock(org.springframework.beans.factory.ObjectProvider.class);
+		var nullStoreProvider = mock(org.springframework.beans.factory.ObjectProvider.class);
+		var nullPortProvider = mock(org.springframework.beans.factory.ObjectProvider.class);
+		var presentRegistryProvider = mock(org.springframework.beans.factory.ObjectProvider.class);
+		when(presentRegistryProvider.getIfAvailable()).thenReturn(registry);
+		var presentStoreProvider = mock(org.springframework.beans.factory.ObjectProvider.class);
+		when(presentStoreProvider.getIfAvailable()).thenReturn(statusStore);
+		var customPortProvider = mock(org.springframework.beans.factory.ObjectProvider.class);
+		when(customPortProvider.getIfAvailable()).thenReturn(customPort);
+
+		assertThat(config.facilityAvailabilityPort(nullRegistryProvider, presentStoreProvider).currentView().available())
+			.isFalse();
+		assertThat(config.facilityAvailabilityPort(presentRegistryProvider, nullStoreProvider).currentView().available())
+			.isFalse();
+
+		assertThat(config.journeyCandidateCanaryService(registry, workspacePool, nullStoreProvider, nullPortProvider, false))
+			.isNotNull();
+		assertThat(config.journeyCandidateCanaryService(registry, workspacePool, nullStoreProvider, customPortProvider, false))
+			.isNotNull();
+		assertThat(config.journeyCandidateCanaryService(registry, workspacePool, presentStoreProvider, customPortProvider, false))
+			.isNotNull();
+	}
+
+	@Test
 	@DisplayName("internal candidate canary는 control Bearer로 내부 직접 POST만 허용한다")
 	void candidateCanaryIngressRequiresBearerAndDeniesOtherMethods() {
 		validProductionContext().run(context -> {
