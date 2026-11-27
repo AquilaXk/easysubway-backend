@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -31,8 +30,8 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 	private final TrustedClientIpResolver clientIpResolver;
 	private final int maxRequestsPerMinute;
 	private final Clock clock;
-	private final Map<String, WindowBucket> loginBuckets = boundedMap();
-	private final Map<String, WindowBucket> basicFailureBuckets = boundedMap();
+	private final WindowBucketStore loginBuckets = new WindowBucketStore();
+	private final WindowBucketStore basicFailureBuckets = new WindowBucketStore();
 
 	AdminLoginRateLimitFilter(
 		TrustedClientIpResolver clientIpResolver,
@@ -45,17 +44,6 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 		}
 		this.maxRequestsPerMinute = maxRequestsPerMinute;
 		this.clock = Objects.requireNonNull(clock, "clock");
-	}
-
-	private static Map<String, WindowBucket> boundedMap() {
-		return Collections.synchronizedMap(
-			new LinkedHashMap<>(256, 0.75f, true) {
-				@Override
-				protected boolean removeEldestEntry(Map.Entry<String, WindowBucket> eldest) {
-					return size() > MAX_TRACKED_KEYS;
-				}
-			}
-		);
 	}
 
 	@Override
@@ -78,7 +66,7 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 		long nowMillis = clock.millis();
 
 		if (formLoginPost) {
-			long retryAfterSeconds = tryConsume(loginBuckets, key, effectiveLimit, nowMillis);
+			long retryAfterSeconds = loginBuckets.tryConsume(key, effectiveLimit, nowMillis);
 			if (retryAfterSeconds > 0L) {
 				rejectTooManyRequests(request, response, retryAfterSeconds);
 				return;
@@ -87,14 +75,14 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 			return;
 		}
 
-		long blockedSeconds = blockedRetryAfter(basicFailureBuckets, key, effectiveLimit, nowMillis);
+		long blockedSeconds = basicFailureBuckets.blockedRetryAfter(key, effectiveLimit, nowMillis);
 		if (blockedSeconds > 0L) {
 			rejectTooManyRequests(request, response, blockedSeconds);
 			return;
 		}
 		filterChain.doFilter(request, response);
 		if (response.getStatus() == HttpStatus.UNAUTHORIZED.value()) {
-			recordFailure(basicFailureBuckets, key, nowMillis);
+			basicFailureBuckets.recordFailure(key, nowMillis);
 		}
 	}
 
@@ -128,11 +116,18 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 		}
 	}
 
-	private static long tryConsume(Map<String, WindowBucket> map, String key, int limit, long nowMillis) {
-		synchronized (map) {
-			WindowBucket bucket = map.get(key);
+	private static final class WindowBucketStore {
+		private final Map<String, WindowBucket> buckets = new LinkedHashMap<>(256, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<String, WindowBucket> eldest) {
+				return size() > MAX_TRACKED_KEYS;
+			}
+		};
+
+		synchronized long tryConsume(String key, int limit, long nowMillis) {
+			WindowBucket bucket = buckets.get(key);
 			if (bucket == null || nowMillis - bucket.windowStartMillis >= WINDOW_MILLIS) {
-				map.put(key, new WindowBucket(nowMillis, 1));
+				buckets.put(key, new WindowBucket(nowMillis, 1));
 				return 0L;
 			}
 			if (bucket.count < limit) {
@@ -142,11 +137,9 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 			long remainingMillis = WINDOW_MILLIS - (nowMillis - bucket.windowStartMillis);
 			return Math.max(1L, (remainingMillis + 999L) / 1000L);
 		}
-	}
 
-	private static long blockedRetryAfter(Map<String, WindowBucket> map, String key, int limit, long nowMillis) {
-		synchronized (map) {
-			WindowBucket bucket = map.get(key);
+		synchronized long blockedRetryAfter(String key, int limit, long nowMillis) {
+			WindowBucket bucket = buckets.get(key);
 			if (bucket == null || nowMillis - bucket.windowStartMillis >= WINDOW_MILLIS) {
 				return 0L;
 			}
@@ -156,13 +149,11 @@ final class AdminLoginRateLimitFilter extends OncePerRequestFilter {
 			long remainingMillis = WINDOW_MILLIS - (nowMillis - bucket.windowStartMillis);
 			return Math.max(1L, (remainingMillis + 999L) / 1000L);
 		}
-	}
 
-	private static void recordFailure(Map<String, WindowBucket> map, String key, long nowMillis) {
-		synchronized (map) {
-			WindowBucket bucket = map.get(key);
+		synchronized void recordFailure(String key, long nowMillis) {
+			WindowBucket bucket = buckets.get(key);
 			if (bucket == null || nowMillis - bucket.windowStartMillis >= WINDOW_MILLIS) {
-				map.put(key, new WindowBucket(nowMillis, 1));
+				buckets.put(key, new WindowBucket(nowMillis, 1));
 				return;
 			}
 			bucket.count++;

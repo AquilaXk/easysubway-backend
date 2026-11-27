@@ -2887,4 +2887,104 @@ class JourneyRaptorAdapterTest {
 			assertThat(candidate.walkingDistanceMeters()).isEqualTo(320);
 		});
 	}
+
+	@Test
+	void viaSearchSupportsUpstreamTransferAndRealtimeSameTripPassThrough() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-a", "line-a", "A", "Line A", "station-mid", "Asia/Seoul"),
+			new TransitRoute("route-b", "line-b", "B", "Line B", "station-b", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip("trip-feeder", "route-a", "daily", "station-mid", "down", "SUBWAY", "LOCAL", "2001", 0),
+			new TransitTrip("trip-through", "route-b", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-feeder", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-feeder", 2, "station-mid", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-through", 1, "station-mid", "line-b", 33_300, 33_300, 0, 0),
+			new TransitStopTime("trip-through", 2, "station-transfer", "line-b", 33_900, 33_920, 0, 0),
+			new TransitStopTime("trip-through", 3, "station-b", "line-b", 34_500, 34_500, 0, 0));
+		var edges = List.of(
+			new PathwayEdge("entry", "entrance", "platform-a", 120, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("transfer-mid", "platform-mid-a", "platform-mid-b", 120, 80, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"),
+			new PathwayEdge("exit", "platform-b", "outside", 60, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED").withStairAccessState("STEP_FREE"));
+		var rules = List.of(
+			new TransferRule("rule-mid", "station-mid", "line-a", "station-mid", "line-b", "IN_STATION",
+				120, "transfer-mid", "transfer-mid", "VERIFIED"));
+		var evidence = List.of(
+			new RouteEdgeEvidence("entry-evidence", "station-a", "line-a", "entry", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new RouteEdgeEvidence("transfer-mid-evidence", "station-mid", "line-b", "transfer-mid", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new RouteEdgeEvidence("exit-evidence", "station-b", "line-b", "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new PathwayNode("platform-a", "station-a", "line-a", "PLATFORM"),
+				new PathwayNode("platform-mid-a", "station-mid", "line-a", "PLATFORM"),
+				new PathwayNode("platform-mid-b", "station-mid", "line-b", "PLATFORM"),
+				new PathwayNode("platform-transfer", "station-transfer", "line-b", "PLATFORM"),
+				new PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
+				new PathwayNode("outside", "station-b", null, "EXIT")),
+			edges, rules, evidence);
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access));
+
+		var serviceDate = LocalDate.of(2026, 7, 1);
+		var update1 = new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure(
+				"station-a", "line-a", "trip-feeder", "2001", "LOCAL", serviceDate, 1,
+				serviceInstant(serviceDate, 32_400), serviceInstant(serviceDate, 32_400)),
+			30, 30, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var update2 = new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure(
+				"station-mid", "line-b", "trip-through", "2002", "LOCAL", serviceDate, 1,
+				serviceInstant(serviceDate, 33_300), serviceInstant(serviceDate, 33_300)),
+			45, 45, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates(List.of(update1, update2)));
+		var observation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer",
+			new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			2, 2, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, observation, measurement());
+
+		assertThat(result.candidates()).isNotEmpty();
+		var best = result.candidates().getFirst();
+		assertThat(best.transferCount()).isEqualTo(1);
+		assertThat(best.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
+		assertThat(best.realtimeDepartureTime()).isNotNull();
+		assertThat(best.realtimeArrivalTime()).isNotNull();
+		assertThat(best.legs()).hasSize(3);
+		assertThat(best.legs().get(0)).isInstanceOfSatisfying(JourneyCandidate.Ride.class, ride -> {
+			assertThat(ride.tripId()).isEqualTo("trip-feeder");
+			assertThat(ride.fromStationId()).isEqualTo("station-a");
+			assertThat(ride.toStationId()).isEqualTo("station-mid");
+		});
+		assertThat(best.legs().get(1)).isInstanceOfSatisfying(JourneyCandidate.Transfer.class, transfer -> {
+			assertThat(transfer.fromStationId()).isEqualTo("station-mid");
+			assertThat(transfer.toStationId()).isEqualTo("station-mid");
+		});
+		assertThat(best.legs().get(2)).isInstanceOfSatisfying(JourneyCandidate.Ride.class, ride -> {
+			assertThat(ride.tripId()).isEqualTo("trip-through");
+			assertThat(ride.fromStationId()).isEqualTo("station-mid");
+			assertThat(ride.toStationId()).isEqualTo("station-b");
+			assertThat(ride.stops()).extracting(JourneyCandidate.Stop::stationId)
+				.containsExactly("station-mid", "station-transfer", "station-b");
+		});
+	}
 }

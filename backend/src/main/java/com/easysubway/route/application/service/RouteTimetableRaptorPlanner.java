@@ -64,6 +64,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.function.BooleanSupplier;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Function;
 
@@ -2923,7 +2924,7 @@ public final class RouteTimetableRaptorPlanner {
 		private final Map<String, List<StationDepartureOccurrence>> departuresByStation;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays =
 			new LinkedHashMap<>(16, 0.75f, true);
-		private volatile CachedServiceDay recentServiceDay;
+		private final AtomicReference<CachedServiceDay> recentServiceDay = new AtomicReference<>();
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
 		private final int[] stationSlotOffsets;
@@ -3684,7 +3685,7 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		ActiveServiceDay activeServiceDay(LocalDate serviceDate) {
-			CachedServiceDay recent = this.recentServiceDay;
+			CachedServiceDay recent = this.recentServiceDay.get();
 			if (recent != null && recent.date().equals(serviceDate)) {
 				return recent.day();
 			}
@@ -3700,7 +3701,7 @@ public final class RouteTimetableRaptorPlanner {
 					activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
 				}
 			}
-			this.recentServiceDay = new CachedServiceDay(serviceDate, day);
+			this.recentServiceDay.set(new CachedServiceDay(serviceDate, day));
 			return day;
 		}
 

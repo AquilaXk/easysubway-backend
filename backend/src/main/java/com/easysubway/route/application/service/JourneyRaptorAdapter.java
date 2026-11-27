@@ -940,8 +940,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		int youthCash = 0;
 		int childCard = 0;
 		int childCash = 0;
-		String singleSnapshotId = null;
-		Set<String> multipleSnapshotIds = null;
+		SnapshotIdCollector snapshotIds = new SnapshotIdCollector();
 		boolean unavailable = false;
 
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
@@ -966,16 +965,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 						youthCash = Math.addExact(youthCash, quote.yungCashFare());
 						childCard = Math.addExact(childCard, quote.childCardFare());
 						childCash = Math.addExact(childCash, quote.childCashFare());
-						String snapshotId = quote.snapshotId();
-						if (singleSnapshotId == null) {
-							singleSnapshotId = snapshotId;
-						} else if (multipleSnapshotIds != null) {
-							multipleSnapshotIds.add(snapshotId);
-						} else if (!singleSnapshotId.equals(snapshotId)) {
-							multipleSnapshotIds = new LinkedHashSet<>();
-							multipleSnapshotIds.add(singleSnapshotId);
-							multipleSnapshotIds.add(snapshotId);
-						}
+						snapshotIds.add(quote.snapshotId());
 					}
 				}
 				sectionFirstRide = null;
@@ -998,18 +988,30 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		youthCash = Math.addExact(youthCash, quote.yungCashFare());
 		childCard = Math.addExact(childCard, quote.childCardFare());
 		childCash = Math.addExact(childCash, quote.childCashFare());
-		String snapshotId = quote.snapshotId();
-		List<String> snapshotIds;
-		if (multipleSnapshotIds != null) {
-			multipleSnapshotIds.add(snapshotId);
-			snapshotIds = List.copyOf(multipleSnapshotIds);
-		} else if (singleSnapshotId == null || singleSnapshotId.equals(snapshotId)) {
-			snapshotIds = List.of(snapshotId);
-		} else {
-			snapshotIds = List.of(singleSnapshotId, snapshotId);
-		}
+		snapshotIds.add(quote.snapshotId());
 		return JourneyCandidate.Fare.available(
-			adultCard, adultCash, youthCard, youthCash, childCard, childCash, snapshotIds);
+			adultCard, adultCash, youthCard, youthCash, childCard, childCash, snapshotIds.toList());
+	}
+
+	private static final class SnapshotIdCollector {
+		private String first;
+		private Set<String> multiple;
+
+		void add(String snapshotId) {
+			if (first == null) {
+				first = snapshotId;
+			} else if (multiple != null) {
+				multiple.add(snapshotId);
+			} else if (!first.equals(snapshotId)) {
+				multiple = new LinkedHashSet<>();
+				multiple.add(first);
+				multiple.add(snapshotId);
+			}
+		}
+
+		List<String> toList() {
+			return multiple != null ? List.copyOf(multiple) : List.of(first);
+		}
 	}
 
 	private static OfficialFareQuote lookupFareQuote(

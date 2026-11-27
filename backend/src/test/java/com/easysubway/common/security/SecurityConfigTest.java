@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.authorization.AdminAuthorization;
 import com.easysubway.admin.authorization.adapter.out.persistence.InMemoryAdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.adapter.out.persistence.InMemoryAdminIdentityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
@@ -1258,6 +1259,18 @@ class SecurityConfigTest {
 		assertThatThrownBy(() -> SecurityConfig.validateProdBasicAuthPolicy(
 			true, "security-owner", "", prod, Clock.systemUTC()
 		)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void adminAuthorizationAndInMemoryRbacHandleEmptyAndNullInputsSafely() {
+		assertThat(AdminAuthorization.authoritiesFor(AdminIdentityRole.OPERATOR_ADMIN)).isEmpty();
+		assertThat(AdminAuthorization.authoritiesFor(null, null)).isEmpty();
+
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		rbacRepository.seedRole("admin", null);
+		rbacRepository.replacePermissionAuthorities(null, null);
+		assertThat(rbacRepository.findPermissionAuthorities(null)).isEmpty();
+		assertThat(rbacRepository.findPermissionAuthorities("admin")).isEmpty();
 	}
 
 	@RestController
