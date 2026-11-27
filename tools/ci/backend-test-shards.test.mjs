@@ -55,6 +55,9 @@ test('Backend #416 Gradle init script applies the same shard rule and fails clos
     "throw new GradleException('test sharding and merged JaCoCo reporting are separate invocations')",
     "report.executionData.setFrom(executionFiles)",
     'throw new GradleException("no JaCoCo execution data in ${directory}")',
+    'https://maven-central.storage-download.googleapis.com/maven2/',
+    "excludeGroup 'org.egovframe.boot'",
+    "excludeGroup 'org.egovframe.rte'",
   ]) assert.ok(initScript.includes(literal), `init script missing ${literal}`);
   assert.doesNotMatch(initScript, /ignoreFailures|failOnNoMatchingTests\s*=\s*false|maxParallelForks|enabled\s*=\s*false/);
 });

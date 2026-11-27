@@ -32,6 +32,17 @@ def backendTestShardOf = { String relativeClassPath, int shardCount ->
 }
 
 gradle.allprojects { project ->
+	// GitHub Actions 공유 러너 IP에 대한 repo.maven.apache.org HTTP 429 차단을 피하기 위해 공식 GCS 미러를 먼저 조회한다.
+	project.repositories {
+		maven {
+			name = 'GoogleMavenCentralMirror'
+			url = project.uri('https://maven-central.storage-download.googleapis.com/maven2/')
+			content {
+				excludeGroup 'org.egovframe.boot'
+				excludeGroup 'org.egovframe.rte'
+			}
+		}
+	}
 	project.plugins.withId('java') {
 		if (shardIndexText != null) {
 			if (!(shardCountText ==~ /[1-9][0-9]?/) || !(shardIndexText ==~ /[1-9][0-9]?/)) {
