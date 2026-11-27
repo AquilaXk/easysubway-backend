@@ -92,6 +92,8 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	void exposesCanonicalTripIdentityForRealtimeCancellation() {
 		var compiled = planner.compile(everyDayTimetable());
 		int scheduledTripIndex = compiled.uniqueScheduledTripIndex("trip-daily");
+		assertThat(compiled.uniqueScheduledTripIndex(null)).isEqualTo(-1);
+		assertThat(compiled.uniqueScheduledTripIndex("missing-trip")).isEqualTo(-1);
 		var scheduledTrip = compiled.scheduledTrip(scheduledTripIndex);
 		var overlay = planner.compileRealtimeOverlay(compiled,
 			new TimetableRealtimeUpdates("v1", true, List.of(
