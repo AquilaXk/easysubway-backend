@@ -29,7 +29,7 @@ runs:
       uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
       with:
         distribution: temurin
-        java-version: "21.0.13"
+        java-version: "21.0.13+9"
         cache: ${{ inputs.gradle-cache == 'true' && 'gradle' || '' }}
 
     # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
