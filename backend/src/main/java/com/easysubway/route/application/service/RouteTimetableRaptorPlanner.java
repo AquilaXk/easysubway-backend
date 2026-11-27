@@ -2921,10 +2921,9 @@ public final class RouteTimetableRaptorPlanner {
 		private final int[][] slotOfStopInPattern;
 		private final Map<String, Integer> tripIndexById;
 		private final Map<String, List<StationDepartureOccurrence>> departuresByStation;
-		private final java.util.concurrent.ConcurrentHashMap<LocalDate, ActiveServiceDay> activeServiceDays =
-			new java.util.concurrent.ConcurrentHashMap<>();
-		private final java.util.concurrent.ConcurrentLinkedDeque<LocalDate> activeServiceDayOrder =
-			new java.util.concurrent.ConcurrentLinkedDeque<>();
+		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays =
+			new LinkedHashMap<>(16, 0.75f, true);
+		private volatile CachedServiceDay recentServiceDay;
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
 		private final int[] stationSlotOffsets;
@@ -3685,37 +3684,24 @@ public final class RouteTimetableRaptorPlanner {
 		}
 
 		ActiveServiceDay activeServiceDay(LocalDate serviceDate) {
-			ActiveServiceDay cached = activeServiceDays.get(serviceDate);
-			if (cached != null) {
-				recordAccess(serviceDate);
-				return cached;
+			CachedServiceDay recent = this.recentServiceDay;
+			if (recent != null && recent.date().equals(serviceDate)) {
+				return recent.day();
 			}
-			ActiveServiceDay compiled = compileActiveServiceDay(serviceDate);
-			ActiveServiceDay existing = activeServiceDays.putIfAbsent(serviceDate, compiled);
-			if (existing != null) {
-				recordAccess(serviceDate);
-				return existing;
-			}
-			recordNewEntry(serviceDate);
-			return compiled;
+			return loadActiveServiceDay(serviceDate);
 		}
 
-		private synchronized void recordAccess(LocalDate date) {
-			activeServiceDayOrder.remove(date);
-			activeServiceDayOrder.add(date);
-		}
-
-		private synchronized void recordNewEntry(LocalDate date) {
-			activeServiceDayOrder.remove(date);
-			activeServiceDayOrder.add(date);
-			while (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
-				LocalDate oldest = activeServiceDayOrder.poll();
-				if (oldest != null) {
-					activeServiceDays.remove(oldest);
-				} else {
-					break;
+		private synchronized ActiveServiceDay loadActiveServiceDay(LocalDate serviceDate) {
+			ActiveServiceDay day = activeServiceDays.get(serviceDate);
+			if (day == null) {
+				day = compileActiveServiceDay(serviceDate);
+				activeServiceDays.put(serviceDate, day);
+				if (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
+					activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
 				}
 			}
+			this.recentServiceDay = new CachedServiceDay(serviceDate, day);
+			return day;
 		}
 
 		private ActiveServiceDay compileActiveServiceDay(LocalDate serviceDate) {
@@ -3763,16 +3749,19 @@ public final class RouteTimetableRaptorPlanner {
 			return new ActiveServiceDay(List.copyOf(activeTrips), List.copyOf(activeTripsByPattern));
 		}
 
-		int activeServiceDayCacheSize() {
+		synchronized int activeServiceDayCacheSize() {
 			return activeServiceDays.size();
 		}
 
-		boolean isServiceDayCached(LocalDate serviceDate) {
+		synchronized boolean isServiceDayCached(LocalDate serviceDate) {
 			return activeServiceDays.containsKey(serviceDate);
 		}
 
 		int activeTripCount(LocalDate serviceDate) {
 			return activeServiceDay(serviceDate).trips().size();
+		}
+
+		private record CachedServiceDay(LocalDate date, ActiveServiceDay day) {
 		}
 
 		private record DayCalendarEntry(int serviceIndex, LocalDate startDate, LocalDate endDate) {

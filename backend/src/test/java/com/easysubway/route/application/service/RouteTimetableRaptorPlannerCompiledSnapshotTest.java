@@ -767,7 +767,9 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@DisplayName("active service day cache는 access-order 최근 8일만 유지한다")
 	void evictsLeastRecentlyUsedServiceDayAfterEightEntries() {
 		var compiled = planner.compile(everyDayTimetable());
-		for (int offset = 0; offset < 9; offset += 1) {
+		var firstWednesday = compiled.activeServiceDay(WEDNESDAY);
+		assertThat(compiled.activeServiceDay(WEDNESDAY)).isSameAs(firstWednesday);
+		for (int offset = 1; offset < 9; offset += 1) {
 			compiled.activeServiceDay(WEDNESDAY.plusDays(offset));
 		}
 
